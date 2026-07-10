@@ -4,10 +4,14 @@ used throughout main.py — conn.execute(sql_with_question_marks, params),
 row["col"] / row[0] / dict(row) access, and last_insert_rowid() emulation —
 so the application query code did not need to be rewritten call-by-call.
 """
+import logging
 import os
 import re
+import weakref
 import psycopg2
 import psycopg2.pool
+
+logger = logging.getLogger("ems.db")
 
 IntegrityError = psycopg2.IntegrityError
 
@@ -87,6 +91,14 @@ class Conn:
     def __init__(self, raw):
         self._raw = raw
         self._last_id = None
+        self._closed = False
+        # Safety net: if calling code forgets to call .close() (e.g. an
+        # exception raised between get_db() and the endpoint's close() call),
+        # this returns the connection to the pool once the Conn is garbage
+        # collected instead of leaking it out of the (small, 10-connection)
+        # pool permanently. GC timing isn't deterministic, so this is a
+        # backstop, not a substitute for closing explicitly.
+        self._finalizer = weakref.finalize(self, _return_to_pool, raw, leaked=True)
 
     def execute(self, sql, params=()):
         sql2 = sql.replace("?", "%s")
@@ -116,7 +128,23 @@ class Conn:
         self._raw.rollback()
 
     def close(self):
-        _get_pool().putconn(self._raw)
+        if self._closed:
+            return
+        self._closed = True
+        self._finalizer.detach()
+        _return_to_pool(self._raw, leaked=False)
+
+
+def _return_to_pool(raw, leaked):
+    if leaked:
+        logger.warning(
+            "DB connection was garbage-collected without an explicit .close() call "
+            "— returning it to the pool now, but this indicates a leak at the call site."
+        )
+    try:
+        _get_pool().putconn(raw)
+    except Exception:
+        logger.exception("Failed to return a connection to the pool")
 
 
 def get_db():

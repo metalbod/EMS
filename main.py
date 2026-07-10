@@ -2,8 +2,10 @@ import os
 import io
 import csv
 import json
+import logging
 import random
-import secrets
+import time
+from collections import defaultdict, deque
 from datetime import datetime, timezone, timedelta, date
 from typing import List, Optional
 
@@ -31,9 +33,27 @@ except ImportError:
     from ems import payroll_calc
 
 # ---------------------------------------------------------------------------
+# Logging — plain stdout logging so `fly logs` / any container log collector
+# picks it up. PYTHONUNBUFFERED=1 (set in the Dockerfile) keeps it flushing
+# immediately instead of buffering.
+# ---------------------------------------------------------------------------
+logging.basicConfig(
+    level=os.environ.get("LOG_LEVEL", "INFO"),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+logger = logging.getLogger("ems")
+
+# ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-JWT_SECRET = os.environ.get("JWT_SECRET", secrets.token_hex(32))
+JWT_SECRET = os.environ.get("JWT_SECRET")
+if not JWT_SECRET:
+    raise RuntimeError(
+        "JWT_SECRET environment variable is not set. A random secret is deliberately "
+        "NOT generated as a fallback — that would silently invalidate all sessions on "
+        "every restart, and break auth entirely across multiple worker processes/machines "
+        "(each would mint a different secret). Set JWT_SECRET explicitly (see .env.example)."
+    )
 JWT_ALG    = "HS256"
 JWT_HOURS  = 8
 
@@ -114,6 +134,38 @@ def seed_ob_templates(conn, inst_id: int):
 def hash_password(p): return bcrypt.hashpw(p.encode(), bcrypt.gensalt()).decode()
 def verify_password(p, h): return bcrypt.checkpw(p.encode(), h.encode())
 
+# ---------------------------------------------------------------------------
+# Login rate limiting — in-memory sliding window. This is intentionally
+# process-local (no Redis/shared store): the app currently runs as a single
+# uvicorn worker/machine, so this is a real backstop against brute-forcing a
+# single username, not just decoration. If this ever runs as multiple
+# workers/machines, move this to a shared store or it silently stops working
+# per-instance.
+# ---------------------------------------------------------------------------
+LOGIN_MAX_ATTEMPTS = 5
+LOGIN_WINDOW_SECONDS = 300  # 5 minutes
+_login_failures: dict = defaultdict(deque)
+
+def _login_rate_key(request: Request, username: str) -> str:
+    ip = request.client.host if request.client else "unknown"
+    return f"{ip}:{username.strip().lower()}"
+
+def _check_login_rate_limit(key: str):
+    now = time.monotonic()
+    attempts = _login_failures[key]
+    while attempts and now - attempts[0] > LOGIN_WINDOW_SECONDS:
+        attempts.popleft()
+    if len(attempts) >= LOGIN_MAX_ATTEMPTS:
+        retry_after = max(1, int(LOGIN_WINDOW_SECONDS - (now - attempts[0])))
+        raise HTTPException(429, f"Too many failed login attempts. Try again in {retry_after} seconds.")
+
+def _record_login_failure(key: str):
+    _login_failures[key].append(time.monotonic())
+    logger.warning("Failed login attempt for %s (%d in window)", key, len(_login_failures[key]))
+
+def _clear_login_failures(key: str):
+    _login_failures.pop(key, None)
+
 bearer = HTTPBearer(auto_error=False)
 
 # ---------------------------------------------------------------------------
@@ -146,6 +198,24 @@ async def cors_middleware(request: Request, call_next):
     response = await call_next(request)
     for k, v in CORS_HEADERS.items():
         response.headers[k] = v
+    return response
+
+@app.middleware("http")
+async def request_logging_middleware(request: Request, call_next):
+    """Logs every request (method, path, status, duration) and guarantees
+    unhandled exceptions are logged with a stack trace before propagating —
+    previously an unhandled error anywhere in an endpoint had no log trail
+    at all beyond uvicorn's bare access line."""
+    start = time.monotonic()
+    try:
+        response = await call_next(request)
+    except Exception:
+        duration_ms = round((time.monotonic() - start) * 1000, 1)
+        logger.exception("Unhandled error on %s %s (%sms)", request.method, request.url.path, duration_ms)
+        raise
+    duration_ms = round((time.monotonic() - start) * 1000, 1)
+    level = logging.WARNING if response.status_code >= 500 else logging.INFO
+    logger.log(level, "%s %s -> %s (%sms)", request.method, request.url.path, response.status_code, duration_ms)
     return response
 
 # ---------------------------------------------------------------------------
@@ -1499,7 +1569,10 @@ def gen_employee_id(conn, inst_id: int) -> str:
 # Auth routes
 # ---------------------------------------------------------------------------
 @app.post("/api/auth/login")
-def login(body: LoginIn):
+def login(body: LoginIn, request: Request):
+    rate_key = _login_rate_key(request, body.username)
+    _check_login_rate_limit(rate_key)
+
     conn = get_db()
     code = body.institution_code.strip().upper() if body.institution_code and body.institution_code.strip() else None
 
@@ -1510,6 +1583,7 @@ def login(body: LoginIn):
         ).fetchone()
         if not inst_row:
             conn.close()
+            _record_login_failure(rate_key)
             raise HTTPException(401, "Invalid company code, username or password")
         user = conn.execute(
             "SELECT * FROM users WHERE username=? AND institution_id=?",
@@ -1525,11 +1599,13 @@ def login(body: LoginIn):
 
     conn.close()
     if not user or not verify_password(body.password, user["password_hash"]):
+        _record_login_failure(rate_key)
         raise HTTPException(401, "Invalid company code, username or password")
     if not user["is_active"]:
         raise HTTPException(403, "Account is deactivated")
     if inst and inst["status"] != "Active":
         raise HTTPException(403, "Your company account has been suspended. Please contact platform support.")
+    _clear_login_failures(rate_key)
     token = make_token(dict(user))
     return {
         "access_token": token,
