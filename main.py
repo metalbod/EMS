@@ -1,9 +1,11 @@
 import os
 import io
 import csv
+import hashlib
 import json
 import logging
 import random
+import re
 import time
 from collections import defaultdict, deque
 from datetime import datetime, timezone, timedelta, date
@@ -16,7 +18,7 @@ import jwt
 import bcrypt
 from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, field_validator, ValidationError
 
@@ -5744,8 +5746,32 @@ def cancel_bonus_payout(payout_id: int, user: dict = Depends(require_roles(*PERF
 # ---------------------------------------------------------------------------
 # Frontend
 # ---------------------------------------------------------------------------
-app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static")), name="static")
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+_CACHE_BUST_RE = re.compile(r"\?v=[A-Za-z0-9]+")
+_index_html_cache = {"version": None, "content": None}
+
+def _static_asset_version() -> str:
+    """Cache-busting token derived from every file under static/ — changes
+    automatically whenever any static asset's content changes. Replaces the
+    previous scheme of manually editing '?v=N' across ~19 references in
+    index.html by hand on every frontend change (error-prone: miss one file
+    and a stale asset gets served after deploy)."""
+    h = hashlib.md5()
+    for root, _, files in os.walk(STATIC_DIR):
+        for name in sorted(files):
+            path = os.path.join(root, name)
+            h.update(path.encode())
+            h.update(str(os.path.getmtime(path)).encode())
+    return h.hexdigest()[:10]
 
 @app.get("/{full_path:path}")
 def serve_frontend(full_path: str):
-    return FileResponse(os.path.join(os.path.dirname(__file__), "static", "index.html"))
+    version = _static_asset_version()
+    if _index_html_cache["version"] != version:
+        with open(os.path.join(STATIC_DIR, "index.html"), "r", encoding="utf-8") as f:
+            raw = f.read()
+        _index_html_cache["content"] = _CACHE_BUST_RE.sub(f"?v={version}", raw)
+        _index_html_cache["version"] = version
+    return Response(content=_index_html_cache["content"], media_type="text/html")

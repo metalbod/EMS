@@ -31,26 +31,41 @@ npm run build:css
 
 `npm run watch:css` rebuilds on save while iterating on styles.
 
+## Frontend asset versioning
+
+`index.html`'s `?v=...` cache-busting query strings are rewritten
+automatically at request time (`_static_asset_version()` in `main.py`),
+derived from a hash of every static file's path + mtime. Editing any file
+under `static/` automatically changes the served version — there is
+nothing to bump by hand. The literal `?v=...` values committed in
+`static/index.html` are just inert placeholders.
+
 ## Testing
 
 ```bash
 pytest
 ```
 
-- `tests/test_payroll_calc.py` — pure unit tests, no external dependencies.
-- `tests/test_auth.py` — integration tests against the real app; requires
-  `DATABASE_URL`/`JWT_SECRET` in `.env`. These tests are strictly read-only
-  and never create, mutate, or delete data (see `tests/conftest.py`).
+- `tests/test_payroll_calc.py` — pure unit tests, no external dependencies
+  (doesn't import `main.py`, so no DB connection needed).
+- `tests/test_auth.py`, `tests/test_frontend.py` — integration tests
+  against the real app; require `DATABASE_URL`/`JWT_SECRET` in `.env`.
+  Note this applies even to tests that look unrelated to the database
+  (e.g. `test_frontend.py`, which only tests static file serving) — they
+  import `main.py`, which connects to and migrates the DB at module import
+  time. These tests are strictly read-only and never create, mutate, or
+  delete data (see `tests/conftest.py`).
 
 There is currently no dedicated test database — integration tests run
 against whatever `DATABASE_URL` points to. Keep new DB-touching tests
 read-only, or scope them to clearly-prefixed disposable data with
 guaranteed teardown.
 
-CI (`.github/workflows/tests.yml`) runs on every push/PR. The auth
-integration tests require `DATABASE_URL` and `JWT_SECRET` to be configured
-as repo secrets (Settings → Secrets and variables → Actions) — without
-them, that step logs a warning and skips rather than failing the build.
+CI (`.github/workflows/tests.yml`) runs on every push/PR: the CSS build is
+checked for drift, `payroll_calc` tests always run, and the DB-backed
+integration tests require `DATABASE_URL`/`JWT_SECRET` to be configured as
+repo secrets (Settings → Secrets and variables → Actions) — without them,
+that step logs a warning and skips rather than failing the build.
 
 ## Known limitations
 
