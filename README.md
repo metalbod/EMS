@@ -13,6 +13,24 @@ pip install -r requirements-dev.txt
 uvicorn main:app --reload
 ```
 
+## Frontend CSS (Tailwind)
+
+Tailwind is compiled ahead of time rather than loaded from the CDN at
+runtime (the CDN build is explicitly documented by Tailwind as unsuitable
+for production — no purging, external runtime dependency, unpinned
+version). The compiled, purged `static/css/tailwind.css` is committed to
+the repo, so no build step is required to run or deploy the app.
+
+If you add new Tailwind utility classes to `static/index.html` or any
+`static/js/*.js` file, rebuild the compiled CSS before committing:
+
+```bash
+npm install
+npm run build:css
+```
+
+`npm run watch:css` rebuilds on save while iterating on styles.
+
 ## Testing
 
 ```bash

@@ -15,8 +15,24 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Python dependencies
         run: pip install -r requirements-dev.txt
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Verify committed tailwind.css is up to date
+        run: |
+          npm run build:css
+          if ! git diff --quiet -- static/css/tailwind.css; then
+            echo "::error::static/css/tailwind.css is out of date. Run 'npm run build:css' and commit the result."
+            git diff --stat -- static/css/tailwind.css
+            exit 1
+          fi
 
       - name: Run payroll_calc unit tests (no external dependencies)
         run: pytest tests/test_payroll_calc.py -v

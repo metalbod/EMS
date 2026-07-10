@@ -1,0 +1,29 @@
+{
+  "name": "ems",
+  "version": "1.0.0",
+  "description": "Multi-tenant HR platform: employees, recruitment, L&D, leave, timesheets/projects, payroll (Malaysia EPF/SOCSO/EIS/PCB), and performance management.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "build:css": "tailwindcss -i ./static/css/tailwind-input.css -o ./static/css/tailwind.css --minify",
+    "watch:css": "tailwindcss -i ./static/css/tailwind-input.css -o ./static/css/tailwind.css --watch"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/metalbod/EMS.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/metalbod/EMS/issues"
+  },
+  "homepage": "https://github.com/metalbod/EMS#readme",
+  "devDependencies": {
+    "tailwindcss": "^3.4.19"
+  }
+}
