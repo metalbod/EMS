@@ -7,7 +7,17 @@ FastAPI + Postgres (Supabase) backend, vanilla JS frontend, deployed to Fly.io.
 
 ## Setup
 
+Use the exact Python version pinned in `.python-version` (matches CI and
+the Docker deployment's `python:3.11-slim`) — `psycopg2-binary`'s exact
+pinned version has no prebuilt wheel for older/unusual Python builds
+(e.g. macOS system Python 3.9), which silently masks dependency-version
+drift between local runs and what's actually deployed if you skip this.
+
 ```bash
+pyenv install   # reads .python-version automatically, if using pyenv
+python3 -m venv .venv
+source .venv/bin/activate
+
 cp .env.example .env   # fill in DATABASE_URL and JWT_SECRET
 pip install -r requirements-dev.txt
 uvicorn main:app --reload
