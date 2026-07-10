@@ -9,11 +9,28 @@ import os
 import re
 import weakref
 import psycopg2
+import psycopg2.extensions
 import psycopg2.pool
 
 logger = logging.getLogger("ems.db")
 
 IntegrityError = psycopg2.IntegrityError
+
+# Currency columns are NUMERIC(12,2) (exact fixed-point) rather than REAL
+# (float) so storage/aggregation don't drift — see main.py's migration notes.
+# psycopg2 returns NUMERIC as Decimal by default, which would break every
+# existing call site that mixes these values with float arithmetic
+# (payroll_calc.py, main.py's payslip math) with a TypeError, since Python's
+# decimal module deliberately refuses to mix with float. Registering this
+# standard adapter makes NUMERIC come back as plain float instead, so all
+# existing arithmetic and JSON serialization keep working unchanged — the
+# fixed-point guarantee still applies to storage and SQL-side aggregation
+# (e.g. SUM(net_pay)), which is where float drift actually caused problems.
+_DEC2FLOAT = psycopg2.extensions.new_type(
+    psycopg2.extensions.DECIMAL.values, "DEC2FLOAT",
+    lambda value, curs: float(value) if value is not None else None,
+)
+psycopg2.extensions.register_type(_DEC2FLOAT)
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 

@@ -297,7 +297,7 @@ def init_db():
             income_tax_number   TEXT,
             bank_name           TEXT,
             bank_account        TEXT,
-            basic_salary        REAL    NOT NULL DEFAULT 0,
+            basic_salary        NUMERIC(12,2) NOT NULL DEFAULT 0,
             reports_to          TEXT,
             status              TEXT    NOT NULL DEFAULT 'Active',
             created_at          TEXT    NOT NULL DEFAULT (to_char(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS')),
@@ -332,8 +332,8 @@ def init_db():
             employment_type     TEXT    NOT NULL DEFAULT 'Permanent',
             description         TEXT,
             requirements        TEXT,
-            salary_min          REAL,
-            salary_max          REAL,
+            salary_min          NUMERIC(12,2),
+            salary_max          NUMERIC(12,2),
             priority            TEXT    NOT NULL DEFAULT 'Normal',
             status              TEXT    NOT NULL DEFAULT 'Draft',
             created_by          TEXT    NOT NULL,
@@ -372,7 +372,7 @@ def init_db():
             skills                  TEXT,
             source                  TEXT    NOT NULL DEFAULT 'Direct',
             resume_text             TEXT,
-            expected_salary         REAL,
+            expected_salary         NUMERIC(12,2),
             notice_period           TEXT,
             linkedin_url            TEXT,
             referral_by             TEXT,
@@ -427,7 +427,7 @@ def init_db():
             candidate_id        INTEGER NOT NULL REFERENCES candidates(id),
             requisition_id      INTEGER REFERENCES job_requisitions(id),
             offer_type          TEXT    NOT NULL DEFAULT 'Offer',
-            salary_offered      REAL,
+            salary_offered      NUMERIC(12,2),
             start_date          TEXT,
             expiry_date         TEXT,
             status              TEXT    NOT NULL DEFAULT 'Draft',
@@ -523,7 +523,7 @@ def init_db():
             title           TEXT    NOT NULL,
             category        TEXT    NOT NULL DEFAULT 'professional_development',
             description     TEXT,
-            cost            REAL    NOT NULL DEFAULT 0,
+            cost            NUMERIC(12,2) NOT NULL DEFAULT 0,
             is_active       INTEGER NOT NULL DEFAULT 1,
             created_by      TEXT    NOT NULL,
             created_at      TEXT    NOT NULL DEFAULT (to_char(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS'))
@@ -819,18 +819,18 @@ def init_db():
             institution_id      INTEGER NOT NULL,
             payroll_run_id      INTEGER NOT NULL REFERENCES payroll_runs(id),
             employee_id         TEXT    NOT NULL,
-            basic_salary        REAL    NOT NULL DEFAULT 0,
+            basic_salary        NUMERIC(12,2) NOT NULL DEFAULT 0,
             unpaid_leave_days   REAL    NOT NULL DEFAULT 0,
-            unpaid_leave_deduction REAL NOT NULL DEFAULT 0,
-            gross_pay           REAL    NOT NULL DEFAULT 0,
-            epf_employee        REAL    NOT NULL DEFAULT 0,
-            epf_employer        REAL    NOT NULL DEFAULT 0,
-            socso_employee      REAL    NOT NULL DEFAULT 0,
-            socso_employer      REAL    NOT NULL DEFAULT 0,
-            eis_employee        REAL    NOT NULL DEFAULT 0,
-            eis_employer        REAL    NOT NULL DEFAULT 0,
-            pcb                 REAL    NOT NULL DEFAULT 0,
-            net_pay             REAL    NOT NULL DEFAULT 0,
+            unpaid_leave_deduction NUMERIC(12,2) NOT NULL DEFAULT 0,
+            gross_pay           NUMERIC(12,2) NOT NULL DEFAULT 0,
+            epf_employee        NUMERIC(12,2) NOT NULL DEFAULT 0,
+            epf_employer        NUMERIC(12,2) NOT NULL DEFAULT 0,
+            socso_employee      NUMERIC(12,2) NOT NULL DEFAULT 0,
+            socso_employer      NUMERIC(12,2) NOT NULL DEFAULT 0,
+            eis_employee        NUMERIC(12,2) NOT NULL DEFAULT 0,
+            eis_employer        NUMERIC(12,2) NOT NULL DEFAULT 0,
+            pcb                 NUMERIC(12,2) NOT NULL DEFAULT 0,
+            net_pay             NUMERIC(12,2) NOT NULL DEFAULT 0,
             created_at          TEXT    NOT NULL DEFAULT (to_char(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS')),
             UNIQUE(payroll_run_id, employee_id)
         )
@@ -841,11 +841,11 @@ def init_db():
     conn.execute("ALTER TABLE leave_types ADD COLUMN IF NOT EXISTS is_paid INTEGER NOT NULL DEFAULT 1")
     conn.execute("ALTER TABLE employees ADD COLUMN IF NOT EXISTS num_children INTEGER NOT NULL DEFAULT 0")
     conn.execute("ALTER TABLE employees ADD COLUMN IF NOT EXISTS salary_type TEXT NOT NULL DEFAULT 'Monthly'")
-    conn.execute("ALTER TABLE employees ADD COLUMN IF NOT EXISTS hourly_rate REAL NOT NULL DEFAULT 0")
+    conn.execute("ALTER TABLE employees ADD COLUMN IF NOT EXISTS hourly_rate NUMERIC(12,2) NOT NULL DEFAULT 0")
     conn.execute("ALTER TABLE payslips ADD COLUMN IF NOT EXISTS salary_type TEXT NOT NULL DEFAULT 'Monthly'")
     conn.execute("ALTER TABLE payslips ADD COLUMN IF NOT EXISTS regular_hours REAL NOT NULL DEFAULT 0")
     conn.execute("ALTER TABLE payslips ADD COLUMN IF NOT EXISTS overtime_hours REAL NOT NULL DEFAULT 0")
-    conn.execute("ALTER TABLE payslips ADD COLUMN IF NOT EXISTS overtime_pay REAL NOT NULL DEFAULT 0")
+    conn.execute("ALTER TABLE payslips ADD COLUMN IF NOT EXISTS overtime_pay NUMERIC(12,2) NOT NULL DEFAULT 0")
     conn.commit()
     conn.execute("""
         CREATE TABLE IF NOT EXISTS performance_cycles (
@@ -926,7 +926,7 @@ def init_db():
             appraisal_id    INTEGER NOT NULL REFERENCES appraisals(id),
             employee_id     TEXT    NOT NULL,
             payout_type     TEXT    NOT NULL,
-            amount          REAL    NOT NULL DEFAULT 0,
+            amount          NUMERIC(12,2) NOT NULL DEFAULT 0,
             increment_pct   REAL,
             status          TEXT    NOT NULL DEFAULT 'Pending',
             payroll_run_id  INTEGER REFERENCES payroll_runs(id),
@@ -936,7 +936,31 @@ def init_db():
         )
     """)
     conn.commit()
-    conn.execute("ALTER TABLE payslips ADD COLUMN IF NOT EXISTS bonus_amount REAL NOT NULL DEFAULT 0")
+    conn.execute("ALTER TABLE payslips ADD COLUMN IF NOT EXISTS bonus_amount NUMERIC(12,2) NOT NULL DEFAULT 0")
+    conn.commit()
+
+    # Currency columns migrated from REAL (float) to NUMERIC(12,2) (exact
+    # fixed-point decimal) to eliminate float storage/aggregation drift —
+    # rehearsed against a temp copy of payslips before running for real (see
+    # tech-debt notes). CREATE TABLE / ADD COLUMN above already declare these
+    # as NUMERIC for fresh installs; the ALTERs below bring an existing
+    # database's already-created REAL columns in line. Safe to re-run: a
+    # column already NUMERIC(12,2) is a no-op.
+    for _tbl, _col in [
+        ("employees", "basic_salary"), ("employees", "hourly_rate"),
+        ("job_requisitions", "salary_min"), ("job_requisitions", "salary_max"),
+        ("candidates", "expected_salary"),
+        ("offers", "salary_offered"),
+        ("ld_courses", "cost"),
+        ("payslips", "basic_salary"), ("payslips", "unpaid_leave_deduction"),
+        ("payslips", "gross_pay"), ("payslips", "epf_employee"), ("payslips", "epf_employer"),
+        ("payslips", "socso_employee"), ("payslips", "socso_employer"),
+        ("payslips", "eis_employee"), ("payslips", "eis_employer"),
+        ("payslips", "pcb"), ("payslips", "net_pay"),
+        ("payslips", "overtime_pay"), ("payslips", "bonus_amount"),
+        ("performance_payouts", "amount"),
+    ]:
+        conn.execute(f"ALTER TABLE {_tbl} ALTER COLUMN {_col} TYPE NUMERIC(12,2) USING {_col}::numeric(12,2)")
     conn.commit()
 
     # Enable RLS on every table so Supabase's auto-exposed PostgREST/GraphQL API

@@ -48,13 +48,14 @@ pytest
 
 - `tests/test_payroll_calc.py` — pure unit tests, no external dependencies
   (doesn't import `main.py`, so no DB connection needed).
-- `tests/test_auth.py`, `tests/test_frontend.py` — integration tests
-  against the real app; require `DATABASE_URL`/`JWT_SECRET` in `.env`.
-  Note this applies even to tests that look unrelated to the database
-  (e.g. `test_frontend.py`, which only tests static file serving) — they
-  import `main.py`, which connects to and migrates the DB at module import
-  time. These tests are strictly read-only and never create, mutate, or
-  delete data (see `tests/conftest.py`).
+- `tests/test_auth.py`, `tests/test_frontend.py`, `tests/test_currency.py`
+  — integration tests against the real app; require `DATABASE_URL`/
+  `JWT_SECRET` in `.env`. Note this applies even to tests that look
+  unrelated to the database (e.g. `test_frontend.py`, which only tests
+  static file serving) — they import `main.py`, which connects to and
+  migrates the DB at module import time. These tests are strictly
+  read-only and never create, mutate, or delete data (see
+  `tests/conftest.py`).
 
 There is currently no dedicated test database — integration tests run
 against whatever `DATABASE_URL` points to. Keep new DB-touching tests
@@ -67,10 +68,20 @@ integration tests require `DATABASE_URL`/`JWT_SECRET` to be configured as
 repo secrets (Settings → Secrets and variables → Actions) — without them,
 that step logs a warning and skips rather than failing the build.
 
+## Currency storage
+
+All money columns are `NUMERIC(12,2)` (exact fixed-point decimal), not
+`REAL`/float — storage and SQL-side aggregation (e.g. `SUM(net_pay)`) are
+exact. `db.py` registers a psycopg2 adapter so these still come back as
+plain Python `float` in application code (existing arithmetic in
+`payroll_calc.py` and elsewhere is unchanged); the fixed-point guarantee
+applies to the database layer, where float drift previously accumulated
+silently across storage/retrieval and aggregation. See `tests/test_currency.py`.
+
 ## Known limitations
 
 See commit history / project notes for the running tech-debt list. Notably:
 multi-tenancy isolation is enforced in application code only (no DB-level
-RLS), payroll statutory tables are simplified approximations (see
+RLS), and payroll statutory tables are simplified approximations (see
 `payroll_calc.py` docstring — verify against official tables before real
-use), and currency is stored as floating point rather than fixed-point.
+use).
