@@ -1,0 +1,33 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run payroll_calc unit tests (no external dependencies)
+        run: pytest tests/test_payroll_calc.py -v
+
+      - name: Run auth integration tests (requires DATABASE_URL/JWT_SECRET secrets)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::warning::DATABASE_URL secret is not set on this repo — skipping DB-backed tests. Add it under Settings > Secrets and variables > Actions to enable them."
+            exit 0
+          fi
+          pytest tests/test_auth.py -v
