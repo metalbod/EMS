@@ -14,12 +14,9 @@ from typing import List, Optional
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
-import jwt
-import bcrypt
 from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import Response, StreamingResponse
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, field_validator, ValidationError
 
 import psycopg2.extras
@@ -33,6 +30,19 @@ try:
     import payroll_calc
 except ImportError:
     from ems import payroll_calc
+
+try:
+    from core.deps import (
+        hash_password, verify_password, make_token,
+        get_current_user, require_roles, need_inst,
+    )
+    from routers.audit import router as audit_router
+except ImportError:
+    from ems.core.deps import (
+        hash_password, verify_password, make_token,
+        get_current_user, require_roles, need_inst,
+    )
+    from ems.routers.audit import router as audit_router
 
 # ---------------------------------------------------------------------------
 # Logging — plain stdout logging so `fly logs` / any container log collector
@@ -48,16 +58,10 @@ logger = logging.getLogger("ems")
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-JWT_SECRET = os.environ.get("JWT_SECRET")
-if not JWT_SECRET:
-    raise RuntimeError(
-        "JWT_SECRET environment variable is not set. A random secret is deliberately "
-        "NOT generated as a fallback — that would silently invalidate all sessions on "
-        "every restart, and break auth entirely across multiple worker processes/machines "
-        "(each would mint a different secret). Set JWT_SECRET explicitly (see .env.example)."
-    )
-JWT_ALG    = "HS256"
-JWT_HOURS  = 8
+# JWT/auth config and the fail-fast JWT_SECRET check now live in
+# core/deps.py (imported below) — the first piece extracted out of this
+# file as part of splitting main.py into routers. See core/deps.py's
+# docstring and the repo's tech-debt notes.
 
 ROLES = ["superadmin", "hr_manager", "hr_admin", "manager", "payroll_manager", "employee"]
 INSTITUTION_ROLES = ["hr_manager", "hr_admin", "manager", "payroll_manager", "employee"]
@@ -133,8 +137,7 @@ def seed_ob_templates(conn, inst_id: int):
                     (inst_id, ob_type, title, desc, role, idx)
                 )
 
-def hash_password(p): return bcrypt.hashpw(p.encode(), bcrypt.gensalt()).decode()
-def verify_password(p, h): return bcrypt.checkpw(p.encode(), h.encode())
+# hash_password, verify_password imported from core.deps above.
 
 # ---------------------------------------------------------------------------
 # Login rate limiting — in-memory sliding window. This is intentionally
@@ -168,12 +171,11 @@ def _record_login_failure(key: str):
 def _clear_login_failures(key: str):
     _login_failures.pop(key, None)
 
-bearer = HTTPBearer(auto_error=False)
-
 # ---------------------------------------------------------------------------
 # App + CORS
 # ---------------------------------------------------------------------------
 app = FastAPI(title="EMS Multi-Tenant")
+app.include_router(audit_router)
 
 @app.get("/health")
 def health():
@@ -1002,87 +1004,8 @@ def init_db():
 
 init_db()
 
-# ---------------------------------------------------------------------------
-# Auth helpers
-# ---------------------------------------------------------------------------
-def make_token(user: dict) -> str:
-    return jwt.encode({
-        "sub": str(user["id"]),
-        "username": user["username"],
-        "role": user["role"],
-        "full_name": user["full_name"],
-        "institution_id": user.get("institution_id"),
-        "department": user.get("department"),
-        "employee_id": user["employee_id"] if "employee_id" in user else None,
-        "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_HOURS),
-    }, JWT_SECRET, algorithm=JWT_ALG)
-
-def decode_token(token: str) -> dict:
-    try:
-        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALG])
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(401, "Token expired")
-    except jwt.InvalidTokenError:
-        raise HTTPException(401, "Invalid token")
-
-def get_current_user(
-    request: Request,
-    creds: HTTPAuthorizationCredentials = Depends(bearer),
-) -> dict:
-    if not creds:
-        raise HTTPException(401, "Authentication required")
-    payload = decode_token(creds.credentials)
-    conn = get_db()
-    user = conn.execute(
-        "SELECT id, username, full_name, role, roles, department, employee_id, is_active, institution_id "
-        "FROM users WHERE id = ?", (payload["sub"],)
-    ).fetchone()
-    conn.close()
-    if not user or not user["is_active"]:
-        raise HTTPException(401, "User not found or inactive")
-    u = dict(user)
-    # users.department is a denormalized copy that can drift out of sync with
-    # (or never be set from) the linked employee record. Manager-scoped
-    # queries throughout the app rely on this field, so always derive it
-    # fresh from employees rather than trusting the possibly-stale column.
-    if u.get("employee_id") and u.get("institution_id"):
-        conn2 = get_db()
-        emp = conn2.execute(
-            "SELECT department FROM employees WHERE institution_id=? AND employee_id=?",
-            (u["institution_id"], u["employee_id"])
-        ).fetchone()
-        conn2.close()
-        if emp and emp["department"]:
-            u["department"] = emp["department"]
-    # Honor a switched role from the token (see /auth/switch-role) — the DB's
-    # `role` column only holds the primary role, so without this a multi-role
-    # user's active-role switch would silently revert on every request.
-    token_role = payload.get("role")
-    if token_role and token_role != u["role"]:
-        allowed = [r.strip() for r in (u.get("roles") or u["role"]).split(",") if r.strip()]
-        if token_role in allowed:
-            u["role"] = token_role
-    # Superadmin can switch institution context via X-Institution-Id header
-    if u["role"] == "superadmin":
-        hdr = request.headers.get("X-Institution-Id")
-        u["active_institution_id"] = int(hdr) if hdr else None
-    else:
-        u["active_institution_id"] = u["institution_id"]
-    return u
-
-def require_roles(*allowed: str):
-    def dep(user: dict = Depends(get_current_user)):
-        if user["role"] not in allowed:
-            raise HTTPException(403, "Insufficient permissions")
-        return user
-    return dep
-
-def need_inst(user: dict) -> int:
-    """Return active_institution_id or raise 400."""
-    iid = user.get("active_institution_id")
-    if iid is None:
-        raise HTTPException(400, "Select an institution context first")
-    return iid
+# make_token, decode_token, get_current_user, require_roles, need_inst
+# imported from core.deps above.
 
 # ---------------------------------------------------------------------------
 # Audit helpers
@@ -2148,32 +2071,8 @@ def get_org_chart(user: dict = Depends(get_current_user)):
     conn.close()
     return [dict(r) for r in rows]
 
-# ---------------------------------------------------------------------------
-# Audit log routes
-# ---------------------------------------------------------------------------
-@app.get("/api/audit-logs")
-def list_audit_logs(
-    employee_id: Optional[str] = None,
-    action: Optional[str] = None,
-    limit: int = 200,
-    user: dict = Depends(require_roles("superadmin","hr_manager")),
-):
-    inst_id = need_inst(user)
-    conn = get_db()
-    q = "SELECT * FROM audit_logs WHERE institution_id=?"
-    p = [inst_id]
-    if employee_id: q += " AND target_employee_id=?"; p.append(employee_id)
-    if action:      q += " AND action=?";             p.append(action)
-    q += " ORDER BY timestamp DESC LIMIT ?"
-    p.append(limit)
-    rows = conn.execute(q, p).fetchall()
-    conn.close()
-    result = []
-    for r in rows:
-        d = dict(r)
-        d["changes"] = json.loads(d["changes"]) if d["changes"] else []
-        result.append(d)
-    return result
+# Audit log routes now live in routers/audit.py, mounted below via
+# app.include_router(audit_router).
 
 # ---------------------------------------------------------------------------
 # User management routes
