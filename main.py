@@ -44,6 +44,7 @@ try:
     from routers.institutions import router as institutions_router
     from routers.orgchart import router as orgchart_router
     from routers.holidays import router as holidays_router
+    from routers.hr_notes import router as hr_notes_router
 except ImportError:
     from ems.core.deps import (
         hash_password, verify_password, make_token,
@@ -57,6 +58,7 @@ except ImportError:
     from ems.routers.institutions import router as institutions_router
     from ems.routers.orgchart import router as orgchart_router
     from ems.routers.holidays import router as holidays_router
+    from ems.routers.hr_notes import router as hr_notes_router
 
 # ---------------------------------------------------------------------------
 # Logging — plain stdout logging so `fly logs` / any container log collector
@@ -148,6 +150,7 @@ app.include_router(notifications_router)
 app.include_router(institutions_router)
 app.include_router(orgchart_router)
 app.include_router(holidays_router)
+app.include_router(hr_notes_router)
 
 @app.get("/health")
 def health():
@@ -1209,10 +1212,6 @@ class OBItemAddIn(BaseModel):
     assigned_role: str = "hr_admin"
     linked_ld_course_id: Optional[int] = None
 
-class NoteIn(BaseModel):
-    note_type: str = "general"
-    body: str
-
 class LDCourseIn(BaseModel):
     title: str
     category: str = "professional_development"  # mandatory | professional_development | certification
@@ -1987,50 +1986,8 @@ def delete_user(user_id: int, user: dict = Depends(require_roles("superadmin","h
     conn.commit()
     conn.close()
 
-# ---------------------------------------------------------------------------
-# HR Notes (confidential)
-# ---------------------------------------------------------------------------
-HR_NOTE_ROLES = ["superadmin","hr_manager","hr_admin"]
-
-@app.get("/api/employees/{employee_id}/notes")
-def get_notes(employee_id: str, user: dict = Depends(require_roles(*HR_NOTE_ROLES))):
-    inst_id = need_inst(user)
-    conn = get_db()
-    rows = conn.execute(
-        "SELECT id,note_type,body,created_by,created_at FROM hr_notes "
-        "WHERE institution_id=? AND employee_id=? AND deleted=0 ORDER BY created_at DESC",
-        (inst_id, employee_id)
-    ).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
-
-@app.post("/api/employees/{employee_id}/notes", status_code=201)
-def create_note(employee_id: str, note: NoteIn, user: dict = Depends(require_roles(*HR_NOTE_ROLES))):
-    inst_id = need_inst(user)
-    conn = get_db()
-    if not conn.execute(
-        "SELECT id FROM employees WHERE institution_id=? AND employee_id=?", (inst_id, employee_id)
-    ).fetchone():
-        conn.close(); raise HTTPException(404, "Employee not found")
-    conn.execute(
-        "INSERT INTO hr_notes (institution_id, employee_id, note_type, body, created_by) VALUES (?,?,?,?,?)",
-        (inst_id, employee_id, note.note_type, note.body.strip(), user["username"])
-    )
-    conn.commit()
-    conn.close()
-    return {"ok": True}
-
-@app.delete("/api/employees/{employee_id}/notes/{note_id}", status_code=204)
-def delete_note(employee_id: str, note_id: int,
-                user: dict = Depends(require_roles("superadmin","hr_manager"))):
-    inst_id = need_inst(user)
-    conn = get_db()
-    conn.execute(
-        "UPDATE hr_notes SET deleted=1 WHERE id=? AND institution_id=? AND employee_id=?",
-        (note_id, inst_id, employee_id)
-    )
-    conn.commit()
-    conn.close()
+# HR Notes routes now live in routers/hr_notes.py, mounted above via
+# app.include_router(hr_notes_router).
 
 # ---------------------------------------------------------------------------
 # Recruitment — models
