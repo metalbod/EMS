@@ -38,10 +38,12 @@ try:
     )
     from core.onboarding_seed import seed_ob_templates
     from core.validators import validate_logo_url as _validate_logo_url
+    from core.roles import LEAVE_MANAGE_ROLES
     from routers.audit import router as audit_router
     from routers.notifications import router as notifications_router
     from routers.institutions import router as institutions_router
     from routers.orgchart import router as orgchart_router
+    from routers.holidays import router as holidays_router
 except ImportError:
     from ems.core.deps import (
         hash_password, verify_password, make_token,
@@ -49,10 +51,12 @@ except ImportError:
     )
     from ems.core.onboarding_seed import seed_ob_templates
     from ems.core.validators import validate_logo_url as _validate_logo_url
+    from ems.core.roles import LEAVE_MANAGE_ROLES
     from ems.routers.audit import router as audit_router
     from ems.routers.notifications import router as notifications_router
     from ems.routers.institutions import router as institutions_router
     from ems.routers.orgchart import router as orgchart_router
+    from ems.routers.holidays import router as holidays_router
 
 # ---------------------------------------------------------------------------
 # Logging — plain stdout logging so `fly logs` / any container log collector
@@ -143,6 +147,7 @@ app.include_router(audit_router)
 app.include_router(notifications_router)
 app.include_router(institutions_router)
 app.include_router(orgchart_router)
+app.include_router(holidays_router)
 
 @app.get("/health")
 def health():
@@ -1251,11 +1256,6 @@ class LDModuleIn(BaseModel):
 
 class LDModulesIn(BaseModel):
     modules: List[LDModuleIn]
-
-class HolidayIn(BaseModel):
-    name: str
-    date: str  # YYYY-MM-DD
-    year: int
 
 class LeaveTypeIn(BaseModel):
     name: str
@@ -3746,47 +3746,10 @@ def mark_module_viewed(enr_id: int, module_id: int, user: dict = Depends(get_cur
     conn.close()
     return {"ok": True}
 
-# ---------------------------------------------------------------------------
-# Holiday Manager
-# ---------------------------------------------------------------------------
-LEAVE_MANAGE_ROLES = ("superadmin", "hr_manager", "hr_admin")
-
-@app.get("/api/holidays")
-def list_holidays(year: Optional[int] = None, user: dict = Depends(get_current_user)):
-    inst_id = need_inst(user)
-    conn = get_db()
-    q = "SELECT * FROM holidays WHERE institution_id=?"
-    p = [inst_id]
-    if year:
-        q += " AND year=?"; p.append(year)
-    q += " ORDER BY date"
-    rows = conn.execute(q, p).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
-
-@app.post("/api/holidays", status_code=201)
-def create_holiday(body: HolidayIn, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))):
-    inst_id = need_inst(user)
-    conn = get_db()
-    try:
-        conn.execute(
-            "INSERT INTO holidays (institution_id,name,date,year,created_by) VALUES (?,?,?,?,?)",
-            (inst_id, body.name, body.date, body.year, user["username"])
-        )
-        conn.commit()
-    except IntegrityError as e:
-        conn.rollback(); conn.close()
-        raise HTTPException(400, "A holiday already exists on this date")
-    row = conn.execute("SELECT * FROM holidays WHERE id=last_insert_rowid()").fetchone()
-    conn.close()
-    return dict(row)
-
-@app.delete("/api/holidays/{holiday_id}", status_code=204)
-def delete_holiday(holiday_id: int, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))):
-    inst_id = need_inst(user)
-    conn = get_db()
-    conn.execute("DELETE FROM holidays WHERE id=? AND institution_id=?", (holiday_id, inst_id))
-    conn.commit(); conn.close()
+# Holiday Manager routes now live in routers/holidays.py, mounted above via
+# app.include_router(holidays_router). LEAVE_MANAGE_ROLES (still needed by
+# the Leave routes below) now lives in core/roles.py, imported near the top
+# of this file.
 
 # ---------------------------------------------------------------------------
 # Leave — Types

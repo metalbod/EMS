@@ -1,0 +1,68 @@
+"""Holiday Manager (institution-scoped)."""
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+
+try:
+    from core.deps import get_current_user, need_inst, require_roles
+except ImportError:
+    from ems.core.deps import get_current_user, need_inst, require_roles
+
+try:
+    from core.roles import LEAVE_MANAGE_ROLES
+except ImportError:
+    from ems.core.roles import LEAVE_MANAGE_ROLES
+
+try:
+    from db import get_db, IntegrityError
+except ImportError:
+    from ems.db import get_db, IntegrityError
+
+router = APIRouter()
+
+
+class HolidayIn(BaseModel):
+    name: str
+    date: str  # YYYY-MM-DD
+    year: int
+
+
+@router.get("/api/holidays")
+def list_holidays(year: Optional[int] = None, user: dict = Depends(get_current_user)):
+    inst_id = need_inst(user)
+    conn = get_db()
+    q = "SELECT * FROM holidays WHERE institution_id=?"
+    p = [inst_id]
+    if year:
+        q += " AND year=?"; p.append(year)
+    q += " ORDER BY date"
+    rows = conn.execute(q, p).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+@router.post("/api/holidays", status_code=201)
+def create_holiday(body: HolidayIn, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))):
+    inst_id = need_inst(user)
+    conn = get_db()
+    try:
+        conn.execute(
+            "INSERT INTO holidays (institution_id,name,date,year,created_by) VALUES (?,?,?,?,?)",
+            (inst_id, body.name, body.date, body.year, user["username"])
+        )
+        conn.commit()
+    except IntegrityError as e:
+        conn.rollback(); conn.close()
+        raise HTTPException(400, "A holiday already exists on this date")
+    row = conn.execute("SELECT * FROM holidays WHERE id=last_insert_rowid()").fetchone()
+    conn.close()
+    return dict(row)
+
+
+@router.delete("/api/holidays/{holiday_id}", status_code=204)
+def delete_holiday(holiday_id: int, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))):
+    inst_id = need_inst(user)
+    conn = get_db()
+    conn.execute("DELETE FROM holidays WHERE id=? AND institution_id=?", (holiday_id, inst_id))
+    conn.commit(); conn.close()
