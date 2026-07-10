@@ -36,15 +36,21 @@ try:
         hash_password, verify_password, make_token,
         get_current_user, require_roles, need_inst,
     )
+    from core.onboarding_seed import seed_ob_templates
+    from core.validators import validate_logo_url as _validate_logo_url
     from routers.audit import router as audit_router
     from routers.notifications import router as notifications_router
+    from routers.institutions import router as institutions_router
 except ImportError:
     from ems.core.deps import (
         hash_password, verify_password, make_token,
         get_current_user, require_roles, need_inst,
     )
+    from ems.core.onboarding_seed import seed_ob_templates
+    from ems.core.validators import validate_logo_url as _validate_logo_url
     from ems.routers.audit import router as audit_router
     from ems.routers.notifications import router as notifications_router
+    from ems.routers.institutions import router as institutions_router
 
 # ---------------------------------------------------------------------------
 # Logging — plain stdout logging so `fly logs` / any container log collector
@@ -89,55 +95,9 @@ BANKS = [
 
 OB_ROLES = ["employee", "manager", "hr_admin", "hr_manager"]
 
-DEFAULT_OB_TEMPLATES = {
-    "onboarding": [
-        ("Medical / Health Check",          "Arrange pre-employment medical examination",              "hr_admin",   0),
-        ("Background Check",                "Conduct background and reference verification",           "hr_admin",   1),
-        ("Contract Signing",                "Issue and sign employment contract",                      "hr_manager", 2),
-        ("System Account Setup",            "Create email, system logins and access cards",            "hr_admin",   3),
-        ("Laptop / Equipment Allocation",   "Provision laptop and peripherals",                       "hr_admin",   4),
-        ("Stationery & Supplies",           "Provide stationery kit and desk setup",                  "hr_admin",   5),
-        ("Payroll & Bank Details",          "Collect bank info and register in payroll",               "hr_admin",   6),
-        ("EPF / SOCSO / PCB Registration",  "Register statutory contributions",                       "hr_admin",   7),
-        ("Orientation & Induction",         "Conduct company orientation session",                    "hr_manager", 8),
-        ("Department Introduction",         "Introduce new hire to team and assign buddy",            "manager",    9),
-        ("Welcome Acknowledgement",         "New employee signs onboarding completion form",          "employee",  10),
-        # Day 1 activities
-        ("Day 1: IT & Security Briefing",   "IT security policies, password rules and acceptable use","hr_admin",  11),
-        ("Day 1: Workplace Safety Briefing","Evacuation routes, first aid and OSH awareness",         "hr_admin",  12),
-        ("Day 1: Awareness Training",       "Complete mandatory e-learning modules (data privacy, anti-bribery, harassment)", "employee", 13),
-        ("Day 1: Code of Conduct",          "Read and acknowledge the company Code of Conduct",       "employee",  14),
-        ("Day 1: Employee Handbook",        "Read and acknowledge the Employee Handbook",             "employee",  15),
-        ("Day 1: Company Policies",         "Briefing on leave, claims, travel and other HR policies","hr_manager",16),
-        ("Day 1: Buddy / Mentor Intro",     "Meet assigned buddy or mentor for the probation period","manager",   17),
-    ],
-    "offboarding": [
-        ("Resignation Letter Received",     "Acknowledge and accept resignation letter",               "hr_manager", 0),
-        ("Exit Interview",                  "Conduct structured exit interview",                      "hr_manager", 1),
-        ("Knowledge Transfer",              "Ensure handover of duties and documentation",            "manager",    2),
-        ("System Access Revocation",        "Revoke all system, email and door access",               "hr_admin",   3),
-        ("Return of Laptop / Equipment",    "Collect laptop, accessories and company assets",         "hr_admin",   4),
-        ("Return of Stationery & Items",    "Collect stationery, pass and any company items",        "hr_admin",   5),
-        ("Final Payroll Settlement",        "Process last salary, claims and encashment",             "hr_admin",   6),
-        ("EPF / SOCSO Cessation",           "Notify statutory bodies of employment cessation",        "hr_admin",   7),
-        ("Insurance & Benefits Termination","Remove from group insurance and benefits",               "hr_admin",   8),
-        ("Reference / Certificate",         "Issue experience letter or reference if applicable",    "hr_manager", 9),
-        ("Employee Acknowledgement",        "Employee signs offboarding completion checklist",       "employee",  10),
-    ],
-}
-
-def seed_ob_templates(conn, inst_id: int):
-    """Seed default onboarding/offboarding templates for a new institution."""
-    for ob_type, items in DEFAULT_OB_TEMPLATES.items():
-        existing = conn.execute(
-            "SELECT COUNT(*) FROM ob_templates WHERE institution_id=? AND type=?", (inst_id, ob_type)
-        ).fetchone()[0]
-        if existing == 0:
-            for title, desc, role, idx in items:
-                conn.execute(
-                    "INSERT INTO ob_templates (institution_id,type,title,description,assigned_role,order_index) VALUES (?,?,?,?,?,?)",
-                    (inst_id, ob_type, title, desc, role, idx)
-                )
+# DEFAULT_OB_TEMPLATES / seed_ob_templates moved to core/onboarding_seed.py
+# (imported near the top of this file) so routers/institutions.py can use it
+# without importing from main.py and creating a circular import.
 
 # hash_password, verify_password imported from core.deps above.
 
@@ -179,6 +139,7 @@ def _clear_login_failures(key: str):
 app = FastAPI(title="EMS Multi-Tenant")
 app.include_router(audit_router)
 app.include_router(notifications_router)
+app.include_router(institutions_router)
 
 @app.get("/health")
 def health():
@@ -1063,54 +1024,10 @@ def write_employee_change_note(conn, inst_id, emp_id, actor, changes):
 # ---------------------------------------------------------------------------
 # Pydantic models
 # ---------------------------------------------------------------------------
-MAX_LOGO_DATA_URL_LEN = 700_000  # ~500KB image after base64 overhead
-
-def _validate_logo_url(v):
-    if v is None or v == "":
-        return None
-    if not v.startswith("data:image/"):
-        raise ValueError("logo_url must be a data:image/... URI")
-    if len(v) > MAX_LOGO_DATA_URL_LEN:
-        raise ValueError("Logo image is too large (max ~500KB)")
-    return v
-
-class InstitutionIn(BaseModel):
-    name: str
-    code: str
-    contact_name: Optional[str] = None
-    contact_email: str
-    phone: Optional[str] = None
-    address: Optional[str] = None
-    plan: str = "starter"
-    max_employees: int = 50
-    logo_url: Optional[str] = None
-    admin_username: str
-    admin_full_name: str
-    admin_password: str
-    admin_email: Optional[str] = None
-
-    @field_validator("logo_url")
-    @classmethod
-    def validate_logo_url(cls, v):
-        return _validate_logo_url(v)
-
-class InstitutionUpdate(BaseModel):
-    name: str
-    contact_name: Optional[str] = None
-    contact_email: str
-    phone: Optional[str] = None
-    address: Optional[str] = None
-    plan: str = "starter"
-    max_employees: int = 50
-    logo_url: Optional[str] = None
-
-    @field_validator("logo_url")
-    @classmethod
-    def validate_logo_url(cls, v):
-        return _validate_logo_url(v)
-
-class InstStatusIn(BaseModel):
-    status: str
+# InstitutionIn/InstitutionUpdate/InstStatusIn moved to routers/institutions.py.
+# MAX_LOGO_DATA_URL_LEN / logo_url validation moved to core/validators.py
+# (imported near the top of this file as _validate_logo_url) since EmployeeIn
+# below still needs it.
 
 class EmployeeIn(BaseModel):
     full_name: str
@@ -1610,99 +1527,8 @@ def get_meta(user: dict = Depends(get_current_user)):
         "role_labels": ROLE_LABELS, "plans": PLANS, "plan_labels": PLAN_LABELS,
     }
 
-# ---------------------------------------------------------------------------
-# Institution routes (superadmin only)
-# ---------------------------------------------------------------------------
-@app.get("/api/institutions")
-def list_institutions(user: dict = Depends(require_roles("superadmin"))):
-    conn = get_db()
-    rows = conn.execute("""
-        SELECT i.*,
-               COUNT(DISTINCT e.id)  AS employee_count,
-               COUNT(DISTINCT u.id)  AS user_count
-        FROM   institutions i
-        LEFT JOIN employees e ON e.institution_id = i.id
-        LEFT JOIN users     u ON u.institution_id = i.id
-        GROUP BY i.id
-        ORDER BY i.created_at DESC
-    """).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
-
-@app.post("/api/institutions", status_code=201)
-def create_institution(body: InstitutionIn, user: dict = Depends(require_roles("superadmin"))):
-    conn = get_db()
-    try:
-        code = body.code.upper()
-        if conn.execute("SELECT id FROM institutions WHERE code=?", (code,)).fetchone():
-            raise HTTPException(400, "Institution code already exists")
-        if conn.execute("SELECT id FROM users WHERE username=?", (body.admin_username,)).fetchone():
-            raise HTTPException(400, "Admin username already taken")
-        conn.execute("""
-            INSERT INTO institutions (name, code, contact_name, contact_email, phone, address, plan, max_employees, logo_url)
-            VALUES (?,?,?,?,?,?,?,?,?)
-        """, (body.name, code, body.contact_name, body.contact_email,
-              body.phone, body.address, body.plan, body.max_employees, body.logo_url))
-        inst_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-        conn.execute("""
-            INSERT INTO users (institution_id, username, full_name, email, password_hash, role)
-            VALUES (?,?,?,?,?,'hr_manager')
-        """, (inst_id, body.admin_username, body.admin_full_name,
-              body.admin_email, hash_password(body.admin_password)))
-        seed_ob_templates(conn, inst_id)
-        conn.commit()
-        row = conn.execute("""
-            SELECT i.*, 0 AS employee_count, 1 AS user_count
-            FROM institutions i WHERE i.id=?
-        """, (inst_id,)).fetchone()
-        return dict(row)
-    except IntegrityError as e:
-        conn.rollback()
-        raise HTTPException(400, str(e))
-    finally:
-        conn.close()
-
-@app.get("/api/institutions/{inst_id}")
-def get_institution(inst_id: int, user: dict = Depends(require_roles("superadmin"))):
-    conn = get_db()
-    row = conn.execute("""
-        SELECT i.*,
-               COUNT(DISTINCT e.id) AS employee_count,
-               COUNT(DISTINCT u.id) AS user_count
-        FROM institutions i
-        LEFT JOIN employees e ON e.institution_id = i.id
-        LEFT JOIN users     u ON u.institution_id = i.id
-        WHERE i.id=? GROUP BY i.id
-    """, (inst_id,)).fetchone()
-    conn.close()
-    if not row: raise HTTPException(404, "Institution not found")
-    return dict(row)
-
-@app.put("/api/institutions/{inst_id}")
-def update_institution(inst_id: int, body: InstitutionUpdate, user: dict = Depends(require_roles("superadmin"))):
-    conn = get_db()
-    if not conn.execute("SELECT id FROM institutions WHERE id=?", (inst_id,)).fetchone():
-        conn.close(); raise HTTPException(404, "Institution not found")
-    conn.execute("""
-        UPDATE institutions SET name=?,contact_name=?,contact_email=?,phone=?,address=?,plan=?,max_employees=?,logo_url=?
-        WHERE id=?
-    """, (body.name, body.contact_name, body.contact_email, body.phone,
-          body.address, body.plan, body.max_employees, body.logo_url, inst_id))
-    conn.commit()
-    row = conn.execute("SELECT * FROM institutions WHERE id=?", (inst_id,)).fetchone()
-    conn.close()
-    return dict(row)
-
-@app.patch("/api/institutions/{inst_id}/status")
-def toggle_inst_status(inst_id: int, body: InstStatusIn, user: dict = Depends(require_roles("superadmin"))):
-    if body.status not in ("Active", "Suspended"):
-        raise HTTPException(400, "Status must be Active or Suspended")
-    conn = get_db()
-    conn.execute("UPDATE institutions SET status=? WHERE id=?", (body.status, inst_id))
-    conn.commit()
-    row = conn.execute("SELECT * FROM institutions WHERE id=?", (inst_id,)).fetchone()
-    conn.close()
-    return dict(row)
+# Institution CRUD routes now live in routers/institutions.py, mounted
+# above via app.include_router(institutions_router).
 
 # ---------------------------------------------------------------------------
 # Employee routes (institution-scoped)
