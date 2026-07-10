@@ -41,6 +41,7 @@ try:
     from routers.audit import router as audit_router
     from routers.notifications import router as notifications_router
     from routers.institutions import router as institutions_router
+    from routers.orgchart import router as orgchart_router
 except ImportError:
     from ems.core.deps import (
         hash_password, verify_password, make_token,
@@ -51,6 +52,7 @@ except ImportError:
     from ems.routers.audit import router as audit_router
     from ems.routers.notifications import router as notifications_router
     from ems.routers.institutions import router as institutions_router
+    from ems.routers.orgchart import router as orgchart_router
 
 # ---------------------------------------------------------------------------
 # Logging — plain stdout logging so `fly logs` / any container log collector
@@ -140,6 +142,7 @@ app = FastAPI(title="EMS Multi-Tenant")
 app.include_router(audit_router)
 app.include_router(notifications_router)
 app.include_router(institutions_router)
+app.include_router(orgchart_router)
 
 @app.get("/health")
 def health():
@@ -1866,23 +1869,8 @@ def update_status(employee_id: str, body: StatusUpdate, request: Request,
     conn.close()
     return dict(result)
 
-# ---------------------------------------------------------------------------
-# Org chart
-# ---------------------------------------------------------------------------
-@app.get("/api/org-chart")
-def get_org_chart(user: dict = Depends(get_current_user)):
-    inst_id = need_inst(user)
-    conn = get_db()
-    rows = conn.execute("""
-        SELECT e.employee_id, e.full_name, e.designation, e.department,
-               e.status, e.reports_to, m.full_name AS manager_name
-        FROM employees e
-        LEFT JOIN employees m ON m.institution_id = e.institution_id AND m.employee_id = e.reports_to
-        WHERE e.institution_id = ?
-        ORDER BY e.full_name
-    """, (inst_id,)).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
+# Org chart routes now live in routers/orgchart.py, mounted above via
+# app.include_router(orgchart_router).
 
 # Audit log routes now live in routers/audit.py, mounted below via
 # app.include_router(audit_router).
