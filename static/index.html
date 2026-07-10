@@ -1,0 +1,2337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>EMS — Employee Management System</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="/static/css/styles.css?v=47"/>
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans antialiased">
+
+<!-- LOGIN SCREEN -->
+<div id="loginScreen" class="min-h-screen flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-8">
+    <div class="text-center mb-8">
+      <div class="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center mx-auto mb-3">
+        <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+      </div>
+      <h1 class="text-xl font-bold">Employee Management</h1>
+      <p class="text-sm text-slate-500 mt-1">Sign in to your account</p>
+    </div>
+    <form onsubmit="doLogin(event)" class="space-y-4">
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Company Code</label>
+        <input id="loginCode" type="text" class="inp" placeholder="e.g. ACME  (leave blank for platform admin)" autocomplete="organization" style="text-transform:uppercase"/>
+        <p class="text-xs text-slate-400 mt-1">Leave blank if you are a platform administrator.</p>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Username</label>
+        <input id="loginUser" type="text" class="inp" placeholder="username" autocomplete="username"/>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Password</label>
+        <input id="loginPass" type="password" class="inp" placeholder="••••••••" autocomplete="current-password"/>
+      </div>
+      <p id="loginErr" class="hidden text-sm text-red-600"></p>
+      <button type="submit" class="btn-primary w-full py-2.5">Sign In</button>
+    </form>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="appShell" class="hidden min-h-screen flex">
+
+  <!-- Sidebar: auto-collapsing rail. Expands only when a group with sub-items is opened. -->
+  <aside class="flex flex-shrink-0 relative">
+    <div id="sidebarRail" class="bg-white border-r border-slate-200 flex flex-col py-3 px-3 gap-1 flex-shrink-0 z-20 overflow-x-hidden">
+      <div class="flex items-center gap-2 mb-3 px-1 min-w-0">
+        <div id="brandLogoDefault" class="w-9 h-9 bg-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
+          <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+        </div>
+        <img id="brandLogoImg" src="" class="hidden w-9 h-9 rounded-lg object-cover flex-shrink-0"/>
+        <span id="brandName" class="font-semibold text-sm truncate">EMS Platform</span>
+      </div>
+
+      <!-- Dashboard (direct nav) -->
+      <div id="nav-dashboard-wrap">
+        <button class="nav-rail-btn" onclick="showPage('dashboard');collapseNavRail();" data-page="dashboard" title="Dashboard">
+          <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+          <span class="nav-rail-label">Dashboard</span>
+        </button>
+      </div>
+      <!-- Institutions (superadmin, direct nav) -->
+      <div id="nav-institutions-wrap" class="hidden">
+        <button class="nav-rail-btn" onclick="showPage('institutions');collapseNavRail();" data-page="institutions" title="Institutions">
+          <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
+          <span class="nav-rail-label">Institutions</span>
+        </button>
+      </div>
+      <!-- System Notifications (superadmin, direct nav — global, not tied to institution context) -->
+      <div id="nav-sysnotif-wrap" class="hidden">
+        <button class="nav-rail-btn" onclick="showPage('settings-system-notifications');collapseNavRail();" data-page="settings-system-notifications" title="System Notifications">
+          <svg class="w-5 h-5 flex-shrink-0 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/></svg>
+          <span class="nav-rail-label">System Alerts</span>
+        </button>
+      </div>
+      <!-- Employee Management -->
+      <div id="nav-emp-group">
+        <button class="nav-rail-btn" onclick="toggleNavGroup('empMgmt')" title="Employee Management">
+          <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+          <span class="nav-rail-label">Employees</span>
+          <svg class="nav-rail-chevron w-3 h-3 ml-auto flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+        </button>
+        <div id="submenu-empMgmt" class="nav-submenu hidden space-y-0.5">
+          <div class="nav-sub-item" onclick="showPage('employees');collapseNavRail();" data-page="employees">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+            Employee List
+          </div>
+          <div class="nav-sub-item" onclick="showPage('orgchart');collapseNavRail();" data-page="orgchart">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1v-2zm10 0a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1h-4a1 1 0 01-1-1v-2z"/></svg>
+            Org Chart
+          </div>
+          <div class="nav-sub-item" onclick="showPage('onboarding');collapseNavRail();" data-page="onboarding">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/></svg>
+            Onboarding
+          </div>
+          <div class="nav-sub-item" onclick="showPage('offboarding');collapseNavRail();" data-page="offboarding">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+            Offboarding
+          </div>
+        </div>
+      </div>
+      <!-- Recruitment -->
+      <div id="nav-recruit-group" class="hidden">
+        <button class="nav-rail-btn" onclick="toggleNavGroup('recruit')" title="Recruitment">
+          <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          <span class="nav-rail-label">Recruitment</span>
+          <svg class="nav-rail-chevron w-3 h-3 ml-auto flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+        </button>
+        <div id="submenu-recruit" class="nav-submenu hidden space-y-0.5">
+          <div class="nav-sub-item" onclick="showPage('requisitions');collapseNavRail();" data-page="requisitions">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+            Job Requisitions
+          </div>
+          <div class="nav-sub-item" onclick="showPage('candidates');collapseNavRail();" data-page="candidates">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+            Candidate Bank
+          </div>
+          <div class="nav-sub-item" onclick="showPage('interviews');collapseNavRail();" data-page="interviews">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+            Interviews
+          </div>
+          <div class="nav-sub-item" onclick="showPage('offers');collapseNavRail();" data-page="offers">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+            Offers &amp; Letters
+          </div>
+        </div>
+      </div>
+      <!-- L&D -->
+      <div id="nav-ld-group" class="hidden">
+        <button class="nav-rail-btn" onclick="toggleNavGroup('ld')" title="Learning &amp; Development">
+          <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s4.832.477 6 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+          <span class="nav-rail-label">L&amp;D</span>
+          <svg class="nav-rail-chevron w-3 h-3 ml-auto flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+        </button>
+        <div id="submenu-ld" class="nav-submenu hidden space-y-0.5">
+          <div class="nav-sub-item" onclick="showPage('ld-catalog');collapseNavRail();" data-page="ld-catalog">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s4.832.477 6 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+            Course Catalog
+          </div>
+          <div class="nav-sub-item" onclick="showPage('ld-trainings');collapseNavRail();" data-page="ld-trainings">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            My Trainings
+          </div>
+        </div>
+      </div>
+      <!-- Leave -->
+      <div id="nav-leave-group" class="hidden">
+        <button class="nav-rail-btn" onclick="toggleNavGroup('leave')" title="Leave">
+          <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+          <span class="nav-rail-label">Leave</span>
+          <svg class="nav-rail-chevron w-3 h-3 ml-auto flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+        </button>
+        <div id="submenu-leave" class="nav-submenu hidden space-y-0.5">
+          <div class="nav-sub-item" onclick="showPage('leave-my');collapseNavRail();" data-page="leave-my">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+            My Leave
+          </div>
+          <div id="nav-leave-approvals" class="hidden nav-sub-item" onclick="showPage('leave-approvals');collapseNavRail();" data-page="leave-approvals">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            Approvals
+          </div>
+          <div id="nav-leave-holidays" class="hidden nav-sub-item" onclick="showPage('leave-holidays');collapseNavRail();" data-page="leave-holidays">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3M3 11h18M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+            Holiday Manager
+          </div>
+        </div>
+      </div>
+      <!-- Timesheet -->
+      <div id="nav-timesheet-group" class="hidden">
+        <button class="nav-rail-btn" onclick="toggleNavGroup('timesheet')" title="Timesheet">
+          <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          <span class="nav-rail-label">Timesheet</span>
+          <svg class="nav-rail-chevron w-3 h-3 ml-auto flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+        </button>
+        <div id="submenu-timesheet" class="nav-submenu hidden space-y-0.5">
+          <div class="nav-sub-item" onclick="showPage('timesheet-my');collapseNavRail();" data-page="timesheet-my">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            My Timesheet
+          </div>
+          <div id="nav-timesheet-approvals" class="hidden nav-sub-item" onclick="showPage('timesheet-approvals');collapseNavRail();" data-page="timesheet-approvals">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            Approvals
+          </div>
+          <div id="nav-projects" class="hidden nav-sub-item" onclick="showPage('projects');collapseNavRail();" data-page="projects">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5"/></svg>
+            Projects
+          </div>
+        </div>
+      </div>
+      <!-- Payroll -->
+      <div id="nav-payroll-group" class="hidden">
+        <button class="nav-rail-btn" onclick="toggleNavGroup('payroll')" title="Payroll">
+          <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+          <span class="nav-rail-label">Payroll</span>
+          <svg class="nav-rail-chevron w-3 h-3 ml-auto flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+        </button>
+        <div id="submenu-payroll" class="nav-submenu hidden space-y-0.5">
+          <div id="nav-payroll-runs" class="hidden nav-sub-item" onclick="showPage('payroll-runs');collapseNavRail();" data-page="payroll-runs">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+            Payroll Runs
+          </div>
+          <div id="nav-payroll-my" class="hidden nav-sub-item" onclick="showPage('payroll-my');collapseNavRail();" data-page="payroll-my">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            My Payslips
+          </div>
+        </div>
+      </div>
+      <!-- Settings (HR Manager / HR Admin) -->
+      <div id="nav-settings-wrap" class="hidden">
+        <button class="nav-rail-btn" onclick="toggleNavGroup('settings')" title="Settings">
+          <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          <span class="nav-rail-label">Settings</span>
+          <svg class="nav-rail-chevron w-3 h-3 ml-auto flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+        </button>
+        <div id="submenu-settings" class="nav-submenu hidden space-y-0.5">
+          <div id="nav-settings-notifications" class="hidden nav-sub-item" onclick="showPage('settings-notifications');collapseNavRail();" data-page="settings-notifications">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+            Notifications
+          </div>
+          <div id="nav-audit" class="hidden nav-sub-item" onclick="showPage('audit');collapseNavRail();" data-page="audit">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+            Audit Log
+          </div>
+          <div id="nav-users" class="hidden nav-sub-item" onclick="showPage('users');collapseNavRail();" data-page="users">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+            Users
+          </div>
+          <div id="nav-bulk-upload" class="hidden nav-sub-item" onclick="showPage('settings-bulk-upload');collapseNavRail();" data-page="settings-bulk-upload">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"/></svg>
+            Bulk Upload
+          </div>
+        </div>
+      </div>
+      <!-- Performance -->
+      <div id="nav-performance-group" class="hidden">
+        <button class="nav-rail-btn" onclick="toggleNavGroup('performance')" title="Performance">
+          <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+          <span class="nav-rail-label">Performance</span>
+          <svg class="nav-rail-chevron w-3 h-3 ml-auto flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+        </button>
+        <div id="submenu-performance" class="nav-submenu hidden space-y-0.5">
+          <div class="nav-sub-item" onclick="showPage('perf-my');collapseNavRail();" data-page="perf-my">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            My Goals &amp; Appraisal
+          </div>
+          <div id="nav-perf-team" class="hidden nav-sub-item" onclick="showPage('perf-team');collapseNavRail();" data-page="perf-team">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+            Team Appraisals
+          </div>
+          <div id="nav-perf-cycles" class="hidden nav-sub-item" onclick="showPage('perf-cycles');collapseNavRail();" data-page="perf-cycles">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+            Cycles
+          </div>
+          <div id="nav-perf-calibration" class="hidden nav-sub-item" onclick="showPage('perf-calibration');collapseNavRail();" data-page="perf-calibration">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+            Calibration
+          </div>
+        </div>
+      </div>
+      <!-- More Modules -->
+      <div>
+        <button class="nav-rail-btn" onclick="toggleNavGroup('more')" title="More Modules">
+          <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+          <span class="nav-rail-label">More</span>
+          <svg class="nav-rail-chevron w-3 h-3 ml-auto flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+        </button>
+        <div id="submenu-more" class="nav-submenu hidden space-y-0.5">
+          <div class="nav-sub-item nav-sub-item-disabled">More coming soon</div>
+        </div>
+      </div>
+
+      <div class="flex-1"></div>
+
+      <!-- User avatar / logout -->
+      <div id="avatarInitials" class="w-9 h-9 bg-blue-100 rounded-full flex items-center justify-center text-blue-700 text-xs font-bold flex-shrink-0 mb-1" title="Loading…">SA</div>
+      <button onclick="doLogout()" title="Sign out" class="text-slate-400 hover:text-slate-600 transition p-2">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+      </button>
+      <!-- kept for JS compatibility; not visible in rail mode -->
+      <p id="sidebarName" class="hidden">Loading…</p>
+      <p id="sidebarRole" class="hidden">—</p>
+    </div>
+  </aside>
+
+  <!-- Main content -->
+  <div class="flex-1 flex flex-col min-w-0">
+    <!-- Header -->
+    <header class="bg-white border-b border-slate-200 px-6 py-3 flex items-center gap-3">
+      <h2 id="pageTitle" class="text-lg font-semibold flex-1">Dashboard</h2>
+      <!-- Institution context pill (superadmin) -->
+      <div id="instContextPill" class="hidden items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-1.5">
+        <svg class="w-4 h-4 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5"/></svg>
+        <span id="instContextName" class="text-sm font-medium text-blue-700 max-w-xs truncate">—</span>
+        <button onclick="clearInstitutionContext()" class="text-blue-400 hover:text-blue-600 ml-1" title="Exit institution">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <!-- Role switcher (multi-role users only) -->
+      <div id="roleSwitcherWrap" class="hidden relative">
+        <button onclick="toggleRoleSwitcher()" class="flex items-center gap-1.5 text-sm bg-slate-100 hover:bg-slate-200 rounded-lg px-3 py-1.5 font-medium text-slate-700">
+          <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+          <span id="roleSwitcherLabel">—</span>
+          <svg class="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+        </button>
+        <div id="roleSwitcherMenu" class="hidden absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-50 min-w-[180px] py-1">
+          <p class="text-xs text-slate-400 px-3 py-1.5 border-b border-slate-100">Switch active role</p>
+          <div id="roleSwitcherOptions"></div>
+        </div>
+      </div>
+      <span id="headerDate" class="text-sm text-slate-400"></span>
+    </header>
+
+    <main class="flex-1 overflow-y-auto p-6">
+
+      <!-- DASHBOARD -->
+      <div id="page-dashboard" class="hidden">
+        <!-- System-wide notification banner (ALL roles, incl. superadmin) — red, highest priority -->
+        <div id="dashboardSystemNotifBar" class="hidden items-start gap-3 bg-red-50 border border-red-300 rounded-xl px-4 py-3 mb-5">
+          <svg class="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/></svg>
+          <p id="dashboardSystemNotifMsg" class="flex-1 text-sm text-red-800 font-medium whitespace-pre-line"></p>
+          <button onclick="dismissDashboardSystemNotification()" class="text-red-400 hover:text-red-600 flex-shrink-0"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+        </div>
+
+        <!-- Institution notification banner (all roles except superadmin) -->
+        <div id="dashboardNotifBar" class="hidden items-start gap-3 bg-purple-50 border border-purple-200 rounded-xl px-4 py-3 mb-5">
+          <svg class="w-5 h-5 text-purple-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+          <p id="dashboardNotifMsg" class="flex-1 text-sm text-purple-800 whitespace-pre-line"></p>
+          <button onclick="dismissDashboardNotification()" class="text-purple-400 hover:text-purple-600 flex-shrink-0"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+        </div>
+
+        <!-- To-Do list (all roles except superadmin) — always visible, even when empty -->
+        <div id="dashboardTodoCard" class="hidden bg-white rounded-xl border border-slate-200 p-5 mb-6">
+          <div class="flex items-center gap-2 mb-3">
+            <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <h3 class="text-sm font-semibold text-slate-700">To-Do</h3>
+          </div>
+          <div id="dashboardTodoList" class="space-y-1"></div>
+          <p id="dashboardTodoEmpty" class="hidden text-sm text-slate-400 py-2">You're all caught up — nothing pending right now.</p>
+        </div>
+
+        <!-- Global (superadmin no context) -->
+        <div id="superadminGlobalDash" class="hidden">
+          <div class="grid grid-cols-3 gap-4 mb-6">
+            <div class="bg-white rounded-xl border border-slate-200 p-5">
+              <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Institutions</p>
+              <p id="gStatInst" class="text-3xl font-bold text-blue-600">0</p>
+            </div>
+            <div class="bg-white rounded-xl border border-slate-200 p-5">
+              <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Total Employees</p>
+              <p id="gStatEmp" class="text-3xl font-bold text-slate-800">0</p>
+            </div>
+            <div class="bg-white rounded-xl border border-slate-200 p-5">
+              <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Total Users</p>
+              <p id="gStatUser" class="text-3xl font-bold text-slate-800">0</p>
+            </div>
+          </div>
+          <div class="bg-white rounded-xl border border-slate-200 p-5">
+            <h3 class="font-semibold mb-4">All Institutions</h3>
+            <div id="gInstList" class="space-y-2"></div>
+          </div>
+        </div>
+        <!-- Institution dashboard -->
+        <div id="instDash" class="hidden">
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+            <div class="bg-white rounded-xl border border-slate-200 p-5"><p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Total</p><p id="statTotal" class="text-3xl font-bold text-blue-600">0</p></div>
+            <div class="bg-white rounded-xl border border-slate-200 p-5"><p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Active</p><p id="statActive" class="text-3xl font-bold text-emerald-600">0</p></div>
+            <div class="bg-white rounded-xl border border-slate-200 p-5"><p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Inactive</p><p id="statInactive" class="text-3xl font-bold text-slate-400">0</p></div>
+            <div class="bg-white rounded-xl border border-slate-200 p-5"><p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Depts</p><p id="statDepts" class="text-3xl font-bold text-violet-600">0</p></div>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div class="bg-white rounded-xl border border-slate-200 p-5"><h3 class="font-semibold mb-3">By Department</h3><div id="deptBreakdown" class="space-y-2"></div></div>
+            <div class="bg-white rounded-xl border border-slate-200 p-5"><h3 class="font-semibold mb-3">By Employment Type</h3><div id="empTypeBreakdown" class="space-y-2"></div></div>
+          </div>
+          <!-- Recruitment Stats (HR roles only) -->
+          <div id="recruitDashSection" class="hidden">
+            <div class="flex items-center gap-2 mb-3">
+              <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+              <h3 class="font-semibold text-slate-700">Recruitment Overview</h3>
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+              <div class="bg-white rounded-xl border border-slate-200 p-4 cursor-pointer hover:border-blue-300 transition" onclick="showPage('requisitions')">
+                <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Open Requisitions</p>
+                <p id="rStatOpenReq" class="text-2xl font-bold text-blue-600">0</p>
+                <p id="rStatPendingApproval" class="text-xs text-amber-600 mt-1"></p>
+              </div>
+              <div class="bg-white rounded-xl border border-slate-200 p-4 cursor-pointer hover:border-blue-300 transition" onclick="showPage('candidates')">
+                <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Total Candidates</p>
+                <p id="rStatCands" class="text-2xl font-bold text-slate-800">0</p>
+                <p id="rStatHiredMonth" class="text-xs text-emerald-600 mt-1"></p>
+              </div>
+              <div class="bg-white rounded-xl border border-slate-200 p-4 cursor-pointer hover:border-blue-300 transition" onclick="showPage('interviews')">
+                <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Upcoming Interviews</p>
+                <p id="rStatUpcoming" class="text-2xl font-bold text-violet-600">0</p>
+                <p id="rStatIntMonth" class="text-xs text-slate-400 mt-1"></p>
+              </div>
+              <div class="bg-white rounded-xl border border-slate-200 p-4 cursor-pointer hover:border-blue-300 transition" onclick="showPage('offers')">
+                <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Offers Pending</p>
+                <p id="rStatOffers" class="text-2xl font-bold text-amber-600">0</p>
+                <p class="text-xs text-slate-400 mt-1">awaiting response</p>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div class="bg-white rounded-xl border border-slate-200 p-5">
+                <h3 class="font-semibold mb-3 text-sm">Candidate Pipeline</h3>
+                <div id="rCandPipeline" class="space-y-2"></div>
+              </div>
+              <div class="bg-white rounded-xl border border-slate-200 p-5">
+                <h3 class="font-semibold mb-3 text-sm">Requisitions by Status</h3>
+                <div id="rReqStatus" class="space-y-2"></div>
+              </div>
+            </div>
+          </div>
+          <!-- Project Utilization (HR Manager / superadmin only) -->
+          <div id="utilDashSection" class="hidden mt-6">
+            <div class="flex items-center gap-2 mb-3">
+              <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5"/></svg>
+              <h3 class="font-semibold text-slate-700">Project Utilization</h3>
+            </div>
+            <div id="utilProjectList" class="space-y-4"></div>
+            <p id="utilEmpty" class="hidden text-slate-400 text-sm">No active projects yet.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- INSTITUTIONS -->
+      <div id="page-institutions" class="hidden">
+        <div class="flex justify-end mb-5">
+          <button onclick="openInstModal()" class="btn-primary flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Add Institution
+          </button>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Company</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase hidden sm:table-cell">Contact</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Plan</th>
+                <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Staff</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+                <th class="px-4 py-3"></th>
+              </tr>
+            </thead>
+            <tbody id="instTableBody" class="divide-y divide-slate-100"></tbody>
+          </table>
+          <p id="instEmpty" class="hidden text-center text-slate-400 text-sm py-12">No institutions yet. Click "Add Institution" to get started.</p>
+        </div>
+      </div>
+
+      <!-- EMPLOYEES -->
+      <div id="page-employees" class="hidden">
+        <div class="flex flex-col sm:flex-row gap-3 mb-5">
+          <input id="empSearch" type="text" placeholder="Search name, ID, IC, designation…" class="inp flex-1" oninput="filterEmployees()"/>
+          <select id="empStatusFilter" class="inp w-40" onchange="filterEmployees()">
+            <option value="">All Status</option>
+            <option value="Active">Active</option>
+            <option value="Inactive">Inactive</option>
+          </select>
+          <button id="addEmpBtn" onclick="openAddModal()" class="btn-primary hidden flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Add Employee
+          </button>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Employee</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase hidden md:table-cell">Department</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase hidden lg:table-cell">Type</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+                <th class="px-4 py-3"></th>
+              </tr>
+            </thead>
+            <tbody id="empTableBody" class="divide-y divide-slate-100"></tbody>
+          </table>
+          <p id="empEmpty" class="hidden text-center text-slate-400 text-sm py-12">No employees found.</p>
+        </div>
+      </div>
+
+      <!-- ORG CHART -->
+      <div id="page-orgchart" class="hidden">
+        <div class="flex gap-3 mb-4">
+          <select id="orgStatusFilter" class="inp w-40" onchange="loadOrgChart()">
+            <option value="Active">Active Only</option>
+            <option value="">All</option>
+          </select>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-auto min-h-64 p-4">
+          <svg id="orgSvg" class="block"></svg>
+        </div>
+      </div>
+
+      <!-- AUDIT LOG -->
+      <div id="page-audit" class="hidden">
+        <div class="flex gap-3 mb-4">
+          <select id="auditActionFilter" class="inp w-48" onchange="loadAuditLog()">
+            <option value="">All Actions</option>
+            <option value="CREATE">Create</option>
+            <option value="UPDATE">Update</option>
+            <option value="ACTIVATE">Activate</option>
+            <option value="DEACTIVATE">Deactivate</option>
+          </select>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">When</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Actor</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Employee</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Action</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase hidden lg:table-cell">Changes</th>
+              </tr>
+            </thead>
+            <tbody id="auditTableBody" class="divide-y divide-slate-100"></tbody>
+          </table>
+          <p id="auditEmpty" class="hidden text-center text-slate-400 text-sm py-12">No records.</p>
+        </div>
+      </div>
+
+      <!-- USERS -->
+      <div id="page-users" class="hidden">
+        <div class="flex justify-end mb-4">
+          <button onclick="openUserModal()" class="btn-primary flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Add User
+          </button>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">User</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase hidden md:table-cell">Role</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase hidden lg:table-cell">Institution</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+                <th class="px-4 py-3"></th>
+              </tr>
+            </thead>
+            <tbody id="userTableBody" class="divide-y divide-slate-100"></tbody>
+          </table>
+          <p id="userEmpty" class="hidden text-center text-slate-400 text-sm py-12">No users.</p>
+        </div>
+      </div>
+
+      <!-- JOB REQUISITIONS -->
+      <div id="page-requisitions" class="hidden">
+        <div class="flex flex-col sm:flex-row gap-3 mb-5">
+          <select id="reqStatusFilter" class="inp w-48" onchange="loadRequisitions()">
+            <option value="">All Status</option>
+            <option value="Draft">Draft</option>
+            <option value="Pending Approval">Pending Approval</option>
+            <option value="Approved">Approved</option>
+            <option value="Rejected">Rejected</option>
+            <option value="Closed">Closed</option>
+            <option value="Filled">Filled</option>
+          </select>
+          <div class="flex-1"></div>
+          <button id="addReqBtn" onclick="openReqModal()" class="btn-primary hidden flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            New Requisition
+          </button>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Position</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase hidden md:table-cell">Dept</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase hidden lg:table-cell">Priority</th>
+                <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase hidden sm:table-cell">HC</th>
+                <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase hidden sm:table-cell">Cands</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+                <th class="px-4 py-3"></th>
+              </tr>
+            </thead>
+            <tbody id="reqTableBody" class="divide-y divide-slate-100"></tbody>
+          </table>
+          <p id="reqEmpty" class="hidden text-center text-slate-400 text-sm py-12">No job requisitions found.</p>
+        </div>
+      </div>
+
+      <!-- CANDIDATE BANK (ATS) -->
+      <div id="page-candidates" class="hidden">
+        <div class="flex flex-col sm:flex-row gap-3 mb-5">
+          <input id="candSearch" type="text" placeholder="Search name, email, company, skills…" class="inp flex-1" oninput="loadCandidates()"/>
+          <select id="candStageFilter" class="inp w-44" onchange="loadCandidates()">
+            <option value="">All Stages</option>
+            <option value="New">New</option>
+            <option value="Screening">Screening</option>
+            <option value="Interview">Interview</option>
+            <option value="Offer">Offer</option>
+            <option value="Hired">Hired</option>
+            <option value="Rejected">Rejected</option>
+            <option value="Withdrawn">Withdrawn</option>
+          </select>
+          <button id="addCandBtn" onclick="openCandModal()" class="btn-primary hidden flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Add Candidate
+          </button>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Candidate</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase hidden md:table-cell">Position Applied</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase hidden lg:table-cell">Source</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Stage</th>
+                <th class="px-4 py-3"></th>
+              </tr>
+            </thead>
+            <tbody id="candTableBody" class="divide-y divide-slate-100"></tbody>
+          </table>
+          <p id="candEmpty" class="hidden text-center text-slate-400 text-sm py-12">No candidates found.</p>
+        </div>
+      </div>
+
+      <!-- INTERVIEWS -->
+      <div id="page-interviews" class="hidden">
+        <div class="flex flex-col sm:flex-row gap-3 mb-5">
+          <select id="intStatusFilter" class="inp w-44" onchange="loadInterviews()">
+            <option value="">All Status</option>
+            <option value="Scheduled">Scheduled</option>
+            <option value="Completed">Completed</option>
+            <option value="Cancelled">Cancelled</option>
+            <option value="No-Show">No-Show</option>
+          </select>
+          <div class="flex-1"></div>
+          <button id="addIntBtn" onclick="openIntModal()" class="btn-primary hidden flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Schedule Interview
+          </button>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Candidate</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase hidden md:table-cell">Type</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Date &amp; Time</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase hidden lg:table-cell">Interviewers</th>
+                <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase hidden sm:table-cell">Avg Score</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+                <th class="px-4 py-3"></th>
+              </tr>
+            </thead>
+            <tbody id="intTableBody" class="divide-y divide-slate-100"></tbody>
+          </table>
+          <p id="intEmpty" class="hidden text-center text-slate-400 text-sm py-12">No interviews scheduled.</p>
+        </div>
+      </div>
+
+      <!-- OFFERS & LETTERS -->
+      <div id="page-offers" class="hidden">
+        <div class="flex justify-end mb-5">
+          <button id="addOfferBtn" onclick="openOfferModal()" class="btn-primary hidden flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Generate Letter
+          </button>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Candidate</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase hidden md:table-cell">Position</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Type</th>
+                <th class="text-left px-4 py-3 text-xs font-semibond text-slate-500 uppercase hidden lg:table-cell">Salary</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+                <th class="px-4 py-3"></th>
+              </tr>
+            </thead>
+            <tbody id="offerTableBody" class="divide-y divide-slate-100"></tbody>
+          </table>
+          <p id="offerEmpty" class="hidden text-center text-slate-400 text-sm py-12">No offers or letters yet.</p>
+        </div>
+      </div>
+
+      <!-- ONBOARDING -->
+      <div id="page-onboarding" class="hidden">
+        <div class="flex items-center justify-between mb-5">
+          <div class="flex gap-2">
+            <button id="obFilterAll" onclick="setObFilter('onboarding','all')" class="btn-ghost text-xs ob-filter-btn ob-filter-active">All</button>
+            <button onclick="setObFilter('onboarding','In Progress')" class="btn-ghost text-xs ob-filter-btn">In Progress</button>
+            <button onclick="setObFilter('onboarding','Completed')" class="btn-ghost text-xs ob-filter-btn">Completed</button>
+          </div>
+          <div class="flex gap-2">
+            <button id="obTemplatesBtnOn" onclick="showObTemplates('onboarding')" class="btn-ghost hidden text-xs">Manage Templates</button>
+            <button id="startOnboardingBtn" onclick="openStartObModal('onboarding')" class="btn-primary hidden text-sm flex items-center gap-2">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+              Start Onboarding
+            </button>
+          </div>
+        </div>
+        <div id="onboardingList" class="space-y-3"></div>
+        <p id="onboardingEmpty" class="hidden text-center text-slate-400 text-sm py-12">No onboarding checklists yet.</p>
+      </div>
+
+      <!-- OFFBOARDING -->
+      <div id="page-offboarding" class="hidden">
+        <div class="flex items-center justify-between mb-5">
+          <div class="flex gap-2">
+            <button onclick="setObFilter('offboarding','all')" class="btn-ghost text-xs ob-filter-btn ob-filter-active">All</button>
+            <button onclick="setObFilter('offboarding','In Progress')" class="btn-ghost text-xs ob-filter-btn">In Progress</button>
+            <button onclick="setObFilter('offboarding','Completed')" class="btn-ghost text-xs ob-filter-btn">Completed</button>
+          </div>
+          <div class="flex gap-2">
+            <button id="obTemplatesBtnOff" onclick="showObTemplates('offboarding')" class="btn-ghost hidden text-xs">Manage Templates</button>
+            <button id="startOffboardingBtn" onclick="openStartObModal('offboarding')" class="btn-primary hidden text-sm flex items-center gap-2">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+              Start Offboarding
+            </button>
+          </div>
+        </div>
+        <div id="offboardingList" class="space-y-3"></div>
+        <p id="offboardingEmpty" class="hidden text-center text-slate-400 text-sm py-12">No offboarding checklists yet.</p>
+      </div>
+
+      <!-- LD COURSE CATALOG -->
+      <div id="page-ld-catalog" class="hidden">
+        <div class="flex items-center justify-between mb-5">
+          <div class="flex gap-2">
+            <button onclick="setLdCatFilter('')" class="btn-ghost text-xs ld-cat-filter-btn ld-cat-filter-active">All</button>
+            <button onclick="setLdCatFilter('mandatory')" class="btn-ghost text-xs ld-cat-filter-btn">Mandatory</button>
+            <button onclick="setLdCatFilter('professional_development')" class="btn-ghost text-xs ld-cat-filter-btn">Professional Dev</button>
+            <button onclick="setLdCatFilter('certification')" class="btn-ghost text-xs ld-cat-filter-btn">Certification</button>
+          </div>
+          <button id="ldAddCourseBtn" onclick="openLdCourseModal()" class="btn-primary hidden text-sm flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Add Course
+          </button>
+        </div>
+        <div id="ldCourseList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+        <p id="ldCourseEmpty" class="hidden text-center text-slate-400 text-sm py-12">No courses in the catalog yet.</p>
+      </div>
+
+      <!-- LD MY TRAININGS -->
+      <div id="page-ld-trainings" class="hidden">
+        <div class="flex items-center justify-between mb-5">
+          <div class="flex gap-2">
+            <button onclick="setLdEnrollFilter('')" class="btn-ghost text-xs ld-enr-filter-btn ld-enr-filter-active">All</button>
+            <button onclick="setLdEnrollFilter('Pending Approval')" class="btn-ghost text-xs ld-enr-filter-btn">Pending Approval</button>
+            <button onclick="setLdEnrollFilter('In Progress')" class="btn-ghost text-xs ld-enr-filter-btn">In Progress</button>
+            <button onclick="setLdEnrollFilter('Completed')" class="btn-ghost text-xs ld-enr-filter-btn">Completed</button>
+          </div>
+        </div>
+        <div id="ldEnrollmentList" class="space-y-3"></div>
+        <p id="ldEnrollmentEmpty" class="hidden text-center text-slate-400 text-sm py-12">No trainings yet.</p>
+      </div>
+
+      <!-- MY LEAVE -->
+      <div id="page-leave-my" class="hidden">
+        <div class="flex items-center justify-between mb-5">
+          <div class="flex gap-2">
+            <button onclick="setLeaveFilter('')" class="btn-ghost text-xs leave-filter-btn leave-filter-active">All</button>
+            <button onclick="setLeaveFilter('Pending Approval')" class="btn-ghost text-xs leave-filter-btn">Pending</button>
+            <button onclick="setLeaveFilter('Approved')" class="btn-ghost text-xs leave-filter-btn">Approved</button>
+            <button onclick="setLeaveFilter('Rejected')" class="btn-ghost text-xs leave-filter-btn">Rejected</button>
+          </div>
+          <button onclick="openLeaveApplyModal()" class="btn-primary text-sm flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Apply for Leave
+          </button>
+        </div>
+        <div id="leaveBalanceCards" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5"></div>
+        <div id="leaveAppList" class="space-y-3"></div>
+        <p id="leaveAppEmpty" class="hidden text-center text-slate-400 text-sm py-12">No leave applications yet.</p>
+      </div>
+
+      <!-- LEAVE APPROVALS -->
+      <div id="page-leave-approvals" class="hidden">
+        <div class="flex items-center gap-2 mb-5">
+          <button onclick="setLeaveApprovalFilter('Pending Approval')" class="btn-ghost text-xs leave-appr-filter-btn leave-appr-filter-active">Pending</button>
+          <button onclick="setLeaveApprovalFilter('')" class="btn-ghost text-xs leave-appr-filter-btn">All</button>
+        </div>
+        <div id="leaveApprovalList" class="space-y-3"></div>
+        <p id="leaveApprovalEmpty" class="hidden text-center text-slate-400 text-sm py-12">No leave applications to review.</p>
+      </div>
+
+      <!-- HOLIDAY MANAGER -->
+      <div id="page-leave-holidays" class="hidden">
+        <div class="flex items-center justify-between mb-5">
+          <div class="flex items-center gap-2">
+            <label class="text-sm text-slate-600">Year</label>
+            <select id="holidayYearSelect" onchange="loadHolidays()" class="inp" style="width:100px"></select>
+          </div>
+          <button onclick="openHolidayModal()" class="btn-primary text-sm flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Add Holiday
+          </button>
+        </div>
+        <div class="bg-white border border-slate-200 rounded-xl overflow-hidden">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 text-slate-500 text-xs uppercase">
+              <tr><th class="px-4 py-2 text-left">Date</th><th class="px-4 py-2 text-left">Day</th><th class="px-4 py-2 text-left">Holiday</th><th class="px-4 py-2"></th></tr>
+            </thead>
+            <tbody id="holidayTableBody"></tbody>
+          </table>
+        </div>
+        <p id="holidayEmpty" class="hidden text-center text-slate-400 text-sm py-12">No public holidays defined for this year yet.</p>
+
+        <div class="mt-8 border-t border-slate-200 pt-6">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-sm font-semibold text-slate-700">Leave Types</h3>
+            <button onclick="openLeaveTypeModal()" class="btn-ghost text-xs">+ Add Leave Type</button>
+          </div>
+          <div id="leaveTypeList" class="space-y-2"></div>
+        </div>
+      </div>
+
+      <!-- PROJECTS (HR Manager) -->
+      <div id="page-projects" class="hidden">
+        <div class="flex items-center justify-between mb-5">
+          <div class="flex gap-2">
+            <button onclick="setProjectFilter('')" class="btn-ghost text-xs project-filter-btn project-filter-active">All</button>
+            <button onclick="setProjectFilter('Active')" class="btn-ghost text-xs project-filter-btn">Active</button>
+            <button onclick="setProjectFilter('On Hold')" class="btn-ghost text-xs project-filter-btn">On Hold</button>
+            <button onclick="setProjectFilter('Completed')" class="btn-ghost text-xs project-filter-btn">Completed</button>
+          </div>
+          <button onclick="openProjectModal()" class="btn-primary text-sm flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Add Project
+          </button>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr id="projectTableHead"></tr>
+            </thead>
+            <tbody id="projectList"></tbody>
+          </table>
+        </div>
+        <p id="projectEmpty" class="hidden text-center text-slate-400 text-sm py-12">No projects yet.</p>
+      </div>
+
+      <!-- MY TIMESHEET -->
+      <div id="page-timesheet-my" class="hidden">
+        <div class="flex items-center justify-between mb-5">
+          <div class="flex items-center gap-2">
+            <button onclick="shiftTimesheetWeek(-1)" class="btn-ghost text-xs px-2">←</button>
+            <span id="timesheetWeekLabel" class="text-sm font-medium text-slate-700"></span>
+            <button onclick="shiftTimesheetWeek(1)" class="btn-ghost text-xs px-2">→</button>
+          </div>
+          <div id="timesheetStatusBadgeWrap"></div>
+        </div>
+        <div class="bg-white border border-slate-200 rounded-xl overflow-hidden mb-4">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 text-slate-500 text-xs uppercase">
+              <tr><th class="px-4 py-2 text-left">Date</th><th class="px-4 py-2 text-left">Project</th><th class="px-4 py-2 text-left">Task</th><th class="px-4 py-2 text-left">Hours</th><th class="px-4 py-2 text-left">Description</th><th class="px-4 py-2"></th></tr>
+            </thead>
+            <tbody id="timesheetEntryBody"></tbody>
+            <tfoot>
+              <tr class="border-t border-slate-200 bg-slate-50">
+                <td class="px-4 py-2 font-medium" colspan="3">Total</td>
+                <td id="timesheetTotalHours" class="px-4 py-2 font-medium">0</td>
+                <td colspan="2"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        <p id="timesheetEntryEmpty" class="hidden text-center text-slate-400 text-sm py-8">No entries logged for this week yet.</p>
+        <div id="timesheetAddForm" class="bg-white border border-slate-200 rounded-xl p-4 mb-4">
+          <p class="text-xs font-medium text-slate-500 mb-2">Log Time</p>
+          <div class="grid grid-cols-2 md:grid-cols-5 gap-2">
+            <select id="tsEntryProject" class="inp text-sm" onchange="loadTsEntryTasks()"></select>
+            <select id="tsEntryTask" class="inp text-sm"></select>
+            <input id="tsEntryDate" type="date" class="inp text-sm"/>
+            <input id="tsEntryHours" type="number" step="0.5" min="0.5" max="24" class="inp text-sm" placeholder="Hours"/>
+            <input id="tsEntryDesc" class="inp text-sm" placeholder="Description…"/>
+          </div>
+          <button onclick="addTimesheetEntry()" class="btn-primary text-xs px-3 py-1.5 mt-2">Add Entry</button>
+        </div>
+        <button id="timesheetSubmitBtn" onclick="submitTimesheet()" class="btn-primary text-sm">Submit for Approval</button>
+      </div>
+
+      <!-- TIMESHEET APPROVALS -->
+      <div id="page-timesheet-approvals" class="hidden">
+        <div class="flex items-center gap-2 mb-5">
+          <button onclick="setTimesheetApprovalFilter('Submitted')" class="btn-ghost text-xs ts-appr-filter-btn ts-appr-filter-active">Pending</button>
+          <button onclick="setTimesheetApprovalFilter('')" class="btn-ghost text-xs ts-appr-filter-btn">All</button>
+        </div>
+        <div id="timesheetApprovalList" class="space-y-3"></div>
+        <p id="timesheetApprovalEmpty" class="hidden text-center text-slate-400 text-sm py-12">No timesheets to review.</p>
+      </div>
+
+      <!-- SETTINGS: Notifications (HR Manager / HR Admin) -->
+      <div id="page-settings-notifications" class="hidden">
+        <div class="flex items-center justify-between mb-5">
+          <p class="text-sm text-slate-500">Configure a broadcast message shown to all employees on their dashboard for a scheduled time window. Only one notification can be active at a time.</p>
+          <button onclick="openNotificationModal()" class="btn-primary text-sm flex items-center gap-2 flex-shrink-0 ml-4">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Add Notification
+          </button>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Message</th>
+                <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Start</th>
+                <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">End</th>
+                <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
+                <th class="px-4 py-2.5"></th>
+              </tr>
+            </thead>
+            <tbody id="notificationList"></tbody>
+          </table>
+        </div>
+        <p id="notificationEmpty" class="hidden text-center text-slate-400 text-sm py-12">No notifications configured yet.</p>
+      </div>
+
+      <!-- SETTINGS: System-Wide Notifications (superadmin only) -->
+      <div id="page-settings-system-notifications" class="hidden">
+        <div class="flex items-center justify-between mb-5">
+          <p class="text-sm text-slate-500">Configure an urgent, platform-wide broadcast (e.g. system downtime) shown in red to <strong>every</strong> user across <strong>all</strong> institutions. Only one can be active at a time.</p>
+          <button onclick="openSystemNotificationModal()" class="btn-primary text-sm flex items-center gap-2 flex-shrink-0 ml-4" style="background:#dc2626">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Add System Notification
+          </button>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Message</th>
+                <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Start</th>
+                <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">End</th>
+                <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
+                <th class="px-4 py-2.5"></th>
+              </tr>
+            </thead>
+            <tbody id="systemNotificationList"></tbody>
+          </table>
+        </div>
+        <p id="systemNotificationEmpty" class="hidden text-center text-slate-400 text-sm py-12">No system-wide notifications configured yet.</p>
+      </div>
+
+      <!-- SETTINGS: Bulk Upload Employees (HR Manager only) -->
+      <div id="page-settings-bulk-upload" class="hidden">
+        <div class="bg-white rounded-xl border border-slate-200 p-6 max-w-2xl">
+          <h3 class="text-sm font-semibold text-slate-700 mb-1">1. Download the template</h3>
+          <p class="text-sm text-slate-500 mb-3">Fill in one row per employee. Required columns: full name, IC number, race, religion, gender, date of birth, marital status, phone, department, designation, employment type, start date. Leave Employee ID blank to auto-generate, or set a custom one.</p>
+          <button onclick="downloadBulkTemplate()" class="btn-ghost text-sm flex items-center gap-2 mb-6">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+            Download CSV Template
+          </button>
+
+          <h3 class="text-sm font-semibold text-slate-700 mb-1">2. Upload the completed file</h3>
+          <p class="text-sm text-slate-500 mb-3">Valid rows are created immediately; any rows with errors are skipped and listed below so you can fix and re-upload just those.</p>
+          <div class="flex items-center gap-3">
+            <input id="bulkUploadFile" type="file" accept=".csv" class="inp" style="max-width:320px"/>
+            <button id="bulkUploadBtn" onclick="submitBulkUpload()" class="btn-primary text-sm" disabled>Upload</button>
+          </div>
+
+          <div id="bulkUploadResults" class="hidden mt-6 pt-5 border-t border-slate-100">
+            <div class="flex items-center gap-4 mb-3">
+              <span id="bulkUploadSuccessCount" class="badge bg-green-100 text-green-700 text-xs"></span>
+              <span id="bulkUploadErrorCount" class="badge bg-red-100 text-red-700 text-xs hidden"></span>
+            </div>
+            <div id="bulkUploadErrorList" class="space-y-1"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PAYROLL RUNS (payroll_manager edit, hr_manager view-only) -->
+      <div id="page-payroll-runs" class="hidden">
+        <div class="flex items-center justify-between mb-5">
+          <p class="text-sm text-slate-500">Salaried payroll runs for Malaysia (EPF/SOCSO/EIS/PCB). Statutory figures are estimates — verify against current official tables before relying on them.</p>
+          <button id="newPayrollRunBtn" onclick="openPayrollRunModal()" class="btn-primary text-sm flex items-center gap-2 flex-shrink-0 ml-4">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            New Run
+          </button>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Period</th>
+                <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
+                <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Employees</th>
+                <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Total Net Pay</th>
+                <th class="px-4 py-2.5"></th>
+              </tr>
+            </thead>
+            <tbody id="payrollRunList"></tbody>
+          </table>
+        </div>
+        <p id="payrollRunEmpty" class="hidden text-center text-slate-400 text-sm py-12">No payroll runs yet.</p>
+      </div>
+
+      <!-- MY PAYSLIPS -->
+      <div id="page-payroll-my" class="hidden">
+        <div id="myPayslipList" class="space-y-2"></div>
+        <p id="myPayslipEmpty" class="hidden text-center text-slate-400 text-sm py-12">No payslips available yet.</p>
+      </div>
+
+      <!-- PERFORMANCE: Cycles (hr_manager) -->
+      <div id="page-perf-cycles" class="hidden">
+        <div class="flex items-center justify-between mb-5">
+          <p class="text-sm text-slate-500">Performance review cycles: Self-Review → Manager Review → HR Calibration → Finalized.</p>
+          <button onclick="openCycleModal()" class="btn-primary text-sm flex items-center gap-2 flex-shrink-0 ml-4">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            New Cycle
+          </button>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Cycle</th>
+                <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Period</th>
+                <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
+                <th class="px-4 py-2.5"></th>
+              </tr>
+            </thead>
+            <tbody id="perfCycleList"></tbody>
+          </table>
+        </div>
+        <p id="perfCycleEmpty" class="hidden text-center text-slate-400 text-sm py-12">No performance cycles yet.</p>
+      </div>
+
+      <!-- PERFORMANCE: My Goals & Appraisal -->
+      <div id="page-perf-my" class="hidden">
+        <div class="flex items-center justify-between mb-5 gap-3">
+          <select id="perfMyCycleSelect" class="inp" style="max-width:280px" onchange="loadMyPerformancePage()"></select>
+          <button id="perfAddGoalBtn" onclick="openGoalModal()" class="btn-primary text-sm flex items-center gap-2 flex-shrink-0 hidden">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Add Goal
+          </button>
+        </div>
+        <div id="perfMyContent"></div>
+      </div>
+
+      <!-- PERFORMANCE: Team Appraisals -->
+      <div id="page-perf-team" class="hidden">
+        <select id="perfTeamCycleSelect" class="inp mb-5" style="max-width:280px" onchange="loadTeamAppraisalsPage()"></select>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Employee</th>
+                <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
+                <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Self Rating</th>
+                <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Manager Rating</th>
+                <th class="px-4 py-2.5"></th>
+              </tr>
+            </thead>
+            <tbody id="perfTeamList"></tbody>
+          </table>
+        </div>
+        <p id="perfTeamEmpty" class="hidden text-center text-slate-400 text-sm py-12">No appraisals to show for this cycle.</p>
+      </div>
+
+      <!-- PERFORMANCE: Calibration (hr_manager) -->
+      <div id="page-perf-calibration" class="hidden">
+        <div class="flex items-center justify-between mb-5 gap-3">
+          <select id="perfCalibCycleSelect" class="inp" style="max-width:280px" onchange="loadCalibrationPage()"></select>
+          <div id="perfCalibActions" class="flex gap-2"></div>
+        </div>
+        <div id="perfCalibDistribution" class="bg-white rounded-xl border border-slate-200 p-5 mb-5"></div>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Employee</th>
+                <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Self</th>
+                <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Manager</th>
+                <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Calibrated</th>
+                <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Notes</th>
+                <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Payout</th>
+                <th class="px-4 py-2.5"></th>
+              </tr>
+            </thead>
+            <tbody id="perfCalibList"></tbody>
+          </table>
+        </div>
+        <p id="perfCalibEmpty" class="hidden text-center text-slate-400 text-sm py-12">No appraisals awaiting calibration for this cycle.</p>
+      </div>
+
+      <!-- COMING SOON -->
+      <div id="page-coming-soon" class="hidden flex items-center justify-center min-h-60">
+        <div class="text-center">
+          <div class="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <svg class="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          </div>
+          <h3 class="text-lg font-semibold text-slate-700">Coming Soon</h3>
+          <p class="text-slate-400 text-sm mt-1">This module is under development.</p>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<!-- ===== MODALS ===== -->
+
+<!-- Add/Edit Notification Modal -->
+<div id="notificationModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 id="notificationModalTitle" class="text-base font-semibold">Add Notification</h2>
+      <button onclick="closeNotificationModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <div class="p-6 space-y-4">
+      <input type="hidden" id="notificationId"/>
+      <div>
+        <label class="lbl">Message <span class="text-red-500">*</span></label>
+        <textarea id="notificationMessage" class="inp" rows="6" maxlength="4000" oninput="updateNotificationWordCount()"></textarea>
+        <p id="notificationWordCount" class="text-xs text-slate-400 mt-1">0 / 500 words</p>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="lbl">Start</label><input id="notificationStart" type="datetime-local" class="inp"/></div>
+        <div><label class="lbl">End</label><input id="notificationEnd" type="datetime-local" class="inp"/></div>
+      </div>
+      <div class="flex gap-2">
+        <button type="button" onclick="submitNotification()" class="btn-primary">Save</button>
+        <button type="button" onclick="closeNotificationModal()" class="btn-ghost">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add/Edit System-Wide Notification Modal (superadmin) -->
+<div id="systemNotificationModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-red-200 bg-red-50 rounded-t-2xl">
+      <h2 id="systemNotificationModalTitle" class="text-base font-semibold text-red-700">Add System Notification</h2>
+      <button onclick="closeSystemNotificationModal()" class="text-red-400 hover:text-red-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <div class="p-6 space-y-4">
+      <input type="hidden" id="systemNotificationId"/>
+      <div>
+        <label class="lbl">Message <span class="text-red-500">*</span></label>
+        <textarea id="systemNotificationMessage" class="inp" rows="6" maxlength="4000" oninput="updateSystemNotificationWordCount()"></textarea>
+        <p id="systemNotificationWordCount" class="text-xs text-slate-400 mt-1">0 / 500 words</p>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="lbl">Start</label><input id="systemNotificationStart" type="datetime-local" class="inp"/></div>
+        <div><label class="lbl">End</label><input id="systemNotificationEnd" type="datetime-local" class="inp"/></div>
+      </div>
+      <div class="flex gap-2">
+        <button type="button" onclick="submitSystemNotification()" class="btn-primary" style="background:#dc2626">Save</button>
+        <button type="button" onclick="closeSystemNotificationModal()" class="btn-ghost">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- New Payroll Run Modal -->
+<div id="payrollRunModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-md">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 class="text-base font-semibold">New Payroll Run</h2>
+      <button onclick="closePayrollRunModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <div class="p-6 space-y-4">
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="lbl">Period Start</label><input id="prStart" type="date" class="inp"/></div>
+        <div><label class="lbl">Period End</label><input id="prEnd" type="date" class="inp"/></div>
+      </div>
+      <p class="text-xs text-slate-400">Generates a Draft payslip for every Active employee. Review and edit before finalizing.</p>
+      <div class="flex gap-2">
+        <button type="button" onclick="submitPayrollRun()" class="btn-primary">Create Run</button>
+        <button type="button" onclick="closePayrollRunModal()" class="btn-ghost">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Payroll Run Detail Modal -->
+<div id="payrollRunDetailModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-4xl">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <div>
+        <h2 id="prDetailTitle" class="text-base font-semibold">Payroll Run</h2>
+        <p id="prDetailMeta" class="text-xs text-slate-400 mt-0.5">—</p>
+      </div>
+      <button onclick="closePayrollRunDetailModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <div class="p-6">
+      <div class="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-50 border-b border-slate-200">
+            <tr>
+              <th class="text-left px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Employee</th>
+              <th class="text-right px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Basic</th>
+              <th class="text-right px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Unpaid Days</th>
+              <th class="text-right px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Gross</th>
+              <th class="text-right px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">EPF (EE)</th>
+              <th class="text-right px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">SOCSO (EE)</th>
+              <th class="text-right px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">EIS (EE)</th>
+              <th class="text-right px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">PCB</th>
+              <th class="text-right px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Net Pay</th>
+              <th class="px-3 py-2.5"></th>
+            </tr>
+          </thead>
+          <tbody id="payrollRunDetailList"></tbody>
+        </table>
+      </div>
+      <div id="payrollRunDetailActions" class="flex gap-2 mt-5"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Payslip View/Print Modal -->
+<div id="payslipViewModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+    <div id="payslipPrintArea" class="p-8">
+      <div class="flex items-center justify-between mb-6 no-print">
+        <h2 class="text-base font-semibold">Payslip</h2>
+        <button onclick="closePayslipViewModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+      </div>
+      <div id="payslipContent"></div>
+    </div>
+    <div class="px-8 pb-8 flex gap-2 no-print">
+      <button type="button" onclick="window.print()" class="btn-primary">Print / Save as PDF</button>
+      <button type="button" onclick="closePayslipViewModal()" class="btn-ghost">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- New Performance Cycle Modal -->
+<div id="cycleModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-md">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 class="text-base font-semibold">New Performance Cycle</h2>
+      <button onclick="closeCycleModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <div class="p-6 space-y-4">
+      <div><label class="lbl">Cycle Name</label><input id="cycleName" class="inp" placeholder="e.g. H1 2026"/></div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="lbl">Period Start</label><input id="cycleStart" type="date" class="inp"/></div>
+        <div><label class="lbl">Period End</label><input id="cycleEnd" type="date" class="inp"/></div>
+      </div>
+      <p class="text-xs text-slate-400">Creates the cycle as Draft. Activating it opens goal-setting and creates a self-review appraisal for every active employee.</p>
+      <div class="flex gap-2">
+        <button type="button" onclick="submitCycle()" class="btn-primary">Create Cycle</button>
+        <button type="button" onclick="closeCycleModal()" class="btn-ghost">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add/Edit Goal Modal (KPI or OKR) -->
+<div id="goalModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 id="goalModalTitle" class="text-base font-semibold">Add Goal</h2>
+      <button onclick="closeGoalModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <div class="p-6 space-y-4">
+      <input type="hidden" id="goalId"/>
+      <input type="hidden" id="goalCycleId"/>
+      <input type="hidden" id="goalEmployeeId"/>
+      <div>
+        <label class="lbl">Goal Type</label>
+        <select id="goalType" class="inp" onchange="toggleGoalTypeFields()">
+          <option value="KPI">KPI (target vs. actual)</option>
+          <option value="OKR">OKR (objective + key results)</option>
+        </select>
+      </div>
+      <div><label class="lbl">Title <span class="text-red-500">*</span></label><input id="goalTitle" class="inp" placeholder="e.g. Increase customer NPS"/></div>
+      <div><label class="lbl">Description</label><textarea id="goalDescription" class="inp" rows="2"></textarea></div>
+      <div><label class="lbl">Weight (%) <span class="text-slate-400 font-normal">— all goals should sum to 100</span></label><input id="goalWeight" type="number" step="1" min="0" max="100" class="inp" value="0"/></div>
+
+      <div id="goalKpiFields" class="grid grid-cols-2 gap-3">
+        <div><label class="lbl">Target</label><input id="goalTarget" type="number" step="0.01" class="inp"/></div>
+        <div><label class="lbl">Actual</label><input id="goalActual" type="number" step="0.01" class="inp"/></div>
+        <div class="col-span-2"><label class="lbl">Unit</label><input id="goalUnit" class="inp" placeholder="e.g. %, RM, units"/></div>
+      </div>
+
+      <div id="goalOkrFields" class="hidden">
+        <label class="lbl">Key Results</label>
+        <div id="goalKeyResultsList" class="space-y-2 mb-2"></div>
+        <div class="grid grid-cols-5 gap-2">
+          <input id="newKrDescription" class="inp text-sm col-span-3" placeholder="Key result description"/>
+          <input id="newKrTarget" type="number" step="0.01" class="inp text-sm" placeholder="Target" value="100"/>
+          <button type="button" onclick="addKeyResultToForm()" class="btn-ghost text-xs">+ Add</button>
+        </div>
+        <p id="goalOkrHint" class="text-xs text-slate-400 mt-2 hidden">Save the goal first, then add key results.</p>
+      </div>
+
+      <div class="flex gap-2 pt-2">
+        <button type="button" onclick="submitGoal()" class="btn-primary">Save Goal</button>
+        <button type="button" onclick="closeGoalModal()" class="btn-ghost">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Manager Review Modal -->
+<div id="managerReviewModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <div>
+        <h2 id="mrModalTitle" class="text-base font-semibold">Manager Review</h2>
+        <p id="mrModalMeta" class="text-xs text-slate-400 mt-0.5">—</p>
+      </div>
+      <button onclick="closeManagerReviewModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <div class="p-6">
+      <div id="mrGoalsList" class="space-y-2 mb-4"></div>
+      <div class="bg-slate-50 rounded-lg p-3 mb-4 text-sm text-slate-600" id="mrSelfComments"></div>
+      <div class="mb-3">
+        <label class="lbl">Manager Rating <span class="text-slate-400 font-normal">(auto-computed from goals, editable)</span></label>
+        <input id="mrRating" type="number" step="0.01" min="1" max="5" class="inp" style="max-width:120px"/>
+      </div>
+      <div class="mb-4">
+        <label class="lbl">Manager Comments</label>
+        <textarea id="mrComments" class="inp" rows="3"></textarea>
+      </div>
+      <input type="hidden" id="mrAppraisalId"/>
+      <div class="flex gap-2">
+        <button type="button" onclick="submitManagerReview()" class="btn-primary">Submit Manager Review</button>
+        <button type="button" onclick="closeManagerReviewModal()" class="btn-ghost">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="payoutModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-md">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 id="payoutModalTitle" class="text-base font-semibold">Apply Merit Increment</h2>
+      <button onclick="closePayoutModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <div class="p-6 space-y-4">
+      <p id="payoutModalMeta" class="text-sm text-slate-500">—</p>
+      <div id="payoutIncrementField">
+        <label class="lbl">Increment (%)</label>
+        <input id="payoutIncrementPct" type="number" step="0.1" min="0.1" max="100" class="inp" placeholder="e.g. 5"/>
+      </div>
+      <div id="payoutBonusField" class="hidden">
+        <label class="lbl">Bonus Amount (RM)</label>
+        <input id="payoutBonusAmount" type="number" step="0.01" min="0.01" class="inp" placeholder="e.g. 1500"/>
+        <p class="text-xs text-slate-400 mt-1">Queued now, added to the employee's next payroll run automatically.</p>
+      </div>
+      <input type="hidden" id="payoutAppraisalId"/>
+      <div class="flex gap-2">
+        <button type="button" onclick="submitPayout()" class="btn-primary">Confirm</button>
+        <button type="button" onclick="closePayoutModal()" class="btn-ghost">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Institution Modal -->
+<div id="instModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-xl">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 id="instModalTitle" class="text-base font-semibold">Add Institution</h2>
+      <button onclick="closeInstModal()" class="text-slate-400 hover:text-slate-600">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <form onsubmit="submitInstForm(event)" class="p-6 space-y-4">
+      <input type="hidden" id="instId"/>
+      <div class="grid grid-cols-2 gap-4">
+        <div class="col-span-2">
+          <label class="block text-sm font-medium text-slate-700 mb-1">Company Logo</label>
+          <div class="flex items-center gap-3">
+            <div id="instLogoPreviewWrap" class="w-14 h-14 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center overflow-hidden flex-shrink-0">
+              <img id="instLogoPreview" src="" class="hidden w-full h-full object-cover"/>
+              <svg id="instLogoPlaceholder" class="w-6 h-6 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14M14 8h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+            </div>
+            <div class="flex-1">
+              <input id="instLogoFile" type="file" accept="image/*" class="text-xs" onchange="handleInstLogoFile(event)"/>
+              <button type="button" id="instLogoRemoveBtn" onclick="removeInstLogo()" class="hidden text-xs text-red-600 hover:text-red-700 mt-1">Remove logo</button>
+              <p class="text-xs text-slate-400 mt-0.5">PNG/JPG, max ~500KB</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-span-2">
+          <label class="block text-sm font-medium text-slate-700 mb-1">Company Name <span class="text-red-500">*</span></label>
+          <input id="instName" type="text" class="inp" required placeholder="Acme Corporation Sdn Bhd"/>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Company Code <span class="text-red-500">*</span></label>
+          <input id="instCode" type="text" class="inp" required placeholder="ACME" maxlength="20"/>
+          <p class="text-xs text-slate-400 mt-0.5">Short unique ID</p>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Plan</label>
+          <select id="instPlan" class="inp">
+            <option value="starter">Starter</option>
+            <option value="professional">Professional</option>
+            <option value="enterprise">Enterprise</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Max Employees</label>
+          <input id="instMaxEmp" type="number" class="inp" value="50" min="1"/>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Contact Name</label>
+          <input id="instContactName" type="text" class="inp" placeholder="Ahmad Razif"/>
+        </div>
+        <div class="col-span-2">
+          <label class="block text-sm font-medium text-slate-700 mb-1">Contact Email <span class="text-red-500">*</span></label>
+          <input id="instContactEmail" type="email" class="inp" required placeholder="hr@company.com"/>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Phone</label>
+          <input id="instPhone" type="text" class="inp" placeholder="+603-1234 5678"/>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Address</label>
+          <input id="instAddress" type="text" class="inp" placeholder="Kuala Lumpur, Malaysia"/>
+        </div>
+      </div>
+      <div id="instAdminSection">
+        <div class="border-t border-slate-200 pt-4">
+          <p class="text-sm font-semibold text-slate-700 mb-3">Initial HR Manager Account</p>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm font-medium text-slate-700 mb-1">Username <span class="text-red-500">*</span></label>
+              <input id="instAdminUser" type="text" class="inp" placeholder="acme_admin"/>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-slate-700 mb-1">Full Name <span class="text-red-500">*</span></label>
+              <input id="instAdminName" type="text" class="inp" placeholder="Ahmad Razif"/>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-slate-700 mb-1">Password <span class="text-red-500">*</span></label>
+              <input id="instAdminPass" type="password" class="inp"/>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-slate-700 mb-1">Admin Email</label>
+              <input id="instAdminEmail" type="email" class="inp" placeholder="admin@acme.com"/>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p id="instFormErr" class="hidden text-sm text-red-600"></p>
+      <div class="flex justify-end gap-2 pt-1">
+        <button type="button" onclick="closeInstModal()" class="btn-ghost">Cancel</button>
+        <button type="submit" id="instSubmitBtn" class="btn-primary">Create Institution</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Employee Add/Edit Modal -->
+<div id="empModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-3xl">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 id="empModalTitle" class="text-base font-semibold">Add Employee</h2>
+      <button onclick="closeEmpModal()" class="text-slate-400 hover:text-slate-600">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="flex border-b border-slate-200 px-6 gap-1">
+      <button class="tab-btn tab-active px-4 py-3 text-sm" data-tab="personal" onclick="switchTab('personal')">Personal Info</button>
+      <button class="tab-btn px-4 py-3 text-sm text-slate-500" data-tab="employment" onclick="switchTab('employment')">Employment</button>
+      <button class="tab-btn px-4 py-3 text-sm text-slate-500" data-tab="statutory" onclick="switchTab('statutory')">Statutory &amp; Payroll</button>
+    </div>
+    <form id="empForm" onsubmit="submitEmpForm(event)" class="p-6">
+      <div id="tab-personal" class="tab-panel grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Employee ID</label>
+          <input id="fEmployeeId" type="text" class="inp" placeholder="Auto-generated" readonly/>
+          <p id="fEmployeeIdHint" class="hidden text-xs text-slate-400 mt-1">Must be unique within this institution.</p>
+        </div>
+        <div class="md:col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1">Full Name <span class="text-red-500">*</span></label><input id="fFullName" type="text" class="inp" required/></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Preferred Name</label><input id="fPreferredName" type="text" class="inp"/></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">IC Number <span class="text-red-500">*</span></label><input id="fIcNumber" type="text" class="inp" required placeholder="900101-14-1234"/></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Passport Number</label><input id="fPassportNumber" type="text" class="inp"/></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Nationality</label><input id="fNationality" type="text" class="inp" value="Malaysian"/></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Race <span class="text-red-500">*</span></label><select id="fRace" class="inp" required><option value="">Select</option></select></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Religion <span class="text-red-500">*</span></label><select id="fReligion" class="inp" required><option value="">Select</option></select></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Gender <span class="text-red-500">*</span></label><select id="fGender" class="inp" required><option value="">Select</option><option>Male</option><option>Female</option></select></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Date of Birth <span class="text-red-500">*</span></label><input id="fDateOfBirth" type="date" class="inp" required/></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Marital Status <span class="text-red-500">*</span></label><select id="fMaritalStatus" class="inp" required><option value="">Select</option></select></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Personal Email</label><input id="fPersonalEmail" type="email" class="inp"/></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Phone <span class="text-red-500">*</span></label><input id="fPhone" type="text" class="inp" required placeholder="+60123456789"/></div>
+        <div class="md:col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1">Address</label><textarea id="fAddress" class="inp" style="height:5rem;resize:none"></textarea></div>
+      </div>
+      <div id="tab-employment" class="tab-panel hidden grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Department <span class="text-red-500">*</span></label><input id="fDepartment" type="text" class="inp" required/></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Designation <span class="text-red-500">*</span></label><input id="fDesignation" type="text" class="inp" required/></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Employment Type <span class="text-red-500">*</span></label><select id="fEmploymentType" class="inp" required><option value="">Select</option></select></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Start Date <span class="text-red-500">*</span></label><input id="fStartDate" type="date" class="inp" required/></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Probation End</label><input id="fProbationEndDate" type="date" class="inp"/></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Contract End</label><input id="fContractEndDate" type="date" class="inp"/></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Work Email</label><input id="fWorkEmail" type="email" class="inp"/></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Reports To</label>
+          <select id="fReportsTo" class="inp"><option value="">None (Top Level)</option><option value="SELF">⭐ Self (CEO / Top of Org)</option></select>
+        </div>
+      </div>
+      <div id="tab-statutory" class="tab-panel hidden grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">EPF Number</label><input id="fEpfNumber" type="text" class="inp"/></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">SOCSO Number</label><input id="fSocsoNumber" type="text" class="inp"/></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Income Tax No.</label><input id="fIncomeTaxNumber" type="text" class="inp"/></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Salary Type</label>
+          <select id="fSalaryType" class="inp" onchange="toggleSalaryTypeFields()">
+            <option value="Monthly">Monthly</option>
+            <option value="Hourly">Hourly</option>
+          </select>
+        </div>
+        <div id="fBasicSalaryWrap"><label class="block text-sm font-medium text-slate-700 mb-1">Basic Salary (RM/month)</label><input id="fBasicSalary" type="number" step="0.01" min="0" class="inp" value="0"/></div>
+        <div id="fHourlyRateWrap" class="hidden"><label class="block text-sm font-medium text-slate-700 mb-1">Hourly Rate (RM/hour)</label><input id="fHourlyRate" type="number" step="0.01" min="0" class="inp" value="0"/></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Bank Name</label><select id="fBankName" class="inp"><option value="">Select bank</option></select></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Bank Account</label><input id="fBankAccount" type="text" class="inp"/></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">No. of Children <span class="text-slate-400 font-normal">(for PCB relief)</span></label><input id="fNumChildren" type="number" step="1" min="0" class="inp" value="0"/></div>
+      </div>
+      <p id="empFormErr" class="hidden text-sm text-red-600 mt-3"></p>
+      <div class="flex justify-between items-center pt-4 mt-2 border-t border-slate-100">
+        <div class="flex gap-2">
+          <button type="button" id="prevTabBtn" onclick="prevTab()" class="btn-ghost hidden">← Previous</button>
+          <button type="button" id="nextTabBtn" onclick="nextTab()" class="btn-primary">Next →</button>
+        </div>
+        <div class="flex gap-2">
+          <button type="button" onclick="closeEmpModal()" class="btn-ghost">Cancel</button>
+          <button type="submit" id="empSubmitBtn" class="btn-primary hidden">Save Employee</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Employee View Modal -->
+<div id="viewModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-3xl">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <div>
+        <h2 id="viewName" class="text-base font-semibold">—</h2>
+        <p id="viewMeta" class="text-xs text-slate-500 mt-0.5">—</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <span id="viewBadge" class="badge"></span>
+        <button onclick="closeViewModal()" class="text-slate-400 hover:text-slate-600">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="flex border-b border-slate-200 px-6 gap-1">
+      <button class="view-tab-btn view-tab-active px-4 py-3 text-sm" data-vtab="vt-personal" onclick="switchViewTab('vt-personal')">Personal Info</button>
+      <button class="view-tab-btn px-4 py-3 text-sm text-slate-500" data-vtab="vt-employment" onclick="switchViewTab('vt-employment')">Employment</button>
+      <button class="view-tab-btn px-4 py-3 text-sm text-slate-500" data-vtab="vt-statutory" onclick="switchViewTab('vt-statutory')">Statutory &amp; Payroll</button>
+      <button id="vt-notes-btn" class="view-tab-btn px-4 py-3 text-sm text-slate-500 hidden" data-vtab="vt-notes" onclick="switchViewTab('vt-notes')">HR Notes 🔒</button>
+    </div>
+    <div id="vt-personal" class="view-tab-panel p-6"></div>
+    <div id="vt-employment" class="view-tab-panel p-6 hidden"></div>
+    <div id="vt-statutory" class="view-tab-panel p-6 hidden"></div>
+    <div id="vt-notes" class="view-tab-panel p-6 hidden">
+      <div id="noteForm" class="mb-5 bg-slate-50 border border-slate-200 rounded-xl p-4">
+        <div class="flex gap-3 mb-3">
+          <select id="noteType" class="inp flex-1" style="font-size:.875rem">
+            <option value="general">General Note</option>
+            <option value="disciplinary">Disciplinary</option>
+            <option value="performance">Performance</option>
+            <option value="warning">Warning</option>
+            <option value="commendation">Commendation</option>
+          </select>
+          <button onclick="submitNote()" class="btn-primary">Add Note</button>
+        </div>
+        <textarea id="noteBody" class="inp" style="height:5rem;resize:none;font-size:.875rem" placeholder="Write note here…"></textarea>
+        <p id="noteError" class="hidden text-xs text-red-600 mt-1"></p>
+      </div>
+      <div id="notesList" class="space-y-3"></div>
+    </div>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200">
+      <button id="viewEditBtn" onclick="editFromView()" class="btn-primary hidden">Edit</button>
+      <button id="viewToggleBtn" onclick="toggleStatusFromView()" class="btn-ghost hidden"></button>
+      <div class="flex-1"></div>
+      <button onclick="closeViewModal()" class="btn-ghost">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Start Onboarding/Offboarding Modal -->
+<div id="startObModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-md">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 id="startObTitle" class="text-base font-semibold">Start Onboarding</h2>
+      <button onclick="closeStartObModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form onsubmit="submitStartOb(event)" class="p-6 space-y-4">
+      <input type="hidden" id="startObType"/>
+      <div><label class="lbl">Employee <span class="text-red-500">*</span></label><select id="startObEmpId" class="inp" required></select></div>
+      <div><label class="lbl">Notes</label><textarea id="startObNotes" class="inp" rows="2" placeholder="Optional notes…"></textarea></div>
+      <p id="startObErr" class="hidden text-sm text-red-600"></p>
+      <div class="flex justify-end gap-2"><button type="button" onclick="closeStartObModal()" class="btn-ghost">Cancel</button><button type="submit" class="btn-primary" id="startObSubmitBtn">Start</button></div>
+    </form>
+  </div>
+</div>
+
+<!-- OB Checklist Detail Modal -->
+<div id="obDetailModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <div>
+        <h2 id="obDetailTitle" class="text-base font-semibold">Checklist</h2>
+        <p id="obDetailMeta" class="text-xs text-slate-500 mt-0.5"></p>
+      </div>
+      <button onclick="closeObDetail()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <div class="px-6 py-3 bg-slate-50 border-b border-slate-200">
+      <div class="flex items-center gap-3">
+        <div class="flex-1 bg-slate-200 rounded-full h-2"><div id="obProgressBar" class="bg-blue-500 h-2 rounded-full transition-all" style="width:0%"></div></div>
+        <span id="obProgressLabel" class="text-xs text-slate-500 whitespace-nowrap">0 / 0</span>
+        <span id="obStatusBadge" class="badge bg-blue-100 text-blue-700">In Progress</span>
+      </div>
+    </div>
+    <div id="obItemsContainer" class="p-6 space-y-2 max-h-[60vh] overflow-y-auto"></div>
+  </div>
+</div>
+
+<!-- OB Templates Modal -->
+<div id="obTemplatesModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 id="obTemplatesTitle" class="text-base font-semibold">Manage Templates</h2>
+      <button onclick="closeObTemplates()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <div class="p-6">
+      <div id="obTemplatesList" class="space-y-2 mb-4 max-h-80 overflow-y-auto"></div>
+      <div class="border-t border-slate-200 pt-4">
+        <p class="text-sm font-medium text-slate-700 mb-2">Add Item</p>
+        <div class="grid grid-cols-2 gap-2">
+          <input type="hidden" id="obTmplType"/>
+          <input id="obTmplTitle" class="inp col-span-2" placeholder="Item title *"/>
+          <input id="obTmplDesc" class="inp col-span-2" placeholder="Description (optional)"/>
+          <select id="obTmplRole" class="inp">
+            <option value="employee">Employee</option>
+            <option value="manager">Manager</option>
+            <option value="hr_admin" selected>HR Admin</option>
+            <option value="hr_manager">HR Manager</option>
+          </select>
+          <select id="obTmplLdCourse" class="inp col-span-2">
+            <option value="">No linked course — manual completion</option>
+          </select>
+          <p class="text-xs text-slate-400 col-span-2 -mt-1">If linked, this item auto-completes when the employee finishes the course (passes its quiz, or is marked complete if it has no quiz).</p>
+          <button onclick="addObTemplate()" class="btn-primary text-sm col-span-2">Add Item</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- LD Course Modal -->
+<div id="ldCourseModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-md">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 id="ldCourseModalTitle" class="text-base font-semibold">Add Course</h2>
+      <button onclick="closeLdCourseModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form onsubmit="submitLdCourse(event)" class="p-6 space-y-4">
+      <input type="hidden" id="ldCourseId"/>
+      <div><label class="lbl">Title <span class="text-red-500">*</span></label><input id="ldCourseTitle" class="inp" required/></div>
+      <div><label class="lbl">Category <span class="text-red-500">*</span></label>
+        <select id="ldCourseCategory" class="inp" required>
+          <option value="mandatory">Mandatory / Compliance</option>
+          <option value="professional_development" selected>Professional Development</option>
+          <option value="certification">Certification</option>
+        </select>
+      </div>
+      <div><label class="lbl">Description</label><textarea id="ldCourseDesc" class="inp" rows="3"></textarea></div>
+      <div><label class="lbl">Cost (RM)</label><input id="ldCourseCost" type="number" step="0.01" min="0" class="inp" value="0"/>
+        <p class="text-xs text-slate-400 mt-1">Courses with a cost above 0 require manager/HR approval before an employee can start.</p>
+      </div>
+      <div class="flex gap-2 pt-2">
+        <button type="submit" class="btn-primary">Save</button>
+        <button type="button" onclick="closeLdCourseModal()" class="btn-ghost">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- LD Enroll Modal -->
+<div id="ldEnrollModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-md">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 id="ldEnrollModalTitle" class="text-base font-semibold">Enroll in Course</h2>
+      <button onclick="closeLdEnrollModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form onsubmit="submitLdEnroll(event)" class="p-6 space-y-4">
+      <input type="hidden" id="ldEnrollCourseId"/>
+      <div id="ldEnrollEmpWrap" class="hidden">
+        <label class="lbl">Employee <span class="text-red-500">*</span></label>
+        <select id="ldEnrollEmpId" class="inp" required></select>
+      </div>
+      <div><label class="lbl">Notes</label><textarea id="ldEnrollNotes" class="inp" rows="2" placeholder="Optional notes…"></textarea></div>
+      <p id="ldEnrollCostNote" class="hidden text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2"></p>
+      <div class="flex gap-2 pt-2">
+        <button type="submit" class="btn-primary">Enroll</button>
+        <button type="button" onclick="closeLdEnrollModal()" class="btn-ghost">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- LD Quiz Builder Modal -->
+<div id="ldQuizModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 id="ldQuizModalTitle" class="text-base font-semibold">Quiz for Course</h2>
+      <button onclick="closeLdQuizModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <div class="p-6">
+      <input type="hidden" id="ldQuizCourseId"/>
+      <div class="grid grid-cols-3 gap-3 mb-4">
+        <div class="col-span-3"><label class="lbl">Quiz Title <span class="text-red-500">*</span></label><input id="ldQuizTitle" class="inp" placeholder="e.g. Workplace Safety Quiz"/></div>
+        <div><label class="lbl">Pass Threshold (%)</label><input id="ldQuizPassThreshold" type="number" min="1" max="100" class="inp" value="80"/></div>
+        <div><label class="lbl">Max Attempts</label><input id="ldQuizMaxAttempts" type="number" min="1" class="inp" value="3"/></div>
+        <div class="col-span-3 flex items-center gap-5 pt-1">
+          <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+            <input type="checkbox" id="ldQuizRandomizeQuestions" class="w-4 h-4"/> Randomize question order
+          </label>
+          <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+            <input type="checkbox" id="ldQuizRandomizeOptions" class="w-4 h-4"/> Randomize answer order
+          </label>
+        </div>
+      </div>
+      <div id="ldQuizQuestions" class="space-y-4 mb-4"></div>
+      <button type="button" onclick="addLdQuizQuestion()" class="btn-ghost text-sm">+ Add Question</button>
+      <div class="flex gap-2 pt-4 border-t border-slate-200 mt-4">
+        <button type="button" onclick="submitLdQuiz()" class="btn-primary">Save Quiz</button>
+        <button type="button" onclick="closeLdQuizModal()" class="btn-ghost">Cancel</button>
+        <div class="flex-1"></div>
+        <button id="ldQuizDeleteBtn" type="button" onclick="deleteLdQuiz()" class="hidden text-sm text-red-600 hover:text-red-700 px-3">Remove Quiz</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- LD Take Quiz Modal -->
+<div id="ldTakeQuizModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 id="ldTakeQuizTitle" class="text-base font-semibold">Quiz</h2>
+      <button onclick="closeLdTakeQuizModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <div class="p-6">
+      <input type="hidden" id="ldTakeQuizId"/>
+      <input type="hidden" id="ldTakeQuizEnrollId"/>
+      <div id="ldTakeQuizResult" class="hidden mb-4 rounded-xl p-4 text-sm"></div>
+      <div id="ldTakeQuizQuestions" class="space-y-5"></div>
+      <div class="flex gap-2 pt-4 border-t border-slate-200 mt-4">
+        <button id="ldTakeQuizSubmitBtn" type="button" onclick="submitLdQuizAttempt()" class="btn-primary">Submit Answers</button>
+        <button type="button" onclick="closeLdTakeQuizModal()" class="btn-ghost">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- LD Quiz Preview Modal (HR — not recorded) -->
+<div id="ldPreviewQuizModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <div>
+        <h2 id="ldPreviewQuizTitle" class="text-base font-semibold">Quiz Preview</h2>
+        <span class="badge text-xs bg-amber-100 text-amber-700 mt-1">Preview mode — nothing is recorded</span>
+      </div>
+      <button onclick="closeLdPreviewQuizModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <div class="p-6">
+      <div id="ldPreviewQuizResult" class="hidden mb-4 rounded-xl p-4 text-sm"></div>
+      <div id="ldPreviewQuizQuestions" class="space-y-5"></div>
+      <div class="flex gap-2 pt-4 border-t border-slate-200 mt-4">
+        <button id="ldPreviewQuizSubmitBtn" type="button" onclick="submitLdQuizPreview()" class="btn-primary">Check Answers</button>
+        <button id="ldPreviewQuizRetryBtn" type="button" onclick="openLdPreviewQuizModal(window.ldPreviewCourseId)" class="btn-ghost hidden">Try Again</button>
+        <button type="button" onclick="closeLdPreviewQuizModal()" class="btn-ghost">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Apply for Leave Modal -->
+<div id="leaveApplyModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-md">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 class="text-base font-semibold">Apply for Leave</h2>
+      <button onclick="closeLeaveApplyModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form onsubmit="submitLeaveApplication(event)" class="p-6 space-y-4">
+      <div id="leaveApplyEmpWrap" class="hidden">
+        <label class="lbl">Employee <span class="text-red-500">*</span></label>
+        <select id="leaveApplyEmpId" class="inp" required></select>
+      </div>
+      <div><label class="lbl">Leave Type <span class="text-red-500">*</span></label>
+        <select id="leaveApplyTypeId" class="inp" required onchange="updateLeaveApplyBalanceNote()"></select>
+        <p id="leaveApplyBalanceNote" class="text-xs text-slate-400 mt-1"></p>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="lbl">Start Date <span class="text-red-500">*</span></label><input id="leaveApplyStart" type="date" class="inp" required onchange="updateLeaveApplyDaysPreview()"/></div>
+        <div><label class="lbl">End Date <span class="text-red-500">*</span></label><input id="leaveApplyEnd" type="date" class="inp" required onchange="updateLeaveApplyDaysPreview()"/></div>
+      </div>
+      <p id="leaveApplyDaysPreview" class="text-xs text-slate-500"></p>
+      <div><label class="lbl">Reason</label><textarea id="leaveApplyReason" class="inp" rows="2" placeholder="Optional notes…"></textarea></div>
+      <div id="leaveApplyAttachWrap" class="hidden">
+        <label class="lbl">Supporting Document <span class="text-red-500">*</span></label>
+        <input id="leaveApplyAttachFile" type="file" accept="image/*" class="text-xs" onchange="handleLeaveAttachFile(event)"/>
+        <p class="text-xs text-slate-400 mt-1">Required for this leave type (e.g. medical certificate). Max ~500KB.</p>
+      </div>
+      <p id="leaveApplyErr" class="hidden text-xs text-red-600"></p>
+      <div class="flex gap-2 pt-2">
+        <button type="submit" class="btn-primary">Submit Application</button>
+        <button type="button" onclick="closeLeaveApplyModal()" class="btn-ghost">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Add Holiday Modal -->
+<div id="holidayModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 class="text-base font-semibold">Add Public Holiday</h2>
+      <button onclick="closeHolidayModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form onsubmit="submitHoliday(event)" class="p-6 space-y-4">
+      <div><label class="lbl">Holiday Name <span class="text-red-500">*</span></label><input id="holidayName" class="inp" required placeholder="e.g. Merdeka Day"/></div>
+      <div><label class="lbl">Date <span class="text-red-500">*</span></label><input id="holidayDate" type="date" class="inp" required/></div>
+      <div class="flex gap-2 pt-2">
+        <button type="submit" class="btn-primary">Add Holiday</button>
+        <button type="button" onclick="closeHolidayModal()" class="btn-ghost">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Add/Edit Leave Type Modal -->
+<div id="leaveTypeModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 id="leaveTypeModalTitle" class="text-base font-semibold">Add Leave Type</h2>
+      <button onclick="closeLeaveTypeModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form onsubmit="submitLeaveType(event)" class="p-6 space-y-4">
+      <input type="hidden" id="leaveTypeId"/>
+      <div><label class="lbl">Name <span class="text-red-500">*</span></label><input id="leaveTypeName" class="inp" required placeholder="e.g. Annual Leave"/></div>
+      <div><label class="lbl">Annual Entitlement (days)</label><input id="leaveTypeEntitlement" type="number" step="0.5" min="0" class="inp" value="14"/></div>
+      <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+        <input type="checkbox" id="leaveTypeRequiresApproval" class="w-4 h-4" checked/> Requires manager/HR approval
+      </label>
+      <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+        <input type="checkbox" id="leaveTypeRequiresAttachment" class="w-4 h-4"/> Requires supporting document (e.g. MC)
+      </label>
+      <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+        <input type="checkbox" id="leaveTypeIsPaid" class="w-4 h-4" checked/> Paid leave <span class="text-slate-400 font-normal">(unchecked = docks pay in Payroll)</span>
+      </label>
+      <div class="flex gap-2 pt-2">
+        <button type="submit" class="btn-primary">Save</button>
+        <button type="button" onclick="closeLeaveTypeModal()" class="btn-ghost">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Add/Edit Project Modal (with member management) -->
+<div id="projectModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 flex-shrink-0">
+      <h2 id="projectModalTitle" class="text-base font-semibold">Add Project</h2>
+      <button onclick="closeProjectModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+
+    <!-- Tabs: Tasks only relevant once the project exists -->
+    <div id="projectModalTabs" class="flex border-b border-slate-200 px-6 flex-shrink-0">
+      <button class="project-tab-btn project-tab-active px-3 py-2.5 text-sm" data-ptab="details" onclick="switchProjectTab('details')">Details</button>
+      <button id="projectTabTasksBtn" class="project-tab-btn hidden px-3 py-2.5 text-sm text-slate-500" data-ptab="tasks" onclick="switchProjectTab('tasks')">Tasks</button>
+    </div>
+
+    <div class="p-6 overflow-y-auto flex-1">
+      <input type="hidden" id="projectId"/>
+
+      <!-- Details tab -->
+      <div id="projectTab-details" class="project-tab-pane space-y-4">
+        <div><label class="lbl">Project Name <span class="text-red-500">*</span></label><input id="projectName" class="inp" required/></div>
+        <div><label class="lbl">Description</label><textarea id="projectDesc" class="inp" rows="2"></textarea></div>
+        <div><label class="lbl">Status</label>
+          <select id="projectStatus" class="inp">
+            <option value="Active">Active</option>
+            <option value="On Hold">On Hold</option>
+            <option value="Completed">Completed</option>
+          </select>
+        </div>
+        <div class="flex gap-2">
+          <button type="button" onclick="submitProject()" class="btn-primary">Save</button>
+          <button type="button" onclick="closeProjectModal()" class="btn-ghost">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Tasks tab -->
+      <div id="projectTab-tasks" class="project-tab-pane hidden">
+        <div id="projectTaskList" class="space-y-2 mb-3"></div>
+        <div id="projectTaskForm" class="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2">
+          <input type="hidden" id="projectTaskId"/>
+          <input id="projectTaskName" class="inp text-sm" placeholder="Task name…"/>
+          <textarea id="projectTaskDesc" class="inp text-sm" rows="2" placeholder="Description (optional)…"></textarea>
+          <div class="grid grid-cols-3 gap-2">
+            <input id="projectTaskHours" type="number" step="0.5" min="0" class="inp text-sm" placeholder="Est. hours"/>
+            <input id="projectTaskStart" type="date" class="inp text-sm"/>
+            <input id="projectTaskEnd" type="date" class="inp text-sm"/>
+          </div>
+          <select id="projectTaskStatus" class="inp text-sm">
+            <option value="Not Started">Not Started</option>
+            <option value="In Progress">In Progress</option>
+            <option value="Completed">Completed</option>
+          </select>
+          <div class="flex gap-2">
+            <button type="button" onclick="submitProjectTask()" class="btn-primary text-xs px-3 py-1.5">Save Task</button>
+            <button type="button" onclick="resetProjectTaskForm()" class="btn-ghost text-xs px-3 py-1.5">Clear</button>
+          </div>
+
+          <!-- Per-member expected effort — only available once the task has been saved -->
+          <div id="taskAssignSection" class="hidden border-t border-slate-200 pt-2 mt-1">
+            <p class="text-xs font-semibold text-slate-600 mb-1">Assigned Team Members <span class="text-slate-400 font-normal">— expected effort</span></p>
+            <div id="taskAssignOpenBanner" class="hidden flex items-center justify-between gap-2 bg-blue-50 border border-blue-100 rounded-lg px-2.5 py-1.5 mb-2">
+              <span class="text-xs text-blue-700">Open to all — every employee can clock hours to this task</span>
+              <button type="button" onclick="removeTaskOpenToAll()" class="text-xs text-blue-600 hover:underline flex-shrink-0">Restrict</button>
+            </div>
+            <div id="taskAssignList" class="space-y-1 mb-2 max-h-32 overflow-y-auto"></div>
+            <div class="grid grid-cols-2 gap-2 mb-2">
+              <select id="taskAssignEmpId" class="inp text-sm" onchange="toggleTaskAssignAllMode()"></select>
+              <input id="taskAssignStart" type="datetime-local" class="inp text-sm" title="Start date &amp; time"/>
+            </div>
+            <div class="flex gap-2">
+              <input id="taskAssignDuration" type="number" step="0.5" min="0.5" class="inp text-sm flex-1" placeholder="Duration (hours)"/>
+              <button type="button" onclick="addTaskAssignment()" class="btn-primary text-xs px-3">Assign</button>
+            </div>
+          </div>
+          <p id="taskAssignHint" class="text-xs text-slate-400 italic pt-1">Save the task first to assign team members.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Timesheet Detail Viewer Modal (approvals) -->
+<div id="timesheetDetailModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <div>
+        <h2 id="timesheetDetailTitle" class="text-base font-semibold">Timesheet</h2>
+        <p id="timesheetDetailMeta" class="text-xs text-slate-500 mt-0.5"></p>
+      </div>
+      <button onclick="closeTimesheetDetailModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <div class="p-6">
+      <table class="w-full text-sm mb-4">
+        <thead class="text-slate-500 text-xs uppercase border-b border-slate-200">
+          <tr><th class="py-2 text-left">Date</th><th class="py-2 text-left">Project</th><th class="py-2 text-left">Task</th><th class="py-2 text-left">Hours</th><th class="py-2 text-left">Description</th></tr>
+        </thead>
+        <tbody id="timesheetDetailBody"></tbody>
+      </table>
+      <p id="timesheetDetailTotal" class="text-sm font-medium text-slate-700 mb-4"></p>
+      <div id="timesheetDetailActions" class="flex gap-2"></div>
+    </div>
+  </div>
+</div>
+
+<!-- LD Module Editor Modal (HR) -->
+<div id="ldModulesModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 id="ldModulesModalTitle" class="text-base font-semibold">Course Content</h2>
+      <button onclick="closeLdModulesModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <div class="p-6">
+      <input type="hidden" id="ldModulesCourseId"/>
+      <div id="ldModulesList" class="space-y-4 mb-4"></div>
+      <div class="flex gap-2">
+        <button type="button" onclick="addLdModule('text')" class="btn-ghost text-sm">+ Text Lesson</button>
+        <button type="button" onclick="addLdModule('video')" class="btn-ghost text-sm">+ Video Lesson</button>
+      </div>
+      <div class="flex gap-2 pt-4 border-t border-slate-200 mt-4">
+        <button type="button" onclick="submitLdModules()" class="btn-primary">Save Content</button>
+        <button type="button" onclick="closeLdModulesModal()" class="btn-ghost">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- LD Course Viewer Modal (Employee) -->
+<div id="ldViewerModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <div>
+        <h2 id="ldViewerTitle" class="text-base font-semibold">Course</h2>
+        <p id="ldViewerProgress" class="text-xs text-slate-500 mt-0.5"></p>
+      </div>
+      <button onclick="closeLdViewerModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <div id="ldViewerBody" class="p-6 space-y-4 max-h-[65vh] overflow-y-auto"></div>
+  </div>
+</div>
+
+<!-- User Modal -->
+<div id="userModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 id="userModalTitle" class="text-base font-semibold">Add User</h2>
+      <button onclick="closeUserModal()" class="text-slate-400 hover:text-slate-600">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <form onsubmit="submitUserForm(event)" class="p-6 space-y-4">
+      <input type="hidden" id="editingUserId"/>
+      <div class="grid grid-cols-2 gap-4">
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Username <span class="text-red-500">*</span></label><input id="uUsername" type="text" class="inp" required/></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Full Name <span class="text-red-500">*</span></label><input id="uFullName" type="text" class="inp" required/></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Email</label><input id="uEmail" type="email" class="inp"/></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Password</label><input id="uPassword" type="password" class="inp"/></div>
+        <div class="col-span-2">
+          <label class="block text-sm font-medium text-slate-700 mb-1">Roles <span class="text-red-500">*</span></label>
+          <div id="uRolesWrap" class="flex flex-wrap gap-3 mb-2"></div>
+          <label class="block text-xs text-slate-500 mb-1">Active / Primary Role</label>
+          <select id="uRole" class="inp" required></select>
+        </div>
+        <div class="col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1">Linked Employee</label><select id="uEmployeeId" class="inp"><option value="">Not linked</option></select></div>
+        <p class="col-span-2 text-xs text-slate-400 -mt-2">Department for manager-scoped approvals is taken automatically from the linked employee record above.</p>
+        <div id="uInstWrap" class="col-span-2 hidden"><label class="block text-sm font-medium text-slate-700 mb-1">Institution</label><select id="uInstitution" class="inp"><option value="">Platform Admin (no institution)</option></select></div>
+        <div class="flex items-center gap-2 col-span-2">
+          <input id="uIsActive" type="checkbox" class="w-4 h-4" checked/>
+          <label class="text-sm font-medium text-slate-700">Active</label>
+        </div>
+      </div>
+      <p id="userFormErr" class="hidden text-sm text-red-600"></p>
+      <div class="flex justify-end gap-2">
+        <button type="button" onclick="closeUserModal()" class="btn-ghost">Cancel</button>
+        <button type="submit" class="btn-primary">Save User</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Requisition Modal -->
+<div id="reqModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 id="reqModalTitle" class="text-base font-semibold">New Job Requisition</h2>
+      <button onclick="closeReqModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form onsubmit="submitReqForm(event)" class="p-6 space-y-4">
+      <input type="hidden" id="reqId"/>
+      <div class="grid grid-cols-2 gap-4">
+        <div class="col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1">Position Title <span class="text-red-500">*</span></label><input id="reqTitle" type="text" class="inp" required placeholder="Senior Software Engineer"/></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Department <span class="text-red-500">*</span></label><input id="reqDept" type="text" class="inp" required placeholder="Engineering"/></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Headcount</label><input id="reqHeadcount" type="number" class="inp" value="1" min="1"/></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Employment Type</label><select id="reqEmpType" class="inp"></select></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Priority</label><select id="reqPriority" class="inp"><option>Low</option><option selected>Normal</option><option>High</option><option>Urgent</option></select></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Min Salary (RM)</label><input id="reqSalMin" type="number" class="inp" min="0" placeholder="3000"/></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Max Salary (RM)</label><input id="reqSalMax" type="number" class="inp" min="0" placeholder="6000"/></div>
+        <div class="col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1">Job Description</label><textarea id="reqDescription" class="inp" style="height:5rem;resize:none" placeholder="Describe the role and responsibilities…"></textarea></div>
+        <div class="col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1">Requirements</label><textarea id="reqRequirements" class="inp" style="height:5rem;resize:none" placeholder="Required qualifications, skills, experience…"></textarea></div>
+      </div>
+      <p id="reqFormErr" class="hidden text-sm text-red-600"></p>
+      <div class="flex justify-end gap-2">
+        <button type="button" onclick="closeReqModal()" class="btn-ghost">Cancel</button>
+        <button type="submit" id="reqSubmitBtn" class="btn-primary">Save Draft</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Requisition Detail / Approval Modal -->
+<div id="reqDetailModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <div><h2 id="rdTitle" class="text-base font-semibold">—</h2><p id="rdMeta" class="text-xs text-slate-500 mt-0.5">—</p></div>
+      <div class="flex items-center gap-2"><span id="rdBadge" class="badge"></span><button onclick="closeReqDetailModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></div>
+    </div>
+    <div id="rdBody" class="p-6 space-y-4 text-sm"></div>
+    <div id="rdApprovalSection" class="hidden px-6 pb-4 border-t border-slate-100 pt-4">
+      <p class="text-sm font-medium text-slate-700 mb-2">Approval Decision</p>
+      <textarea id="rdComments" class="inp mb-3" style="height:4rem;resize:none" placeholder="Optional comments…"></textarea>
+      <div class="flex gap-2">
+        <button onclick="approveReq('approve')" class="btn-primary" style="background:#059669">Approve</button>
+        <button onclick="approveReq('reject')" class="btn-ghost" style="color:#dc2626">Reject</button>
+      </div>
+    </div>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200">
+      <button id="rdEditBtn" onclick="editReqFromDetail()" class="btn-primary hidden">Edit</button>
+      <button id="rdSubmitBtn" onclick="submitReqForApproval()" class="btn-primary hidden" style="background:#7c3aed">Submit for Approval</button>
+      <button id="rdCloseBtn" onclick="closeReqAction()" class="btn-ghost hidden" style="color:#dc2626">Close Requisition</button>
+      <div class="flex-1"></div>
+      <button onclick="closeReqDetailModal()" class="btn-ghost">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Candidate Modal (Add/Edit) -->
+<div id="candModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 id="candModalTitle" class="text-base font-semibold">Add Candidate</h2>
+      <button onclick="closeCandModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <!-- Tab bar -->
+    <div class="flex border-b border-slate-200 px-6">
+      <button type="button" data-cmtab="cm-personal"  onclick="switchCandFormTab('cm-personal')"  class="cand-form-tab view-tab-active  py-3 px-4 text-sm font-medium border-b-2 border-blue-600 text-blue-600 -mb-px">Personal Info</button>
+      <button type="button" data-cmtab="cm-employment" onclick="switchCandFormTab('cm-employment')" class="cand-form-tab text-slate-500 py-3 px-4 text-sm font-medium border-b-2 border-transparent -mb-px hover:text-slate-700">Employment</button>
+      <button type="button" data-cmtab="cm-education"  onclick="switchCandFormTab('cm-education')"  class="cand-form-tab text-slate-500 py-3 px-4 text-sm font-medium border-b-2 border-transparent -mb-px hover:text-slate-700">Education</button>
+      <button type="button" data-cmtab="cm-others"     onclick="switchCandFormTab('cm-others')"     class="cand-form-tab text-slate-500 py-3 px-4 text-sm font-medium border-b-2 border-transparent -mb-px hover:text-slate-700">Others</button>
+    </div>
+    <form onsubmit="submitCandForm(event)">
+      <input type="hidden" id="candId"/>
+
+      <!-- Tab: Personal Info -->
+      <div id="cm-personal" class="p-6 grid grid-cols-2 gap-4">
+        <div class="col-span-2"><label class="lbl">Full Name <span class="text-red-500">*</span></label><input id="candFullName" type="text" class="inp" required/></div>
+        <div><label class="lbl">Email</label><input id="candEmail" type="email" class="inp"/></div>
+        <div><label class="lbl">Phone</label><input id="candPhone" type="tel" class="inp" placeholder="012-3456789"/></div>
+        <div><label class="lbl">IC Number</label><input id="candIc" type="text" class="inp" placeholder="900101-14-1234"/></div>
+        <div><label class="lbl">Nationality</label><input id="candNationality" type="text" class="inp" value="Malaysian"/></div>
+        <div><label class="lbl">Gender</label>
+          <select id="candGender" class="inp">
+            <option value="">Prefer not to say</option>
+            <option>Male</option><option>Female</option>
+          </select>
+        </div>
+        <div><label class="lbl">Date of Birth</label><input id="candDob" type="date" class="inp"/></div>
+        <div class="col-span-2"><label class="lbl">Current Address</label><textarea id="candAddress" class="inp" style="height:4rem;resize:none" placeholder="Street, City, State…"></textarea></div>
+      </div>
+
+      <!-- Tab: Employment History -->
+      <div id="cm-employment" class="hidden p-6 grid grid-cols-2 gap-4">
+        <div><label class="lbl">Current / Last Position</label><input id="candPosition" type="text" class="inp"/></div>
+        <div><label class="lbl">Current / Last Company</label><input id="candCompany" type="text" class="inp"/></div>
+        <div><label class="lbl">Years of Experience</label><input id="candExp" type="number" class="inp" value="0" min="0"/></div>
+        <div><label class="lbl">Source</label><select id="candSource" class="inp"></select></div>
+        <div class="col-span-2"><label class="lbl">Apply For (Job Requisition)</label><select id="candReqId" class="inp"><option value="">General / No specific requisition</option></select></div>
+        <div class="col-span-2"><label class="lbl">Key Skills <span class="text-xs text-slate-400">(comma-separated)</span></label><input id="candSkills" type="text" class="inp" placeholder="Python, SQL, React…"/></div>
+        <div class="col-span-2"><label class="lbl">Employment History / Summary</label><textarea id="candEmpHistory" class="inp" style="height:7rem;resize:none" placeholder="Brief work history — roles, companies, achievements…"></textarea></div>
+      </div>
+
+      <!-- Tab: Education -->
+      <div id="cm-education" class="hidden p-6 grid grid-cols-2 gap-4">
+        <div><label class="lbl">Highest Qualification</label><select id="candQual" class="inp"><option value="">Select</option></select></div>
+        <div><label class="lbl">Field of Study</label><input id="candField" type="text" class="inp" placeholder="e.g. Computer Science"/></div>
+        <div><label class="lbl">Institution / University</label><input id="candInstitution" type="text" class="inp"/></div>
+        <div><label class="lbl">Graduation Year</label><input id="candGradYear" type="number" class="inp" placeholder="2020" min="1970" max="2030"/></div>
+        <div class="col-span-2"><label class="lbl">Certifications / Professional Qualifications</label><textarea id="candCerts" class="inp" style="height:5rem;resize:none" placeholder="e.g. AWS Certified, CPA, PMP…"></textarea></div>
+        <div class="col-span-2"><label class="lbl">Resume / CV <span class="text-xs text-slate-400">(paste text or summary)</span></label><textarea id="candResume" class="inp" style="height:6rem;resize:none"></textarea></div>
+      </div>
+
+      <!-- Tab: Others -->
+      <div id="cm-others" class="hidden p-6 grid grid-cols-2 gap-4">
+        <div><label class="lbl">Expected Salary (RM)</label><input id="candExpSalary" type="number" class="inp" placeholder="5000" min="0"/></div>
+        <div><label class="lbl">Notice Period</label>
+          <select id="candNotice" class="inp">
+            <option value="">Not specified</option>
+            <option>Immediate</option><option>1 week</option><option>2 weeks</option>
+            <option>1 month</option><option>2 months</option><option>3 months</option>
+          </select>
+        </div>
+        <div><label class="lbl">LinkedIn / Portfolio URL</label><input id="candLinkedin" type="url" class="inp" placeholder="https://linkedin.com/in/…"/></div>
+        <div><label class="lbl">Referral By</label><input id="candReferral" type="text" class="inp" placeholder="Employee name if referred"/></div>
+        <div class="col-span-2"><label class="lbl">HR Notes <span class="text-xs text-slate-400">(internal only)</span></label><textarea id="candNotes" class="inp" style="height:5rem;resize:none" placeholder="Internal notes, observations, concerns…"></textarea></div>
+      </div>
+
+      <div class="px-6 pb-6 flex items-center justify-between">
+        <p id="candFormErr" class="text-sm text-red-600 hidden"></p>
+        <div class="flex gap-2 ml-auto">
+          <button type="button" onclick="closeCandModal()" class="btn-ghost">Cancel</button>
+          <button type="submit" class="btn-primary">Save Candidate</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Candidate Detail Modal -->
+<div id="candDetailModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-3xl">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <div><h2 id="cdName" class="text-base font-semibold">—</h2><p id="cdMeta" class="text-xs text-slate-500 mt-0.5">—</p></div>
+      <div class="flex items-center gap-2"><span id="cdStageBadge" class="badge"></span><button onclick="closeCandDetailModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></div>
+    </div>
+    <div class="flex border-b border-slate-200 px-6 gap-1">
+      <button class="view-tab-btn view-tab-active px-4 py-3 text-sm" data-cdtab="cdt-profile" onclick="switchCandTab('cdt-profile')">Profile</button>
+      <button class="view-tab-btn px-4 py-3 text-sm text-slate-500" data-cdtab="cdt-interviews" onclick="switchCandTab('cdt-interviews')">Interviews &amp; Scores</button>
+      <button class="view-tab-btn px-4 py-3 text-sm text-slate-500" data-cdtab="cdt-resume" onclick="switchCandTab('cdt-resume')">Resume</button>
+      <button id="cdHistoryTab" class="view-tab-btn px-4 py-3 text-sm text-slate-500 hidden" data-cdtab="cdt-history" onclick="switchCandTab('cdt-history')">History</button>
+    </div>
+    <div id="cdt-profile" class="p-6"></div>
+    <div id="cdt-interviews" class="p-6 hidden"></div>
+    <div id="cdt-resume" class="p-6 hidden"></div>
+    <div id="cdt-history" class="p-6 hidden"></div>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200">
+      <select id="cdStageSelect" class="inp w-40" onchange="moveCandStage()"></select>
+      <button onclick="openIntModal(viewingCandId)" class="btn-ghost hidden" id="cdScheduleBtn">+ Schedule Interview</button>
+      <button onclick="openOfferModal(null,viewingCandId)" class="btn-primary hidden" id="cdOfferBtn">Generate Letter</button>
+      <button onclick="convertToEmployee()" class="btn-primary hidden" id="cdConvertBtn" style="background:#059669">Convert to Employee</button>
+      <div class="flex-1"></div>
+      <button onclick="editCand()" class="btn-ghost">Edit</button>
+      <button onclick="closeCandDetailModal()" class="btn-ghost">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Interview Modal (Schedule/Edit) -->
+<div id="intModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 id="intModalTitle" class="text-base font-semibold">Schedule Interview</h2>
+      <button onclick="closeIntModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form onsubmit="submitIntForm(event)" class="p-6 space-y-4">
+      <input type="hidden" id="intId"/>
+      <div class="grid grid-cols-2 gap-4">
+        <div class="col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1">Candidate <span class="text-red-500">*</span></label><select id="intCandId" class="inp" required></select></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Interview Type</label><select id="intType" class="inp"></select></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Duration (mins)</label><input id="intDuration" type="number" class="inp" value="60" min="15"/></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Date <span class="text-red-500">*</span></label><input id="intDate" type="date" class="inp" required/></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Time <span class="text-red-500">*</span></label><input id="intTime" type="time" class="inp" required/></div>
+        <div class="col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1">Location / Meeting Link</label><input id="intLocation" type="text" class="inp" placeholder="Meeting Room A or https://meet.google.com/…"/></div>
+        <div class="col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1">Interviewers (comma separated)</label><input id="intInterviewers" type="text" class="inp" placeholder="Ahmad, Siti, John"/></div>
+        <div class="col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1">Notes</label><textarea id="intNotes" class="inp" style="height:4rem;resize:none"></textarea></div>
+      </div>
+      <p id="intFormErr" class="hidden text-sm text-red-600"></p>
+      <div class="flex justify-end gap-2">
+        <button type="button" onclick="closeIntModal()" class="btn-ghost">Cancel</button>
+        <button type="submit" class="btn-primary">Save Interview</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Score Modal -->
+<div id="scoreModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 class="text-base font-semibold">Interview Scorecard</h2>
+      <button onclick="closeScoreModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form onsubmit="submitScore(event)" class="p-6 space-y-4">
+      <input type="hidden" id="scoreIntId"/>
+      <p id="scoreInterviewMeta" class="text-sm text-slate-500 mb-2"></p>
+      <div class="grid grid-cols-2 gap-4">
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Technical (1-5)</label><input id="scoreTech" type="number" class="inp" min="1" max="5" placeholder="—"/></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Communication (1-5)</label><input id="scoreComm" type="number" class="inp" min="1" max="5" placeholder="—"/></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Attitude (1-5)</label><input id="scoreAttr" type="number" class="inp" min="1" max="5" placeholder="—"/></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Culture Fit (1-5)</label><input id="scoreCult" type="number" class="inp" min="1" max="5" placeholder="—"/></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Overall (1-5) <span class="text-red-500">*</span></label><input id="scoreOverall" type="number" class="inp" min="1" max="5" required/></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Recommendation</label>
+          <select id="scoreRec" class="inp"><option value="Hire">Hire</option><option value="Maybe" selected>Maybe</option><option value="No Hire">No Hire</option></select>
+        </div>
+        <div class="col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1">Comments</label><textarea id="scoreComments" class="inp" style="height:4rem;resize:none"></textarea></div>
+      </div>
+      <p id="scoreFormErr" class="hidden text-sm text-red-600"></p>
+      <div class="flex justify-end gap-2">
+        <button type="button" onclick="closeScoreModal()" class="btn-ghost">Cancel</button>
+        <button type="submit" class="btn-primary">Submit Scorecard</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Offer / Decline Letter Modal -->
+<div id="offerModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 id="offerModalTitle" class="text-base font-semibold">Generate Letter</h2>
+      <button onclick="closeOfferModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form onsubmit="submitOfferForm(event)" class="p-6 space-y-4">
+      <input type="hidden" id="offerId"/>
+      <div class="grid grid-cols-2 gap-4">
+        <div class="col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1">Candidate <span class="text-red-500">*</span></label><select id="offerCandId" class="inp" required onchange="onOfferCandChange()"></select></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Letter Type</label>
+          <select id="offerType" class="inp" onchange="toggleOfferFields()">
+            <option value="Offer">Offer Letter</option>
+            <option value="Decline">Decline Letter</option>
+          </select>
+        </div>
+        <div id="offerReqWrap"><label class="block text-sm font-medium text-slate-700 mb-1">Job Requisition</label><select id="offerReqId" class="inp"><option value="">None</option></select></div>
+        <div id="offerSalaryWrap"><label class="block text-sm font-medium text-slate-700 mb-1">Salary Offered (RM)</label><input id="offerSalary" type="number" class="inp" min="0"/></div>
+        <div id="offerStartWrap"><label class="block text-sm font-medium text-slate-700 mb-1">Start Date</label><input id="offerStart" type="date" class="inp"/></div>
+        <div id="offerExpiryWrap"><label class="block text-sm font-medium text-slate-700 mb-1">Offer Expiry</label><input id="offerExpiry" type="date" class="inp"/></div>
+      </div>
+      <div>
+        <div class="flex items-center justify-between mb-1">
+          <label class="text-sm font-medium text-slate-700">Letter Content</label>
+          <button type="button" onclick="previewLetter()" class="text-xs text-blue-600 hover:underline">Auto-generate preview</button>
+        </div>
+        <textarea id="offerLetterContent" class="inp font-mono text-xs" style="height:16rem;resize:vertical"></textarea>
+      </div>
+      <p id="offerFormErr" class="hidden text-sm text-red-600"></p>
+      <div class="flex justify-end gap-2">
+        <button type="button" onclick="closeOfferModal()" class="btn-ghost">Cancel</button>
+        <button type="submit" class="btn-primary">Save Letter</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Offer / Letter View Modal (read + status update + print) -->
+<div id="offerViewModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <div><h2 id="ovTitle" class="text-base font-semibold">Letter</h2><p id="ovMeta" class="text-xs text-slate-500 mt-0.5">—</p></div>
+      <div class="flex items-center gap-2"><span id="ovBadge" class="badge"></span><button onclick="closeOfferViewModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></div>
+    </div>
+    <div class="p-6">
+      <pre id="ovContent" class="text-xs font-mono whitespace-pre-wrap bg-slate-50 border border-slate-200 rounded-xl p-4 text-slate-700 max-h-96 overflow-y-auto"></pre>
+    </div>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200">
+      <select id="ovStatusSelect" class="inp w-36" onchange="updateOfferStatus()">
+        <option value="Draft">Draft</option>
+        <option value="Sent">Sent</option>
+        <option value="Accepted">Accepted</option>
+        <option value="Rejected">Rejected</option>
+        <option value="Withdrawn">Withdrawn</option>
+      </select>
+      <button onclick="printLetter()" class="btn-ghost">Print</button>
+      <div class="flex-1"></div>
+      <button onclick="closeOfferViewModal()" class="btn-ghost">Close</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/js/core.js?v=47"></script>
+<script src="/static/js/dashboard.js?v=47"></script>
+<script src="/static/js/institutions.js?v=47"></script>
+<script src="/static/js/employees.js?v=47"></script>
+<script src="/static/js/orgchart.js?v=47"></script>
+<script src="/static/js/audit.js?v=47"></script>
+<script src="/static/js/users.js?v=47"></script>
+<script src="/static/js/recruitment.js?v=47"></script>
+<script src="/static/js/onboarding.js?v=47"></script>
+<script src="/static/js/ld.js?v=47"></script>
+<script src="/static/js/leave.js?v=47"></script>
+<script src="/static/js/timesheet.js?v=47"></script>
+<script src="/static/js/notifications.js?v=47"></script>
+<script src="/static/js/payroll.js?v=47"></script>
+<script src="/static/js/bulk-upload.js?v=47"></script>
+<script src="/static/js/performance.js?v=47"></script>
+<script src="/static/js/app-init.js?v=47"></script>
+</body>
+</html>
