@@ -28,8 +28,6 @@ try:
     )
     from core.onboarding_seed import seed_ob_templates
     from core.validators import validate_logo_url as _validate_logo_url
-    from core.roles import ROLES, LEAVE_MANAGE_ROLES, PAYROLL_VIEW_ROLES
-    from core.constants import RACES, RELIGIONS, GENDERS, MARITAL_STATUSES, EMPLOYMENT_TYPES, STATUSES, BANKS
     from core.audit import write_audit
     from core.org_queries import subordinates_in_clause, is_self_or_subordinate
     from routers.audit import router as audit_router
@@ -50,6 +48,7 @@ try:
     from routers.performance import router as performance_router
     from routers.employees import router as employees_router
     from routers.auth import router as auth_router
+    from routers.meta import router as meta_router
 except ImportError:
     from ems.core.deps import (
         hash_password, verify_password, make_token,
@@ -57,8 +56,6 @@ except ImportError:
     )
     from ems.core.onboarding_seed import seed_ob_templates
     from ems.core.validators import validate_logo_url as _validate_logo_url
-    from ems.core.roles import ROLES, LEAVE_MANAGE_ROLES, PAYROLL_VIEW_ROLES
-    from ems.core.constants import RACES, RELIGIONS, GENDERS, MARITAL_STATUSES, EMPLOYMENT_TYPES, STATUSES, BANKS
     from ems.core.audit import write_audit
     from ems.core.org_queries import subordinates_in_clause, is_self_or_subordinate
     from ems.routers.audit import router as audit_router
@@ -79,6 +76,7 @@ except ImportError:
     from ems.routers.performance import router as performance_router
     from ems.routers.employees import router as employees_router
     from ems.routers.auth import router as auth_router
+    from ems.routers.meta import router as meta_router
 
 # ---------------------------------------------------------------------------
 # Logging — plain stdout logging so `fly logs` / any container log collector
@@ -99,20 +97,12 @@ logger = logging.getLogger("ems")
 # file as part of splitting main.py into routers. See core/deps.py's
 # docstring and the repo's tech-debt notes.
 
-# ROLES moved to core/roles.py (imported near the top of this file) since
-# routers/users.py needs it too and routers must not import from main.py.
-INSTITUTION_ROLES = ["hr_manager", "hr_admin", "manager", "payroll_manager", "employee"]
-ROLE_LABELS = {
-    "superadmin": "Platform Admin", "hr_manager": "HR Manager",
-    "hr_admin": "HR Admin", "manager": "Manager", "payroll_manager": "Payroll Manager",
-    "employee": "Employee",
-}
-PLANS = ["starter", "professional", "enterprise"]
-PLAN_LABELS = {"starter": "Starter", "professional": "Professional", "enterprise": "Enterprise"}
+# ROLES moved to core/roles.py; INSTITUTION_ROLES/ROLE_LABELS/PLANS/
+# PLAN_LABELS moved to core/constants.py — only routers/meta.py uses them now.
 
 # RACES/RELIGIONS/GENDERS/MARITAL_STATUSES/EMPLOYMENT_TYPES/STATUSES/BANKS
-# moved to core/constants.py (imported near the top of this file) since
-# routers/employees.py needs them too.
+# moved to core/constants.py — routers/employees.py and routers/meta.py
+# need them.
 
 # OB_ROLES moved to routers/onboarding.py (only used there now).
 
@@ -146,6 +136,7 @@ app.include_router(payroll_router)
 app.include_router(performance_router)
 app.include_router(employees_router)
 app.include_router(auth_router)
+app.include_router(meta_router)
 
 @app.get("/health")
 def health():
@@ -1027,18 +1018,8 @@ init_db()
 # Auth routes (login, switch-role, me) now live in routers/auth.py,
 # mounted above via app.include_router(auth_router).
 
-# ---------------------------------------------------------------------------
-# Meta
-# ---------------------------------------------------------------------------
-@app.get("/api/meta")
-def get_meta(user: dict = Depends(get_current_user)):
-    return {
-        "races": RACES, "religions": RELIGIONS, "genders": GENDERS,
-        "marital_statuses": MARITAL_STATUSES, "employment_types": EMPLOYMENT_TYPES,
-        "statuses": STATUSES, "banks": BANKS, "roles": ROLES,
-        "institution_roles": INSTITUTION_ROLES,
-        "role_labels": ROLE_LABELS, "plans": PLANS, "plan_labels": PLAN_LABELS,
-    }
+# /api/meta now lives in routers/meta.py, mounted above via
+# app.include_router(meta_router).
 
 # Institution CRUD routes now live in routers/institutions.py, mounted
 # above via app.include_router(institutions_router).

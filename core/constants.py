@@ -10,3 +10,12 @@ BANKS = [
     "AmBank","Bank Islam","Bank Rakyat","Affin Bank","Alliance Bank",
     "HSBC Bank Malaysia","Standard Chartered","OCBC Bank","UOB Malaysia","Others",
 ]
+
+INSTITUTION_ROLES = ["hr_manager", "hr_admin", "manager", "payroll_manager", "employee"]
+ROLE_LABELS = {
+    "superadmin": "Platform Admin", "hr_manager": "HR Manager",
+    "hr_admin": "HR Admin", "manager": "Manager", "payroll_manager": "Payroll Manager",
+    "employee": "Employee",
+}
+PLANS = ["starter", "professional", "enterprise"]
+PLAN_LABELS = {"starter": "Starter", "professional": "Professional", "enterprise": "Enterprise"}
