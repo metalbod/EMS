@@ -333,10 +333,10 @@ def add_ob_item(cl_id: int, body: OBItemAddIn,
         (cl_id, inst_id, body.title, body.description, body.assigned_role, max_order + 1,
          body.linked_ld_course_id, enrollment_id)
     )
+    row = conn.execute("SELECT * FROM ob_checklist_items WHERE id=last_insert_rowid()").fetchone()
     log_ob(conn, inst_id, cl_id, cl["employee_id"], cl["type"],
            "Item Added", f"New item '{body.title}' assigned to {body.assigned_role}", user)
     conn.commit()
-    row = conn.execute("SELECT * FROM ob_checklist_items WHERE id=last_insert_rowid()").fetchone()
     conn.close()
     return dict(row)
 
