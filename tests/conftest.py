@@ -34,15 +34,16 @@ def client():
 
 @pytest.fixture(autouse=True)
 def _reset_login_rate_limit():
-    """The login rate limiter is process-local in-memory state (see main.py).
-    Clear it before and after every test so one test's failed-login attempts
-    can't trip the 429 lockout in an unrelated test. Skips entirely for test
-    files that never touch `main` (e.g. test_payroll_calc.py), so importing
-    it isn't forced on tests that don't need it."""
+    """The login rate limiter is process-local in-memory state (see
+    routers/auth.py). Clear it before and after every test so one test's
+    failed-login attempts can't trip the 429 lockout in an unrelated test.
+    Skips entirely for test files that never touch `main` (e.g.
+    test_payroll_calc.py), so importing it isn't forced on tests that don't
+    need it."""
     if "main" not in sys.modules:
         yield
         return
-    import main as app_module
-    app_module._login_failures.clear()
+    from routers.auth import _login_failures
+    _login_failures.clear()
     yield
-    app_module._login_failures.clear()
+    _login_failures.clear()

@@ -45,9 +45,9 @@ def test_protected_endpoint_with_garbage_token_returns_401(client):
 
 class TestLoginRateLimit:
     def test_locks_out_after_max_attempts(self, client):
-        import main as app_module
+        from routers.auth import LOGIN_MAX_ATTEMPTS
 
-        for _ in range(app_module.LOGIN_MAX_ATTEMPTS):
+        for _ in range(LOGIN_MAX_ATTEMPTS):
             res = client.post("/api/auth/login", json={
                 "username": NONEXISTENT_USER, "password": "wrong", "institution_code": None,
             })
@@ -60,9 +60,9 @@ class TestLoginRateLimit:
         assert "Too many failed login attempts" in locked.json()["detail"]
 
     def test_rate_limit_is_scoped_per_username_not_global(self, client):
-        import main as app_module
+        from routers.auth import LOGIN_MAX_ATTEMPTS
 
-        for _ in range(app_module.LOGIN_MAX_ATTEMPTS):
+        for _ in range(LOGIN_MAX_ATTEMPTS):
             client.post("/api/auth/login", json={
                 "username": NONEXISTENT_USER, "password": "wrong", "institution_code": None,
             })
