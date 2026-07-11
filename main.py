@@ -1,35 +1,24 @@
 import os
-import hashlib
 import logging
-import re
 import time
-from datetime import datetime, timezone, timedelta, date
-from typing import List, Optional
 
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
-from fastapi import FastAPI, HTTPException, Request, Depends
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import Response, StreamingResponse
-from pydantic import BaseModel, field_validator, ValidationError
+from fastapi.responses import Response
 
 try:
-    from db import get_db, IntegrityError
+    from db import get_db
 except ImportError:
-    from ems.db import get_db, IntegrityError
+    from ems.db import get_db
 
 # payroll_calc import moved to routers/payroll.py (only used there now).
 
 try:
-    from core.deps import (
-        hash_password, verify_password, make_token,
-        get_current_user, require_roles, need_inst,
-    )
+    from core.deps import hash_password
     from core.onboarding_seed import seed_ob_templates
-    from core.validators import validate_logo_url as _validate_logo_url
-    from core.audit import write_audit
-    from core.org_queries import subordinates_in_clause, is_self_or_subordinate
     from routers.audit import router as audit_router
     from routers.notifications import router as notifications_router
     from routers.institutions import router as institutions_router
@@ -49,15 +38,10 @@ try:
     from routers.employees import router as employees_router
     from routers.auth import router as auth_router
     from routers.meta import router as meta_router
+    from routers.frontend import router as frontend_router, STATIC_DIR
 except ImportError:
-    from ems.core.deps import (
-        hash_password, verify_password, make_token,
-        get_current_user, require_roles, need_inst,
-    )
+    from ems.core.deps import hash_password
     from ems.core.onboarding_seed import seed_ob_templates
-    from ems.core.validators import validate_logo_url as _validate_logo_url
-    from ems.core.audit import write_audit
-    from ems.core.org_queries import subordinates_in_clause, is_self_or_subordinate
     from ems.routers.audit import router as audit_router
     from ems.routers.notifications import router as notifications_router
     from ems.routers.institutions import router as institutions_router
@@ -77,6 +61,7 @@ except ImportError:
     from ems.routers.employees import router as employees_router
     from ems.routers.auth import router as auth_router
     from ems.routers.meta import router as meta_router
+    from ems.routers.frontend import router as frontend_router, STATIC_DIR
 
 # ---------------------------------------------------------------------------
 # Logging — plain stdout logging so `fly logs` / any container log collector
@@ -982,9 +967,7 @@ init_db()
 # Pydantic models
 # ---------------------------------------------------------------------------
 # InstitutionIn/InstitutionUpdate/InstStatusIn moved to routers/institutions.py.
-# MAX_LOGO_DATA_URL_LEN / logo_url validation moved to core/validators.py
-# (imported near the top of this file as _validate_logo_url) since EmployeeIn
-# below still needs it.
+# MAX_LOGO_DATA_URL_LEN / logo_url validation moved to core/validators.py.
 
 # EmployeeIn/BulkUploadIn/StatusUpdate moved to routers/employees.py.
 
@@ -1099,34 +1082,9 @@ init_db()
 # app.include_router(performance_router).
 
 # ---------------------------------------------------------------------------
-# Frontend
+# Frontend — static mount stays here (APIRouter has no .mount()); the SPA
+# catch-all route itself lives in routers/frontend.py and is included last,
+# below, after every API router so it can't shadow a more specific route.
 # ---------------------------------------------------------------------------
-STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-
-_CACHE_BUST_RE = re.compile(r"\?v=[A-Za-z0-9]+")
-_index_html_cache = {"version": None, "content": None}
-
-def _static_asset_version() -> str:
-    """Cache-busting token derived from every file under static/ — changes
-    automatically whenever any static asset's content changes. Replaces the
-    previous scheme of manually editing '?v=N' across ~19 references in
-    index.html by hand on every frontend change (error-prone: miss one file
-    and a stale asset gets served after deploy)."""
-    h = hashlib.md5()
-    for root, _, files in os.walk(STATIC_DIR):
-        for name in sorted(files):
-            path = os.path.join(root, name)
-            h.update(path.encode())
-            h.update(str(os.path.getmtime(path)).encode())
-    return h.hexdigest()[:10]
-
-@app.get("/{full_path:path}")
-def serve_frontend(full_path: str):
-    version = _static_asset_version()
-    if _index_html_cache["version"] != version:
-        with open(os.path.join(STATIC_DIR, "index.html"), "r", encoding="utf-8") as f:
-            raw = f.read()
-        _index_html_cache["content"] = _CACHE_BUST_RE.sub(f"?v={version}", raw)
-        _index_html_cache["version"] = version
-    return Response(content=_index_html_cache["content"], media_type="text/html")
+app.include_router(frontend_router)
