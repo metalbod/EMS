@@ -55,4 +55,4 @@ jobs:
             echo "::warning::DATABASE_URL secret is not set on this repo — skipping DB-backed tests (these import main.py, which connects to the DB at startup). Add it under Settings > Secrets and variables > Actions to enable them."
             exit 0
           fi
-          pytest tests/test_auth.py tests/test_frontend.py tests/test_currency.py -v
+          pytest tests/ --ignore=tests/test_payroll_calc.py -v
