@@ -273,6 +273,33 @@ def make_test_project_task(client, hr_manager_auth):
         client.delete(f"/api/projects/{project_id}/tasks/{task_id}", headers=hr_manager_auth)
 
 
+@pytest.fixture
+def make_test_leave_type(client, hr_manager_auth):
+    """Factory fixture: creates a disposable leave type, soft-deletes it on
+    teardown (leave types have no hard-delete endpoint, only
+    is_active=0 via DELETE). Usage:
+
+        def test_x(make_test_leave_type):
+            lt = make_test_leave_type()
+            lt = make_test_leave_type(requires_approval=False, annual_entitlement=5)
+    """
+    created_ids = []
+
+    def _make(**overrides):
+        payload = {"name": "ZZ Test Leave Type", "annual_entitlement": 14.0}
+        payload.update(overrides)
+        res = client.post("/api/leave/types", headers=hr_manager_auth, json=payload)
+        assert res.status_code == 201, f"failed to create test leave type: {res.text}"
+        lt = res.json()
+        created_ids.append(lt["id"])
+        return lt
+
+    yield _make
+
+    for tid in created_ids:
+        client.delete(f"/api/leave/types/{tid}", headers=hr_manager_auth)
+
+
 @pytest.fixture(autouse=True)
 def _reset_login_rate_limit():
     """The login rate limiter is process-local in-memory state (see
