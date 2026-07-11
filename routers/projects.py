@@ -235,8 +235,11 @@ def delete_project_task(project_id: int, task_id: int, user: dict = Depends(requ
     conn = get_db()
     if conn.execute("SELECT id FROM timesheet_entries WHERE task_id=? AND institution_id=?", (task_id, inst_id)).fetchone():
         conn.close(); raise HTTPException(400, "Cannot delete a task that already has logged timesheet hours — mark it Completed instead")
-    conn.execute("DELETE FROM project_tasks WHERE id=? AND project_id=? AND institution_id=?", (task_id, project_id, inst_id))
+    # task_assignments has a foreign key to project_tasks, so it must be
+    # deleted first — deleting project_tasks first violates that FK whenever
+    # the task has any assignments.
     conn.execute("DELETE FROM task_assignments WHERE task_id=? AND institution_id=?", (task_id, inst_id))
+    conn.execute("DELETE FROM project_tasks WHERE id=? AND project_id=? AND institution_id=?", (task_id, project_id, inst_id))
     conn.commit(); conn.close()
 
 
