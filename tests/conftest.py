@@ -209,6 +209,70 @@ def make_test_employee(client, hr_manager_auth):
         client.patch(f"/api/employees/{emp_id}/status", headers=hr_manager_auth, json={"status": "Inactive"})
 
 
+@pytest.fixture
+def make_test_project(client, hr_manager_auth):
+    """Factory fixture: creates a disposable project, deletes it on teardown.
+    Shared by test_projects.py and (later) test_leave.py/test_timesheets.py,
+    which both need a real project+task to log time against. Usage:
+
+        def test_x(make_test_project):
+            project = make_test_project()
+            project = make_test_project(name="ZZ Special Project")
+    """
+    created_ids = []
+
+    def _make(**overrides):
+        payload = {"name": "ZZ Test Project", "status": "Active"}
+        payload.update(overrides)
+        res = client.post("/api/projects", headers=hr_manager_auth, json=payload)
+        assert res.status_code == 201, f"failed to create test project: {res.text}"
+        project = res.json()
+        created_ids.append(project["id"])
+        return project
+
+    yield _make
+
+    for pid in created_ids:
+        # Defensive: delete any child tasks first regardless of whether
+        # make_test_project_task's own teardown already ran — pytest doesn't
+        # guarantee this fixture tears down after make_test_project_task
+        # just because a test happens to use both (project_id is passed as a
+        # plain value, not a fixture dependency, so there's no ordering edge
+        # between them). Deleting a project that still has project_tasks
+        # rows violates a foreign key, so this must run first every time.
+        tasks = client.get(f"/api/projects/{pid}/tasks", headers=hr_manager_auth)
+        if tasks.status_code == 200:
+            for task in tasks.json():
+                client.delete(f"/api/projects/{pid}/tasks/{task['id']}", headers=hr_manager_auth)
+        client.delete(f"/api/projects/{pid}", headers=hr_manager_auth)
+
+
+@pytest.fixture
+def make_test_project_task(client, hr_manager_auth):
+    """Factory fixture: creates a disposable task on the given project,
+    deletes it on teardown. Usage:
+
+        def test_x(make_test_project, make_test_project_task):
+            project = make_test_project()
+            task = make_test_project_task(project["id"])
+    """
+    created = []  # (project_id, task_id)
+
+    def _make(project_id, **overrides):
+        payload = {"name": "ZZ Test Task", "status": "Not Started"}
+        payload.update(overrides)
+        res = client.post(f"/api/projects/{project_id}/tasks", headers=hr_manager_auth, json=payload)
+        assert res.status_code == 201, f"failed to create test task: {res.text}"
+        task = res.json()
+        created.append((project_id, task["id"]))
+        return task
+
+    yield _make
+
+    for project_id, task_id in created:
+        client.delete(f"/api/projects/{project_id}/tasks/{task_id}", headers=hr_manager_auth)
+
+
 @pytest.fixture(autouse=True)
 def _reset_login_rate_limit():
     """The login rate limiter is process-local in-memory state (see
