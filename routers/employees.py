@@ -244,7 +244,6 @@ def list_employees(
     return [dict(r) for r in rows]
 
 
-@router.post("/api/employees", status_code=201)
 def _insert_new_employee(conn, inst_id, emp: EmployeeIn, user: dict, ip: Optional[str]):
     """Core employee-creation logic, shared by the single Add Employee form and bulk upload.
     Raises HTTPException on business-rule violations; lets IntegrityError propagate to the caller."""
@@ -286,6 +285,7 @@ def _insert_new_employee(conn, inst_id, emp: EmployeeIn, user: dict, ip: Optiona
     return emp_id
 
 
+@router.post("/api/employees", status_code=201)
 def create_employee(emp: EmployeeIn, request: Request, user: dict = Depends(require_roles(*CAN_WRITE))):
     inst_id = need_inst(user)
     conn = get_db()
