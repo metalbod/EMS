@@ -20,15 +20,6 @@ def _unique_year():
 
 
 @pytest.fixture
-def hr_manager_auth(make_test_user, test_institution):
-    token, _ = make_test_user(role="hr_manager")
-    return {
-        "Authorization": f"Bearer {token}",
-        "X-Institution-Id": str(test_institution["id"]),
-    }
-
-
-@pytest.fixture
 def make_test_holiday(client, hr_manager_auth):
     """Factory: creates a disposable holiday, deletes it on teardown (any
     not already deleted by the test itself)."""

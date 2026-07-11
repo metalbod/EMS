@@ -8,75 +8,9 @@ test_create_employee_success is a regression test: POST /api/employees was
 completely unroutable for a while (the @router.post decorator was on the
 wrong function — see commit 207a31f) and returned 422 for every request.
 """
-import itertools
-import random
-
 import pytest
 
-# Salted with a fresh random value per process (not the PID, which can
-# recycle across separate CI runs) plus a per-process counter, so IC numbers
-# are unique both within a run and across separate pytest invocations — a
-# prior run's leftover test employees (e.g. from an interrupted run) must
-# never collide with a fresh run's.
-_ic_counter = itertools.count(1)
-_ic_run_salt = random.randint(0, 9999)
-
-
-def _unique_ic():
-    """A syntactically valid, per-call-unique 12-digit IC number, so tests
-    that check IC-based matching (related-contracts) don't collide with
-    other employees created by other tests or other runs in the same shared
-    institution."""
-    n = next(_ic_counter)
-    return f"9001{_ic_run_salt:04d}{n:04d}"
-
-
-def _valid_employee_payload(**overrides):
-    payload = {
-        "full_name": "ZZ Test Employee",
-        "ic_number": _unique_ic(),
-        "race": "Malay",
-        "religion": "Islam",
-        "gender": "Male",
-        "date_of_birth": "1990-01-01",
-        "marital_status": "Single",
-        "phone": "+60123456789",
-        "department": "IT",
-        "designation": "Tester",
-        "employment_type": "Permanent",
-        "start_date": "2026-01-01",
-    }
-    payload.update(overrides)
-    return payload
-
-
-@pytest.fixture
-def hr_manager_auth(make_test_user, test_institution):
-    token, _ = make_test_user(role="hr_manager")
-    return {
-        "Authorization": f"Bearer {token}",
-        "X-Institution-Id": str(test_institution["id"]),
-    }
-
-
-@pytest.fixture
-def make_test_employee(client, hr_manager_auth):
-    """Factory: creates a disposable employee, deactivates it on teardown
-    (employees have no delete endpoint)."""
-    created_ids = []
-
-    def _make(**overrides):
-        res = client.post("/api/employees", headers=hr_manager_auth, json=_valid_employee_payload(**overrides))
-        assert res.status_code == 201, f"failed to create test employee: {res.text}"
-        emp = res.json()
-        created_ids.append(emp["employee_id"])
-        return emp
-
-    yield _make
-
-    for emp_id in created_ids:
-        client.patch(f"/api/employees/{emp_id}/status", headers=hr_manager_auth, json={"status": "Inactive"})
-
+from conftest import _valid_employee_payload
 
 # ---------------------------------------------------------------------------
 # Auth / permissions
