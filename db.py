@@ -149,6 +149,25 @@ class Conn:
             return
         self._closed = True
         self._finalizer.detach()
+        # psycopg2 connections are not autocommit, so every .execute() call
+        # implicitly opens a transaction that stays open until explicitly
+        # committed or rolled back. Read-only call sites (the majority —
+        # every GET/list endpoint) never call .commit(), so without this
+        # rollback, .close() would return the connection to the pool with an
+        # open transaction still holding its locks and snapshot. The next
+        # borrower inherits that half-open transaction, and Supabase's
+        # connection pooler can forcibly terminate long-idle-in-transaction
+        # connections — very likely the real cause of the "transient"
+        # deadlocks and connection-reset errors seen intermittently in the
+        # test suite, not actual infra flakiness. Rolling back here is safe
+        # even when nothing was written (no-op on a clean read-only
+        # transaction) and correct when something *was* written but the
+        # caller forgot to commit (better to lose the write than leak an
+        # open transaction into the pool).
+        try:
+            self._raw.rollback()
+        except Exception:
+            logger.exception("Failed to roll back connection before returning it to the pool")
         _return_to_pool(self._raw, leaked=False)
 
 
@@ -158,6 +177,12 @@ def _return_to_pool(raw, leaked):
             "DB connection was garbage-collected without an explicit .close() call "
             "— returning it to the pool now, but this indicates a leak at the call site."
         )
+        # Same reasoning as Conn.close(): don't return a connection to the
+        # pool with an open transaction still holding locks/snapshot.
+        try:
+            raw.rollback()
+        except Exception:
+            logger.exception("Failed to roll back a leaked connection before returning it to the pool")
     try:
         _get_pool().putconn(raw)
     except Exception:
