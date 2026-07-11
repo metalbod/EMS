@@ -50,6 +50,7 @@ try:
     from routers.recruitment import router as recruitment_router
     from routers.onboarding import router as onboarding_router
     from routers.ld import router as ld_router
+    from routers.dashboard import router as dashboard_router
 except ImportError:
     from ems.core.deps import (
         hash_password, verify_password, make_token,
@@ -72,6 +73,7 @@ except ImportError:
     from ems.routers.recruitment import router as recruitment_router
     from ems.routers.onboarding import router as onboarding_router
     from ems.routers.ld import router as ld_router
+    from ems.routers.dashboard import router as dashboard_router
 
 # ---------------------------------------------------------------------------
 # Logging — plain stdout logging so `fly logs` / any container log collector
@@ -172,6 +174,7 @@ app.include_router(timesheets_router)
 app.include_router(recruitment_router)
 app.include_router(onboarding_router)
 app.include_router(ld_router)
+app.include_router(dashboard_router)
 
 @app.get("/health")
 def health():
@@ -1813,51 +1816,8 @@ def rehire_prefill(employee_id: str, user: dict = Depends(require_roles(*CAN_WRI
 # Institution/System-Wide Notification routes now live in routers/notifications.py,
 # mounted above via app.include_router(notifications_router).
 
-# ---------------------------------------------------------------------------
-# Dashboard To-Do List — personal items only (about the logged-in user's own
-# data), not approval/task queues that belong to other people's requests.
-# Computed on every request from live state (not stored), so items disappear
-# automatically once actioned. Excluded for superadmin (no personal employee record).
-# ---------------------------------------------------------------------------
-@app.get("/api/todos")
-def get_todos(user: dict = Depends(get_current_user)):
-    role = user["role"]
-    if role == "superadmin":
-        return []
-    inst_id = need_inst(user)
-    conn = get_db()
-    emp_id = user.get("employee_id")
-    todos = []
-
-    if emp_id:
-        today = datetime.now(timezone.utc).date()
-        monday = (today - timedelta(days=today.weekday())).isoformat()
-        row = conn.execute(
-            "SELECT id FROM timesheets WHERE institution_id=? AND employee_id=? AND period_start=? AND status='Draft'",
-            (inst_id, emp_id, monday)
-        ).fetchone()
-        if row:
-            todos.append({"key": "timesheet-my", "label": "Your timesheet for this week hasn't been submitted yet", "page": "timesheet-my", "count": 1})
-
-        cnt = conn.execute(
-            "SELECT COUNT(*) FROM ld_enrollments WHERE institution_id=? AND employee_id=? AND status='In Progress'",
-            (inst_id, emp_id)
-        ).fetchone()[0]
-        if cnt:
-            todos.append({"key": "ld-trainings", "label": f"{cnt} training course{'s' if cnt != 1 else ''} in progress", "page": "ld-trainings", "count": cnt})
-
-        if role in ("manager", "hr_manager"):
-            frag, fp = _subordinates_in_clause(inst_id, emp_id)
-            cnt = conn.execute(f"""
-                SELECT COUNT(*) FROM appraisals a
-                WHERE a.institution_id=? AND a.status='ManagerReview' AND a.employee_id != ?
-                  AND a.employee_id IN {frag}
-            """, (inst_id, emp_id, *fp)).fetchone()[0]
-            if cnt:
-                todos.append({"key": "perf-team", "label": f"{cnt} appraisal{'s' if cnt != 1 else ''} awaiting your manager review", "page": "perf-team", "count": cnt})
-
-    conn.close()
-    return todos
+# Dashboard To-Do List routes now live in routers/dashboard.py, mounted
+# above via app.include_router(dashboard_router).
 
 # Timesheets routes now live in routers/timesheets.py, mounted above via
 # app.include_router(timesheets_router).
