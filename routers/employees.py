@@ -296,15 +296,26 @@ def create_employee(emp: EmployeeIn, request: Request, user: dict = Depends(requ
         if cnt >= inst["max_employees"]:
             conn.close()
             raise HTTPException(400, f"Employee limit ({inst['max_employees']}) reached for this institution")
+    # gen_employee_id is check-then-insert with no locking, so two concurrent
+    # requests (e.g. CI and a local run against the same shared DB) can pick the
+    # same candidate EMP#### and race on the unique constraint. Retry with a
+    # freshly generated id a few times before giving up — but only when the id
+    # was auto-generated; a caller-supplied employee_id colliding is a real
+    # business error and should surface immediately.
+    max_attempts = 5 if not emp.employee_id else 1
     try:
-        emp_id = _insert_new_employee(conn, inst_id, emp, user, request.client.host if request.client else None)
-        conn.commit()
-        row = conn.execute("SELECT * FROM employees WHERE institution_id=? AND employee_id=?",
-                           (inst_id, emp_id)).fetchone()
-        return dict(row)
-    except IntegrityError as e:
-        conn.rollback()
-        raise HTTPException(400, str(e))
+        for attempt in range(max_attempts):
+            try:
+                emp_id = _insert_new_employee(conn, inst_id, emp, user, request.client.host if request.client else None)
+                conn.commit()
+                row = conn.execute("SELECT * FROM employees WHERE institution_id=? AND employee_id=?",
+                                   (inst_id, emp_id)).fetchone()
+                return dict(row)
+            except IntegrityError as e:
+                conn.rollback()
+                if "employees_institution_id_employee_id_key" in str(e) and attempt < max_attempts - 1:
+                    continue
+                raise HTTPException(400, str(e))
     finally:
         conn.close()
 
