@@ -145,6 +145,18 @@ def hr_manager_auth(make_test_user, test_institution):
     }
 
 
+@pytest.fixture
+def payroll_manager_auth(make_test_user, test_institution):
+    """A disposable payroll_manager user's auth headers, pre-scoped to the
+    test institution — the only role in PAYROLL_MANAGE_ROLES (see
+    routers/payroll.py)."""
+    token, _ = make_test_user(role="payroll_manager")
+    return {
+        "Authorization": f"Bearer {token}",
+        "X-Institution-Id": str(test_institution["id"]),
+    }
+
+
 # Salted with a fresh random value per process (not the PID, which can
 # recycle across separate CI runs) plus a per-process counter, so IC numbers
 # are unique both within a run and across separate pytest invocations — a
