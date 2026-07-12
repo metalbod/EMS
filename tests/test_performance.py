@@ -26,16 +26,19 @@ def _period(month=None):
     return start, end
 
 
-@pytest.fixture(scope="module", autouse=True)
+@pytest.fixture(autouse=True)
 def _deactivate_stray_active_employees(superadmin_token, test_institution):
     """activate_performance_cycle snapshots EVERY Active employee in the
     institution into new appraisals, and close_performance_cycle requires all
     of a cycle's appraisals to reach Calibration/Finalized. Employees left
     Active by an interrupted test run elsewhere (e.g. a killed pytest process
-    whose make_test_employee teardown never ran) would otherwise get swept
-    into every cycle this file activates and permanently block cycle-close
-    assertions. One-time sweep at module start so only employees created
-    within this file's own tests are Active when a cycle is activated."""
+    whose make_test_employee teardown never ran, or another test file's
+    fixture ordering leaving one behind momentarily in a large parallel test
+    session) would otherwise get swept into any cycle this file activates and
+    permanently block cycle-close assertions. Sweeping before EVERY test
+    (not just once at module start — a single early sweep proved insufficient
+    once this file ran as part of the full ~350-test suite) keeps each test's
+    cycle activation scoped to only the employees it creates itself."""
     import main as app_module
     from fastapi.testclient import TestClient
     c = TestClient(app_module.app)
