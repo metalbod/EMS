@@ -62,9 +62,23 @@ def test_institution(superadmin_token):
     headers = {"Authorization": f"Bearer {superadmin_token}"}
     code = "ZZPYTEST"
 
+    # Employees have no hard-delete endpoint (only a status toggle — see
+    # make_test_employee's teardown), so every test run permanently adds to
+    # this institution's employee count. max_employees is a billing guard for
+    # real customer institutions, not meant to cap a permanently-disposable
+    # test tenant, so keep it very high here to avoid hitting "Employee limit
+    # reached" as more router test files accumulate employees over time.
+    MAX_EMPLOYEES = 1_000_000
+
     existing = c.get("/api/institutions", headers=headers).json()
     for inst in existing:
         if inst["code"] == code:
+            if inst["max_employees"] < MAX_EMPLOYEES:
+                update_res = c.put(f"/api/institutions/{inst['id']}", headers=headers, json={
+                    "name": inst["name"], "contact_email": inst["contact_email"],
+                    "plan": inst["plan"], "max_employees": MAX_EMPLOYEES,
+                })
+                assert update_res.status_code == 200, f"failed to raise test institution employee limit: {update_res.text}"
             return {"id": inst["id"], "code": code}
 
     res = c.post("/api/institutions", headers=headers, json={
@@ -75,7 +89,7 @@ def test_institution(superadmin_token):
         "admin_full_name": "ZZ Pytest Admin",
         "admin_password": "ZzPytest@123",
         "plan": "enterprise",
-        "max_employees": 1000,
+        "max_employees": MAX_EMPLOYEES,
     })
     assert res.status_code == 201, f"failed to create test institution: {res.text}"
     return {"id": res.json()["id"], "code": code}
