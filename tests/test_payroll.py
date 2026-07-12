@@ -1,20 +1,35 @@
 """Integration tests for routers/payroll.py.
 
-Uses far-future salted periods so period_start/period_end never collide
-across repeated runs in the shared ZZPYTEST institution (payroll_runs has a
-unique constraint on institution_id+period_start+period_end).
+Uses far-future, counter-spaced periods so period_start/period_end never
+collide across repeated runs in the shared ZZPYTEST institution (payroll_runs
+has a unique constraint on institution_id+period_start+period_end).
+Payroll runs have no delete-on-teardown for most tests here, so they
+accumulate permanently — a small fixed year x month space (as this file
+originally used) will eventually collide after enough repeated full-suite
+runs; a per-call counter spanning many years avoids that.
 """
+import itertools
 import random
+from datetime import date, timedelta
 
 import payroll_calc
 
-_year_salt = 2100 + random.randint(0, 800)
+# A day-granularity random offset (not just a small year range) gives a vastly
+# larger no-collision space than picking among ~800 years — after enough
+# repeated full-suite runs in a day, a small fixed set of (year, month)
+# combinations is exactly the kind of space that eventually collides by the
+# pigeonhole principle (as happened here).
+_base_date = date(2100, 1, 1) + timedelta(days=random.randint(0, 2_000_000))
+_period_counter = itertools.count()
 
 
-def _period(month=1):
-    """A 1-month period in a far-future salted year, e.g. 2xxx-01-01..01-31."""
-    start = f"{_year_salt}-{month:02d}-01"
-    end = f"{_year_salt}-{month:02d}-28"
+def _period(month=None):
+    """A unique 4-week period far in the future. `month` is accepted-but-ignored
+    for call-site readability; periods are actually spaced out via a counter
+    from a randomized base date so no two calls collide."""
+    base = _base_date + timedelta(days=35 * next(_period_counter))
+    start = base.isoformat()
+    end = (base + timedelta(days=27)).isoformat()
     return start, end
 
 
