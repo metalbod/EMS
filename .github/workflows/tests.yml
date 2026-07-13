@@ -55,4 +55,20 @@ jobs:
             echo "::warning::DATABASE_URL secret is not set on this repo — skipping DB-backed tests (these import main.py, which connects to the DB at startup). Add it under Settings > Secrets and variables > Actions to enable them."
             exit 0
           fi
-          pytest tests/ --ignore=tests/test_payroll_calc.py -v
+          # -n 2 --dist loadscope: run test FILES in parallel (2 workers),
+          # keeping each file's own tests together in one worker so
+          # within-file ordering assumptions still hold. Kept conservative
+          # (2, not 4+) because every worker opens its own DB connection
+          # pool against the same small shared Supabase instance — this
+          # exact setup produced real deadlocks/connection exhaustion when
+          # pushed further while building out this test suite.
+          #
+          # test_performance.py is run separately, sequentially, and NOT
+          # parallelized with the rest: its cycle-activation tests snapshot
+          # every Active employee institution-wide (see
+          # activate_performance_cycle in routers/performance.py), and its
+          # cleanup fixture deactivates all of them before each of its own
+          # tests. Running that concurrently with any other file that has an
+          # employee mid-test would yank that employee out from under it.
+          pytest tests/ --ignore=tests/test_payroll_calc.py --ignore=tests/test_performance.py -n 2 --dist loadscope -v
+          pytest tests/test_performance.py -v
