@@ -1,7 +1,7 @@
-fastapi==0.115.6
-uvicorn[standard]==0.32.1
-psycopg2-binary==2.9.10
-pyjwt==2.10.1
-bcrypt==4.2.1
-python-dotenv==1.0.1
-pydantic==2.10.3
+fastapi==0.139.0
+uvicorn[standard]==0.51.0
+psycopg2-binary==2.9.12
+pyjwt==2.13.0
+bcrypt==5.0.0
+python-dotenv==1.2.2
+pydantic==2.13.4
