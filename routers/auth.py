@@ -121,6 +121,7 @@ def login(body: LoginIn, request: Request):
             "department": user["department"],
             "employee_id": user["employee_id"],
             "institution": dict(inst) if inst else None,
+            "must_change_password": bool(user["must_change_password"]),
         }
     }
 

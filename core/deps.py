@@ -75,8 +75,8 @@ def get_current_user(
     payload = decode_token(creds.credentials)
     conn = get_db()
     user = conn.execute(
-        "SELECT id, username, full_name, role, roles, department, employee_id, is_active, institution_id "
-        "FROM users WHERE id = ?", (payload["sub"],)
+        "SELECT id, username, full_name, role, roles, department, employee_id, is_active, institution_id, "
+        "must_change_password FROM users WHERE id = ?", (payload["sub"],)
     ).fetchone()
     conn.close()
     if not user or not user["is_active"]:

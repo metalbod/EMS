@@ -64,14 +64,14 @@ def list_users(user: dict = Depends(require_roles(*CAN_MANAGE_USERS))):
         inst_id = user.get("active_institution_id")
         if inst_id:
             rows = conn.execute(
-                "SELECT id,institution_id,username,full_name,email,role,roles,employee_id,is_active,created_at "
+                "SELECT id,institution_id,username,full_name,email,role,roles,employee_id,is_active,created_at,must_change_password "
                 "FROM users WHERE institution_id=? ORDER BY created_at DESC", (inst_id,)
             ).fetchall()
         else:
             # Global view — return all non-superadmin users with institution info
             rows = conn.execute("""
                 SELECT u.id, u.institution_id, u.username, u.full_name, u.email, u.role, u.roles,
-                       u.employee_id, u.is_active, u.created_at,
+                       u.employee_id, u.is_active, u.created_at, u.must_change_password,
                        i.name AS institution_name, i.code AS institution_code
                 FROM users u
                 LEFT JOIN institutions i ON i.id = u.institution_id
@@ -80,7 +80,7 @@ def list_users(user: dict = Depends(require_roles(*CAN_MANAGE_USERS))):
     else:
         inst_id = user["institution_id"]
         rows = conn.execute(
-            "SELECT id,institution_id,username,full_name,email,role,roles,employee_id,is_active,created_at "
+            "SELECT id,institution_id,username,full_name,email,role,roles,employee_id,is_active,created_at,must_change_password "
             "FROM users WHERE institution_id=? ORDER BY created_at DESC", (inst_id,)
         ).fetchall()
     conn.close()
@@ -88,6 +88,7 @@ def list_users(user: dict = Depends(require_roles(*CAN_MANAGE_USERS))):
     for r in rows:
         d = dict(r)
         d["roles"] = [x.strip() for x in (d.get("roles") or d["role"]).split(",") if x.strip()]
+        d["must_change_password"] = bool(d["must_change_password"])
         result.append(d)
     return result
 
@@ -139,12 +140,15 @@ def update_user(user_id: int, body: UserUpdate, user: dict = Depends(require_rol
     if user_id == user["id"] and body.role != user["role"]:
         conn.close(); raise HTTPException(400, "Cannot change your own role")
     new_hash = hash_password(body.password) if body.password else target["password_hash"]
+    # Any real password change (not just leaving it unset) clears a pending
+    # forced-rotation flag — see main.py's superadmin seeding.
+    must_change_password = 0 if body.password else target["must_change_password"]
     roles_str = ",".join(body.roles) if body.roles else body.role
     conn.execute("""
-        UPDATE users SET full_name=?,email=?,password_hash=?,role=?,roles=?,employee_id=?,is_active=?
+        UPDATE users SET full_name=?,email=?,password_hash=?,role=?,roles=?,employee_id=?,is_active=?,must_change_password=?
         WHERE id=?
     """, (body.full_name, body.email, new_hash, body.role, roles_str,
-          body.employee_id, 1 if body.is_active else 0, user_id))
+          body.employee_id, 1 if body.is_active else 0, must_change_password, user_id))
     conn.commit()
     row = conn.execute(
         "SELECT id,institution_id,username,full_name,email,role,roles,employee_id,is_active,created_at "

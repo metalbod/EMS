@@ -19,7 +19,7 @@ except ImportError:
 # payroll_calc import moved to routers/payroll.py (only used there now).
 
 try:
-    from core.deps import hash_password
+    from core.deps import hash_password, verify_password
     from core.onboarding_seed import seed_ob_templates
     from routers.audit import router as audit_router
     from routers.notifications import router as notifications_router
@@ -42,7 +42,7 @@ try:
     from routers.meta import router as meta_router
     from routers.frontend import router as frontend_router, STATIC_DIR
 except ImportError:
-    from ems.core.deps import hash_password
+    from ems.core.deps import hash_password, verify_password
     from ems.core.onboarding_seed import seed_ob_templates
     from ems.routers.audit import router as audit_router
     from ems.routers.notifications import router as notifications_router
@@ -236,6 +236,7 @@ def _init_db_body(conn):
             employee_id     TEXT,
             department      TEXT,
             is_active       INTEGER NOT NULL DEFAULT 1,
+            must_change_password INTEGER NOT NULL DEFAULT 0,
             created_at      TEXT    NOT NULL DEFAULT (to_char(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS')),
             updated_at      TEXT    NOT NULL DEFAULT (to_char(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS'))
         );
@@ -814,6 +815,7 @@ def _init_db_body(conn):
     conn.commit()
     conn.execute("ALTER TABLE institutions ADD COLUMN IF NOT EXISTS pay_cycle TEXT NOT NULL DEFAULT 'Monthly'")
     conn.execute("ALTER TABLE institutions ADD COLUMN IF NOT EXISTS pay_day INTEGER NOT NULL DEFAULT 25")
+    conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password INTEGER NOT NULL DEFAULT 0")
     conn.execute("ALTER TABLE leave_types ADD COLUMN IF NOT EXISTS is_paid INTEGER NOT NULL DEFAULT 1")
     conn.execute("ALTER TABLE employees ADD COLUMN IF NOT EXISTS num_children INTEGER NOT NULL DEFAULT 0")
     conn.execute("ALTER TABLE employees ADD COLUMN IF NOT EXISTS salary_type TEXT NOT NULL DEFAULT 'Monthly'")
@@ -981,13 +983,29 @@ def _init_db_body(conn):
             conn.execute(f"ALTER TABLE public.{tbl} ENABLE ROW LEVEL SECURITY")
     conn.commit()
 
-    # Seed platform superadmin
+    # Seed platform superadmin. must_change_password=1 forces a password
+    # rotation before anything else meaningful can happen with this
+    # well-known default credential — see routers/auth.py's login response
+    # and routers/users.py's update_user, which clears the flag once a real
+    # password is set.
     if not conn.execute("SELECT id FROM users WHERE role='superadmin' LIMIT 1").fetchone():
         conn.execute("""
-            INSERT INTO users (institution_id, username, full_name, email, password_hash, role)
-            VALUES (NULL, ?, ?, ?, ?, 'superadmin')
+            INSERT INTO users (institution_id, username, full_name, email, password_hash, role, must_change_password)
+            VALUES (NULL, ?, ?, ?, ?, 'superadmin', 1)
         """, ("superadmin", "Platform Administrator", "admin@platform.com", hash_password("Admin@123")))
         conn.commit()
+
+    # One-time backfill for superadmin accounts seeded before
+    # must_change_password existed: if the password still matches the known
+    # default, flag it for rotation now instead of leaving it silently
+    # unrotated forever. Skips accounts that already changed their password
+    # (verify_password against the old default correctly fails for those).
+    for row in conn.execute(
+        "SELECT id, password_hash FROM users WHERE role='superadmin' AND must_change_password=0"
+    ).fetchall():
+        if verify_password("Admin@123", row["password_hash"]):
+            conn.execute("UPDATE users SET must_change_password=1 WHERE id=?", (row["id"],))
+    conn.commit()
 
     # Seed OB templates for existing institutions that don't have them
     inst_ids = [r[0] for r in conn.execute("SELECT id FROM institutions").fetchall()]
