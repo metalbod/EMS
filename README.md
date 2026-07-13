@@ -78,6 +78,36 @@ integration tests require `DATABASE_URL`/`JWT_SECRET` to be configured as
 repo secrets (Settings → Secrets and variables → Actions) — without them,
 that step logs a warning and skips rather than failing the build.
 
+## Database schema migrations
+
+The schema predating this section is still owned by `main.py`'s
+`init_db()`/`_init_db_body()` — idempotent `CREATE TABLE IF NOT EXISTS` /
+`ALTER TABLE ... ADD COLUMN IF NOT EXISTS` statements that run on every app
+boot. That mechanism is unchanged and still authoritative for anything that
+already exists.
+
+[Alembic](https://alembic.sqlalchemy.org/) is now set up (`migrations/`,
+`alembic.ini`) for **new** schema changes going forward, so they go through
+reviewable, versioned migrations instead of being appended to `init_db()`.
+The current schema was stamped as a baseline (`alembic stamp head`, revision
+`75b14e73962f`) without running any DDL — see that migration's docstring for
+why. This app has no ORM, so autogenerate isn't available; write migrations
+by hand with `op.execute("...")`, matching the raw-SQL style used everywhere
+else in this codebase.
+
+```bash
+pip install -r requirements-dev.txt   # includes alembic + sqlalchemy
+
+alembic revision -m "add foo column to bar"   # new migration
+alembic upgrade head                          # apply pending migrations
+alembic current                                # what's applied now
+```
+
+Alembic reads `DATABASE_URL` from the same `.env` file the app uses (see
+`migrations/env.py`) — no separate configuration needed. Not yet wired into
+deployment (the app still self-migrates via `init_db()` on boot); running
+`alembic upgrade head` is a manual step for now when a migration is added.
+
 ## Currency storage
 
 All money columns are `NUMERIC(12,2)` (exact fixed-point decimal), not
