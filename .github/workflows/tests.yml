@@ -38,21 +38,30 @@ jobs:
 
       - name: Verify the Tailwind build pipeline still runs
         run: |
-          # Not a diff-against-committed-output check: two different
-          # comparison strategies (byte-exact, then a semantic utility-class
-          # set comparison) were both tried here and both produced false
-          # positives — the build is not fully deterministic across separate
-          # `npm ci` installs (observed cosmetic reordering, and even a
-          # spurious core utility class like `.static{position:static}`
-          # appearing in one build but not another with zero source changes).
-          # Chasing full automation of "is the committed CSS exactly right"
-          # cost two failed CI iterations for a check that's inherently
-          # unstable in this environment. This step only confirms the build
-          # command itself still runs to completion (catches a broken
-          # tailwind.config.js, a missing content glob, etc.) — keeping the
-          # committed file in sync with source is a manual step per the
-          # README, same as any change that needs `npm run build:css`.
+          # Not a diff-against-committed-output *failure* check: two
+          # different comparison strategies (byte-exact, then a semantic
+          # utility-class set comparison) were both tried here and both
+          # produced false-positive CI *failures* — the build is not fully
+          # deterministic across separate `npm ci` installs (observed
+          # cosmetic reordering, and even a spurious core utility class like
+          # `.static{position:static}` appearing in one build but not another
+          # with zero source changes). Chasing full automation of "is the
+          # committed CSS exactly right" as a blocking check cost two failed
+          # CI iterations for something inherently unstable in this
+          # environment.
+          #
+          # This step still confirms the build command itself runs to
+          # completion (catches a broken tailwind.config.js, a missing
+          # content glob, etc.), and now additionally emits a non-blocking
+          # ::warning:: if the freshly-built output differs from the
+          # committed file — a *warning* has no false-positive-failure cost
+          # (an occasional spurious nudge is cheap), so it's safe to leave on
+          # even though the diff isn't 100% reliable. Keeping the committed
+          # file in sync with source remains a manual step per the README.
           npm run build:css
+          if ! git diff --quiet -- static/css/tailwind.css; then
+            echo "::warning::static/css/tailwind.css differs from a fresh 'npm run build:css' output. This can be a false positive (the build isn't fully deterministic across installs — see comment above), but if you added/changed Tailwind classes and forgot to rebuild before committing, this is your signal. Run 'npm run build:css' locally and compare before assuming it's spurious."
+          fi
 
       - name: Run payroll_calc unit tests (no external dependencies)
         run: pytest tests/test_payroll_calc.py -v
