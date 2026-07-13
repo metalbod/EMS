@@ -1,6 +1,11 @@
 """Integration tests for routers/users.py."""
 import os
 
+from dotenv import load_dotenv
+
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"))
+from db import get_db
+
 
 def test_list_users_requires_auth(client):
     res = client.get("/api/users")
@@ -161,4 +166,55 @@ def test_cannot_delete_own_account(client, make_test_user, test_institution):
     headers = {"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}
     res = client.delete(f"/api/users/{user_id}", headers=headers)
     assert res.status_code == 400
+
+
+def test_new_user_login_does_not_require_password_change(client, hr_manager_auth, test_institution):
+    username = f"zztest_{os.urandom(4).hex()}"
+    password = "ZzPytest@123"
+    create = client.post("/api/users", headers=hr_manager_auth, json={
+        "username": username, "full_name": "ZZ Fresh User", "password": password, "role": "employee",
+    })
+    user_id = create.json()["id"]
+    login = client.post("/api/auth/login", json={
+        "username": username, "password": password, "institution_code": test_institution["code"],
+    })
+    assert login.status_code == 200
+    assert login.json()["user"]["must_change_password"] is False
+    client.delete(f"/api/users/{user_id}", headers=hr_manager_auth)
+
+
+def test_flagged_password_change_required_clears_on_real_password_change(client, hr_manager_auth, test_institution):
+    """No API sets must_change_password=1 directly (only main.py's superadmin
+    seed/backfill does) — simulate the flagged state the same way a real
+    forced-rotation account would arrive at it, via a direct DB write, then
+    verify the flag surfaces on login and clears once the password actually
+    changes via PUT /api/users/{id}."""
+    username = f"zztest_{os.urandom(4).hex()}"
+    password = "ZzPytest@123"
+    create = client.post("/api/users", headers=hr_manager_auth, json={
+        "username": username, "full_name": "ZZ Flagged User", "password": password, "role": "employee",
+    })
+    user_id = create.json()["id"]
+
+    conn = get_db()
+    conn.execute("UPDATE users SET must_change_password=1 WHERE id=?", (user_id,))
+    conn.commit()
+    conn.close()
+
+    login = client.post("/api/auth/login", json={
+        "username": username, "password": password, "institution_code": test_institution["code"],
+    })
+    assert login.status_code == 200
+    assert login.json()["user"]["must_change_password"] is True
+
+    update = client.put(f"/api/users/{user_id}", headers=hr_manager_auth, json={
+        "full_name": "ZZ Flagged User", "role": "employee", "password": "ZzNewPassword@456",
+    })
+    assert update.status_code == 200, update.text
+
+    listing = client.get("/api/users", headers=hr_manager_auth)
+    updated = next(u for u in listing.json() if u["id"] == user_id)
+    assert updated["must_change_password"] is False
+
+    client.delete(f"/api/users/{user_id}", headers=hr_manager_auth)
 
