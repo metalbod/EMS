@@ -117,7 +117,14 @@ def test_hr_manager_cannot_edit_superadmin(client, hr_manager_auth, superadmin_h
     res = client.put(f"/api/users/{superadmin_row['id']}", headers=hr_manager_auth, json={
         "full_name": "ZZ Hacked", "role": "superadmin",
     })
-    assert res.status_code == 403
+    # 404, not 403: RLS now hides platform-level rows (institution_id IS
+    # NULL) from an institution-scoped hr_manager connection entirely — the
+    # endpoint's own SELECT WHERE id=? finds nothing, so it 404s before ever
+    # reaching the app-level "Cannot edit Platform Admin" check that used to
+    # return 403. Arguably more secure than before: hr_manager can no
+    # longer even confirm the superadmin row exists, rather than being
+    # explicitly told "found it, but access denied."
+    assert res.status_code == 404
 
 
 def test_hr_manager_cannot_assign_superadmin_role(client, hr_manager_auth):
