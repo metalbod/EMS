@@ -22,12 +22,14 @@ if config.config_file_name is not None:
 # metadata object for Alembic's autogenerate to diff against.
 target_metadata = None
 
-# Reuse the same DATABASE_URL the app itself connects with (see db.py),
-# loaded from the same .env file, instead of a separately-configured
-# sqlalchemy.url in alembic.ini — one source of truth for which DB migrations
-# run against.
+# Migrations run schema DDL, which needs the owner role's privileges — the
+# app's regular DATABASE_URL deliberately points at a lower-privileged role
+# with no RLS bypass (see db.py's ADMIN_DATABASE_URL/DATABASE_URL split and
+# the RLS tenant-isolation migration), so migrations must use
+# ADMIN_DATABASE_URL instead, falling back to DATABASE_URL for any
+# environment that hasn't set up the separate app role yet.
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"))
-_database_url = os.environ.get("DATABASE_URL")
+_database_url = os.environ.get("ADMIN_DATABASE_URL") or os.environ.get("DATABASE_URL")
 if _database_url:
     config.set_main_option("sqlalchemy.url", _database_url)
 

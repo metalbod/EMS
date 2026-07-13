@@ -12,9 +12,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import Response
 
 try:
-    from db import get_db
+    from db import get_db, get_admin_db
 except ImportError:
-    from ems.db import get_db
+    from ems.db import get_db, get_admin_db
 
 # payroll_calc import moved to routers/payroll.py (only used there now).
 
@@ -191,7 +191,12 @@ def init_db():
     with open(lock_path, "w") as lockfile:
         fcntl.flock(lockfile, fcntl.LOCK_EX)
         try:
-            conn = get_db()
+            # get_admin_db(), not get_db(): this runs schema DDL (CREATE
+            # TABLE, ALTER TABLE, CREATE POLICY), which needs the owner
+            # role's privileges — the app's regular runtime role
+            # (get_db()) deliberately does NOT have those, so RLS policies
+            # actually apply to it (see ADMIN_DATABASE_URL in db.py).
+            conn = get_admin_db()
             try:
                 _init_db_body(conn)
             finally:
@@ -955,12 +960,22 @@ def _init_db_body(conn):
             conn.execute(f"ALTER TABLE {_tbl} ALTER COLUMN {_col} TYPE NUMERIC(12,2) USING {_col}::numeric(12,2)")
     conn.commit()
 
-    # Enable RLS on every table so Supabase's auto-exposed PostgREST/GraphQL API
-    # can't read/write this data. Our app connects as the table owner (postgres),
-    # which bypasses RLS by default — access control stays enforced in the API layer.
-    # Same AccessExclusiveLock-every-boot concern as the NUMERIC migration
-    # above: check pg_class.relrowsecurity first so an already-enabled table
-    # is a no-op SELECT instead of a repeated exclusive-lock DDL statement.
+    # Enable RLS on every tenant-scoped table so Supabase's auto-exposed
+    # PostgREST/GraphQL API can't read/write this data, and so the RLS
+    # tenant-isolation policies (see the Alembic migration
+    # eb95a484c74a_add_rls_tenant_isolation_policies) have something to
+    # attach to. Same AccessExclusiveLock-every-boot concern as the NUMERIC
+    # migration above: check pg_class.relrowsecurity first so an
+    # already-enabled table is a no-op SELECT instead of a repeated
+    # exclusive-lock DDL statement.
+    #
+    # system_notifications is deliberately excluded: it's intentionally
+    # global/unscoped (see routers/notifications.py), and that same Alembic
+    # migration explicitly DISABLEs RLS on it — including it here would
+    # silently re-enable RLS on every app boot (with zero policies, which
+    # denies ALL access for any non-bypass role) and undo that fix. This bit
+    # both of us once already; don't re-add it without also updating the
+    # migration.
     for tbl in (
         "institutions", "users", "employees", "audit_logs", "job_requisitions",
         "candidates", "interviews", "interview_scores", "offers",
@@ -971,7 +986,7 @@ def _init_db_body(conn):
         "ld_course_modules", "ld_lesson_progress",
         "holidays", "leave_types", "leave_balances", "leave_applications", "leave_audit_log",
         "projects", "project_tasks", "timesheets", "timesheet_entries", "timesheet_audit_log",
-        "task_assignments", "institution_notifications", "system_notifications",
+        "task_assignments", "institution_notifications",
         "payroll_runs", "payslips",
         "performance_cycles", "goals", "okr_key_results", "appraisals", "appraisal_audit_log", "performance_payouts",
     ):
