@@ -10,7 +10,7 @@ wrong function — see commit 207a31f) and returned 422 for every request.
 """
 import pytest
 
-from conftest import _valid_employee_payload
+from conftest import _valid_employee_payload, _unique_ic
 
 # ---------------------------------------------------------------------------
 # Auth / permissions
@@ -134,7 +134,11 @@ def test_bulk_template_download_success(client, hr_manager_auth):
 
 def test_bulk_upload_creates_employee(client, hr_manager_auth):
     header = "employee_id,full_name,ic_number,passport_number,nationality,race,religion,gender,date_of_birth,marital_status,personal_email,phone,address,department,designation,employment_type,start_date,probation_end_date,contract_end_date,work_email,epf_number,socso_number,income_tax_number,bank_name,bank_account,basic_salary,num_children,salary_type,hourly_rate,reports_to"
-    row = ",ZZ Bulk Employee,900101-14-5678,,Malaysian,Chinese,Buddhism,Female,1992-05-05,Single,,+60129998888,,Sales,Sales Rep,Permanent,2026-02-01,,,,,,,,,3000,0,Monthly,0,"
+    # A per-call-unique IC (not a hardcoded literal) — a fixed IC eventually
+    # collides with a prior run's leftover employee in the shared ZZPYTEST
+    # institution (employees are never hard-deleted), causing the row to be
+    # rejected as a duplicate and this test to flake with created=[].
+    row = f",ZZ Bulk Employee,{_unique_ic()},,Malaysian,Chinese,Buddhism,Female,1992-05-05,Single,,+60129998888,,Sales,Sales Rep,Permanent,2026-02-01,,,,,,,,,3000,0,Monthly,0,"
     csv_content = header + "\n" + row + "\n"
     res = client.post("/api/employees/bulk-upload", headers=hr_manager_auth, json={"csv_content": csv_content})
     assert res.status_code == 200
