@@ -1,5 +1,7 @@
+import fcntl
 import os
 import logging
+import tempfile
 import time
 
 from dotenv import load_dotenv
@@ -172,7 +174,33 @@ async def request_logging_middleware(request: Request, call_next):
 # Database (Postgres/Supabase — see db.py)
 # ---------------------------------------------------------------------------
 def init_db():
-    conn = get_db()
+    # Serializes this function's DDL across concurrent same-host processes
+    # that import main.py at the same time (e.g. parallel pytest-xdist
+    # workers) — without this, two processes running the same CREATE OR
+    # REPLACE FUNCTION / ALTER TABLE statements concurrently can hit
+    # Postgres's "tuple concurrently updated" error on the system catalog.
+    # A plain filesystem lock (not a Postgres advisory lock) is used
+    # deliberately: an advisory lock's blocking wait is itself a SQL
+    # statement, and if the winning process's DDL run takes longer than
+    # Supabase's statement_timeout, every OTHER waiting process gets its
+    # wait cancelled with "canceling statement due to statement timeout" —
+    # which then fails that process's app import entirely. A file lock has
+    # no such interaction with the DB and is sufficient since every worker
+    # racing on this runs on the same machine.
+    lock_path = os.path.join(tempfile.gettempdir(), "ems_init_db.lock")
+    with open(lock_path, "w") as lockfile:
+        fcntl.flock(lockfile, fcntl.LOCK_EX)
+        try:
+            conn = get_db()
+            try:
+                _init_db_body(conn)
+            finally:
+                conn.close()
+        finally:
+            fcntl.flock(lockfile, fcntl.LOCK_UN)
+
+
+def _init_db_body(conn):
     conn.executescript("""
         CREATE OR REPLACE FUNCTION set_updated_at() RETURNS TRIGGER AS $$
         BEGIN
@@ -893,7 +921,15 @@ def init_db():
     # tech-debt notes). CREATE TABLE / ADD COLUMN above already declare these
     # as NUMERIC for fresh installs; the ALTERs below bring an existing
     # database's already-created REAL columns in line. Safe to re-run: a
-    # column already NUMERIC(12,2) is a no-op.
+    # column already NUMERIC(12,2) is a no-op in terms of data, BUT an
+    # unconditional ALTER TABLE ... ALTER COLUMN still takes an
+    # AccessExclusiveLock on the table every single time regardless of
+    # whether anything actually changes — on every app boot, forever. Under
+    # concurrent load (e.g. two app/test processes starting up close
+    # together) that unconditional exclusive lock is what produced a real
+    # Postgres deadlock against ordinary traffic on these same tables.
+    # Checking information_schema first turns an already-migrated column
+    # into a plain SELECT with no lock escalation at all.
     for _tbl, _col in [
         ("employees", "basic_salary"), ("employees", "hourly_rate"),
         ("job_requisitions", "salary_min"), ("job_requisitions", "salary_max"),
@@ -908,12 +944,21 @@ def init_db():
         ("payslips", "overtime_pay"), ("payslips", "bonus_amount"),
         ("performance_payouts", "amount"),
     ]:
-        conn.execute(f"ALTER TABLE {_tbl} ALTER COLUMN {_col} TYPE NUMERIC(12,2) USING {_col}::numeric(12,2)")
+        already_numeric = conn.execute("""
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema='public' AND table_name=? AND column_name=?
+              AND data_type='numeric' AND numeric_precision=12 AND numeric_scale=2
+        """, (_tbl, _col)).fetchone()
+        if not already_numeric:
+            conn.execute(f"ALTER TABLE {_tbl} ALTER COLUMN {_col} TYPE NUMERIC(12,2) USING {_col}::numeric(12,2)")
     conn.commit()
 
     # Enable RLS on every table so Supabase's auto-exposed PostgREST/GraphQL API
     # can't read/write this data. Our app connects as the table owner (postgres),
     # which bypasses RLS by default — access control stays enforced in the API layer.
+    # Same AccessExclusiveLock-every-boot concern as the NUMERIC migration
+    # above: check pg_class.relrowsecurity first so an already-enabled table
+    # is a no-op SELECT instead of a repeated exclusive-lock DDL statement.
     for tbl in (
         "institutions", "users", "employees", "audit_logs", "job_requisitions",
         "candidates", "interviews", "interview_scores", "offers",
@@ -928,7 +973,12 @@ def init_db():
         "payroll_runs", "payslips",
         "performance_cycles", "goals", "okr_key_results", "appraisals", "appraisal_audit_log", "performance_payouts",
     ):
-        conn.execute(f"ALTER TABLE public.{tbl} ENABLE ROW LEVEL SECURITY")
+        rls_enabled = conn.execute(
+            "SELECT relrowsecurity FROM pg_class WHERE relnamespace='public'::regnamespace AND relname=?",
+            (tbl,)
+        ).fetchone()
+        if not (rls_enabled and rls_enabled[0]):
+            conn.execute(f"ALTER TABLE public.{tbl} ENABLE ROW LEVEL SECURITY")
     conn.commit()
 
     # Seed platform superadmin
@@ -945,8 +995,6 @@ def init_db():
         seed_ob_templates(conn, iid)
     if inst_ids:
         conn.commit()
-
-    conn.close()
 
 init_db()
 
