@@ -394,8 +394,23 @@ def bulk_upload_employees(body: BulkUploadIn, request: Request, user: dict = Dep
             if existing_count >= (inst["max_employees"] if inst else 10**9):
                 errors.append({"row": i, "reason": f"Employee limit ({inst['max_employees']}) reached for this institution"})
                 continue
-            emp_id = _insert_new_employee(conn, inst_id, emp, user, ip)
-            conn.commit()
+            # Same race as create_employee (see its own retry loop): gen_employee_id
+            # is check-then-insert with no locking, so a concurrent request can
+            # collide on the same auto-generated id. Retry with a freshly
+            # generated id a few times — but only when the id was
+            # auto-generated; a CSV-supplied custom employee_id colliding is a
+            # real duplicate-data error and should be reported, not retried.
+            max_attempts = 5 if not emp.employee_id else 1
+            for attempt in range(max_attempts):
+                try:
+                    emp_id = _insert_new_employee(conn, inst_id, emp, user, ip)
+                    conn.commit()
+                    break
+                except IntegrityError as e:
+                    conn.rollback()
+                    if "employees_institution_id_employee_id_key" in str(e) and attempt < max_attempts - 1:
+                        continue
+                    raise
             existing_count += 1
             created.append({"row": i, "employee_id": emp_id, "full_name": emp.full_name})
         except ValidationError as e:
