@@ -25,6 +25,17 @@ jobs:
       - name: Install Node dependencies
         run: npm ci
 
+      - name: Scan Python dependencies for known vulnerabilities
+        # Warn-only for now: pip-audit already finds 21 known vulnerabilities
+        # in current pinned deps (pyjwt, python-dotenv, starlette) that
+        # predate this scanning step — fixing those is a separate dependency-
+        # upgrade effort, not something this step should block merges on.
+        # Findings are printed to the CI log either way so they stay visible.
+        run: pip-audit -r requirements.txt || echo "::warning::pip-audit found known vulnerabilities — see log above. Non-blocking for now; see tech-debt notes."
+
+      - name: Scan Node dependencies for known vulnerabilities
+        run: npm audit || echo "::warning::npm audit found known vulnerabilities — see log above. Non-blocking for now."
+
       - name: Verify the Tailwind build pipeline still runs
         run: |
           # Not a diff-against-committed-output check: two different
