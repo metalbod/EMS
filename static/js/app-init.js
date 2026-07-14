@@ -1,12 +1,12 @@
 // ---------------------------------------------------------------------------
-// Nav helpers — full-width labeled sidebar rail with accordion sub-menus.
+// Nav helpers — off-canvas burger drawer with accordion sub-menus.
 // Sub-menus are collapsed by default and only expand when their group header
-// is clicked.
+// is clicked. The whole drawer is closed after navigating to a page.
 // ---------------------------------------------------------------------------
 let activeNavGroup = null;
 
 function toggleNavGroup(name) {
-  if (activeNavGroup === name) { collapseNavRail(); return; }
+  if (activeNavGroup === name) { collapseNavGroups(); return; }
   document.querySelectorAll('.nav-submenu').forEach(p => p.classList.add('hidden'));
   document.querySelectorAll('.nav-rail-btn').forEach(b => b.classList.remove('group-active'));
   document.querySelectorAll('.nav-rail-chevron').forEach(c => c.classList.remove('rot'));
@@ -18,17 +18,35 @@ function toggleNavGroup(name) {
   activeNavGroup = name;
 }
 
-function collapseNavRail() {
+function collapseNavGroups() {
   document.querySelectorAll('.nav-submenu').forEach(p => p.classList.add('hidden'));
   document.querySelectorAll('.nav-rail-btn').forEach(b => b.classList.remove('group-active'));
   document.querySelectorAll('.nav-rail-chevron').forEach(c => c.classList.remove('rot'));
   activeNavGroup = null;
 }
 
-// Auto-collapse the open sub-menu when clicking anywhere outside the sidebar rail
+function openBurgerMenu() {
+  document.getElementById('burgerDrawer').classList.remove('invisible', 'opacity-0', '-translate-y-2');
+  document.getElementById('navOverlay').classList.remove('hidden');
+}
+
+function closeBurgerMenu() {
+  document.getElementById('burgerDrawer').classList.add('invisible', 'opacity-0', '-translate-y-2');
+  document.getElementById('navOverlay').classList.add('hidden');
+  collapseNavGroups();
+}
+
+function toggleBurgerMenu() {
+  const isOpen = !document.getElementById('burgerDrawer').classList.contains('invisible');
+  if (isOpen) closeBurgerMenu(); else openBurgerMenu();
+}
+
+function toggleUserMenu() {
+  document.getElementById('userMenuDropdown').classList.toggle('hidden');
+}
 document.addEventListener('click', e => {
-  const rail = document.getElementById('sidebarRail');
-  if (activeNavGroup && rail && !rail.contains(e.target)) collapseNavRail();
+  if (!document.getElementById('userMenuWrap')?.contains(e.target))
+    document.getElementById('userMenuDropdown')?.classList.add('hidden');
 });
 
 function esc(s) {
