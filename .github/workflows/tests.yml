@@ -66,9 +66,10 @@ jobs:
       - name: Run payroll_calc unit tests (no external dependencies)
         run: pytest tests/test_payroll_calc.py -v
 
-      - name: Run app integration tests (requires DATABASE_URL/JWT_SECRET secrets)
+      - name: Run app integration tests (requires DATABASE_URL/ADMIN_DATABASE_URL/JWT_SECRET secrets)
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ADMIN_DATABASE_URL: ${{ secrets.ADMIN_DATABASE_URL }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
         run: |
           if [ -z "$DATABASE_URL" ]; then
