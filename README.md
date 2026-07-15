@@ -42,7 +42,35 @@ regardless of `FORCE ROW LEVEL SECURITY` — using a genuinely restricted
 role for `DATABASE_URL` is what makes the tenant-isolation policies below
 actually enforced rather than a no-op.
 
-## Frontend CSS (Tailwind)
+## Frontend structure
+
+The frontend is vanilla JavaScript (no framework) with HTML templates in
+`static/index.html` and separate logic files:
+
+- `static/js/core.js` — global auth, boot, page navigation, role switching
+- `static/js/app-init.js` — menu and navigation UI interactions
+- `static/js/payroll.js`, `static/js/leave.js`, etc. — feature-specific logic
+
+### UI Design (Navigation & Menu)
+
+The top navigation includes:
+
+- **Burger menu** (top-left): off-canvas drawer that slides down from the
+  header (not from the left side). Opens/closes via `openBurgerMenu()` /
+  `closeBurgerMenu()` / `toggleBurgerMenu()` in `app-init.js`, with overlay
+  click-to-close. Uses CSS transforms (`invisible opacity-0 -translate-y-2`)
+  for smooth animations and z-index stacking to keep the header clickable
+  while the overlay is open.
+
+- **Company branding** (top-center): logo (custom or default icon) and
+  institution name. Updated by `updateBrandHeader()` in `core.js` when
+  superadmin switches institutions.
+
+- **User profile menu** (top-right): avatar with user initials, dropdown
+  containing logout and role-switching controls (if user has multiple roles).
+  Opens/closes via `toggleUserMenu()` with click-outside handling.
+
+### Frontend CSS (Tailwind)
 
 Tailwind is compiled ahead of time rather than loaded from the CDN at
 runtime (the CDN build is explicitly documented by Tailwind as unsuitable
@@ -71,8 +99,11 @@ nothing to bump by hand. The literal `?v=...` values committed in
 
 ## Testing
 
+### Backend (Python/pytest)
+
 ```bash
-pytest
+pytest                            # run all tests
+pytest tests/test_payroll_calc.py # payroll unit tests only (no DB needed)
 ```
 
 - `tests/test_payroll_calc.py` — pure unit tests, no external dependencies
@@ -85,6 +116,28 @@ pytest
   `main.py`, which connects to and migrates the DB at module import time.
   These tests are strictly read-only and never create, mutate, or delete
   data (see `tests/conftest.py`).
+
+**Concurrency & deadlock handling:** `tests/conftest.py`'s `make_test_user()`
+fixture includes exponential-backoff retry logic for transient `DeadlockDetected`
+errors. Under xdist 2-worker parallelization, concurrent test files both call
+`make_test_user()` simultaneously, hitting concurrent INSERTs on the users table
+with lock conflicts. The retry wrapper (up to 3 attempts, 0.1s–0.2s backoff)
+transparently handles these race conditions without requiring architectural
+changes to the DB layer.
+
+### Frontend (JavaScript/Vitest)
+
+```bash
+npm test              # run all JS tests once
+npm run test:ui       # interactive test UI
+npm run test:coverage # test coverage report
+```
+
+Frontend tests cover vanilla-JS navigation and menu logic (burger menu toggle,
+user dropdown, page navigation, nav accordion groups). Tests use Vitest + jsdom
+and are located in `static/js/__tests__/`. All 15 tests passing validates the
+burger-menu redesign and ensures menu interactions remain correct as the
+codebase evolves.
 
 There is currently no dedicated test database — integration tests run
 against whatever `DATABASE_URL` points to. Keep new DB-touching tests
@@ -153,6 +206,31 @@ non-`BYPASSRLS` role (see the two-role split above); superadmin access
 across institutions works by setting `bypass_rls=true` in the RLS context
 (`core/deps.py`), not by relying on role-level bypass. See
 `tests/test_rls_enforcement.py` for the enforcement tests.
+
+**Institution ID indexing:** All RLS-filtered tables have indexes on
+`institution_id` to avoid full-table scans when the RLS policy filters by
+tenant. These were added in `migrations/versions/8fc32f58e44f_*.py` and cover
+38 tables. Without these indexes, every RLS-scoped query would perform
+sequential scans even when `institution_id` is highly selective (e.g. a single
+institution rarely has >100k rows of any single entity type across millions of
+rows in the large shared tables).
+
+## Deployment (Fly.io)
+
+The app is deployed to Fly.io with a rolling-update strategy. Key deployment
+details:
+
+- **Health checks:** configured in `fly.toml` with a 30-second grace period.
+  This grace period is necessary because `init_db()` (line 1032 in `main.py`)
+  runs synchronously at app startup during Uvicorn's import of the `main`
+  module. This runs DDL/schema initialization (CREATE TABLE, CREATE POLICY,
+  CREATE INDEX, etc.) that can take time, especially on the initial deployment
+  or after schema changes. The 30s grace period ensures health checks don't
+  timeout before initialization is complete.
+
+- **Asset versioning:** CSS and JS static files get automatic cache-busting via
+  query strings (see "Frontend asset versioning" above). No manual steps needed
+  when deploying changes to `static/`.
 
 ## Known limitations
 
