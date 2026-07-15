@@ -18,10 +18,29 @@ pyenv install   # reads .python-version automatically, if using pyenv
 python3 -m venv .venv
 source .venv/bin/activate
 
-cp .env.example .env   # fill in DATABASE_URL and JWT_SECRET
+cp .env.example .env   # fill in DATABASE_URL, ADMIN_DATABASE_URL, and JWT_SECRET
 pip install -r requirements-dev.txt
 uvicorn main:app --reload
 ```
+
+### Two database roles: `DATABASE_URL` vs `ADMIN_DATABASE_URL`
+
+The app connects with two separate Postgres roles, split across two
+connection pools (`db.py`):
+
+- **`DATABASE_URL`** — a low-privilege `ems_app` role (`NOBYPASSRLS`,
+  `NOSUPERUSER`, DML-only grants, not table owner) used for all regular
+  request-serving queries. Row-level security tenant-isolation policies
+  actually apply to this connection.
+- **`ADMIN_DATABASE_URL`** — the schema-owning role, used only for DDL
+  (`init_db()` on boot, Alembic migrations). Falls back to `DATABASE_URL`
+  if unset, for environments that haven't split the two roles.
+
+This split exists because Postgres roles with `BYPASSRLS` (including
+`postgres` on some managed providers) silently skip RLS policy checks
+regardless of `FORCE ROW LEVEL SECURITY` — using a genuinely restricted
+role for `DATABASE_URL` is what makes the tenant-isolation policies below
+actually enforced rather than a no-op.
 
 ## Frontend CSS (Tailwind)
 
@@ -58,14 +77,14 @@ pytest
 
 - `tests/test_payroll_calc.py` — pure unit tests, no external dependencies
   (doesn't import `main.py`, so no DB connection needed).
-- `tests/test_auth.py`, `tests/test_frontend.py`, `tests/test_currency.py`
-  — integration tests against the real app; require `DATABASE_URL`/
-  `JWT_SECRET` in `.env`. Note this applies even to tests that look
-  unrelated to the database (e.g. `test_frontend.py`, which only tests
-  static file serving) — they import `main.py`, which connects to and
-  migrates the DB at module import time. These tests are strictly
-  read-only and never create, mutate, or delete data (see
-  `tests/conftest.py`).
+- `tests/test_auth.py`, `tests/test_frontend.py`, `tests/test_currency.py`,
+  `tests/test_rls_enforcement.py` — integration tests against the real app;
+  require `DATABASE_URL`/`ADMIN_DATABASE_URL`/`JWT_SECRET` in `.env`. Note
+  this applies even to tests that look unrelated to the database (e.g.
+  `test_frontend.py`, which only tests static file serving) — they import
+  `main.py`, which connects to and migrates the DB at module import time.
+  These tests are strictly read-only and never create, mutate, or delete
+  data (see `tests/conftest.py`).
 
 There is currently no dedicated test database — integration tests run
 against whatever `DATABASE_URL` points to. Keep new DB-touching tests
@@ -74,9 +93,12 @@ guaranteed teardown.
 
 CI (`.github/workflows/tests.yml`) runs on every push/PR: the CSS build is
 checked for drift, `payroll_calc` tests always run, and the DB-backed
-integration tests require `DATABASE_URL`/`JWT_SECRET` to be configured as
-repo secrets (Settings → Secrets and variables → Actions) — without them,
-that step logs a warning and skips rather than failing the build.
+integration tests require `DATABASE_URL`/`ADMIN_DATABASE_URL`/`JWT_SECRET`
+to be configured as repo secrets (Settings → Secrets and variables →
+Actions) — without `DATABASE_URL`, that step logs a warning and skips
+rather than failing the build; `ADMIN_DATABASE_URL` must also be wired into
+the step's `env:` block (not just added as a secret) since `init_db()`'s
+schema DDL needs it — see the two-role split above.
 
 ## Database schema migrations
 
@@ -103,10 +125,12 @@ alembic upgrade head                          # apply pending migrations
 alembic current                                # what's applied now
 ```
 
-Alembic reads `DATABASE_URL` from the same `.env` file the app uses (see
-`migrations/env.py`) — no separate configuration needed. Not yet wired into
-deployment (the app still self-migrates via `init_db()` on boot); running
-`alembic upgrade head` is a manual step for now when a migration is added.
+Alembic reads `ADMIN_DATABASE_URL` (falling back to `DATABASE_URL`) from the
+same `.env` file the app uses (see `migrations/env.py`) — migrations run DDL,
+so they need the schema-owning role, not the restricted `ems_app` role. Not
+yet wired into deployment (the app still self-migrates via `init_db()` on
+boot); running `alembic upgrade head` is a manual step for now when a
+migration is added.
 
 ## Currency storage
 
@@ -118,10 +142,21 @@ plain Python `float` in application code (existing arithmetic in
 applies to the database layer, where float drift previously accumulated
 silently across storage/retrieval and aggregation. See `tests/test_currency.py`.
 
+## Row-level security (multi-tenancy)
+
+Tenant isolation is enforced at the database layer via Postgres RLS
+(`migrations/versions/eb95a484c74a_*.py`), not just application-code
+filtering — every standard table has a `tenant_isolation` policy scoped to
+`app.current_institution_id`, set per-request via `set_config(...)` in
+`db.py`. This only actually restricts access because `DATABASE_URL` is a
+non-`BYPASSRLS` role (see the two-role split above); superadmin access
+across institutions works by setting `bypass_rls=true` in the RLS context
+(`core/deps.py`), not by relying on role-level bypass. See
+`tests/test_rls_enforcement.py` for the enforcement tests.
+
 ## Known limitations
 
 See commit history / project notes for the running tech-debt list. Notably:
-multi-tenancy isolation is enforced in application code only (no DB-level
-RLS), and payroll statutory tables are simplified approximations (see
+payroll statutory tables are simplified approximations (see
 `payroll_calc.py` docstring — verify against official tables before real
 use).
