@@ -21,6 +21,7 @@ import itertools
 import os
 import random
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -130,7 +131,24 @@ def make_test_user(test_institution, superadmin_headers):
         }
         if roles:
             payload["roles"] = roles
-        res = c.post("/api/users", headers=superadmin_headers, json=payload)
+
+        # Retry on transient deadlock errors (xdist concurrent INSERTs with lock conflicts)
+        res = None
+        for attempt in range(3):
+            try:
+                res = c.post("/api/users", headers=superadmin_headers, json=payload)
+                if res.status_code == 201:
+                    break
+                if res.status_code == 500 and "deadlock" in res.text.lower():
+                    if attempt < 2:
+                        time.sleep(0.1 * (2 ** attempt))  # Exponential backoff: 0.1s, 0.2s, then fail
+                        continue
+            except Exception as e:
+                if attempt < 2 and "deadlock" in str(e).lower():
+                    time.sleep(0.1 * (2 ** attempt))
+                    continue
+                raise
+
         assert res.status_code == 201, f"failed to create test user: {res.text}"
         user_id = res.json()["id"]
         created_ids.append(user_id)
