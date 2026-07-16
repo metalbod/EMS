@@ -63,6 +63,25 @@ jobs:
             echo "::warning::static/css/tailwind.css differs from a fresh 'npm run build:css' output. This can be a false positive (the build isn't fully deterministic across installs — see comment above), but if you added/changed Tailwind classes and forgot to rebuild before committing, this is your signal. Run 'npm run build:css' locally and compare before assuming it's spurious."
           fi
 
+      - name: Validate Alembic migrations are up-to-date
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ADMIN_DATABASE_URL: ${{ secrets.ADMIN_DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "Skipping migration check (no DATABASE_URL secret)"
+            exit 0
+          fi
+          # Check if any pending migrations exist (returns non-zero if there are)
+          alembic current > /tmp/alembic_current.txt 2>&1 || true
+          alembic upgrade --sql head > /tmp/alembic_pending.sql 2>&1 || true
+          if grep -q "INSERT INTO alembic_version" /tmp/alembic_pending.sql; then
+            echo "::error::Pending Alembic migrations detected. Run 'alembic upgrade head' locally and commit the updates."
+            cat /tmp/alembic_pending.sql
+            exit 1
+          fi
+          echo "✓ All Alembic migrations applied"
+
       - name: Run payroll_calc unit tests (no external dependencies)
         run: pytest tests/test_payroll_calc.py -v
 

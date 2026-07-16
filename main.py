@@ -77,6 +77,21 @@ logging.basicConfig(
 logger = logging.getLogger("ems")
 
 # ---------------------------------------------------------------------------
+# Error tracking (Sentry)
+# ---------------------------------------------------------------------------
+sentry_dsn = os.environ.get("SENTRY_DSN")
+if sentry_dsn:
+    import sentry_sdk
+    from sentry_sdk.integrations.fastapi import FastApiIntegration
+    sentry_sdk.init(
+        dsn=sentry_dsn,
+        integrations=[FastApiIntegration()],
+        traces_sample_rate=float(os.environ.get("SENTRY_TRACES_SAMPLE_RATE", "0.1")),
+        profiles_sample_rate=float(os.environ.get("SENTRY_PROFILES_SAMPLE_RATE", "0.01")),
+        environment=os.environ.get("ENVIRONMENT", "development"),
+    )
+
+# ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 # JWT/auth config and the fail-fast JWT_SECRET check now live in
