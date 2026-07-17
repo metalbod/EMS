@@ -33,6 +33,11 @@ except ImportError:
     from ems.core.constants import RACES, RELIGIONS, GENDERS, MARITAL_STATUSES, EMPLOYMENT_TYPES, STATUSES
 
 try:
+    from core.tasks import bulk_upload_employees_task
+except ImportError:
+    from ems.core.tasks import bulk_upload_employees_task
+
+try:
     from db import get_db, IntegrityError
 except ImportError:
     from ems.db import get_db, IntegrityError
@@ -361,73 +366,31 @@ def download_bulk_template(user: dict = Depends(require_roles(*BULK_UPLOAD_ROLES
     return StreamingResponse(buf, media_type="text/csv", headers={"Content-Disposition": "attachment; filename=employee-bulk-upload-template.csv"})
 
 
-@router.post("/api/employees/bulk-upload")
+@router.post("/api/employees/bulk-upload", status_code=202)
 def bulk_upload_employees(body: BulkUploadIn, request: Request, user: dict = Depends(require_roles(*BULK_UPLOAD_ROLES))):
     inst_id = need_inst(user)
+
+    # Queue async task to process bulk upload
+    task = bulk_upload_employees_task.apply_async(
+        args=[inst_id, body.csv_content, user["username"]]
+    )
+
     conn = get_db()
-    inst = conn.execute("SELECT max_employees FROM institutions WHERE id=?", (inst_id,)).fetchone()
-    existing_count = conn.execute("SELECT COUNT(*) FROM employees WHERE institution_id=?", (inst_id,)).fetchone()[0]
-
-    reader = csv.DictReader(io.StringIO(body.csv_content))
-    missing_cols = [c for c in BULK_UPLOAD_REQUIRED if c not in (reader.fieldnames or [])]
-    if missing_cols:
+    try:
+        # Track the task in database
+        conn.execute("""
+            INSERT INTO task_tracking (id, user_id, institution_id, task_type, status)
+            VALUES (?, ?, ?, ?, ?)
+        """, (task.id, user["id"], inst_id, "bulk_upload", "pending"))
+        conn.commit()
+    finally:
         conn.close()
-        raise HTTPException(400, f"CSV is missing required column(s): {', '.join(missing_cols)}")
 
-    created, errors = [], []
-    ip = request.client.host if request.client else None
-    for i, raw_row in enumerate(reader, start=2):  # row 1 is the header
-        row = {k: (v.strip() if isinstance(v, str) else v) for k, v in raw_row.items()}
-        if not any(row.values()):
-            continue  # skip fully blank rows
-        try:
-            payload = {c: (row.get(c) or None) for c in BULK_UPLOAD_COLUMNS}
-            if payload.get("basic_salary") in (None, ""): payload["basic_salary"] = 0
-            if payload.get("num_children") in (None, ""): payload["num_children"] = 0
-            if payload.get("hourly_rate") in (None, ""): payload["hourly_rate"] = 0
-            if payload.get("salary_type") in (None, ""): payload["salary_type"] = "Monthly"
-            if payload.get("nationality") in (None, ""): payload["nationality"] = "Malaysian"
-            payload["basic_salary"] = float(payload["basic_salary"])
-            payload["num_children"] = int(float(payload["num_children"]))
-            payload["hourly_rate"] = float(payload["hourly_rate"])
-            emp = EmployeeIn(**payload)
-            if existing_count >= (inst["max_employees"] if inst else 10**9):
-                errors.append({"row": i, "reason": f"Employee limit ({inst['max_employees']}) reached for this institution"})
-                continue
-            # Same race as create_employee (see its own retry loop): gen_employee_id
-            # is check-then-insert with no locking, so a concurrent request can
-            # collide on the same auto-generated id. Retry with a freshly
-            # generated id a few times — but only when the id was
-            # auto-generated; a CSV-supplied custom employee_id colliding is a
-            # real duplicate-data error and should be reported, not retried.
-            max_attempts = 5 if not emp.employee_id else 1
-            for attempt in range(max_attempts):
-                try:
-                    emp_id = _insert_new_employee(conn, inst_id, emp, user, ip)
-                    conn.commit()
-                    break
-                except IntegrityError as e:
-                    conn.rollback()
-                    if "employees_institution_id_employee_id_key" in str(e) and attempt < max_attempts - 1:
-                        continue
-                    raise
-            existing_count += 1
-            created.append({"row": i, "employee_id": emp_id, "full_name": emp.full_name})
-        except ValidationError as e:
-            conn.rollback()
-            reasons = "; ".join(f"{err['loc'][0]}: {err['msg']}" for err in e.errors())
-            errors.append({"row": i, "reason": reasons})
-        except (ValueError, TypeError) as e:
-            conn.rollback()
-            errors.append({"row": i, "reason": str(e)})
-        except HTTPException as e:
-            conn.rollback()
-            errors.append({"row": i, "reason": e.detail})
-        except IntegrityError as e:
-            conn.rollback()
-            errors.append({"row": i, "reason": str(e)})
-    conn.close()
-    return {"created": created, "errors": errors}
+    return {
+        "task_id": task.id,
+        "status": "pending",
+        "message": "Bulk upload is being processed. Check task status with GET /api/tasks/{task_id}",
+    }
 
 
 @router.get("/api/employees/{employee_id}")

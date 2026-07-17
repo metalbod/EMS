@@ -141,8 +141,17 @@ def test_bulk_upload_creates_employee(client, hr_manager_auth):
     row = f",ZZ Bulk Employee,{_unique_ic()},,Malaysian,Chinese,Buddhism,Female,1992-05-05,Single,,+60129998888,,Sales,Sales Rep,Permanent,2026-02-01,,,,,,,,,3000,0,Monthly,0,"
     csv_content = header + "\n" + row + "\n"
     res = client.post("/api/employees/bulk-upload", headers=hr_manager_auth, json={"csv_content": csv_content})
-    assert res.status_code == 200
-    body = res.json()
+    assert res.status_code == 202, res.text
+    resp_data = res.json()
+    assert "task_id" in resp_data
+    task_id = resp_data["task_id"]
+
+    # Check task status (task executes synchronously in tests with CELERY_TASK_ALWAYS_EAGER)
+    status_res = client.get(f"/api/tasks/{task_id}", headers=hr_manager_auth)
+    assert status_res.status_code == 200
+    status_data = status_res.json()
+    assert status_data["status"] == "SUCCESS"
+    body = status_data["result"]
     assert len(body["created"]) == 1
     assert body["errors"] == []
     new_emp_id = body["created"][0]["employee_id"]
@@ -156,8 +165,17 @@ def test_bulk_upload_reports_row_errors_without_failing_whole_request(client, hr
     bad_row = ",,bad-ic,,Malaysian,Chinese,Buddhism,Female,1992-05-05,Single,,+60129998888,,Sales,Sales Rep,Permanent,2026-02-01,,,,,,,,,3000,0,Monthly,0,"
     csv_content = header + "\n" + bad_row + "\n"
     res = client.post("/api/employees/bulk-upload", headers=hr_manager_auth, json={"csv_content": csv_content})
-    assert res.status_code == 200
-    body = res.json()
+    assert res.status_code == 202, res.text
+    resp_data = res.json()
+    assert "task_id" in resp_data
+    task_id = resp_data["task_id"]
+
+    # Check task status (task executes synchronously in tests with CELERY_TASK_ALWAYS_EAGER)
+    status_res = client.get(f"/api/tasks/{task_id}", headers=hr_manager_auth)
+    assert status_res.status_code == 200
+    status_data = status_res.json()
+    assert status_data["status"] == "SUCCESS"
+    body = status_data["result"]
     assert body["created"] == []
     assert len(body["errors"]) == 1
     assert body["errors"][0]["row"] == 2

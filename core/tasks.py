@@ -81,6 +81,93 @@ def generate_payroll_run(self, inst_id: int, run_id: int, period_start: str, per
         raise
 
 
+@app.task(bind=True)
+def bulk_upload_employees_task(self, inst_id: int, csv_content: str, username: str):
+    """Bulk upload employees from CSV content (async). Returns dict with created/errors."""
+    try:
+        import csv
+        import io
+        from pydantic import ValidationError
+
+        try:
+            from db import get_db, IntegrityError
+        except ImportError:
+            from ems.db import get_db, IntegrityError
+
+        try:
+            from routers.employees import (
+                _insert_new_employee, BULK_UPLOAD_REQUIRED, BULK_UPLOAD_COLUMNS, EmployeeIn
+            )
+        except ImportError:
+            from ems.routers.employees import (
+                _insert_new_employee, BULK_UPLOAD_REQUIRED, BULK_UPLOAD_COLUMNS, EmployeeIn
+            )
+
+        logger.info(f"Task {self.request.id}: bulk uploading employees for institution {inst_id}")
+
+        conn = get_db()
+        try:
+            inst = conn.execute("SELECT max_employees FROM institutions WHERE id=?", (inst_id,)).fetchone()
+            existing_count = conn.execute("SELECT COUNT(*) FROM employees WHERE institution_id=?", (inst_id,)).fetchone()[0]
+
+            reader = csv.DictReader(io.StringIO(csv_content))
+            missing_cols = [c for c in BULK_UPLOAD_REQUIRED if c not in (reader.fieldnames or [])]
+            if missing_cols:
+                return {"created": [], "errors": [{"row": 0, "reason": f"CSV is missing required column(s): {', '.join(missing_cols)}"}]}
+
+            created, errors = [], []
+            for i, raw_row in enumerate(reader, start=2):  # row 1 is the header
+                row = {k: (v.strip() if isinstance(v, str) else v) for k, v in raw_row.items()}
+                if not any(row.values()):
+                    continue  # skip fully blank rows
+                try:
+                    payload = {c: (row.get(c) or None) for c in BULK_UPLOAD_COLUMNS}
+                    if payload.get("basic_salary") in (None, ""): payload["basic_salary"] = 0
+                    if payload.get("num_children") in (None, ""): payload["num_children"] = 0
+                    if payload.get("hourly_rate") in (None, ""): payload["hourly_rate"] = 0
+                    if payload.get("salary_type") in (None, ""): payload["salary_type"] = "Monthly"
+                    if payload.get("nationality") in (None, ""): payload["nationality"] = "Malaysian"
+                    payload["basic_salary"] = float(payload["basic_salary"])
+                    payload["num_children"] = int(float(payload["num_children"]))
+                    payload["hourly_rate"] = float(payload["hourly_rate"])
+                    emp = EmployeeIn(**payload)
+                    if existing_count >= (inst["max_employees"] if inst else 10**9):
+                        errors.append({"row": i, "reason": f"Employee limit ({inst['max_employees']}) reached for this institution"})
+                        continue
+                    max_attempts = 5 if not emp.employee_id else 1
+                    for attempt in range(max_attempts):
+                        try:
+                            emp_id = _insert_new_employee(conn, inst_id, emp, {"username": username}, None)
+                            conn.commit()
+                            break
+                        except IntegrityError as e:
+                            conn.rollback()
+                            if "employees_institution_id_employee_id_key" in str(e) and attempt < max_attempts - 1:
+                                continue
+                            raise
+                    existing_count += 1
+                    created.append({"row": i, "employee_id": emp_id, "full_name": emp.full_name})
+                except ValidationError as e:
+                    conn.rollback()
+                    reasons = "; ".join(f"{err['loc'][0]}: {err['msg']}" for err in e.errors())
+                    errors.append({"row": i, "reason": reasons})
+                except (ValueError, TypeError) as e:
+                    conn.rollback()
+                    errors.append({"row": i, "reason": str(e)})
+                except IntegrityError as e:
+                    conn.rollback()
+                    errors.append({"row": i, "reason": str(e)})
+
+            result = {"created": created, "errors": errors, "summary": f"{len(created)} created, {len(errors)} errors"}
+            logger.info(f"Task {self.request.id}: completed with {len(created)} employees created, {len(errors)} errors")
+            return result
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.error(f"Task {self.request.id}: failed with error: {e}")
+        raise
+
+
 # Base async task for long-running operations
 @app.task(bind=True)
 def long_running_task(self, task_type: str, payload: dict):
