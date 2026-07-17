@@ -154,9 +154,13 @@ app.include_router(auth_router)
 app.include_router(meta_router)
 app.include_router(tasks_router)
 
-@app.get("/health", response_model=HealthResponse, tags=["health"])
+@app.api_route("/health", methods=["GET", "HEAD"], response_model=HealthResponse, tags=["health"])
 def health():
-    """Liveness/readiness probe for Fly.io — confirms the process is up and the DB pool can serve a connection."""
+    """Liveness/readiness probe for Fly.io — confirms the process is up and the DB pool can serve a connection.
+
+    Supports both GET (returns JSON) and HEAD (returns status code only) for monitoring services.
+    HEAD requests are used by UptimeRobot free plan and other lightweight health checks.
+    """
     try:
         conn = get_db()
         conn.execute("SELECT 1")
