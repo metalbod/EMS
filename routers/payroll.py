@@ -29,6 +29,11 @@ except ImportError:
     from ems.core.roles import PAYROLL_VIEW_ROLES
 
 try:
+    from core.tasks import generate_payroll_run
+except ImportError:
+    from ems.core.tasks import generate_payroll_run
+
+try:
     from db import get_db, IntegrityError
 except ImportError:
     from ems.db import get_db, IntegrityError
@@ -166,7 +171,7 @@ def list_payroll_runs(user: dict = Depends(require_roles(*PAYROLL_VIEW_ROLES))):
     return [dict(r) for r in rows]
 
 
-@router.post("/api/payroll/runs", status_code=201)
+@router.post("/api/payroll/runs", status_code=202)
 def create_payroll_run(body: PayrollRunIn, user: dict = Depends(require_roles(*PAYROLL_MANAGE_ROLES))):
     inst_id = need_inst(user)
     if body.period_end <= body.period_start:
@@ -179,14 +184,25 @@ def create_payroll_run(body: PayrollRunIn, user: dict = Depends(require_roles(*P
         )
         conn.commit()
         run = conn.execute("SELECT * FROM payroll_runs WHERE id=last_insert_rowid()").fetchone()
-        employees = conn.execute(
-            "SELECT * FROM employees WHERE institution_id=? AND status='Active'",
-            (inst_id,)
-        ).fetchall()
-        for emp in employees:
-            _generate_payslip(conn, inst_id, run["id"], emp, body.period_start, body.period_end)
+
+        # Queue async task to generate payslips
+        task = generate_payroll_run.apply_async(
+            args=[inst_id, run["id"], body.period_start, body.period_end]
+        )
+
+        # Track the task in database
+        conn.execute("""
+            INSERT INTO task_tracking (id, user_id, institution_id, task_type, status)
+            VALUES (?, ?, ?, ?, ?)
+        """, (task.id, user["id"], inst_id, "payroll_run", "pending"))
         conn.commit()
-        return dict(run)
+
+        return {
+            "task_id": task.id,
+            "run_id": run["id"],
+            "status": "pending",
+            "message": "Payroll run is being generated. Check task status with GET /api/tasks/{task_id}",
+        }
     except IntegrityError:
         conn.rollback(); raise HTTPException(400, "A payroll run already exists for this exact period")
     finally:

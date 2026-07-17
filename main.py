@@ -22,7 +22,9 @@ try:
     from core.deps import hash_password, verify_password
     from core.onboarding_seed import seed_ob_templates
     from core.schemas import HealthResponse
+    from core.tasks import app as celery_app
     from routers.audit import router as audit_router
+    from routers.tasks import router as tasks_router
     from routers.notifications import router as notifications_router
     from routers.institutions import router as institutions_router
     from routers.orgchart import router as orgchart_router
@@ -46,7 +48,9 @@ except ImportError:
     from ems.core.deps import hash_password, verify_password
     from ems.core.onboarding_seed import seed_ob_templates
     from ems.core.schemas import HealthResponse
+    from ems.core.tasks import app as celery_app
     from ems.routers.audit import router as audit_router
+    from ems.routers.tasks import router as tasks_router
     from ems.routers.notifications import router as notifications_router
     from ems.routers.institutions import router as institutions_router
     from ems.routers.orgchart import router as orgchart_router
@@ -148,6 +152,7 @@ app.include_router(performance_router)
 app.include_router(employees_router)
 app.include_router(auth_router)
 app.include_router(meta_router)
+app.include_router(tasks_router)
 
 @app.get("/health", response_model=HealthResponse, tags=["health"])
 def health():

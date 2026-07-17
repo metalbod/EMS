@@ -120,6 +120,69 @@ def list_users(...):
     ...
 ```
 
+## Async Operations (Celery + Redis)
+
+Long-running operations (e.g. payroll run generation, bulk uploads) are executed
+asynchronously via Celery, returning `202 Accepted` with a task ID immediately
+while the work runs in the background.
+
+### Architecture
+
+- **Celery App** (`core/tasks.py`): defines async tasks, talks to Redis broker/backend
+- **Redis**: message queue (broker) and result storage (backend) for task status
+- **Task Tracking** (`task_tracking` table): optional database record linking tasks to users/institutions
+- **Task Status Endpoint** (`GET /api/tasks/{task_id}`): poll for completion and results
+
+### Local Development
+
+Start Redis and the Celery worker in separate terminals:
+
+```bash
+# Terminal 1: Redis (requires `brew install redis` or Docker)
+redis-server
+
+# Terminal 2: Celery worker
+python celery_worker.py
+```
+
+The FastAPI app runs normally: `uvicorn main:app --reload`
+
+### Async Endpoint Pattern
+
+```python
+from core.tasks import generate_payroll_run
+from celery.result import AsyncResult
+
+@router.post("/api/payroll/runs", status_code=202)
+def create_payroll_run(body: PayrollRunIn, user: dict = Depends(require_roles("payroll_manager"))):
+    # 1. Create the resource (e.g. payroll run) with status 'pending'
+    run = create_run_in_db(...)
+
+    # 2. Queue the async task
+    task = generate_payroll_run.apply_async(
+        args=[inst_id, run["id"], body.period_start, body.period_end]
+    )
+
+    # 3. Track the task (optional, for audit/permissions)
+    track_task_in_db(task.id, user["id"], inst_id, "payroll_run")
+
+    # 4. Return 202 with task ID for polling
+    return {"task_id": task.id, "run_id": run["id"], "status": "pending"}
+```
+
+The client polls `GET /api/tasks/{task_id}` to check progress:
+
+```json
+{
+  "id": "celery-uuid-here",
+  "status": "SUCCESS",
+  "result": {"run_id": 1, "employee_count": 42, ...},
+  "error": null
+}
+```
+
+Possible statuses: `PENDING`, `STARTED`, `SUCCESS`, `FAILURE`, `RETRY`.
+
 ## Testing
 
 ### Backend (Python/pytest)
