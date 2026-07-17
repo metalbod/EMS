@@ -12,7 +12,7 @@ performance_payouts and get folded into gross pay the next time a payroll
 run is generated for that employee (see routers/payroll.py's _generate_payslip).
 """
 from datetime import datetime, timezone
-from typing import Any, Dict,  Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
@@ -41,6 +41,11 @@ try:
     from db import get_db
 except ImportError:
     from ems.db import get_db
+
+try:
+    from core.db_session import db_session
+except ImportError:
+    from ems.core.db_session import db_session
 
 router = APIRouter()
 

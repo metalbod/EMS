@@ -17,6 +17,7 @@ The decorator:
 - Preserves function signature and FastAPI dependency injection
 """
 
+import inspect
 from functools import wraps
 from typing import Callable, Any
 
@@ -38,15 +39,23 @@ def db_session(func: Callable) -> Callable:
 
     FastAPI will handle dependency injection for other parameters normally.
     """
+    sig = inspect.signature(func)
+    params = list(sig.parameters.values())
+
+    # Remove 'conn' parameter from the signature that FastAPI sees
+    if params and params[0].name == 'conn':
+        params = params[1:]
+
+    new_sig = sig.replace(parameters=params)
 
     @wraps(func)
     def wrapper(*args, **kwargs) -> Any:
         conn = get_db()
         try:
-            # Inject connection as first positional argument
             return func(conn, *args, **kwargs)
         finally:
-            # Guarantee cleanup even on exception
             conn.close()
 
+    # Update wrapper's signature to exclude 'conn' so FastAPI doesn't try to inject it
+    wrapper.__signature__ = new_sig
     return wrapper
