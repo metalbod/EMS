@@ -98,6 +98,7 @@ def bulk_upload_employees_task(self, inst_id: int, csv_content: str, username: s
         import csv
         import io
         from pydantic import ValidationError
+        from fastapi import HTTPException
 
         try:
             from db import get_db, IntegrityError
@@ -161,6 +162,9 @@ def bulk_upload_employees_task(self, inst_id: int, csv_content: str, username: s
                     conn.rollback()
                     reasons = "; ".join(f"{err['loc'][0]}: {err['msg']}" for err in e.errors())
                     errors.append({"row": i, "reason": reasons})
+                except HTTPException as e:
+                    conn.rollback()
+                    errors.append({"row": i, "reason": e.detail})
                 except (ValueError, TypeError) as e:
                     conn.rollback()
                     errors.append({"row": i, "reason": str(e)})
