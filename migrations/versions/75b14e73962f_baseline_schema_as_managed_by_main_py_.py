@@ -22,25 +22,18 @@ def upgrade() -> None:
     """Intentionally empty.
 
     Establishes revision 75b14e73962f as the baseline marker for the schema
-    that already existed before Alembic was introduced — the full current
-    schema is still defined and applied by main.py's init_db()/
-    _init_db_body(), which runs idempotently on every app boot (see db.py
-    and main.py). This revision is stamped onto the database via
-    `alembic stamp head`, NOT run via `alembic upgrade head` — no DDL
-    executes here, since the schema this revision represents is already
-    live.
+    that already existed before Alembic was introduced. All schema DDL has
+    been moved to Alembic migrations (see 20260717_0001_full_schema_ddl.py).
 
-    Reusing init_db()'s logic directly from here was considered and
-    rejected: importing main.py unconditionally re-triggers its own
-    module-level init_db() call (and boots the whole FastAPI app just to
-    reach one function) — an unwanted side effect just to read schema DDL.
+    This baseline revision is stamped onto existing databases via
+    `alembic stamp head` to establish a starting point for future migrations.
+    It does not execute any DDL itself — the actual schema is defined in the
+    20260717_0001_full_schema_ddl migration that follows.
 
     Going forward, NEW schema changes should be written as real Alembic
     migrations (op.execute(...) with the actual SQL, following this
     project's raw-SQL style — see migrations/README) chained after this
-    baseline, rather than added to init_db(). init_db() remains as-is for
-    now (untouched, still the source of truth for anything predating this
-    revision) until enough new migrations exist to fully retire it.
+    baseline.
     """
     pass
 
