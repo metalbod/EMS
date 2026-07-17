@@ -21,6 +21,7 @@ except ImportError:
 try:
     from core.deps import hash_password, verify_password
     from core.onboarding_seed import seed_ob_templates
+    from core.schemas import HealthResponse
     from routers.audit import router as audit_router
     from routers.notifications import router as notifications_router
     from routers.institutions import router as institutions_router
@@ -44,6 +45,7 @@ try:
 except ImportError:
     from ems.core.deps import hash_password, verify_password
     from ems.core.onboarding_seed import seed_ob_templates
+    from ems.core.schemas import HealthResponse
     from ems.routers.audit import router as audit_router
     from ems.routers.notifications import router as notifications_router
     from ems.routers.institutions import router as institutions_router
@@ -117,9 +119,16 @@ if sentry_dsn:
 # Login rate limiting moved to routers/auth.py.
 
 # ---------------------------------------------------------------------------
-# App + CORS
+# App + OpenAPI + CORS
 # ---------------------------------------------------------------------------
-app = FastAPI(title="EMS Multi-Tenant")
+app = FastAPI(
+    title="EMS Multi-Tenant",
+    description="Employee Management System: multi-tenant HR platform with employees, recruitment, L&D, leave, timesheets, payroll, and performance management.",
+    version="1.0.0",
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    openapi_url="/api/openapi.json",
+)
 app.include_router(audit_router)
 app.include_router(notifications_router)
 app.include_router(institutions_router)
@@ -140,7 +149,7 @@ app.include_router(employees_router)
 app.include_router(auth_router)
 app.include_router(meta_router)
 
-@app.get("/health")
+@app.get("/health", response_model=HealthResponse, tags=["health"])
 def health():
     """Liveness/readiness probe for Fly.io — confirms the process is up and the DB pool can serve a connection."""
     try:
