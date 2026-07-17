@@ -34,6 +34,11 @@ except ImportError:
     from ems.core.tasks import generate_payroll_run
 
 try:
+    from core.db_session import db_session
+except ImportError:
+    from ems.core.db_session import db_session
+
+try:
     from db import get_db, IntegrityError
 except ImportError:
     from ems.db import get_db, IntegrityError
@@ -157,9 +162,9 @@ def _generate_payslip(conn, inst_id, run_id, emp, period_start, period_end):
 
 
 @router.get("/api/payroll/runs")
-def list_payroll_runs(user: dict = Depends(require_roles(*PAYROLL_VIEW_ROLES))):
+@db_session
+def list_payroll_runs(conn, user: dict = Depends(require_roles(*PAYROLL_VIEW_ROLES))):
     inst_id = need_inst(user)
-    conn = get_db()
     rows = conn.execute("""
         SELECT r.*, COUNT(p.id) AS employee_count, COALESCE(SUM(p.net_pay),0) AS total_net_pay
         FROM payroll_runs r
@@ -167,16 +172,15 @@ def list_payroll_runs(user: dict = Depends(require_roles(*PAYROLL_VIEW_ROLES))):
         WHERE r.institution_id=?
         GROUP BY r.id ORDER BY r.period_start DESC
     """, (inst_id,)).fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
 @router.post("/api/payroll/runs", status_code=202)
-def create_payroll_run(body: PayrollRunIn, user: dict = Depends(require_roles(*PAYROLL_MANAGE_ROLES))):
+@db_session
+def create_payroll_run(conn, body: PayrollRunIn, user: dict = Depends(require_roles(*PAYROLL_MANAGE_ROLES))):
     inst_id = need_inst(user)
     if body.period_end <= body.period_start:
         raise HTTPException(400, "Period end must be after period start")
-    conn = get_db()
     try:
         conn.execute(
             "INSERT INTO payroll_runs (institution_id, period_start, period_end, created_by) VALUES (?,?,?,?)",
@@ -204,39 +208,39 @@ def create_payroll_run(body: PayrollRunIn, user: dict = Depends(require_roles(*P
             "message": "Payroll run is being generated. Check task status with GET /api/tasks/{task_id}",
         }
     except IntegrityError:
-        conn.rollback(); raise HTTPException(400, "A payroll run already exists for this exact period")
-    finally:
-        conn.close()
+        conn.rollback()
+        raise HTTPException(400, "A payroll run already exists for this exact period")
 
 
 @router.get("/api/payroll/runs/{run_id}")
-def get_payroll_run(run_id: int, user: dict = Depends(require_roles(*PAYROLL_VIEW_ROLES))):
+@db_session
+def get_payroll_run(conn, run_id: int, user: dict = Depends(require_roles(*PAYROLL_VIEW_ROLES))):
     inst_id = need_inst(user)
-    conn = get_db()
     run = conn.execute("SELECT * FROM payroll_runs WHERE id=? AND institution_id=?", (run_id, inst_id)).fetchone()
-    if not run: conn.close(); raise HTTPException(404, "Payroll run not found")
+    if not run:
+        raise HTTPException(404, "Payroll run not found")
     payslips = conn.execute("""
         SELECT p.*, e.full_name, e.department, e.designation, e.bank_name, e.bank_account
         FROM payslips p JOIN employees e ON e.employee_id=p.employee_id AND e.institution_id=p.institution_id
         WHERE p.payroll_run_id=? ORDER BY e.full_name
     """, (run_id,)).fetchall()
-    conn.close()
     result = dict(run)
     result["payslips"] = [dict(r) for r in payslips]
     return result
 
 
 @router.put("/api/payroll/payslips/{payslip_id}")
-def adjust_payslip(payslip_id: int, body: PayslipAdjustIn, user: dict = Depends(require_roles(*PAYROLL_MANAGE_ROLES))):
+@db_session
+def adjust_payslip(conn, payslip_id: int, body: PayslipAdjustIn, user: dict = Depends(require_roles(*PAYROLL_MANAGE_ROLES))):
     inst_id = need_inst(user)
-    conn = get_db()
     slip = conn.execute("SELECT * FROM payslips WHERE id=? AND institution_id=?", (payslip_id, inst_id)).fetchone()
-    if not slip: conn.close(); raise HTTPException(404, "Payslip not found")
+    if not slip:
+        raise HTTPException(404, "Payslip not found")
     run = conn.execute("SELECT * FROM payroll_runs WHERE id=?", (slip["payroll_run_id"],)).fetchone()
     if run["status"] != "Draft":
-        conn.close(); raise HTTPException(400, "Cannot edit a payslip on a Finalized run")
+        raise HTTPException(400, "Cannot edit a payslip on a Finalized run")
     if slip["salary_type"] == "Hourly":
-        conn.close(); raise HTTPException(400, "Hourly payslips are computed from approved timesheets — use Recompute instead")
+        raise HTTPException(400, "Hourly payslips are computed from approved timesheets — use Recompute instead")
     emp = conn.execute("SELECT * FROM employees WHERE institution_id=? AND employee_id=?", (inst_id, slip["employee_id"])).fetchone()
 
     basic_salary = body.basic_salary if body.basic_salary is not None else slip["basic_salary"]
@@ -261,20 +265,20 @@ def adjust_payslip(payslip_id: int, body: PayslipAdjustIn, user: dict = Depends(
           eis["employee"], eis["employer"], pcb, net_pay, payslip_id))
     conn.commit()
     row = conn.execute("SELECT * FROM payslips WHERE id=?", (payslip_id,)).fetchone()
-    conn.close()
     return dict(row)
 
 
 @router.patch("/api/payroll/payslips/{payslip_id}/recompute")
-def recompute_payslip(payslip_id: int, user: dict = Depends(require_roles(*PAYROLL_MANAGE_ROLES))):
+@db_session
+def recompute_payslip(conn, payslip_id: int, user: dict = Depends(require_roles(*PAYROLL_MANAGE_ROLES))):
     """Re-derive an Hourly payslip from currently-Approved timesheet hours for the run's period."""
     inst_id = need_inst(user)
-    conn = get_db()
     slip = conn.execute("SELECT * FROM payslips WHERE id=? AND institution_id=?", (payslip_id, inst_id)).fetchone()
-    if not slip: conn.close(); raise HTTPException(404, "Payslip not found")
+    if not slip:
+        raise HTTPException(404, "Payslip not found")
     run = conn.execute("SELECT * FROM payroll_runs WHERE id=?", (slip["payroll_run_id"],)).fetchone()
     if run["status"] != "Draft":
-        conn.close(); raise HTTPException(400, "Cannot edit a payslip on a Finalized run")
+        raise HTTPException(400, "Cannot edit a payslip on a Finalized run")
     emp = conn.execute("SELECT * FROM employees WHERE institution_id=? AND employee_id=?", (inst_id, slip["employee_id"])).fetchone()
 
     basic_salary, unpaid_days, unpaid_deduction, regular_hours, overtime_hours, overtime_pay, gross_pay = \
@@ -298,53 +302,53 @@ def recompute_payslip(payslip_id: int, user: dict = Depends(require_roles(*PAYRO
           eis["employee"], eis["employer"], pcb, net_pay, payslip_id))
     conn.commit()
     row = conn.execute("SELECT * FROM payslips WHERE id=?", (payslip_id,)).fetchone()
-    conn.close()
     return dict(row)
 
 
 @router.patch("/api/payroll/runs/{run_id}/finalize")
-def finalize_payroll_run(run_id: int, user: dict = Depends(require_roles(*PAYROLL_MANAGE_ROLES))):
+@db_session
+def finalize_payroll_run(conn, run_id: int, user: dict = Depends(require_roles(*PAYROLL_MANAGE_ROLES))):
     inst_id = need_inst(user)
-    conn = get_db()
     run = conn.execute("SELECT * FROM payroll_runs WHERE id=? AND institution_id=?", (run_id, inst_id)).fetchone()
-    if not run: conn.close(); raise HTTPException(404, "Payroll run not found")
+    if not run:
+        raise HTTPException(404, "Payroll run not found")
     if run["status"] != "Draft":
-        conn.close(); raise HTTPException(400, f"Run is already {run['status']}")
+        raise HTTPException(400, f"Run is already {run['status']}")
     conn.execute(
         "UPDATE payroll_runs SET status='Finalized', finalized_by=?, finalized_at=to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS') WHERE id=?",
         (user["username"], run_id)
     )
     conn.commit()
     row = conn.execute("SELECT * FROM payroll_runs WHERE id=?", (run_id,)).fetchone()
-    conn.close()
     return dict(row)
 
 
 @router.delete("/api/payroll/runs/{run_id}", status_code=204)
-def delete_payroll_run(run_id: int, user: dict = Depends(require_roles(*PAYROLL_MANAGE_ROLES))):
+@db_session
+def delete_payroll_run(conn, run_id: int, user: dict = Depends(require_roles(*PAYROLL_MANAGE_ROLES))):
     inst_id = need_inst(user)
-    conn = get_db()
     run = conn.execute("SELECT * FROM payroll_runs WHERE id=? AND institution_id=?", (run_id, inst_id)).fetchone()
-    if not run: conn.close(); raise HTTPException(404, "Payroll run not found")
+    if not run:
+        raise HTTPException(404, "Payroll run not found")
     if run["status"] != "Draft":
-        conn.close(); raise HTTPException(400, "Cannot delete a Finalized run")
+        raise HTTPException(400, "Cannot delete a Finalized run")
     conn.execute("DELETE FROM payslips WHERE payroll_run_id=?", (run_id,))
     conn.execute("DELETE FROM payroll_runs WHERE id=?", (run_id,))
-    conn.commit(); conn.close()
+    conn.commit()
 
 
 @router.get("/api/payroll/runs/{run_id}/bank-csv")
-def export_bank_csv(run_id: int, user: dict = Depends(require_roles(*PAYROLL_MANAGE_ROLES))):
+@db_session
+def export_bank_csv(conn, run_id: int, user: dict = Depends(require_roles(*PAYROLL_MANAGE_ROLES))):
     inst_id = need_inst(user)
-    conn = get_db()
     run = conn.execute("SELECT * FROM payroll_runs WHERE id=? AND institution_id=?", (run_id, inst_id)).fetchone()
-    if not run: conn.close(); raise HTTPException(404, "Payroll run not found")
+    if not run:
+        raise HTTPException(404, "Payroll run not found")
     payslips = conn.execute("""
         SELECT p.net_pay, e.full_name, e.employee_id, e.bank_name, e.bank_account
         FROM payslips p JOIN employees e ON e.employee_id=p.employee_id AND e.institution_id=p.institution_id
         WHERE p.payroll_run_id=? ORDER BY e.full_name
     """, (run_id,)).fetchall()
-    conn.close()
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow(["Employee ID", "Full Name", "Bank Name", "Bank Account", "Net Pay"])
@@ -356,26 +360,25 @@ def export_bank_csv(run_id: int, user: dict = Depends(require_roles(*PAYROLL_MAN
 
 
 @router.get("/api/payroll/payslips/mine")
-def my_payslips(user: dict = Depends(get_current_user)):
+@db_session
+def my_payslips(conn, user: dict = Depends(get_current_user)):
     inst_id = need_inst(user)
     emp_id = user.get("employee_id")
     if not emp_id:
         return []
-    conn = get_db()
     rows = conn.execute("""
         SELECT p.*, r.period_start, r.period_end, r.status AS run_status
         FROM payslips p JOIN payroll_runs r ON r.id = p.payroll_run_id
         WHERE p.institution_id=? AND p.employee_id=? AND r.status='Finalized'
         ORDER BY r.period_start DESC
     """, (inst_id, emp_id)).fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
 @router.get("/api/payroll/payslips/{payslip_id}")
-def get_payslip(payslip_id: int, user: dict = Depends(get_current_user)):
+@db_session
+def get_payslip(conn, payslip_id: int, user: dict = Depends(get_current_user)):
     inst_id = need_inst(user)
-    conn = get_db()
     row = conn.execute("""
         SELECT p.*, r.period_start, r.period_end, r.status AS run_status,
                e.full_name, e.designation, e.department, e.bank_name, e.bank_account, e.ic_number
@@ -384,8 +387,8 @@ def get_payslip(payslip_id: int, user: dict = Depends(get_current_user)):
         JOIN employees e ON e.employee_id = p.employee_id AND e.institution_id = p.institution_id
         WHERE p.id=? AND p.institution_id=?
     """, (payslip_id, inst_id)).fetchone()
-    conn.close()
-    if not row: raise HTTPException(404, "Payslip not found")
+    if not row:
+        raise HTTPException(404, "Payslip not found")
     if user["role"] not in PAYROLL_VIEW_ROLES and user.get("employee_id") != row["employee_id"]:
         raise HTTPException(403, "Access denied")
     return dict(row)

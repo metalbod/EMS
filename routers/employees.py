@@ -42,6 +42,11 @@ try:
 except ImportError:
     from ems.db import get_db, IntegrityError
 
+try:
+    from core.db_session import db_session
+except ImportError:
+    from ems.core.db_session import db_session
+
 router = APIRouter()
 
 CAN_WRITE  = ("superadmin", "hr_manager", "hr_admin")
@@ -212,13 +217,14 @@ def gen_employee_id(conn, inst_id: int) -> str:
 
 
 @router.get("/api/employees")
+@db_session
 def list_employees(
+    conn,
     status: Optional[str] = None,
     search: Optional[str] = None,
     user: dict = Depends(get_current_user),
 ):
     inst_id = need_inst(user)
-    conn = get_db()
     if user["role"] == "manager" and user.get("employee_id"):
         # Self + full downstream reporting chain (not just same-department peers)
         q = """
@@ -245,7 +251,6 @@ def list_employees(
         p.extend([like,like,like,like,like])
     q += " ORDER BY created_at DESC"
     rows = conn.execute(q, p).fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
@@ -291,15 +296,14 @@ def _insert_new_employee(conn, inst_id, emp: EmployeeIn, user: dict, ip: Optiona
 
 
 @router.post("/api/employees", status_code=201)
-def create_employee(emp: EmployeeIn, request: Request, user: dict = Depends(require_roles(*CAN_WRITE))):
+@db_session
+def create_employee(conn, emp: EmployeeIn, request: Request, user: dict = Depends(require_roles(*CAN_WRITE))):
     inst_id = need_inst(user)
-    conn = get_db()
     # Enforce max_employees
     inst = conn.execute("SELECT max_employees FROM institutions WHERE id=?", (inst_id,)).fetchone()
     if inst:
         cnt = conn.execute("SELECT COUNT(*) FROM employees WHERE institution_id=?", (inst_id,)).fetchone()[0]
         if cnt >= inst["max_employees"]:
-            conn.close()
             raise HTTPException(400, f"Employee limit ({inst['max_employees']}) reached for this institution")
     # gen_employee_id is check-then-insert with no locking, so two concurrent
     # requests (e.g. CI and a local run against the same shared DB) can pick the
@@ -308,21 +312,18 @@ def create_employee(emp: EmployeeIn, request: Request, user: dict = Depends(requ
     # was auto-generated; a caller-supplied employee_id colliding is a real
     # business error and should surface immediately.
     max_attempts = 5 if not emp.employee_id else 1
-    try:
-        for attempt in range(max_attempts):
-            try:
-                emp_id = _insert_new_employee(conn, inst_id, emp, user, request.client.host if request.client else None)
-                conn.commit()
-                row = conn.execute("SELECT * FROM employees WHERE institution_id=? AND employee_id=?",
-                                   (inst_id, emp_id)).fetchone()
-                return dict(row)
-            except IntegrityError as e:
-                conn.rollback()
-                if "employees_institution_id_employee_id_key" in str(e) and attempt < max_attempts - 1:
-                    continue
-                raise HTTPException(400, str(e))
-    finally:
-        conn.close()
+    for attempt in range(max_attempts):
+        try:
+            emp_id = _insert_new_employee(conn, inst_id, emp, user, request.client.host if request.client else None)
+            conn.commit()
+            row = conn.execute("SELECT * FROM employees WHERE institution_id=? AND employee_id=?",
+                               (inst_id, emp_id)).fetchone()
+            return dict(row)
+        except IntegrityError as e:
+            conn.rollback()
+            if "employees_institution_id_employee_id_key" in str(e) and attempt < max_attempts - 1:
+                continue
+            raise HTTPException(400, str(e))
 
 
 # ---------------------------------------------------------------------------
@@ -367,7 +368,8 @@ def download_bulk_template(user: dict = Depends(require_roles(*BULK_UPLOAD_ROLES
 
 
 @router.post("/api/employees/bulk-upload", status_code=202)
-def bulk_upload_employees(body: BulkUploadIn, request: Request, user: dict = Depends(require_roles(*BULK_UPLOAD_ROLES))):
+@db_session
+def bulk_upload_employees(conn, body: BulkUploadIn, request: Request, user: dict = Depends(require_roles(*BULK_UPLOAD_ROLES))):
     inst_id = need_inst(user)
 
     # Queue async task to process bulk upload
@@ -375,16 +377,12 @@ def bulk_upload_employees(body: BulkUploadIn, request: Request, user: dict = Dep
         args=[inst_id, body.csv_content, user["username"]]
     )
 
-    conn = get_db()
-    try:
-        # Track the task in database
-        conn.execute("""
-            INSERT INTO task_tracking (id, user_id, institution_id, task_type, status)
-            VALUES (?, ?, ?, ?, ?)
-        """, (task.id, user["id"], inst_id, "bulk_upload", "pending"))
-        conn.commit()
-    finally:
-        conn.close()
+    # Track the task in database
+    conn.execute("""
+        INSERT INTO task_tracking (id, user_id, institution_id, task_type, status)
+        VALUES (?, ?, ?, ?, ?)
+    """, (task.id, user["id"], inst_id, "bulk_upload", "pending"))
+    conn.commit()
 
     return {
         "task_id": task.id,
@@ -394,30 +392,31 @@ def bulk_upload_employees(body: BulkUploadIn, request: Request, user: dict = Dep
 
 
 @router.get("/api/employees/{employee_id}")
-def get_employee(employee_id: str, user: dict = Depends(get_current_user)):
+@db_session
+def get_employee(conn, employee_id: str, user: dict = Depends(get_current_user)):
     inst_id = need_inst(user)
     if user["role"] == "employee" and user["employee_id"] != employee_id:
         raise HTTPException(403, "Access denied")
-    conn = get_db()
     if user["role"] == "manager" and not is_self_or_subordinate(conn, inst_id, user.get("employee_id"), employee_id):
-        conn.close(); raise HTTPException(403, "Access denied")
+        raise HTTPException(403, "Access denied")
     row = conn.execute(
         "SELECT * FROM employees WHERE institution_id=? AND employee_id=?", (inst_id, employee_id)
     ).fetchone()
-    conn.close()
-    if not row: raise HTTPException(404, "Employee not found")
+    if not row:
+        raise HTTPException(404, "Employee not found")
     return dict(row)
 
 
 @router.put("/api/employees/{employee_id}")
-def update_employee(employee_id: str, emp: EmployeeIn, request: Request,
+@db_session
+def update_employee(conn, employee_id: str, emp: EmployeeIn, request: Request,
                     user: dict = Depends(require_roles(*CAN_WRITE))):
     inst_id = need_inst(user)
-    conn = get_db()
     old_row = conn.execute(
         "SELECT * FROM employees WHERE institution_id=? AND employee_id=?", (inst_id, employee_id)
     ).fetchone()
-    if not old_row: conn.close(); raise HTTPException(404, "Employee not found")
+    if not old_row:
+        raise HTTPException(404, "Employee not found")
     old = dict(old_row)
     try:
         new_id = employee_id
@@ -476,19 +475,18 @@ def update_employee(employee_id: str, emp: EmployeeIn, request: Request,
     except IntegrityError as e:
         conn.rollback()
         raise HTTPException(400, str(e))
-    finally:
-        conn.close()
 
 
 @router.patch("/api/employees/{employee_id}/status")
-def update_status(employee_id: str, body: StatusUpdate, request: Request,
+@db_session
+def update_status(conn, employee_id: str, body: StatusUpdate, request: Request,
                   user: dict = Depends(require_roles(*CAN_TOGGLE))):
     inst_id = need_inst(user)
-    conn = get_db()
     row = conn.execute(
         "SELECT * FROM employees WHERE institution_id=? AND employee_id=?", (inst_id, employee_id)
     ).fetchone()
-    if not row: conn.close(); raise HTTPException(404, "Employee not found")
+    if not row:
+        raise HTTPException(404, "Employee not found")
     old = dict(row)
     conn.execute("UPDATE employees SET status=? WHERE institution_id=? AND employee_id=?",
                  (body.status, inst_id, employee_id))
@@ -501,7 +499,6 @@ def update_status(employee_id: str, body: StatusUpdate, request: Request,
     result = conn.execute(
         "SELECT * FROM employees WHERE institution_id=? AND employee_id=?", (inst_id, employee_id)
     ).fetchone()
-    conn.close()
     return dict(result)
 
 
@@ -511,16 +508,16 @@ def update_status(employee_id: str, body: StatusUpdate, request: Request,
 # the Onboarding section in the original monolith.
 # ---------------------------------------------------------------------------
 @router.get("/api/employees/{employee_id}/related-contracts")
-def get_related_contracts(employee_id: str, user: dict = Depends(get_current_user)):
+@db_session
+def get_related_contracts(conn, employee_id: str, user: dict = Depends(get_current_user)):
     """Return all employment contracts for the same person (matched by IC number)."""
     inst_id = need_inst(user)
-    conn = get_db()
     target = conn.execute(
         "SELECT ic_number FROM employees WHERE employee_id=? AND institution_id=?",
         (employee_id, inst_id)
     ).fetchone()
     if not target:
-        conn.close(); raise HTTPException(404, "Employee not found")
+        raise HTTPException(404, "Employee not found")
     rows = conn.execute(
         """SELECT employee_id, full_name, employment_type, designation, department,
                   start_date, contract_end_date, status, created_at
@@ -529,20 +526,18 @@ def get_related_contracts(employee_id: str, user: dict = Depends(get_current_use
            ORDER BY start_date DESC""",
         (target["ic_number"], inst_id, employee_id)
     ).fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
 @router.get("/api/employees/{employee_id}/rehire-prefill")
-def rehire_prefill(employee_id: str, user: dict = Depends(require_roles(*CAN_WRITE))):
+@db_session
+def rehire_prefill(conn, employee_id: str, user: dict = Depends(require_roles(*CAN_WRITE))):
     """Pre-fill personal details for a rehire from an existing employee record."""
     inst_id = need_inst(user)
-    conn = get_db()
     row = conn.execute(
         "SELECT * FROM employees WHERE employee_id=? AND institution_id=?",
         (employee_id, inst_id)
     ).fetchone()
-    conn.close()
     if not row:
         raise HTTPException(404, "Employee not found")
     r = dict(row)
