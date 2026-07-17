@@ -97,6 +97,29 @@ under `static/` automatically changes the served version — there is
 nothing to bump by hand. The literal `?v=...` values committed in
 `static/index.html` are just inert placeholders.
 
+## API Documentation (OpenAPI/Swagger)
+
+The API is documented via OpenAPI 3.0 schemas generated from Pydantic response models. Access the interactive docs while the app is running:
+
+- **Swagger UI**: http://localhost:8000/api/docs — full interactive API explorer
+- **ReDoc**: http://localhost:8000/api/redoc — alternative docs view
+- **OpenAPI JSON**: http://localhost:8000/api/openapi.json — raw schema (for code generation)
+
+Response models are defined in `core/schemas.py` and added incrementally to endpoints via `response_model=` parameter. This enables:
+- Automatic request/response validation
+- Clear API contracts for frontend integration
+- Generated client SDKs in any language via tools like `openapi-generator`
+- Swagger UI "Try it out" feature for testing endpoints
+
+To add response models to new endpoints:
+```python
+from core.schemas import UserResponse
+
+@router.get("/api/users", response_model=List[UserResponse], tags=["users"])
+def list_users(...):
+    ...
+```
+
 ## Testing
 
 ### Backend (Python/pytest)
