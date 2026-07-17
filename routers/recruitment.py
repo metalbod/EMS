@@ -249,7 +249,6 @@ def list_requisitions(conn,
     if department: q += " AND r.department=?"; p.append(department)
     q += " GROUP BY r.id ORDER BY r.created_at DESC"
     rows = conn.execute(q, p).fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
@@ -267,7 +266,6 @@ def create_requisition(conn, body: RequisitionIn, user: dict = Depends(require_r
     rid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     conn.commit()
     row = conn.execute("SELECT * FROM job_requisitions WHERE id=?", (rid,)).fetchone()
-    conn.close()
     return dict(row)
 
 
@@ -280,7 +278,6 @@ def get_requisition(conn, req_id: int, user: dict = Depends(get_current_user)) -
         "SELECT id,full_name,stage,source,created_at FROM candidates WHERE requisition_id=? AND institution_id=? ORDER BY created_at DESC",
         (req_id, inst_id)
     ).fetchall()
-    conn.close()
     r["candidates"] = [dict(c) for c in cands]
     return r
 
@@ -301,7 +298,6 @@ def update_requisition(conn, req_id: int, body: RequisitionIn, user: dict = Depe
           body.priority, req_id, inst_id))
     conn.commit()
     row = conn.execute("SELECT * FROM job_requisitions WHERE id=?", (req_id,)).fetchone()
-    conn.close()
     return dict(row)
 
 
@@ -315,7 +311,6 @@ def submit_requisition(conn, req_id: int, user: dict = Depends(require_roles(*RE
     conn.execute("UPDATE job_requisitions SET status='Pending Approval' WHERE id=?", (req_id,))
     conn.commit()
     row = conn.execute("SELECT * FROM job_requisitions WHERE id=?", (req_id,)).fetchone()
-    conn.close()
     return dict(row)
 
 
@@ -336,7 +331,6 @@ def approve_requisition(conn, req_id: int, body: RequisitionApprovalIn,
     """, (new_status, user["username"], body.comments, req_id))
     conn.commit()
     row = conn.execute("SELECT * FROM job_requisitions WHERE id=?", (req_id,)).fetchone()
-    conn.close()
     return dict(row)
 
 
@@ -350,7 +344,6 @@ def close_requisition(conn, req_id: int, user: dict = Depends(require_roles(*REC
     )
     conn.commit()
     row = conn.execute("SELECT * FROM job_requisitions WHERE id=?", (req_id,)).fetchone()
-    conn.close()
     return dict(row)
 
 
@@ -379,7 +372,6 @@ def list_candidates(conn,
         p.extend([like,like,like,like])
     q += " ORDER BY c.created_at DESC"
     rows = conn.execute(q, p).fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
@@ -405,7 +397,6 @@ def create_candidate(conn, body: CandidateIn, user: dict = Depends(require_roles
     _log_candidate(conn, inst_id, cid, "Created", f"Candidate '{body.full_name}' added via {body.source}", user["username"])
     conn.commit()
     row = conn.execute("SELECT * FROM candidates WHERE id=?", (cid,)).fetchone()
-    conn.close()
     return dict(row)
 
 
@@ -438,7 +429,6 @@ def get_candidate(conn, cand_id: int, user: dict = Depends(get_current_user)) ->
         "SELECT * FROM offers WHERE candidate_id=? AND institution_id=? ORDER BY created_at DESC",
         (cand_id, inst_id)
     ).fetchall()
-    conn.close()
     c["requisition"] = req
     c["interviews"] = interview_list
     c["offers"] = [dict(o) for o in offers]
@@ -467,7 +457,6 @@ def update_candidate(conn, cand_id: int, body: CandidateIn, user: dict = Depends
     _log_candidate(conn, inst_id, cand_id, "Updated", "Candidate profile details updated", user["username"])
     conn.commit()
     row = conn.execute("SELECT * FROM candidates WHERE id=?", (cand_id,)).fetchone()
-    conn.close()
     return dict(row)
 
 
@@ -489,7 +478,6 @@ def move_stage(conn, cand_id: int, body: CandidateStageIn, user: dict = Depends(
     _log_candidate(conn, inst_id, cand_id, "Stage Changed", detail, user["username"])
     conn.commit()
     row = conn.execute("SELECT * FROM candidates WHERE id=?", (cand_id,)).fetchone()
-    conn.close()
     return dict(row)
 
 
@@ -516,7 +504,6 @@ def list_interviews(conn,
     if status:       q += " AND i.status=?";       p.append(status)
     q += " GROUP BY i.id, c.full_name, r.title ORDER BY i.scheduled_date DESC, i.scheduled_time DESC"
     rows = conn.execute(q, p).fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
@@ -547,7 +534,6 @@ def schedule_interview(conn, body: InterviewIn, user: dict = Depends(require_rol
         SELECT i.*, c.full_name AS candidate_name FROM interviews i
         JOIN candidates c ON c.id = i.candidate_id WHERE i.id=?
     """, (iid,)).fetchone()
-    conn.close()
     return dict(row)
 
 
@@ -565,7 +551,6 @@ def update_interview(conn, int_id: int, body: InterviewIn, user: dict = Depends(
           body.duration_mins, body.location, body.interviewers, body.notes, int_id, inst_id))
     conn.commit()
     row = conn.execute("SELECT * FROM interviews WHERE id=?", (int_id,)).fetchone()
-    conn.close()
     return dict(row)
 
 
@@ -587,7 +572,6 @@ def update_interview_status(conn, int_id: int, body: InterviewStatusIn,
                        f"{row['interview_type']} interview marked as {body.status}",
                        user["username"])
     conn.commit()
-    conn.close()
     return dict(row)
 
 
@@ -619,7 +603,6 @@ def submit_score(conn, int_id: int, body: ScoreIn, user: dict = Depends(get_curr
     except IntegrityError as e:
         pass; raise HTTPException(400, str(e))
     finally:
-        conn.close()
     return {"ok": True}
 
 
@@ -631,7 +614,6 @@ def get_scores(conn, int_id: int, user: dict = Depends(get_current_user)) -> Opt
         "SELECT * FROM interview_scores WHERE interview_id=? AND institution_id=? ORDER BY created_at",
         (int_id, inst_id)
     ).fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
@@ -656,7 +638,6 @@ def list_offers(conn,
     if offer_type:   q += " AND o.offer_type=?";  p.append(offer_type)
     q += " ORDER BY o.created_at DESC"
     rows = conn.execute(q, p).fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
@@ -688,7 +669,6 @@ def create_offer(conn, body: OfferIn, user: dict = Depends(require_roles(*RECRUI
         user["username"])
     conn.commit()
     row = conn.execute("SELECT * FROM offers WHERE id=?", (oid,)).fetchone()
-    conn.close()
     return dict(row)
 
 
@@ -700,7 +680,6 @@ def get_offer(conn, offer_id: int, user: dict = Depends(require_roles(*RECRUIT_W
         "SELECT o.*, c.full_name AS candidate_name FROM offers o JOIN candidates c ON c.id=o.candidate_id WHERE o.id=? AND o.institution_id=?",
         (offer_id, inst_id)
     ).fetchone()
-    conn.close()
     if not row: raise HTTPException(404, "Offer not found")
     return dict(row)
 
@@ -722,7 +701,6 @@ def update_offer_status(conn, offer_id: int, body: OfferStatusIn,
     _log_candidate(conn, inst_id, row["candidate_id"], "Offer Status Updated",
         f"{row['offer_type']} letter status changed to '{body.status}'", user["username"])
     conn.commit()
-    conn.close()
     return {"ok": True, "status": body.status}
 
 
@@ -742,7 +720,6 @@ def generate_letter(conn, offer_id: int, user: dict = Depends(require_roles(*REC
     letter = _gen_offer_letter(cand, req, offer)
     conn.execute("UPDATE offers SET letter_content=? WHERE id=?", (letter, offer_id))
     conn.commit()
-    conn.close()
     return {"letter_content": letter}
 
 
@@ -761,7 +738,6 @@ def convert_to_employee_prefill(conn, cand_id: int, user: dict = Depends(require
         "SELECT * FROM offers WHERE candidate_id=? AND offer_type='Offer' AND status='Accepted' ORDER BY created_at DESC LIMIT 1",
         (cand_id,)
     ).fetchone()
-    conn.close()
     return {
         "full_name":        c.get("full_name",""),
         "ic_number":        c.get("ic_number",""),
@@ -802,7 +778,6 @@ def get_candidate_audit(conn, cand_id: int, user: dict = Depends(require_roles("
         "SELECT * FROM candidate_audit_log WHERE candidate_id=? AND institution_id=? ORDER BY created_at DESC",
         (cand_id, inst_id)
     ).fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
@@ -850,7 +825,6 @@ def recruitment_dashboard_stats(conn, user: dict = Depends(get_current_user)) ->
         (iid,)
     ).fetchone()[0]
 
-    conn.close()
     return {
         "req_by_status": req_by_status,
         "cand_by_stage": cand_by_stage,
