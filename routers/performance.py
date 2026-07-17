@@ -12,7 +12,7 @@ performance_payouts and get folded into gross pay the next time a payroll
 run is generated for that employee (see routers/payroll.py's _generate_payslip).
 """
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Dict,  Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
@@ -185,7 +185,7 @@ def _log_appraisal(conn, inst_id, appraisal_id, employee_id, action, detail, use
 # --- Cycles ---
 @router.get("/api/performance/cycles")
 @db_session
-def list_performance_cycles(conn, user: dict = Depends(get_current_user)):
+def list_performance_cycles(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
     if user["role"] == "superadmin":
         return []
@@ -198,7 +198,7 @@ def list_performance_cycles(conn, user: dict = Depends(get_current_user)):
 
 @router.post("/api/performance/cycles", status_code=201)
 @db_session
-def create_performance_cycle(conn, body: PerformanceCycleIn, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))):
+def create_performance_cycle(conn, body: PerformanceCycleIn, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     if body.period_end <= body.period_start:
         raise HTTPException(400, "Period end must be after period start")
@@ -214,7 +214,7 @@ def create_performance_cycle(conn, body: PerformanceCycleIn, user: dict = Depend
 
 @router.patch("/api/performance/cycles/{cycle_id}/activate")
 @db_session
-def activate_performance_cycle(conn, cycle_id: int, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))):
+def activate_performance_cycle(conn, cycle_id: int, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     cycle = conn.execute("SELECT * FROM performance_cycles WHERE id=? AND institution_id=?", (cycle_id, inst_id)).fetchone()
     if not cycle: raise HTTPException(404, "Cycle not found")
@@ -235,7 +235,7 @@ def activate_performance_cycle(conn, cycle_id: int, user: dict = Depends(require
 
 @router.patch("/api/performance/cycles/{cycle_id}/open-calibration")
 @db_session
-def open_calibration(conn, cycle_id: int, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))):
+def open_calibration(conn, cycle_id: int, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     cycle = conn.execute("SELECT * FROM performance_cycles WHERE id=? AND institution_id=?", (cycle_id, inst_id)).fetchone()
     if not cycle: raise HTTPException(404, "Cycle not found")
@@ -250,7 +250,7 @@ def open_calibration(conn, cycle_id: int, user: dict = Depends(require_roles(*PE
 
 @router.patch("/api/performance/cycles/{cycle_id}/close")
 @db_session
-def close_performance_cycle(conn, cycle_id: int, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))):
+def close_performance_cycle(conn, cycle_id: int, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     cycle = conn.execute("SELECT * FROM performance_cycles WHERE id=? AND institution_id=?", (cycle_id, inst_id)).fetchone()
     if not cycle: raise HTTPException(404, "Cycle not found")
@@ -278,7 +278,7 @@ def close_performance_cycle(conn, cycle_id: int, user: dict = Depends(require_ro
 # --- Goals ---
 @router.get("/api/performance/goals")
 @db_session
-def list_goals(conn, cycle_id: int, employee_id: Optional[str] = None, user: dict = Depends(get_current_user)):
+def list_goals(conn, cycle_id: int, employee_id: Optional[str] = None, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
     if user["role"] == "superadmin":
         return []
@@ -319,7 +319,7 @@ def list_goals(conn, cycle_id: int, employee_id: Optional[str] = None, user: dic
 
 @router.post("/api/performance/goals", status_code=201)
 @db_session
-def create_goal(conn, body: GoalIn, user: dict = Depends(get_current_user)):
+def create_goal(conn, body: GoalIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     inst_id = need_inst(user)
     if not _can_access_employee_performance(conn, inst_id, user, body.employee_id):
         raise HTTPException(403, "Access denied")
@@ -340,7 +340,7 @@ def create_goal(conn, body: GoalIn, user: dict = Depends(get_current_user)):
 
 @router.put("/api/performance/goals/{goal_id}")
 @db_session
-def update_goal(conn, goal_id: int, body: GoalUpdateIn, user: dict = Depends(get_current_user)):
+def update_goal(conn, goal_id: int, body: GoalUpdateIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     inst_id = need_inst(user)
     goal = conn.execute("SELECT * FROM goals WHERE id=? AND institution_id=?", (goal_id, inst_id)).fetchone()
     if not goal: raise HTTPException(404, "Goal not found")
@@ -367,7 +367,7 @@ def update_goal(conn, goal_id: int, body: GoalUpdateIn, user: dict = Depends(get
 
 @router.delete("/api/performance/goals/{goal_id}", status_code=204)
 @db_session
-def delete_goal(conn, goal_id: int, user: dict = Depends(get_current_user)):
+def delete_goal(conn, goal_id: int, user: dict = Depends(get_current_user)) -> None:
     inst_id = need_inst(user)
     goal = conn.execute("SELECT * FROM goals WHERE id=? AND institution_id=?", (goal_id, inst_id)).fetchone()
     if not goal: raise HTTPException(404, "Goal not found")
@@ -383,7 +383,7 @@ def delete_goal(conn, goal_id: int, user: dict = Depends(get_current_user)):
 
 @router.post("/api/performance/goals/{goal_id}/key-results", status_code=201)
 @db_session
-def add_key_result(conn, goal_id: int, body: KeyResultIn, user: dict = Depends(get_current_user)):
+def add_key_result(conn, goal_id: int, body: KeyResultIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     inst_id = need_inst(user)
     goal = conn.execute("SELECT * FROM goals WHERE id=? AND institution_id=?", (goal_id, inst_id)).fetchone()
     if not goal: raise HTTPException(404, "Goal not found")
@@ -403,7 +403,7 @@ def add_key_result(conn, goal_id: int, body: KeyResultIn, user: dict = Depends(g
 
 @router.put("/api/performance/key-results/{kr_id}")
 @db_session
-def update_key_result(conn, kr_id: int, body: KeyResultIn, user: dict = Depends(get_current_user)):
+def update_key_result(conn, kr_id: int, body: KeyResultIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     inst_id = need_inst(user)
     kr = conn.execute("SELECT * FROM okr_key_results WHERE id=?", (kr_id,)).fetchone()
     if not kr: raise HTTPException(404, "Key result not found")
@@ -422,7 +422,7 @@ def update_key_result(conn, kr_id: int, body: KeyResultIn, user: dict = Depends(
 
 @router.delete("/api/performance/key-results/{kr_id}", status_code=204)
 @db_session
-def delete_key_result(conn, kr_id: int, user: dict = Depends(get_current_user)):
+def delete_key_result(conn, kr_id: int, user: dict = Depends(get_current_user)) -> None:
     inst_id = need_inst(user)
     kr = conn.execute("SELECT * FROM okr_key_results WHERE id=?", (kr_id,)).fetchone()
     if not kr: raise HTTPException(404, "Key result not found")
@@ -436,7 +436,7 @@ def delete_key_result(conn, kr_id: int, user: dict = Depends(get_current_user)):
 # --- Appraisals ---
 @router.get("/api/performance/appraisals")
 @db_session
-def list_appraisals(conn, cycle_id: int, user: dict = Depends(get_current_user)):
+def list_appraisals(conn, cycle_id: int, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
     if user["role"] == "superadmin":
         return []
@@ -458,7 +458,7 @@ def list_appraisals(conn, cycle_id: int, user: dict = Depends(get_current_user))
 
 @router.get("/api/performance/appraisals/{appraisal_id}")
 @db_session
-def get_appraisal(conn, appraisal_id: int, user: dict = Depends(get_current_user)):
+def get_appraisal(conn, appraisal_id: int, user: dict = Depends(get_current_user)) -> Optional[Dict[str, Any]]:
     inst_id = need_inst(user)
     ap = conn.execute("""
         SELECT a.*, e.full_name, e.department, e.designation
@@ -491,7 +491,7 @@ def get_appraisal(conn, appraisal_id: int, user: dict = Depends(get_current_user
 
 @router.post("/api/performance/appraisals/{appraisal_id}/self-review")
 @db_session
-def submit_self_review(conn, appraisal_id: int, body: SelfReviewIn, user: dict = Depends(get_current_user)):
+def submit_self_review(conn, appraisal_id: int, body: SelfReviewIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     inst_id = need_inst(user)
     ap = conn.execute("SELECT * FROM appraisals WHERE id=? AND institution_id=?", (appraisal_id, inst_id)).fetchone()
     if not ap: raise HTTPException(404, "Appraisal not found")
@@ -513,7 +513,7 @@ def submit_self_review(conn, appraisal_id: int, body: SelfReviewIn, user: dict =
 
 @router.post("/api/performance/appraisals/{appraisal_id}/manager-review")
 @db_session
-def submit_manager_review(conn, appraisal_id: int, body: ManagerReviewIn, user: dict = Depends(get_current_user)):
+def submit_manager_review(conn, appraisal_id: int, body: ManagerReviewIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     inst_id = need_inst(user)
     ap = conn.execute("SELECT * FROM appraisals WHERE id=? AND institution_id=?", (appraisal_id, inst_id)).fetchone()
     if not ap: raise HTTPException(404, "Appraisal not found")
@@ -539,7 +539,7 @@ def submit_manager_review(conn, appraisal_id: int, body: ManagerReviewIn, user: 
 
 @router.post("/api/performance/appraisals/{appraisal_id}/calibrate")
 @db_session
-def calibrate_appraisal(conn, appraisal_id: int, body: CalibrateIn, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))):
+def calibrate_appraisal(conn, appraisal_id: int, body: CalibrateIn, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     ap = conn.execute("SELECT * FROM appraisals WHERE id=? AND institution_id=?", (appraisal_id, inst_id)).fetchone()
     if not ap: raise HTTPException(404, "Appraisal not found")
@@ -562,7 +562,7 @@ def calibrate_appraisal(conn, appraisal_id: int, body: CalibrateIn, user: dict =
 # ---------------------------------------------------------------------------
 @router.post("/api/performance/appraisals/{appraisal_id}/merit-increment", status_code=201)
 @db_session
-def apply_merit_increment(conn, appraisal_id: int, body: MeritIncrementIn, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))):
+def apply_merit_increment(conn, appraisal_id: int, body: MeritIncrementIn, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     ap = conn.execute("SELECT * FROM appraisals WHERE id=? AND institution_id=?", (appraisal_id, inst_id)).fetchone()
     if not ap: raise HTTPException(404, "Appraisal not found")
@@ -595,7 +595,7 @@ def apply_merit_increment(conn, appraisal_id: int, body: MeritIncrementIn, user:
 
 @router.post("/api/performance/appraisals/{appraisal_id}/bonus", status_code=201)
 @db_session
-def queue_bonus_payout(conn, appraisal_id: int, body: BonusPayoutIn, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))):
+def queue_bonus_payout(conn, appraisal_id: int, body: BonusPayoutIn, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     ap = conn.execute("SELECT * FROM appraisals WHERE id=? AND institution_id=?", (appraisal_id, inst_id)).fetchone()
     if not ap: raise HTTPException(404, "Appraisal not found")
@@ -617,7 +617,7 @@ def queue_bonus_payout(conn, appraisal_id: int, body: BonusPayoutIn, user: dict 
 
 @router.get("/api/performance/payouts")
 @db_session
-def list_performance_payouts(conn, status: Optional[str] = None, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES, *PAYROLL_VIEW_ROLES))):
+def list_performance_payouts(conn, status: Optional[str] = None, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES, *PAYROLL_VIEW_ROLES))) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
     sql = """
         SELECT po.*, e.full_name, e.department, e.designation
@@ -637,7 +637,7 @@ def list_performance_payouts(conn, status: Optional[str] = None, user: dict = De
 
 @router.delete("/api/performance/payouts/{payout_id}", status_code=204)
 @db_session
-def cancel_bonus_payout(conn, payout_id: int, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))):
+def cancel_bonus_payout(conn, payout_id: int, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))) -> None:
     inst_id = need_inst(user)
     payout = conn.execute("SELECT * FROM performance_payouts WHERE id=? AND institution_id=?", (payout_id, inst_id)).fetchone()
     if not payout: raise HTTPException(404, "Payout not found")

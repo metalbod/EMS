@@ -1,5 +1,5 @@
 """Institution CRUD routes (superadmin only)."""
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
@@ -72,7 +72,7 @@ class InstStatusIn(BaseModel):
 
 @router.get("/api/institutions")
 @db_session
-def list_institutions(conn, user: dict = Depends(require_roles("superadmin"))):
+def list_institutions(conn, user: dict = Depends(require_roles("superadmin"))) -> List[Dict[str, Any]]:
     rows = conn.execute("""
         SELECT i.*,
                COUNT(DISTINCT e.id)  AS employee_count,
@@ -88,7 +88,7 @@ def list_institutions(conn, user: dict = Depends(require_roles("superadmin"))):
 
 @router.post("/api/institutions", status_code=201)
 @db_session
-def create_institution(conn, body: InstitutionIn, user: dict = Depends(require_roles("superadmin"))):
+def create_institution(conn, body: InstitutionIn, user: dict = Depends(require_roles("superadmin"))) -> Dict[str, Any]:
     try:
         code = body.code.upper()
         if conn.execute("SELECT id FROM institutions WHERE code=?", (code,)).fetchone():
@@ -120,7 +120,7 @@ def create_institution(conn, body: InstitutionIn, user: dict = Depends(require_r
 
 @router.get("/api/institutions/{inst_id}")
 @db_session
-def get_institution(conn, inst_id: int, user: dict = Depends(require_roles("superadmin"))):
+def get_institution(conn, inst_id: int, user: dict = Depends(require_roles("superadmin"))) -> Dict[str, Any]:
     row = conn.execute("""
         SELECT i.*,
                COUNT(DISTINCT e.id) AS employee_count,
@@ -137,7 +137,7 @@ def get_institution(conn, inst_id: int, user: dict = Depends(require_roles("supe
 
 @router.put("/api/institutions/{inst_id}")
 @db_session
-def update_institution(conn, inst_id: int, body: InstitutionUpdate, user: dict = Depends(require_roles("superadmin"))):
+def update_institution(conn, inst_id: int, body: InstitutionUpdate, user: dict = Depends(require_roles("superadmin"))) -> Dict[str, Any]:
     if not conn.execute("SELECT id FROM institutions WHERE id=?", (inst_id,)).fetchone():
         raise HTTPException(404, "Institution not found")
     conn.execute("""
@@ -152,7 +152,7 @@ def update_institution(conn, inst_id: int, body: InstitutionUpdate, user: dict =
 
 @router.patch("/api/institutions/{inst_id}/status")
 @db_session
-def toggle_inst_status(conn, inst_id: int, body: InstStatusIn, user: dict = Depends(require_roles("superadmin"))):
+def toggle_inst_status(conn, inst_id: int, body: InstStatusIn, user: dict = Depends(require_roles("superadmin"))) -> Dict[str, Any]:
     if body.status not in ("Active", "Suspended"):
         raise HTTPException(400, "Status must be Active or Suspended")
     conn.execute("UPDATE institutions SET status=? WHERE id=?", (body.status, inst_id))

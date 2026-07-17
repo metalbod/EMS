@@ -1,5 +1,5 @@
 """Projects, Project Tasks, and Task Assignments (managed by HR Manager) — feeds Timesheet's project selector."""
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -54,7 +54,7 @@ class TaskOpenToAllIn(BaseModel):
 # ---------------------------------------------------------------------------
 @router.get("/api/projects")
 @db_session
-def list_projects(conn, status: Optional[str] = None, user: dict = Depends(get_current_user)):
+def list_projects(conn, status: Optional[str] = None, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
     q = """
         SELECT p.*,
@@ -75,7 +75,7 @@ def list_projects(conn, status: Optional[str] = None, user: dict = Depends(get_c
 
 @router.get("/api/projects/utilization")
 @db_session
-def get_project_utilization(conn, user: dict = Depends(require_roles(*PROJECT_MANAGE_ROLES))):
+def get_project_utilization(conn, user: dict = Depends(require_roles(*PROJECT_MANAGE_ROLES))) -> List[Dict[str, Any]]:
     """Hours clocked by project, broken down by task, for all Active projects."""
     inst_id = need_inst(user)
     projects = conn.execute(
@@ -102,7 +102,7 @@ def get_project_utilization(conn, user: dict = Depends(require_roles(*PROJECT_MA
 
 @router.get("/api/projects/mine")
 @db_session
-def list_my_projects(conn, user: dict = Depends(get_current_user)):
+def list_my_projects(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
     """Projects the current employee can log time against — used to populate the timesheet project selector."""
     inst_id = need_inst(user)
     if not user.get("employee_id"):
@@ -123,7 +123,7 @@ def list_my_projects(conn, user: dict = Depends(get_current_user)):
 
 @router.post("/api/projects", status_code=201)
 @db_session
-def create_project(conn, body: ProjectIn, user: dict = Depends(require_roles(*PROJECT_MANAGE_ROLES))):
+def create_project(conn, body: ProjectIn, user: dict = Depends(require_roles(*PROJECT_MANAGE_ROLES))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     conn.execute(
         "INSERT INTO projects (institution_id,name,description,status,created_by) VALUES (?,?,?,?,?)",
@@ -136,7 +136,7 @@ def create_project(conn, body: ProjectIn, user: dict = Depends(require_roles(*PR
 
 @router.put("/api/projects/{project_id}")
 @db_session
-def update_project(conn, project_id: int, body: ProjectIn, user: dict = Depends(require_roles(*PROJECT_MANAGE_ROLES))):
+def update_project(conn, project_id: int, body: ProjectIn, user: dict = Depends(require_roles(*PROJECT_MANAGE_ROLES))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     if not conn.execute("SELECT id FROM projects WHERE id=? AND institution_id=?", (project_id, inst_id)).fetchone():
         raise HTTPException(404, "Project not found")
@@ -151,7 +151,7 @@ def update_project(conn, project_id: int, body: ProjectIn, user: dict = Depends(
 
 @router.delete("/api/projects/{project_id}", status_code=204)
 @db_session
-def delete_project(conn, project_id: int, user: dict = Depends(require_roles(*PROJECT_MANAGE_ROLES))):
+def delete_project(conn, project_id: int, user: dict = Depends(require_roles(*PROJECT_MANAGE_ROLES))) -> None:
     inst_id = need_inst(user)
     if conn.execute("SELECT id FROM timesheet_entries WHERE project_id=? AND institution_id=?", (project_id, inst_id)).fetchone():
         raise HTTPException(400, "Cannot delete a project that already has logged timesheet hours — set it to Completed instead")
@@ -164,7 +164,7 @@ def delete_project(conn, project_id: int, user: dict = Depends(require_roles(*PR
 # ---------------------------------------------------------------------------
 @router.get("/api/projects/{project_id}/tasks")
 @db_session
-def list_project_tasks(conn, project_id: int, user: dict = Depends(get_current_user)):
+def list_project_tasks(conn, project_id: int, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
     if not conn.execute("SELECT id FROM projects WHERE id=? AND institution_id=?", (project_id, inst_id)).fetchone():
         raise HTTPException(404, "Project not found")
@@ -192,7 +192,7 @@ def list_project_tasks(conn, project_id: int, user: dict = Depends(get_current_u
 
 @router.post("/api/projects/{project_id}/tasks", status_code=201)
 @db_session
-def create_project_task(conn, project_id: int, body: ProjectTaskIn, user: dict = Depends(require_roles(*PROJECT_MANAGE_ROLES))):
+def create_project_task(conn, project_id: int, body: ProjectTaskIn, user: dict = Depends(require_roles(*PROJECT_MANAGE_ROLES))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     if not conn.execute("SELECT id FROM projects WHERE id=? AND institution_id=?", (project_id, inst_id)).fetchone():
         raise HTTPException(404, "Project not found")
@@ -211,7 +211,7 @@ def create_project_task(conn, project_id: int, body: ProjectTaskIn, user: dict =
 
 @router.put("/api/projects/{project_id}/tasks/{task_id}")
 @db_session
-def update_project_task(conn, project_id: int, task_id: int, body: ProjectTaskIn, user: dict = Depends(require_roles(*PROJECT_MANAGE_ROLES))):
+def update_project_task(conn, project_id: int, task_id: int, body: ProjectTaskIn, user: dict = Depends(require_roles(*PROJECT_MANAGE_ROLES))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     if not conn.execute("SELECT id FROM project_tasks WHERE id=? AND project_id=? AND institution_id=?", (task_id, project_id, inst_id)).fetchone():
         raise HTTPException(404, "Task not found")
@@ -228,7 +228,7 @@ def update_project_task(conn, project_id: int, task_id: int, body: ProjectTaskIn
 
 @router.delete("/api/projects/{project_id}/tasks/{task_id}", status_code=204)
 @db_session
-def delete_project_task(conn, project_id: int, task_id: int, user: dict = Depends(require_roles(*PROJECT_MANAGE_ROLES))):
+def delete_project_task(conn, project_id: int, task_id: int, user: dict = Depends(require_roles(*PROJECT_MANAGE_ROLES))) -> None:
     inst_id = need_inst(user)
     if conn.execute("SELECT id FROM timesheet_entries WHERE task_id=? AND institution_id=?", (task_id, inst_id)).fetchone():
         raise HTTPException(400, "Cannot delete a task that already has logged timesheet hours — mark it Completed instead")
@@ -247,7 +247,7 @@ def delete_project_task(conn, project_id: int, task_id: int, user: dict = Depend
 # ---------------------------------------------------------------------------
 @router.get("/api/projects/{project_id}/tasks/{task_id}/assignments")
 @db_session
-def list_task_assignments(conn, project_id: int, task_id: int, user: dict = Depends(get_current_user)):
+def list_task_assignments(conn, project_id: int, task_id: int, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
     if not conn.execute("SELECT id FROM project_tasks WHERE id=? AND project_id=? AND institution_id=?", (task_id, project_id, inst_id)).fetchone():
         raise HTTPException(404, "Task not found")
@@ -263,7 +263,7 @@ def list_task_assignments(conn, project_id: int, task_id: int, user: dict = Depe
 
 @router.post("/api/projects/{project_id}/tasks/{task_id}/assignments", status_code=201)
 @db_session
-def add_task_assignment(conn, project_id: int, task_id: int, body: TaskAssignmentIn, user: dict = Depends(require_roles(*PROJECT_MANAGE_ROLES))):
+def add_task_assignment(conn, project_id: int, task_id: int, body: TaskAssignmentIn, user: dict = Depends(require_roles(*PROJECT_MANAGE_ROLES))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     if not conn.execute("SELECT id FROM project_tasks WHERE id=? AND project_id=? AND institution_id=?", (task_id, project_id, inst_id)).fetchone():
         raise HTTPException(404, "Task not found")
@@ -285,7 +285,7 @@ def add_task_assignment(conn, project_id: int, task_id: int, body: TaskAssignmen
 
 @router.delete("/api/projects/{project_id}/tasks/{task_id}/assignments/{employee_id}", status_code=204)
 @db_session
-def remove_task_assignment(conn, project_id: int, task_id: int, employee_id: str, user: dict = Depends(require_roles(*PROJECT_MANAGE_ROLES))):
+def remove_task_assignment(conn, project_id: int, task_id: int, employee_id: str, user: dict = Depends(require_roles(*PROJECT_MANAGE_ROLES))) -> None:
     inst_id = need_inst(user)
     conn.execute(
         "DELETE FROM task_assignments WHERE task_id=? AND employee_id=? AND institution_id=?",
@@ -296,7 +296,7 @@ def remove_task_assignment(conn, project_id: int, task_id: int, employee_id: str
 
 @router.patch("/api/projects/{project_id}/tasks/{task_id}/open-to-all")
 @db_session
-def set_task_open_to_all(conn, project_id: int, task_id: int, body: TaskOpenToAllIn, user: dict = Depends(require_roles(*PROJECT_MANAGE_ROLES))):
+def set_task_open_to_all(conn, project_id: int, task_id: int, body: TaskOpenToAllIn, user: dict = Depends(require_roles(*PROJECT_MANAGE_ROLES))) -> Dict[str, Any]:
     """Marking a task 'ALL' lets every employee in the institution clock hours to it,
     bypassing the usual project-membership requirement (see add_timesheet_entry)."""
     inst_id = need_inst(user)

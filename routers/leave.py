@@ -1,6 +1,6 @@
 """Leave module: Types, Balances, and Applications (institution-scoped)."""
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
@@ -126,7 +126,7 @@ def _get_or_create_leave_balance(conn, inst_id: int, employee_id: str, leave_typ
 # ---------------------------------------------------------------------------
 @router.get("/api/leave/types")
 @db_session
-def list_leave_types(conn, user: dict = Depends(get_current_user)):
+def list_leave_types(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
     rows = conn.execute(
         "SELECT * FROM leave_types WHERE institution_id=? AND is_active=1 ORDER BY name", (inst_id,)
@@ -136,7 +136,7 @@ def list_leave_types(conn, user: dict = Depends(get_current_user)):
 
 @router.post("/api/leave/types", status_code=201)
 @db_session
-def create_leave_type(conn, body: LeaveTypeIn, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))):
+def create_leave_type(conn, body: LeaveTypeIn, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     conn.execute(
         "INSERT INTO leave_types (institution_id,name,annual_entitlement,requires_approval,requires_attachment,is_paid,is_active) VALUES (?,?,?,?,?,?,?)",
@@ -150,7 +150,7 @@ def create_leave_type(conn, body: LeaveTypeIn, user: dict = Depends(require_role
 
 @router.put("/api/leave/types/{type_id}")
 @db_session
-def update_leave_type(conn, type_id: int, body: LeaveTypeIn, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))):
+def update_leave_type(conn, type_id: int, body: LeaveTypeIn, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     if not conn.execute("SELECT id FROM leave_types WHERE id=? AND institution_id=?", (type_id, inst_id)).fetchone():
         raise HTTPException(404, "Leave type not found")
@@ -166,7 +166,7 @@ def update_leave_type(conn, type_id: int, body: LeaveTypeIn, user: dict = Depend
 
 @router.delete("/api/leave/types/{type_id}", status_code=204)
 @db_session
-def delete_leave_type(conn, type_id: int, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))):
+def delete_leave_type(conn, type_id: int, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))) -> None:
     inst_id = need_inst(user)
     conn.execute("UPDATE leave_types SET is_active=0 WHERE id=? AND institution_id=?", (type_id, inst_id))
     conn.commit()
@@ -178,7 +178,7 @@ def delete_leave_type(conn, type_id: int, user: dict = Depends(require_roles(*LE
 @router.get("/api/leave/balances")
 @db_session
 def list_leave_balances(conn, employee_id: Optional[str] = None, year: Optional[int] = None,
-                        user: dict = Depends(get_current_user)):
+                        user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
     year = year or datetime.now().year
     q = """
@@ -214,7 +214,7 @@ def list_leave_balances(conn, employee_id: Optional[str] = None, year: Optional[
 
 @router.patch("/api/leave/balances/{balance_id}")
 @db_session
-def adjust_leave_balance(conn, balance_id: int, body: LeaveBalanceAdjustIn, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))):
+def adjust_leave_balance(conn, balance_id: int, body: LeaveBalanceAdjustIn, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     bal = conn.execute("SELECT * FROM leave_balances WHERE id=? AND institution_id=?", (balance_id, inst_id)).fetchone()
     if not bal:
@@ -232,7 +232,7 @@ def adjust_leave_balance(conn, balance_id: int, body: LeaveBalanceAdjustIn, user
 # ---------------------------------------------------------------------------
 @router.get("/api/leave/applications")
 @db_session
-def list_leave_applications(conn, status: Optional[str] = None, user: dict = Depends(get_current_user)):
+def list_leave_applications(conn, status: Optional[str] = None, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
     q = """
         SELECT a.*, lt.name AS leave_type_name, e.full_name AS employee_name, e.department, e.designation
@@ -255,7 +255,7 @@ def list_leave_applications(conn, status: Optional[str] = None, user: dict = Dep
 
 @router.post("/api/leave/applications", status_code=201)
 @db_session
-def create_leave_application(conn, body: LeaveApplicationIn, user: dict = Depends(get_current_user)):
+def create_leave_application(conn, body: LeaveApplicationIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     inst_id = need_inst(user)
     if user["role"] == "employee" and user.get("employee_id") != body.employee_id:
         raise HTTPException(403, "You can only apply leave for yourself")
@@ -301,7 +301,7 @@ def create_leave_application(conn, body: LeaveApplicationIn, user: dict = Depend
 
 @router.patch("/api/leave/applications/{app_id}/status")
 @db_session
-def update_leave_status(conn, app_id: int, body: LeaveStatusIn, user: dict = Depends(get_current_user)):
+def update_leave_status(conn, app_id: int, body: LeaveStatusIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     inst_id = need_inst(user)
     valid = ("Approved", "Rejected", "Cancelled")
     if body.status not in valid:
@@ -342,7 +342,7 @@ def update_leave_status(conn, app_id: int, body: LeaveStatusIn, user: dict = Dep
 
 @router.get("/api/employees/{employee_id}/leave-history")
 @db_session
-def get_employee_leave_history(conn, employee_id: str, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))):
+def get_employee_leave_history(conn, employee_id: str, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
     rows = conn.execute(
         "SELECT * FROM leave_audit_log WHERE employee_id=? AND institution_id=? ORDER BY created_at ASC",

@@ -1,5 +1,5 @@
 """Timesheets (institution-scoped)."""
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -58,7 +58,7 @@ def _log_timesheet(conn, inst_id: int, ts_id: int, emp_id: str,
 
 @router.get("/api/timesheets")
 @db_session
-def list_timesheets(conn, status: Optional[str] = None, user: dict = Depends(get_current_user)):
+def list_timesheets(conn, status: Optional[str] = None, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
     q = """
         SELECT t.*, e.full_name AS employee_name, e.department, e.designation,
@@ -82,7 +82,7 @@ def list_timesheets(conn, status: Optional[str] = None, user: dict = Depends(get
 
 @router.post("/api/timesheets", status_code=201)
 @db_session
-def start_timesheet(conn, body: TimesheetStartIn, user: dict = Depends(get_current_user)):
+def start_timesheet(conn, body: TimesheetStartIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     """Get-or-create the Draft timesheet for an employee's period (idempotent)."""
     inst_id = need_inst(user)
     if user["role"] == "employee" and user.get("employee_id") != body.employee_id:
@@ -107,7 +107,7 @@ def start_timesheet(conn, body: TimesheetStartIn, user: dict = Depends(get_curre
 
 @router.get("/api/timesheets/{ts_id}")
 @db_session
-def get_timesheet(conn, ts_id: int, user: dict = Depends(get_current_user)):
+def get_timesheet(conn, ts_id: int, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     inst_id = need_inst(user)
     ts = conn.execute("SELECT * FROM timesheets WHERE id=? AND institution_id=?", (ts_id, inst_id)).fetchone()
     if not ts:
@@ -129,7 +129,7 @@ def get_timesheet(conn, ts_id: int, user: dict = Depends(get_current_user)):
 
 @router.post("/api/timesheets/{ts_id}/entries", status_code=201)
 @db_session
-def add_timesheet_entry(conn, ts_id: int, body: TimesheetEntryIn, user: dict = Depends(get_current_user)):
+def add_timesheet_entry(conn, ts_id: int, body: TimesheetEntryIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     inst_id = need_inst(user)
     ts = conn.execute("SELECT * FROM timesheets WHERE id=? AND institution_id=?", (ts_id, inst_id)).fetchone()
     if not ts:
@@ -165,7 +165,7 @@ def add_timesheet_entry(conn, ts_id: int, body: TimesheetEntryIn, user: dict = D
 
 @router.delete("/api/timesheets/{ts_id}/entries/{entry_id}", status_code=204)
 @db_session
-def delete_timesheet_entry(conn, ts_id: int, entry_id: int, user: dict = Depends(get_current_user)):
+def delete_timesheet_entry(conn, ts_id: int, entry_id: int, user: dict = Depends(get_current_user)) -> None:
     inst_id = need_inst(user)
     ts = conn.execute("SELECT * FROM timesheets WHERE id=? AND institution_id=?", (ts_id, inst_id)).fetchone()
     if not ts:
@@ -180,7 +180,7 @@ def delete_timesheet_entry(conn, ts_id: int, entry_id: int, user: dict = Depends
 
 @router.patch("/api/timesheets/{ts_id}/status")
 @db_session
-def update_timesheet_status(conn, ts_id: int, body: TimesheetStatusIn, user: dict = Depends(get_current_user)):
+def update_timesheet_status(conn, ts_id: int, body: TimesheetStatusIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     inst_id = need_inst(user)
     valid = ("Submitted", "Approved", "Rejected")
     if body.status not in valid:

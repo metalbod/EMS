@@ -1,5 +1,5 @@
 """User management routes."""
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
@@ -64,7 +64,7 @@ class UserUpdate(BaseModel):
 
 @router.get("/api/users")
 @db_session
-def list_users(conn, user: dict = Depends(require_roles(*CAN_MANAGE_USERS))):
+def list_users(conn, user: dict = Depends(require_roles(*CAN_MANAGE_USERS))) -> List[Dict[str, Any]]:
     if user["role"] == "superadmin":
         inst_id = user.get("active_institution_id")
         if inst_id:
@@ -99,7 +99,7 @@ def list_users(conn, user: dict = Depends(require_roles(*CAN_MANAGE_USERS))):
 
 @router.post("/api/users", status_code=201)
 @db_session
-def create_user(conn, body: UserIn, user: dict = Depends(require_roles(*CAN_MANAGE_USERS))):
+def create_user(conn, body: UserIn, user: dict = Depends(require_roles(*CAN_MANAGE_USERS))) -> Dict[str, Any]:
     # Determine which institution this user belongs to
     if user["role"] == "superadmin":
         inst_id = body.institution_id or user.get("active_institution_id")
@@ -132,7 +132,7 @@ def create_user(conn, body: UserIn, user: dict = Depends(require_roles(*CAN_MANA
 
 @router.put("/api/users/{user_id}")
 @db_session
-def update_user(conn, user_id: int, body: UserUpdate, user: dict = Depends(require_roles(*CAN_MANAGE_USERS))):
+def update_user(conn, user_id: int, body: UserUpdate, user: dict = Depends(require_roles(*CAN_MANAGE_USERS))) -> Dict[str, Any]:
     target = conn.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
     if not target:
         raise HTTPException(404, "User not found")
@@ -165,7 +165,7 @@ def update_user(conn, user_id: int, body: UserUpdate, user: dict = Depends(requi
 
 @router.delete("/api/users/{user_id}", status_code=204)
 @db_session
-def delete_user(conn, user_id: int, user: dict = Depends(require_roles("superadmin", "hr_manager"))):
+def delete_user(conn, user_id: int, user: dict = Depends(require_roles("superadmin", "hr_manager"))) -> None:
     if user_id == user["id"]:
         raise HTTPException(400, "Cannot delete your own account")
     target = conn.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()

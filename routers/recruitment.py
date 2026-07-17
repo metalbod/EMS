@@ -1,6 +1,6 @@
 """Recruitment module: Job Requisitions, Candidates/ATS, Interviews, and Offers."""
 from datetime import datetime
-from typing import Optional
+from typing import Any, Dict,  Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -255,7 +255,7 @@ def list_requisitions(conn,
 
 @router.post("/api/recruitment/requisitions", status_code=201)
 @db_session
-def create_requisition(conn, body: RequisitionIn, user: dict = Depends(require_roles(*RECRUIT_WRITE))):
+def create_requisition(conn, body: RequisitionIn, user: dict = Depends(require_roles(*RECRUIT_WRITE))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     conn.execute("""
         INSERT INTO job_requisitions (institution_id,title,department,headcount,employment_type,
@@ -273,7 +273,7 @@ def create_requisition(conn, body: RequisitionIn, user: dict = Depends(require_r
 
 @router.get("/api/recruitment/requisitions/{req_id}")
 @db_session
-def get_requisition(conn, req_id: int, user: dict = Depends(get_current_user)):
+def get_requisition(conn, req_id: int, user: dict = Depends(get_current_user)) -> Optional[Dict[str, Any]]:
     inst_id = need_inst(user)
     r = _get_req(conn, inst_id, req_id)
     cands = conn.execute(
@@ -287,7 +287,7 @@ def get_requisition(conn, req_id: int, user: dict = Depends(get_current_user)):
 
 @router.put("/api/recruitment/requisitions/{req_id}")
 @db_session
-def update_requisition(conn, req_id: int, body: RequisitionIn, user: dict = Depends(require_roles(*RECRUIT_WRITE))):
+def update_requisition(conn, req_id: int, body: RequisitionIn, user: dict = Depends(require_roles(*RECRUIT_WRITE))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     r = _get_req(conn, inst_id, req_id)
     if r["status"] not in ("Draft",):
@@ -307,7 +307,7 @@ def update_requisition(conn, req_id: int, body: RequisitionIn, user: dict = Depe
 
 @router.patch("/api/recruitment/requisitions/{req_id}/submit")
 @db_session
-def submit_requisition(conn, req_id: int, user: dict = Depends(require_roles(*RECRUIT_WRITE))):
+def submit_requisition(conn, req_id: int, user: dict = Depends(require_roles(*RECRUIT_WRITE))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     r = _get_req(conn, inst_id, req_id)
     if r["status"] != "Draft":
@@ -322,7 +322,7 @@ def submit_requisition(conn, req_id: int, user: dict = Depends(require_roles(*RE
 @router.patch("/api/recruitment/requisitions/{req_id}/approve")
 @db_session
 def approve_requisition(conn, req_id: int, body: RequisitionApprovalIn,
-                         user: dict = Depends(require_roles("superadmin","hr_manager"))):
+                         user: dict = Depends(require_roles("superadmin","hr_manager"))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     r = _get_req(conn, inst_id, req_id)
     if r["status"] != "Pending Approval":
@@ -342,7 +342,7 @@ def approve_requisition(conn, req_id: int, body: RequisitionApprovalIn,
 
 @router.patch("/api/recruitment/requisitions/{req_id}/close")
 @db_session
-def close_requisition(conn, req_id: int, user: dict = Depends(require_roles(*RECRUIT_WRITE))):
+def close_requisition(conn, req_id: int, user: dict = Depends(require_roles(*RECRUIT_WRITE))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     conn.execute(
         "UPDATE job_requisitions SET status='Closed', closed_at=to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS') WHERE id=? AND institution_id=?",
@@ -385,7 +385,7 @@ def list_candidates(conn,
 
 @router.post("/api/recruitment/candidates", status_code=201)
 @db_session
-def create_candidate(conn, body: CandidateIn, user: dict = Depends(require_roles(*RECRUIT_WRITE))):
+def create_candidate(conn, body: CandidateIn, user: dict = Depends(require_roles(*RECRUIT_WRITE))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     conn.execute("""
         INSERT INTO candidates (institution_id,requisition_id,full_name,email,phone,ic_number,
@@ -411,7 +411,7 @@ def create_candidate(conn, body: CandidateIn, user: dict = Depends(require_roles
 
 @router.get("/api/recruitment/candidates/{cand_id}")
 @db_session
-def get_candidate(conn, cand_id: int, user: dict = Depends(get_current_user)):
+def get_candidate(conn, cand_id: int, user: dict = Depends(get_current_user)) -> Optional[Dict[str, Any]]:
     inst_id = need_inst(user)
     c = _get_candidate(conn, inst_id, cand_id)
     req = None
@@ -447,7 +447,7 @@ def get_candidate(conn, cand_id: int, user: dict = Depends(get_current_user)):
 
 @router.put("/api/recruitment/candidates/{cand_id}")
 @db_session
-def update_candidate(conn, cand_id: int, body: CandidateIn, user: dict = Depends(require_roles(*RECRUIT_WRITE))):
+def update_candidate(conn, cand_id: int, body: CandidateIn, user: dict = Depends(require_roles(*RECRUIT_WRITE))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     _get_candidate(conn, inst_id, cand_id)
     conn.execute("""
@@ -473,7 +473,7 @@ def update_candidate(conn, cand_id: int, body: CandidateIn, user: dict = Depends
 
 @router.patch("/api/recruitment/candidates/{cand_id}/stage")
 @db_session
-def move_stage(conn, cand_id: int, body: CandidateStageIn, user: dict = Depends(require_roles(*RECRUIT_WRITE))):
+def move_stage(conn, cand_id: int, body: CandidateStageIn, user: dict = Depends(require_roles(*RECRUIT_WRITE))) -> Dict[str, Any]:
     if body.stage not in CANDIDATE_STAGES:
         raise HTTPException(400, f"Stage must be one of: {', '.join(CANDIDATE_STAGES)}")
     inst_id = need_inst(user)
@@ -522,7 +522,7 @@ def list_interviews(conn,
 
 @router.post("/api/recruitment/interviews", status_code=201)
 @db_session
-def schedule_interview(conn, body: InterviewIn, user: dict = Depends(require_roles(*RECRUIT_WRITE))):
+def schedule_interview(conn, body: InterviewIn, user: dict = Depends(require_roles(*RECRUIT_WRITE))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     _get_candidate(conn, inst_id, body.candidate_id)
     conn.execute("""
@@ -553,7 +553,7 @@ def schedule_interview(conn, body: InterviewIn, user: dict = Depends(require_rol
 
 @router.put("/api/recruitment/interviews/{int_id}")
 @db_session
-def update_interview(conn, int_id: int, body: InterviewIn, user: dict = Depends(require_roles(*RECRUIT_WRITE))):
+def update_interview(conn, int_id: int, body: InterviewIn, user: dict = Depends(require_roles(*RECRUIT_WRITE))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     if not conn.execute("SELECT id FROM interviews WHERE id=? AND institution_id=?", (int_id, inst_id)).fetchone():
         raise HTTPException(404, "Interview not found")
@@ -572,7 +572,7 @@ def update_interview(conn, int_id: int, body: InterviewIn, user: dict = Depends(
 @router.patch("/api/recruitment/interviews/{int_id}/status")
 @db_session
 def update_interview_status(conn, int_id: int, body: InterviewStatusIn,
-                             user: dict = Depends(require_roles(*RECRUIT_WRITE))):
+                             user: dict = Depends(require_roles(*RECRUIT_WRITE))) -> Dict[str, Any]:
     if body.status not in INTERVIEW_STATUSES:
         raise HTTPException(400, f"Status must be one of: {', '.join(INTERVIEW_STATUSES)}")
     inst_id = need_inst(user)
@@ -593,7 +593,7 @@ def update_interview_status(conn, int_id: int, body: InterviewStatusIn,
 
 @router.post("/api/recruitment/interviews/{int_id}/scores", status_code=201)
 @db_session
-def submit_score(conn, int_id: int, body: ScoreIn, user: dict = Depends(get_current_user)):
+def submit_score(conn, int_id: int, body: ScoreIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     inst_id = need_inst(user)
     if not conn.execute("SELECT id FROM interviews WHERE id=? AND institution_id=?", (int_id, inst_id)).fetchone():
         raise HTTPException(404, "Interview not found")
@@ -625,7 +625,7 @@ def submit_score(conn, int_id: int, body: ScoreIn, user: dict = Depends(get_curr
 
 @router.get("/api/recruitment/interviews/{int_id}/scores")
 @db_session
-def get_scores(conn, int_id: int, user: dict = Depends(get_current_user)):
+def get_scores(conn, int_id: int, user: dict = Depends(get_current_user)) -> Optional[Dict[str, Any]]:
     inst_id = need_inst(user)
     rows = conn.execute(
         "SELECT * FROM interview_scores WHERE interview_id=? AND institution_id=? ORDER BY created_at",
@@ -662,7 +662,7 @@ def list_offers(conn,
 
 @router.post("/api/recruitment/offers", status_code=201)
 @db_session
-def create_offer(conn, body: OfferIn, user: dict = Depends(require_roles(*RECRUIT_WRITE))):
+def create_offer(conn, body: OfferIn, user: dict = Depends(require_roles(*RECRUIT_WRITE))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     cand = _get_candidate(conn, inst_id, body.candidate_id)
     req = None
@@ -694,7 +694,7 @@ def create_offer(conn, body: OfferIn, user: dict = Depends(require_roles(*RECRUI
 
 @router.get("/api/recruitment/offers/{offer_id}")
 @db_session
-def get_offer(conn, offer_id: int, user: dict = Depends(require_roles(*RECRUIT_WRITE))):
+def get_offer(conn, offer_id: int, user: dict = Depends(require_roles(*RECRUIT_WRITE))) -> Optional[Dict[str, Any]]:
     inst_id = need_inst(user)
     row = conn.execute(
         "SELECT o.*, c.full_name AS candidate_name FROM offers o JOIN candidates c ON c.id=o.candidate_id WHERE o.id=? AND o.institution_id=?",
@@ -708,7 +708,7 @@ def get_offer(conn, offer_id: int, user: dict = Depends(require_roles(*RECRUIT_W
 @router.patch("/api/recruitment/offers/{offer_id}/status")
 @db_session
 def update_offer_status(conn, offer_id: int, body: OfferStatusIn,
-                         user: dict = Depends(require_roles(*RECRUIT_WRITE))):
+                         user: dict = Depends(require_roles(*RECRUIT_WRITE))) -> Dict[str, Any]:
     if body.status not in OFFER_STATUSES:
         raise HTTPException(400, f"Status must be one of: {', '.join(OFFER_STATUSES)}")
     inst_id = need_inst(user)
@@ -728,7 +728,7 @@ def update_offer_status(conn, offer_id: int, body: OfferStatusIn,
 
 @router.post("/api/recruitment/offers/{offer_id}/generate-letter")
 @db_session
-def generate_letter(conn, offer_id: int, user: dict = Depends(require_roles(*RECRUIT_WRITE))):
+def generate_letter(conn, offer_id: int, user: dict = Depends(require_roles(*RECRUIT_WRITE))) -> Dict[str, Any]:
     """Regenerate/preview offer letter text."""
     inst_id = need_inst(user)
     row = conn.execute("SELECT * FROM offers WHERE id=? AND institution_id=?", (offer_id, inst_id)).fetchone()
@@ -748,7 +748,7 @@ def generate_letter(conn, offer_id: int, user: dict = Depends(require_roles(*REC
 
 @router.get("/api/recruitment/candidates/{cand_id}/convert-prefill")
 @db_session
-def convert_to_employee_prefill(conn, cand_id: int, user: dict = Depends(require_roles(*RECRUIT_WRITE))):
+def convert_to_employee_prefill(conn, cand_id: int, user: dict = Depends(require_roles(*RECRUIT_WRITE))) -> Dict[str, Any]:
     """Return candidate data pre-formatted for the Add Employee form."""
     inst_id = need_inst(user)
     c = _get_candidate(conn, inst_id, cand_id)
@@ -779,7 +779,7 @@ def convert_to_employee_prefill(conn, cand_id: int, user: dict = Depends(require
 
 @router.get("/api/recruitment/meta")
 @db_session
-def recruitment_meta(conn, user: dict = Depends(get_current_user)):
+def recruitment_meta(conn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     return {
         "stages": CANDIDATE_STAGES,
         "interview_types": INTERVIEW_TYPES,
@@ -795,7 +795,7 @@ def recruitment_meta(conn, user: dict = Depends(get_current_user)):
 
 @router.get("/api/recruitment/candidates/{cand_id}/audit-log")
 @db_session
-def get_candidate_audit(conn, cand_id: int, user: dict = Depends(require_roles("superadmin","hr_manager","hr_admin"))):
+def get_candidate_audit(conn, cand_id: int, user: dict = Depends(require_roles("superadmin","hr_manager","hr_admin"))) -> Optional[Dict[str, Any]]:
     inst_id = need_inst(user)
     _get_candidate(conn, inst_id, cand_id)
     rows = conn.execute(
@@ -808,7 +808,7 @@ def get_candidate_audit(conn, cand_id: int, user: dict = Depends(require_roles("
 
 @router.get("/api/recruitment/dashboard-stats")
 @db_session
-def recruitment_dashboard_stats(conn, user: dict = Depends(get_current_user)):
+def recruitment_dashboard_stats(conn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     iid = need_inst(user)
     # Requisitions by status
     req_rows = conn.execute(

@@ -1,6 +1,6 @@
 """Audit log viewing (superadmin/hr_manager only)."""
 import json
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends
 
@@ -29,7 +29,7 @@ def list_audit_logs(
     action: Optional[str] = None,
     limit: int = 200,
     user: dict = Depends(require_roles("superadmin", "hr_manager")),
-):
+) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
     q = "SELECT * FROM audit_logs WHERE institution_id=?"
     p = [inst_id]

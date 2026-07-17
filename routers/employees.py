@@ -1,7 +1,7 @@
 """Employee routes (institution-scoped), plus Bulk Employee Upload (HR Manager only)."""
 import csv
 import io
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -223,7 +223,7 @@ def list_employees(
     status: Optional[str] = None,
     search: Optional[str] = None,
     user: dict = Depends(get_current_user),
-):
+) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
     if user["role"] == "manager" and user.get("employee_id"):
         # Self + full downstream reporting chain (not just same-department peers)
@@ -297,7 +297,7 @@ def _insert_new_employee(conn, inst_id, emp: EmployeeIn, user: dict, ip: Optiona
 
 @router.post("/api/employees", status_code=201)
 @db_session
-def create_employee(conn, emp: EmployeeIn, request: Request, user: dict = Depends(require_roles(*CAN_WRITE))):
+def create_employee(conn, emp: EmployeeIn, request: Request, user: dict = Depends(require_roles(*CAN_WRITE))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     # Enforce max_employees
     inst = conn.execute("SELECT max_employees FROM institutions WHERE id=?", (inst_id,)).fetchone()
@@ -348,7 +348,7 @@ BULK_UPLOAD_REQUIRED = [
 
 
 @router.get("/api/employees/bulk-template")
-def download_bulk_template(user: dict = Depends(require_roles(*BULK_UPLOAD_ROLES))):
+def download_bulk_template(user: dict = Depends(require_roles(*BULK_UPLOAD_ROLES))) -> StreamingResponse:
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow(BULK_UPLOAD_COLUMNS)
@@ -369,7 +369,7 @@ def download_bulk_template(user: dict = Depends(require_roles(*BULK_UPLOAD_ROLES
 
 @router.post("/api/employees/bulk-upload", status_code=202)
 @db_session
-def bulk_upload_employees(conn, body: BulkUploadIn, request: Request, user: dict = Depends(require_roles(*BULK_UPLOAD_ROLES))):
+def bulk_upload_employees(conn, body: BulkUploadIn, request: Request, user: dict = Depends(require_roles(*BULK_UPLOAD_ROLES))) -> Dict[str, Any]:
     inst_id = need_inst(user)
 
     # Queue async task to process bulk upload
@@ -393,7 +393,7 @@ def bulk_upload_employees(conn, body: BulkUploadIn, request: Request, user: dict
 
 @router.get("/api/employees/{employee_id}")
 @db_session
-def get_employee(conn, employee_id: str, user: dict = Depends(get_current_user)):
+def get_employee(conn, employee_id: str, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     inst_id = need_inst(user)
     if user["role"] == "employee" and user["employee_id"] != employee_id:
         raise HTTPException(403, "Access denied")
@@ -410,7 +410,7 @@ def get_employee(conn, employee_id: str, user: dict = Depends(get_current_user))
 @router.put("/api/employees/{employee_id}")
 @db_session
 def update_employee(conn, employee_id: str, emp: EmployeeIn, request: Request,
-                    user: dict = Depends(require_roles(*CAN_WRITE))):
+                    user: dict = Depends(require_roles(*CAN_WRITE))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     old_row = conn.execute(
         "SELECT * FROM employees WHERE institution_id=? AND employee_id=?", (inst_id, employee_id)
@@ -480,7 +480,7 @@ def update_employee(conn, employee_id: str, emp: EmployeeIn, request: Request,
 @router.patch("/api/employees/{employee_id}/status")
 @db_session
 def update_status(conn, employee_id: str, body: StatusUpdate, request: Request,
-                  user: dict = Depends(require_roles(*CAN_TOGGLE))):
+                  user: dict = Depends(require_roles(*CAN_TOGGLE))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     row = conn.execute(
         "SELECT * FROM employees WHERE institution_id=? AND employee_id=?", (inst_id, employee_id)
@@ -509,7 +509,7 @@ def update_status(conn, employee_id: str, body: StatusUpdate, request: Request,
 # ---------------------------------------------------------------------------
 @router.get("/api/employees/{employee_id}/related-contracts")
 @db_session
-def get_related_contracts(conn, employee_id: str, user: dict = Depends(get_current_user)):
+def get_related_contracts(conn, employee_id: str, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
     """Return all employment contracts for the same person (matched by IC number)."""
     inst_id = need_inst(user)
     target = conn.execute(
@@ -531,7 +531,7 @@ def get_related_contracts(conn, employee_id: str, user: dict = Depends(get_curre
 
 @router.get("/api/employees/{employee_id}/rehire-prefill")
 @db_session
-def rehire_prefill(conn, employee_id: str, user: dict = Depends(require_roles(*CAN_WRITE))):
+def rehire_prefill(conn, employee_id: str, user: dict = Depends(require_roles(*CAN_WRITE))) -> Dict[str, Any]:
     """Pre-fill personal details for a rehire from an existing employee record."""
     inst_id = need_inst(user)
     row = conn.execute(

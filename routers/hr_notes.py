@@ -1,4 +1,6 @@
 """HR Notes (confidential, institution-scoped)."""
+from typing import Any, Dict, List
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -28,7 +30,7 @@ class NoteIn(BaseModel):
 
 @router.get("/api/employees/{employee_id}/notes")
 @db_session
-def get_notes(conn, employee_id: str, user: dict = Depends(require_roles(*HR_NOTE_ROLES))):
+def get_notes(conn, employee_id: str, user: dict = Depends(require_roles(*HR_NOTE_ROLES))) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
     rows = conn.execute(
         "SELECT id,note_type,body,created_by,created_at FROM hr_notes "
@@ -40,7 +42,7 @@ def get_notes(conn, employee_id: str, user: dict = Depends(require_roles(*HR_NOT
 
 @router.post("/api/employees/{employee_id}/notes", status_code=201)
 @db_session
-def create_note(conn, employee_id: str, note: NoteIn, user: dict = Depends(require_roles(*HR_NOTE_ROLES))):
+def create_note(conn, employee_id: str, note: NoteIn, user: dict = Depends(require_roles(*HR_NOTE_ROLES))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     if not conn.execute(
         "SELECT id FROM employees WHERE institution_id=? AND employee_id=?", (inst_id, employee_id)
@@ -57,7 +59,7 @@ def create_note(conn, employee_id: str, note: NoteIn, user: dict = Depends(requi
 @router.delete("/api/employees/{employee_id}/notes/{note_id}", status_code=204)
 @db_session
 def delete_note(conn, employee_id: str, note_id: int,
-                user: dict = Depends(require_roles("superadmin", "hr_manager"))):
+                user: dict = Depends(require_roles("superadmin", "hr_manager"))) -> None:
     inst_id = need_inst(user)
     conn.execute(
         "UPDATE hr_notes SET deleted=1 WHERE id=? AND institution_id=? AND employee_id=?",

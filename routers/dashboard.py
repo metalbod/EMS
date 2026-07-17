@@ -5,6 +5,7 @@ Computed on every request from live state (not stored), so items disappear
 automatically once actioned. Excluded for superadmin (no personal employee record).
 """
 from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends
 
@@ -33,7 +34,7 @@ router = APIRouter()
 
 @router.get("/api/todos")
 @db_session
-def get_todos(conn, user: dict = Depends(get_current_user)):
+def get_todos(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
     role = user["role"]
     if role == "superadmin":
         return []

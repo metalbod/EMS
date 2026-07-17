@@ -78,7 +78,7 @@ def _clear_login_failures(key: str):
 
 @router.post("/api/auth/login", response_model=TokenResponse, tags=["auth"])
 @db_session
-def login(conn, body: LoginIn, request: Request):
+def login(conn, body: LoginIn, request: Request) -> dict:
     rate_key = _login_rate_key(request, body.username)
     _check_login_rate_limit(rate_key)
 
@@ -133,7 +133,7 @@ def login(conn, body: LoginIn, request: Request):
 
 @router.post("/api/auth/switch-role", response_model=TokenResponse, tags=["auth"])
 @db_session
-def switch_role(conn, body: SwitchRoleIn, user: dict = Depends(get_current_user)):
+def switch_role(conn, body: SwitchRoleIn, user: dict = Depends(get_current_user)) -> dict:
     row = conn.execute("SELECT * FROM users WHERE id=?", (user["id"],)).fetchone()
     if not row:
         raise HTTPException(404, "User not found")
@@ -164,5 +164,5 @@ def switch_role(conn, body: SwitchRoleIn, user: dict = Depends(get_current_user)
 
 
 @router.get("/api/auth/me")
-def me(user: dict = Depends(get_current_user)):
+def me(user: dict = Depends(get_current_user)) -> dict:
     return user

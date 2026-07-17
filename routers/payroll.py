@@ -7,7 +7,7 @@ Everyone with an employee record: view/print their own payslips.
 import csv
 import io
 from datetime import date, datetime
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -163,7 +163,7 @@ def _generate_payslip(conn, inst_id, run_id, emp, period_start, period_end):
 
 @router.get("/api/payroll/runs")
 @db_session
-def list_payroll_runs(conn, user: dict = Depends(require_roles(*PAYROLL_VIEW_ROLES))):
+def list_payroll_runs(conn, user: dict = Depends(require_roles(*PAYROLL_VIEW_ROLES))) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
     rows = conn.execute("""
         SELECT r.*, COUNT(p.id) AS employee_count, COALESCE(SUM(p.net_pay),0) AS total_net_pay
@@ -177,7 +177,7 @@ def list_payroll_runs(conn, user: dict = Depends(require_roles(*PAYROLL_VIEW_ROL
 
 @router.post("/api/payroll/runs", status_code=202)
 @db_session
-def create_payroll_run(conn, body: PayrollRunIn, user: dict = Depends(require_roles(*PAYROLL_MANAGE_ROLES))):
+def create_payroll_run(conn, body: PayrollRunIn, user: dict = Depends(require_roles(*PAYROLL_MANAGE_ROLES))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     if body.period_end <= body.period_start:
         raise HTTPException(400, "Period end must be after period start")
@@ -214,7 +214,7 @@ def create_payroll_run(conn, body: PayrollRunIn, user: dict = Depends(require_ro
 
 @router.get("/api/payroll/runs/{run_id}")
 @db_session
-def get_payroll_run(conn, run_id: int, user: dict = Depends(require_roles(*PAYROLL_VIEW_ROLES))):
+def get_payroll_run(conn, run_id: int, user: dict = Depends(require_roles(*PAYROLL_VIEW_ROLES))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     run = conn.execute("SELECT * FROM payroll_runs WHERE id=? AND institution_id=?", (run_id, inst_id)).fetchone()
     if not run:
@@ -231,7 +231,7 @@ def get_payroll_run(conn, run_id: int, user: dict = Depends(require_roles(*PAYRO
 
 @router.put("/api/payroll/payslips/{payslip_id}")
 @db_session
-def adjust_payslip(conn, payslip_id: int, body: PayslipAdjustIn, user: dict = Depends(require_roles(*PAYROLL_MANAGE_ROLES))):
+def adjust_payslip(conn, payslip_id: int, body: PayslipAdjustIn, user: dict = Depends(require_roles(*PAYROLL_MANAGE_ROLES))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     slip = conn.execute("SELECT * FROM payslips WHERE id=? AND institution_id=?", (payslip_id, inst_id)).fetchone()
     if not slip:
@@ -270,7 +270,7 @@ def adjust_payslip(conn, payslip_id: int, body: PayslipAdjustIn, user: dict = De
 
 @router.patch("/api/payroll/payslips/{payslip_id}/recompute")
 @db_session
-def recompute_payslip(conn, payslip_id: int, user: dict = Depends(require_roles(*PAYROLL_MANAGE_ROLES))):
+def recompute_payslip(conn, payslip_id: int, user: dict = Depends(require_roles(*PAYROLL_MANAGE_ROLES))) -> Dict[str, Any]:
     """Re-derive an Hourly payslip from currently-Approved timesheet hours for the run's period."""
     inst_id = need_inst(user)
     slip = conn.execute("SELECT * FROM payslips WHERE id=? AND institution_id=?", (payslip_id, inst_id)).fetchone()
@@ -307,7 +307,7 @@ def recompute_payslip(conn, payslip_id: int, user: dict = Depends(require_roles(
 
 @router.patch("/api/payroll/runs/{run_id}/finalize")
 @db_session
-def finalize_payroll_run(conn, run_id: int, user: dict = Depends(require_roles(*PAYROLL_MANAGE_ROLES))):
+def finalize_payroll_run(conn, run_id: int, user: dict = Depends(require_roles(*PAYROLL_MANAGE_ROLES))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     run = conn.execute("SELECT * FROM payroll_runs WHERE id=? AND institution_id=?", (run_id, inst_id)).fetchone()
     if not run:
@@ -325,7 +325,7 @@ def finalize_payroll_run(conn, run_id: int, user: dict = Depends(require_roles(*
 
 @router.delete("/api/payroll/runs/{run_id}", status_code=204)
 @db_session
-def delete_payroll_run(conn, run_id: int, user: dict = Depends(require_roles(*PAYROLL_MANAGE_ROLES))):
+def delete_payroll_run(conn, run_id: int, user: dict = Depends(require_roles(*PAYROLL_MANAGE_ROLES))) -> None:
     inst_id = need_inst(user)
     run = conn.execute("SELECT * FROM payroll_runs WHERE id=? AND institution_id=?", (run_id, inst_id)).fetchone()
     if not run:
@@ -339,7 +339,7 @@ def delete_payroll_run(conn, run_id: int, user: dict = Depends(require_roles(*PA
 
 @router.get("/api/payroll/runs/{run_id}/bank-csv")
 @db_session
-def export_bank_csv(conn, run_id: int, user: dict = Depends(require_roles(*PAYROLL_MANAGE_ROLES))):
+def export_bank_csv(conn, run_id: int, user: dict = Depends(require_roles(*PAYROLL_MANAGE_ROLES))) -> StreamingResponse:
     inst_id = need_inst(user)
     run = conn.execute("SELECT * FROM payroll_runs WHERE id=? AND institution_id=?", (run_id, inst_id)).fetchone()
     if not run:
@@ -361,7 +361,7 @@ def export_bank_csv(conn, run_id: int, user: dict = Depends(require_roles(*PAYRO
 
 @router.get("/api/payroll/payslips/mine")
 @db_session
-def my_payslips(conn, user: dict = Depends(get_current_user)):
+def my_payslips(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
     emp_id = user.get("employee_id")
     if not emp_id:
@@ -377,7 +377,7 @@ def my_payslips(conn, user: dict = Depends(get_current_user)):
 
 @router.get("/api/payroll/payslips/{payslip_id}")
 @db_session
-def get_payslip(conn, payslip_id: int, user: dict = Depends(get_current_user)):
+def get_payslip(conn, payslip_id: int, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     inst_id = need_inst(user)
     row = conn.execute("""
         SELECT p.*, r.period_start, r.period_end, r.status AS run_status,

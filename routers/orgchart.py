@@ -1,4 +1,6 @@
 """Org chart (institution-scoped)."""
+from typing import Any, Dict, List
+
 from fastapi import APIRouter, Depends
 
 try:
@@ -20,7 +22,7 @@ router = APIRouter()
 
 @router.get("/api/org-chart")
 @db_session
-def get_org_chart(conn, user: dict = Depends(get_current_user)):
+def get_org_chart(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
     rows = conn.execute("""
         SELECT e.employee_id, e.full_name, e.designation, e.department,

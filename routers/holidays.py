@@ -1,5 +1,5 @@
 """Holiday Manager (institution-scoped)."""
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -34,7 +34,7 @@ class HolidayIn(BaseModel):
 
 @router.get("/api/holidays")
 @db_session
-def list_holidays(conn, year: Optional[int] = None, user: dict = Depends(get_current_user)):
+def list_holidays(conn, year: Optional[int] = None, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
     q = "SELECT * FROM holidays WHERE institution_id=?"
     p = [inst_id]
@@ -47,7 +47,7 @@ def list_holidays(conn, year: Optional[int] = None, user: dict = Depends(get_cur
 
 @router.post("/api/holidays", status_code=201)
 @db_session
-def create_holiday(conn, body: HolidayIn, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))):
+def create_holiday(conn, body: HolidayIn, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     try:
         conn.execute(
@@ -63,7 +63,7 @@ def create_holiday(conn, body: HolidayIn, user: dict = Depends(require_roles(*LE
 
 @router.delete("/api/holidays/{holiday_id}", status_code=204)
 @db_session
-def delete_holiday(conn, holiday_id: int, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))):
+def delete_holiday(conn, holiday_id: int, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))) -> None:
     inst_id = need_inst(user)
     conn.execute("DELETE FROM holidays WHERE id=? AND institution_id=?", (holiday_id, inst_id))
     conn.commit()

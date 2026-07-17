@@ -1,6 +1,6 @@
 """Learning & Development: Courses, Enrollments, Quizzes, and Course Modules (content)."""
 import random
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 import psycopg2.extras
 from fastapi import APIRouter, Depends, HTTPException
@@ -95,7 +95,7 @@ class LDModulesIn(BaseModel):
 # ---------------------------------------------------------------------------
 @router.get("/api/ld/courses")
 @db_session
-def list_ld_courses(conn, category: Optional[str] = None, user: dict = Depends(get_current_user)):
+def list_ld_courses(conn, category: Optional[str] = None, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
     q = "SELECT * FROM ld_courses WHERE institution_id=? AND is_active=1"
     p = [inst_id]
@@ -108,7 +108,7 @@ def list_ld_courses(conn, category: Optional[str] = None, user: dict = Depends(g
 
 @router.post("/api/ld/courses", status_code=201)
 @db_session
-def create_ld_course(conn, body: LDCourseIn, user: dict = Depends(require_roles(*LD_MANAGE_ROLES))):
+def create_ld_course(conn, body: LDCourseIn, user: dict = Depends(require_roles(*LD_MANAGE_ROLES))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     if body.category not in LD_CATEGORIES:
         raise HTTPException(400, f"category must be one of: {', '.join(LD_CATEGORIES)}")
@@ -123,7 +123,7 @@ def create_ld_course(conn, body: LDCourseIn, user: dict = Depends(require_roles(
 
 @router.put("/api/ld/courses/{course_id}")
 @db_session
-def update_ld_course(conn, course_id: int, body: LDCourseIn, user: dict = Depends(require_roles(*LD_MANAGE_ROLES))):
+def update_ld_course(conn, course_id: int, body: LDCourseIn, user: dict = Depends(require_roles(*LD_MANAGE_ROLES))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     if body.category not in LD_CATEGORIES:
         raise HTTPException(400, f"category must be one of: {', '.join(LD_CATEGORIES)}")
@@ -140,7 +140,7 @@ def update_ld_course(conn, course_id: int, body: LDCourseIn, user: dict = Depend
 
 @router.delete("/api/ld/courses/{course_id}", status_code=204)
 @db_session
-def delete_ld_course(conn, course_id: int, user: dict = Depends(require_roles(*LD_MANAGE_ROLES))):
+def delete_ld_course(conn, course_id: int, user: dict = Depends(require_roles(*LD_MANAGE_ROLES))) -> None:
     inst_id = need_inst(user)
     conn.execute("UPDATE ld_courses SET is_active=0 WHERE id=? AND institution_id=?", (course_id, inst_id))
     conn.commit()
@@ -151,7 +151,7 @@ def delete_ld_course(conn, course_id: int, user: dict = Depends(require_roles(*L
 # ---------------------------------------------------------------------------
 @router.get("/api/ld/enrollments")
 @db_session
-def list_ld_enrollments(conn, status: Optional[str] = None, user: dict = Depends(get_current_user)):
+def list_ld_enrollments(conn, status: Optional[str] = None, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
     q = """
         SELECT en.*, c.title AS course_title, c.category AS course_category, c.cost AS course_cost,
@@ -179,7 +179,7 @@ def list_ld_enrollments(conn, status: Optional[str] = None, user: dict = Depends
 
 @router.post("/api/ld/enrollments", status_code=201)
 @db_session
-def create_ld_enrollment(conn, body: LDEnrollIn, user: dict = Depends(get_current_user)):
+def create_ld_enrollment(conn, body: LDEnrollIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     inst_id = need_inst(user)
     if user["role"] == "employee" and user.get("employee_id") != body.employee_id:
         raise HTTPException(403, "You can only enroll yourself")
@@ -212,7 +212,7 @@ def create_ld_enrollment(conn, body: LDEnrollIn, user: dict = Depends(get_curren
 
 @router.patch("/api/ld/enrollments/{enr_id}/status")
 @db_session
-def update_ld_enrollment_status(conn, enr_id: int, body: LDEnrollStatusIn, user: dict = Depends(get_current_user)):
+def update_ld_enrollment_status(conn, enr_id: int, body: LDEnrollStatusIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     inst_id = need_inst(user)
     valid_statuses = ("Pending Approval", "Approved", "Rejected", "In Progress", "Completed")
     if body.status not in valid_statuses:
@@ -254,7 +254,7 @@ def update_ld_enrollment_status(conn, enr_id: int, body: LDEnrollStatusIn, user:
 
 @router.get("/api/employees/{employee_id}/ld-history")
 @db_session
-def get_employee_ld_history(conn, employee_id: str, user: dict = Depends(require_roles(*LD_MANAGE_ROLES))):
+def get_employee_ld_history(conn, employee_id: str, user: dict = Depends(require_roles(*LD_MANAGE_ROLES))) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
     rows = conn.execute(
         "SELECT * FROM ld_audit_log WHERE employee_id=? AND institution_id=? ORDER BY created_at ASC",
@@ -282,7 +282,7 @@ def _quiz_for_course(conn, inst_id: int, course_id: int):
 
 @router.get("/api/ld/courses/{course_id}/quiz")
 @db_session
-def get_course_quiz(conn, course_id: int, user: dict = Depends(get_current_user)):
+def get_course_quiz(conn, course_id: int, user: dict = Depends(get_current_user)) -> Optional[Dict[str, Any]]:
     """Returns the quiz for taking. Strips is_correct so answers never reach the client.
     Each option keeps a stable 'id' (its original save-time position) so that shuffled
     display order never breaks grading, which looks answers up by id, not position."""
@@ -302,7 +302,7 @@ def get_course_quiz(conn, course_id: int, user: dict = Depends(get_current_user)
 
 @router.get("/api/ld/courses/{course_id}/quiz/manage")
 @db_session
-def get_course_quiz_for_manage(conn, course_id: int, user: dict = Depends(require_roles(*LD_MANAGE_ROLES))):
+def get_course_quiz_for_manage(conn, course_id: int, user: dict = Depends(require_roles(*LD_MANAGE_ROLES))) -> Optional[Dict[str, Any]]:
     """Returns the quiz with correct answers included, for HR to edit."""
     inst_id = need_inst(user)
     quiz = _quiz_for_course(conn, inst_id, course_id)
@@ -313,7 +313,7 @@ def get_course_quiz_for_manage(conn, course_id: int, user: dict = Depends(requir
 
 @router.put("/api/ld/courses/{course_id}/quiz")
 @db_session
-def upsert_course_quiz(conn, course_id: int, body: LDQuizIn, user: dict = Depends(require_roles(*LD_MANAGE_ROLES))):
+def upsert_course_quiz(conn, course_id: int, body: LDQuizIn, user: dict = Depends(require_roles(*LD_MANAGE_ROLES))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     if not body.questions:
         raise HTTPException(400, "A quiz needs at least one question")
@@ -359,7 +359,7 @@ def upsert_course_quiz(conn, course_id: int, body: LDQuizIn, user: dict = Depend
 
 @router.delete("/api/ld/courses/{course_id}/quiz", status_code=204)
 @db_session
-def delete_course_quiz(conn, course_id: int, user: dict = Depends(require_roles(*LD_MANAGE_ROLES))):
+def delete_course_quiz(conn, course_id: int, user: dict = Depends(require_roles(*LD_MANAGE_ROLES))) -> None:
     inst_id = need_inst(user)
     quiz = conn.execute("SELECT id FROM ld_quizzes WHERE course_id=? AND institution_id=?", (course_id, inst_id)).fetchone()
     if quiz:
@@ -370,7 +370,7 @@ def delete_course_quiz(conn, course_id: int, user: dict = Depends(require_roles(
 
 @router.post("/api/ld/quizzes/{quiz_id}/attempts", status_code=201)
 @db_session
-def submit_quiz_attempt(conn, quiz_id: int, body: LDQuizAttemptIn, user: dict = Depends(get_current_user)):
+def submit_quiz_attempt(conn, quiz_id: int, body: LDQuizAttemptIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     inst_id = need_inst(user)
     quiz = conn.execute("SELECT * FROM ld_quizzes WHERE id=? AND institution_id=?", (quiz_id, inst_id)).fetchone()
     if not quiz:
@@ -432,7 +432,7 @@ def submit_quiz_attempt(conn, quiz_id: int, body: LDQuizAttemptIn, user: dict = 
 
 @router.get("/api/ld/quizzes/{quiz_id}/attempts")
 @db_session
-def list_quiz_attempts(conn, quiz_id: int, user: dict = Depends(get_current_user)):
+def list_quiz_attempts(conn, quiz_id: int, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
     if user["role"] == "employee":
         rows = conn.execute(
@@ -453,7 +453,7 @@ def list_quiz_attempts(conn, quiz_id: int, user: dict = Depends(get_current_user
 @router.get("/api/ld/courses/{course_id}/modules")
 @db_session
 def list_course_modules(conn, course_id: int, enrollment_id: Optional[int] = None,
-                        user: dict = Depends(get_current_user)):
+                        user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
     """Course content. If enrollment_id given, includes per-module viewed flags."""
     inst_id = need_inst(user)
     if not conn.execute("SELECT id FROM ld_courses WHERE id=? AND institution_id=?", (course_id, inst_id)).fetchone():
@@ -476,7 +476,7 @@ def list_course_modules(conn, course_id: int, enrollment_id: Optional[int] = Non
 @router.put("/api/ld/courses/{course_id}/modules")
 @db_session
 def replace_course_modules(conn, course_id: int, body: LDModulesIn,
-                           user: dict = Depends(require_roles(*LD_MANAGE_ROLES))):
+                           user: dict = Depends(require_roles(*LD_MANAGE_ROLES))) -> Dict[str, Any]:
     """Replace the full ordered module list for a course (same upsert pattern as the quiz)."""
     inst_id = need_inst(user)
     for m in body.modules:
@@ -504,7 +504,7 @@ def replace_course_modules(conn, course_id: int, body: LDModulesIn,
 
 @router.post("/api/ld/enrollments/{enr_id}/modules/{module_id}/viewed", status_code=201)
 @db_session
-def mark_module_viewed(conn, enr_id: int, module_id: int, user: dict = Depends(get_current_user)):
+def mark_module_viewed(conn, enr_id: int, module_id: int, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     inst_id = need_inst(user)
     enr = conn.execute("SELECT * FROM ld_enrollments WHERE id=? AND institution_id=?", (enr_id, inst_id)).fetchone()
     if not enr:
