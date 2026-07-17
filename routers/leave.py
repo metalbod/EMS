@@ -125,20 +125,19 @@ def _get_or_create_leave_balance(conn, inst_id: int, employee_id: str, leave_typ
 # Leave — Types
 # ---------------------------------------------------------------------------
 @router.get("/api/leave/types")
-def list_leave_types(user: dict = Depends(get_current_user)):
+@db_session
+def list_leave_types(conn, user: dict = Depends(get_current_user)):
     inst_id = need_inst(user)
-    conn = get_db()
     rows = conn.execute(
         "SELECT * FROM leave_types WHERE institution_id=? AND is_active=1 ORDER BY name", (inst_id,)
     ).fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
 @router.post("/api/leave/types", status_code=201)
-def create_leave_type(body: LeaveTypeIn, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))):
+@db_session
+def create_leave_type(conn, body: LeaveTypeIn, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))):
     inst_id = need_inst(user)
-    conn = get_db()
     conn.execute(
         "INSERT INTO leave_types (institution_id,name,annual_entitlement,requires_approval,requires_attachment,is_paid,is_active) VALUES (?,?,?,?,?,?,?)",
         (inst_id, body.name, body.annual_entitlement, 1 if body.requires_approval else 0,
@@ -146,16 +145,15 @@ def create_leave_type(body: LeaveTypeIn, user: dict = Depends(require_roles(*LEA
     )
     conn.commit()
     row = conn.execute("SELECT * FROM leave_types WHERE id=last_insert_rowid()").fetchone()
-    conn.close()
     return dict(row)
 
 
 @router.put("/api/leave/types/{type_id}")
-def update_leave_type(type_id: int, body: LeaveTypeIn, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))):
+@db_session
+def update_leave_type(conn, type_id: int, body: LeaveTypeIn, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))):
     inst_id = need_inst(user)
-    conn = get_db()
     if not conn.execute("SELECT id FROM leave_types WHERE id=? AND institution_id=?", (type_id, inst_id)).fetchone():
-        conn.close(); raise HTTPException(404, "Leave type not found")
+        raise HTTPException(404, "Leave type not found")
     conn.execute(
         "UPDATE leave_types SET name=?,annual_entitlement=?,requires_approval=?,requires_attachment=?,is_paid=?,is_active=? WHERE id=?",
         (body.name, body.annual_entitlement, 1 if body.requires_approval else 0,
@@ -163,27 +161,26 @@ def update_leave_type(type_id: int, body: LeaveTypeIn, user: dict = Depends(requ
     )
     conn.commit()
     row = conn.execute("SELECT * FROM leave_types WHERE id=?", (type_id,)).fetchone()
-    conn.close()
     return dict(row)
 
 
 @router.delete("/api/leave/types/{type_id}", status_code=204)
-def delete_leave_type(type_id: int, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))):
+@db_session
+def delete_leave_type(conn, type_id: int, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))):
     inst_id = need_inst(user)
-    conn = get_db()
     conn.execute("UPDATE leave_types SET is_active=0 WHERE id=? AND institution_id=?", (type_id, inst_id))
-    conn.commit(); conn.close()
+    conn.commit()
 
 
 # ---------------------------------------------------------------------------
 # Leave — Balances
 # ---------------------------------------------------------------------------
 @router.get("/api/leave/balances")
-def list_leave_balances(employee_id: Optional[str] = None, year: Optional[int] = None,
+@db_session
+def list_leave_balances(conn, employee_id: Optional[str] = None, year: Optional[int] = None,
                         user: dict = Depends(get_current_user)):
     inst_id = need_inst(user)
     year = year or datetime.now().year
-    conn = get_db()
     q = """
         SELECT b.*, lt.name AS leave_type_name, e.full_name AS employee_name, e.department
         FROM leave_balances b
@@ -212,23 +209,21 @@ def list_leave_balances(employee_id: Optional[str] = None, year: Optional[int] =
                 _get_or_create_leave_balance(conn, inst_id, user["employee_id"], tid, year)
             conn.commit()
             rows = conn.execute(q, p).fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
 @router.patch("/api/leave/balances/{balance_id}")
-def adjust_leave_balance(balance_id: int, body: LeaveBalanceAdjustIn, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))):
+@db_session
+def adjust_leave_balance(conn, balance_id: int, body: LeaveBalanceAdjustIn, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))):
     inst_id = need_inst(user)
-    conn = get_db()
     bal = conn.execute("SELECT * FROM leave_balances WHERE id=? AND institution_id=?", (balance_id, inst_id)).fetchone()
     if not bal:
-        conn.close(); raise HTTPException(404, "Balance not found")
+        raise HTTPException(404, "Balance not found")
     entitled = body.entitled_days if body.entitled_days is not None else bal["entitled_days"]
     carried = body.carried_forward_days if body.carried_forward_days is not None else bal["carried_forward_days"]
     conn.execute("UPDATE leave_balances SET entitled_days=?,carried_forward_days=? WHERE id=?", (entitled, carried, balance_id))
     conn.commit()
     row = conn.execute("SELECT * FROM leave_balances WHERE id=?", (balance_id,)).fetchone()
-    conn.close()
     return dict(row)
 
 
@@ -236,9 +231,9 @@ def adjust_leave_balance(balance_id: int, body: LeaveBalanceAdjustIn, user: dict
 # Leave — Applications
 # ---------------------------------------------------------------------------
 @router.get("/api/leave/applications")
-def list_leave_applications(status: Optional[str] = None, user: dict = Depends(get_current_user)):
+@db_session
+def list_leave_applications(conn, status: Optional[str] = None, user: dict = Depends(get_current_user)):
     inst_id = need_inst(user)
-    conn = get_db()
     q = """
         SELECT a.*, lt.name AS leave_type_name, e.full_name AS employee_name, e.department, e.designation
         FROM leave_applications a
@@ -255,36 +250,35 @@ def list_leave_applications(status: Optional[str] = None, user: dict = Depends(g
         q += " AND a.employee_id=?"; p.append(user.get("employee_id", ""))
     q += " ORDER BY a.created_at DESC"
     rows = conn.execute(q, p).fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
 @router.post("/api/leave/applications", status_code=201)
-def create_leave_application(body: LeaveApplicationIn, user: dict = Depends(get_current_user)):
+@db_session
+def create_leave_application(conn, body: LeaveApplicationIn, user: dict = Depends(get_current_user)):
     inst_id = need_inst(user)
-    conn = get_db()
     if user["role"] == "employee" and user.get("employee_id") != body.employee_id:
-        conn.close(); raise HTTPException(403, "You can only apply leave for yourself")
+        raise HTTPException(403, "You can only apply leave for yourself")
     emp = conn.execute("SELECT * FROM employees WHERE employee_id=? AND institution_id=?",
                         (body.employee_id, inst_id)).fetchone()
     if not emp:
-        conn.close(); raise HTTPException(404, "Employee not found")
+        raise HTTPException(404, "Employee not found")
     lt = conn.execute("SELECT * FROM leave_types WHERE id=? AND institution_id=? AND is_active=1",
                        (body.leave_type_id, inst_id)).fetchone()
     if not lt:
-        conn.close(); raise HTTPException(404, "Leave type not found")
+        raise HTTPException(404, "Leave type not found")
     if lt["requires_attachment"] and not body.attachment:
-        conn.close(); raise HTTPException(400, f"'{lt['name']}' requires a supporting document to be attached")
+        raise HTTPException(400, f"'{lt['name']}' requires a supporting document to be attached")
 
     days = _compute_leave_days(conn, inst_id, body.start_date, body.end_date)
     if days <= 0:
-        conn.close(); raise HTTPException(400, "Selected date range has no working days to apply (all weekends/public holidays)")
+        raise HTTPException(400, "Selected date range has no working days to apply (all weekends/public holidays)")
 
     year = datetime.strptime(body.start_date, "%Y-%m-%d").year
     balance = _get_or_create_leave_balance(conn, inst_id, body.employee_id, body.leave_type_id, year)
     available = balance["entitled_days"] + balance["carried_forward_days"] - balance["used_days"]
     if days > available:
-        conn.close(); raise HTTPException(400, f"Insufficient balance: requesting {days} day(s), only {available} available")
+        raise HTTPException(400, f"Insufficient balance: requesting {days} day(s), only {available} available")
 
     status = "Pending Approval" if lt["requires_approval"] else "Approved"
     conn.execute(
@@ -302,27 +296,26 @@ def create_leave_application(body: LeaveApplicationIn, user: dict = Depends(get_
                f"Applied for {lt['name']}: {body.start_date} to {body.end_date} ({days} working day(s)) — status: {status}", user)
     conn.commit()
     row = conn.execute("SELECT * FROM leave_applications WHERE id=?", (app_id,)).fetchone()
-    conn.close()
     return dict(row)
 
 
 @router.patch("/api/leave/applications/{app_id}/status")
-def update_leave_status(app_id: int, body: LeaveStatusIn, user: dict = Depends(get_current_user)):
+@db_session
+def update_leave_status(conn, app_id: int, body: LeaveStatusIn, user: dict = Depends(get_current_user)):
     inst_id = need_inst(user)
     valid = ("Approved", "Rejected", "Cancelled")
     if body.status not in valid:
         raise HTTPException(400, f"status must be one of: {', '.join(valid)}")
-    conn = get_db()
     application = conn.execute("SELECT * FROM leave_applications WHERE id=? AND institution_id=?", (app_id, inst_id)).fetchone()
     if not application:
-        conn.close(); raise HTTPException(404, "Application not found")
+        raise HTTPException(404, "Application not found")
 
     if body.status in ("Approved", "Rejected"):
         can_approve = user["role"] in ("superadmin", "hr_manager", "hr_admin", "manager")
         if not can_approve:
-            conn.close(); raise HTTPException(403, "Only a manager or HR can approve/reject leave")
+            raise HTTPException(403, "Only a manager or HR can approve/reject leave")
         if application["status"] != "Pending Approval":
-            conn.close(); raise HTTPException(400, f"Application is already {application['status']}")
+            raise HTTPException(400, f"Application is already {application['status']}")
         if body.status == "Approved":
             year = datetime.strptime(application["start_date"], "%Y-%m-%d").year
             balance = _get_or_create_leave_balance(conn, inst_id, application["employee_id"], application["leave_type_id"], year)
@@ -331,9 +324,9 @@ def update_leave_status(app_id: int, body: LeaveStatusIn, user: dict = Depends(g
                      (body.status, user["username"], body.notes, app_id))
     elif body.status == "Cancelled":
         if user["role"] == "employee" and user.get("employee_id") != application["employee_id"]:
-            conn.close(); raise HTTPException(403, "Access denied")
+            raise HTTPException(403, "Access denied")
         if application["status"] not in ("Pending Approval", "Approved"):
-            conn.close(); raise HTTPException(400, f"Application is already {application['status']}")
+            raise HTTPException(400, f"Application is already {application['status']}")
         if application["status"] == "Approved":
             year = datetime.strptime(application["start_date"], "%Y-%m-%d").year
             balance = _get_or_create_leave_balance(conn, inst_id, application["employee_id"], application["leave_type_id"], year)
@@ -344,17 +337,15 @@ def update_leave_status(app_id: int, body: LeaveStatusIn, user: dict = Depends(g
                body.notes or "", user)
     conn.commit()
     row = conn.execute("SELECT * FROM leave_applications WHERE id=?", (app_id,)).fetchone()
-    conn.close()
     return dict(row)
 
 
 @router.get("/api/employees/{employee_id}/leave-history")
-def get_employee_leave_history(employee_id: str, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))):
+@db_session
+def get_employee_leave_history(conn, employee_id: str, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))):
     inst_id = need_inst(user)
-    conn = get_db()
     rows = conn.execute(
         "SELECT * FROM leave_audit_log WHERE employee_id=? AND institution_id=? ORDER BY created_at ASC",
         (employee_id, inst_id)
     ).fetchall()
-    conn.close()
     return [dict(r) for r in rows]

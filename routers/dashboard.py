@@ -23,16 +23,21 @@ try:
 except ImportError:
     from ems.db import get_db
 
+try:
+    from core.db_session import db_session
+except ImportError:
+    from ems.core.db_session import db_session
+
 router = APIRouter()
 
 
 @router.get("/api/todos")
-def get_todos(user: dict = Depends(get_current_user)):
+@db_session
+def get_todos(conn, user: dict = Depends(get_current_user)):
     role = user["role"]
     if role == "superadmin":
         return []
     inst_id = need_inst(user)
-    conn = get_db()
     emp_id = user.get("employee_id")
     todos = []
 
@@ -63,5 +68,4 @@ def get_todos(user: dict = Depends(get_current_user)):
             if cnt:
                 todos.append({"key": "perf-team", "label": f"{cnt} appraisal{'s' if cnt != 1 else ''} awaiting your manager review", "page": "perf-team", "count": cnt})
 
-    conn.close()
     return todos

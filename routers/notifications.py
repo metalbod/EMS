@@ -23,6 +23,11 @@ try:
 except ImportError:
     from ems.db import get_db
 
+try:
+    from core.db_session import db_session
+except ImportError:
+    from ems.core.db_session import db_session
+
 router = APIRouter()
 
 NOTIFICATION_MANAGE_ROLES = ("hr_manager", "hr_admin")
@@ -60,76 +65,72 @@ def _notification_overlaps(conn, inst_id, start_time, end_time, exclude_id=None)
 
 
 @router.get("/api/notifications")
-def list_notifications(user: dict = Depends(require_roles(*NOTIFICATION_MANAGE_ROLES))):
+@db_session
+def list_notifications(conn, user: dict = Depends(require_roles(*NOTIFICATION_MANAGE_ROLES))):
     inst_id = need_inst(user)
-    conn = get_db()
     rows = conn.execute(
         "SELECT * FROM institution_notifications WHERE institution_id=? ORDER BY start_time DESC", (inst_id,)
     ).fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
 @router.get("/api/notifications/active")
-def get_active_notification(user: dict = Depends(get_current_user)):
+@db_session
+def get_active_notification(conn, user: dict = Depends(get_current_user)):
     inst_id = user.get("active_institution_id")
     if not inst_id or user["role"] == "superadmin":
         return None
-    conn = get_db()
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M")
     row = conn.execute(
         "SELECT * FROM institution_notifications WHERE institution_id=? AND start_time<=? AND end_time>=? "
         "ORDER BY start_time DESC LIMIT 1",
         (inst_id, now, now)
     ).fetchone()
-    conn.close()
     return dict(row) if row else None
 
 
 @router.post("/api/notifications", status_code=201)
-def create_notification(body: NotificationIn, user: dict = Depends(require_roles(*NOTIFICATION_MANAGE_ROLES))):
+@db_session
+def create_notification(conn, body: NotificationIn, user: dict = Depends(require_roles(*NOTIFICATION_MANAGE_ROLES))):
     inst_id = need_inst(user)
-    conn = get_db()
     if body.end_time <= body.start_time:
-        conn.close(); raise HTTPException(400, "End time must be after start time")
+        raise HTTPException(400, "End time must be after start time")
     if _notification_overlaps(conn, inst_id, body.start_time, body.end_time):
-        conn.close(); raise HTTPException(400, "Another notification is already active/scheduled during this window")
+        raise HTTPException(400, "Another notification is already active/scheduled during this window")
     conn.execute(
         "INSERT INTO institution_notifications (institution_id,message,start_time,end_time,created_by) VALUES (?,?,?,?,?)",
         (inst_id, body.message, body.start_time, body.end_time, user["username"])
     )
     conn.commit()
     row = conn.execute("SELECT * FROM institution_notifications WHERE id=last_insert_rowid()").fetchone()
-    conn.close()
     return dict(row)
 
 
 @router.put("/api/notifications/{notification_id}")
-def update_notification(notification_id: int, body: NotificationIn, user: dict = Depends(require_roles(*NOTIFICATION_MANAGE_ROLES))):
+@db_session
+def update_notification(conn, notification_id: int, body: NotificationIn, user: dict = Depends(require_roles(*NOTIFICATION_MANAGE_ROLES))):
     inst_id = need_inst(user)
-    conn = get_db()
     if not conn.execute("SELECT id FROM institution_notifications WHERE id=? AND institution_id=?", (notification_id, inst_id)).fetchone():
-        conn.close(); raise HTTPException(404, "Notification not found")
+        raise HTTPException(404, "Notification not found")
     if body.end_time <= body.start_time:
-        conn.close(); raise HTTPException(400, "End time must be after start time")
+        raise HTTPException(400, "End time must be after start time")
     if _notification_overlaps(conn, inst_id, body.start_time, body.end_time, exclude_id=notification_id):
-        conn.close(); raise HTTPException(400, "Another notification is already active/scheduled during this window")
+        raise HTTPException(400, "Another notification is already active/scheduled during this window")
     conn.execute(
         "UPDATE institution_notifications SET message=?,start_time=?,end_time=? WHERE id=?",
         (body.message, body.start_time, body.end_time, notification_id)
     )
     conn.commit()
     row = conn.execute("SELECT * FROM institution_notifications WHERE id=?", (notification_id,)).fetchone()
-    conn.close()
     return dict(row)
 
 
 @router.delete("/api/notifications/{notification_id}", status_code=204)
-def delete_notification(notification_id: int, user: dict = Depends(require_roles(*NOTIFICATION_MANAGE_ROLES))):
+@db_session
+def delete_notification(conn, notification_id: int, user: dict = Depends(require_roles(*NOTIFICATION_MANAGE_ROLES))):
     inst_id = need_inst(user)
-    conn = get_db()
     conn.execute("DELETE FROM institution_notifications WHERE id=? AND institution_id=?", (notification_id, inst_id))
-    conn.commit(); conn.close()
+    conn.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -144,63 +145,59 @@ def _system_notification_overlaps(conn, start_time, end_time, exclude_id=None):
 
 
 @router.get("/api/system-notifications")
-def list_system_notifications(user: dict = Depends(require_roles("superadmin"))):
-    conn = get_db()
+@db_session
+def list_system_notifications(conn, user: dict = Depends(require_roles("superadmin"))):
     rows = conn.execute("SELECT * FROM system_notifications ORDER BY start_time DESC").fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
 @router.get("/api/system-notifications/active")
-def get_active_system_notification(user: dict = Depends(get_current_user)):
-    conn = get_db()
+@db_session
+def get_active_system_notification(conn, user: dict = Depends(get_current_user)):
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M")
     row = conn.execute(
         "SELECT * FROM system_notifications WHERE start_time<=? AND end_time>=? ORDER BY start_time DESC LIMIT 1",
         (now, now)
     ).fetchone()
-    conn.close()
     return dict(row) if row else None
 
 
 @router.post("/api/system-notifications", status_code=201)
-def create_system_notification(body: NotificationIn, user: dict = Depends(require_roles("superadmin"))):
-    conn = get_db()
+@db_session
+def create_system_notification(conn, body: NotificationIn, user: dict = Depends(require_roles("superadmin"))):
     if body.end_time <= body.start_time:
-        conn.close(); raise HTTPException(400, "End time must be after start time")
+        raise HTTPException(400, "End time must be after start time")
     if _system_notification_overlaps(conn, body.start_time, body.end_time):
-        conn.close(); raise HTTPException(400, "Another system notification is already active/scheduled during this window")
+        raise HTTPException(400, "Another system notification is already active/scheduled during this window")
     conn.execute(
         "INSERT INTO system_notifications (message,start_time,end_time,created_by) VALUES (?,?,?,?)",
         (body.message, body.start_time, body.end_time, user["username"])
     )
     conn.commit()
     row = conn.execute("SELECT * FROM system_notifications WHERE id=last_insert_rowid()").fetchone()
-    conn.close()
     return dict(row)
 
 
 @router.put("/api/system-notifications/{notification_id}")
-def update_system_notification(notification_id: int, body: NotificationIn, user: dict = Depends(require_roles("superadmin"))):
-    conn = get_db()
+@db_session
+def update_system_notification(conn, notification_id: int, body: NotificationIn, user: dict = Depends(require_roles("superadmin"))):
     if not conn.execute("SELECT id FROM system_notifications WHERE id=?", (notification_id,)).fetchone():
-        conn.close(); raise HTTPException(404, "Notification not found")
+        raise HTTPException(404, "Notification not found")
     if body.end_time <= body.start_time:
-        conn.close(); raise HTTPException(400, "End time must be after start time")
+        raise HTTPException(400, "End time must be after start time")
     if _system_notification_overlaps(conn, body.start_time, body.end_time, exclude_id=notification_id):
-        conn.close(); raise HTTPException(400, "Another system notification is already active/scheduled during this window")
+        raise HTTPException(400, "Another system notification is already active/scheduled during this window")
     conn.execute(
         "UPDATE system_notifications SET message=?,start_time=?,end_time=? WHERE id=?",
         (body.message, body.start_time, body.end_time, notification_id)
     )
     conn.commit()
     row = conn.execute("SELECT * FROM system_notifications WHERE id=?", (notification_id,)).fetchone()
-    conn.close()
     return dict(row)
 
 
 @router.delete("/api/system-notifications/{notification_id}", status_code=204)
-def delete_system_notification(notification_id: int, user: dict = Depends(require_roles("superadmin"))):
-    conn = get_db()
+@db_session
+def delete_system_notification(conn, notification_id: int, user: dict = Depends(require_roles("superadmin"))):
     conn.execute("DELETE FROM system_notifications WHERE id=?", (notification_id,))
-    conn.commit(); conn.close()
+    conn.commit()

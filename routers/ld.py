@@ -26,6 +26,11 @@ try:
 except ImportError:
     from ems.db import get_db, IntegrityError
 
+try:
+    from core.db_session import db_session
+except ImportError:
+    from ems.core.db_session import db_session
+
 router = APIRouter()
 
 LD_MANAGE_ROLES = ("superadmin", "hr_manager", "hr_admin")
@@ -89,68 +94,65 @@ class LDModulesIn(BaseModel):
 # Learning & Development — Courses
 # ---------------------------------------------------------------------------
 @router.get("/api/ld/courses")
-def list_ld_courses(category: Optional[str] = None, user: dict = Depends(get_current_user)):
+@db_session
+def list_ld_courses(conn, category: Optional[str] = None, user: dict = Depends(get_current_user)):
     inst_id = need_inst(user)
-    conn = get_db()
     q = "SELECT * FROM ld_courses WHERE institution_id=? AND is_active=1"
     p = [inst_id]
     if category:
         q += " AND category=?"; p.append(category)
     q += " ORDER BY category, title"
     rows = conn.execute(q, p).fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
 @router.post("/api/ld/courses", status_code=201)
-def create_ld_course(body: LDCourseIn, user: dict = Depends(require_roles(*LD_MANAGE_ROLES))):
+@db_session
+def create_ld_course(conn, body: LDCourseIn, user: dict = Depends(require_roles(*LD_MANAGE_ROLES))):
     inst_id = need_inst(user)
     if body.category not in LD_CATEGORIES:
         raise HTTPException(400, f"category must be one of: {', '.join(LD_CATEGORIES)}")
-    conn = get_db()
     conn.execute(
         "INSERT INTO ld_courses (institution_id,title,category,description,cost,is_active,created_by) VALUES (?,?,?,?,?,?,?)",
         (inst_id, body.title, body.category, body.description, body.cost, 1 if body.is_active else 0, user["username"])
     )
     conn.commit()
     row = conn.execute("SELECT * FROM ld_courses WHERE id=last_insert_rowid()").fetchone()
-    conn.close()
     return dict(row)
 
 
 @router.put("/api/ld/courses/{course_id}")
-def update_ld_course(course_id: int, body: LDCourseIn, user: dict = Depends(require_roles(*LD_MANAGE_ROLES))):
+@db_session
+def update_ld_course(conn, course_id: int, body: LDCourseIn, user: dict = Depends(require_roles(*LD_MANAGE_ROLES))):
     inst_id = need_inst(user)
     if body.category not in LD_CATEGORIES:
         raise HTTPException(400, f"category must be one of: {', '.join(LD_CATEGORIES)}")
-    conn = get_db()
     if not conn.execute("SELECT id FROM ld_courses WHERE id=? AND institution_id=?", (course_id, inst_id)).fetchone():
-        conn.close(); raise HTTPException(404, "Course not found")
+        raise HTTPException(404, "Course not found")
     conn.execute(
         "UPDATE ld_courses SET title=?,category=?,description=?,cost=?,is_active=? WHERE id=?",
         (body.title, body.category, body.description, body.cost, 1 if body.is_active else 0, course_id)
     )
     conn.commit()
     row = conn.execute("SELECT * FROM ld_courses WHERE id=?", (course_id,)).fetchone()
-    conn.close()
     return dict(row)
 
 
 @router.delete("/api/ld/courses/{course_id}", status_code=204)
-def delete_ld_course(course_id: int, user: dict = Depends(require_roles(*LD_MANAGE_ROLES))):
+@db_session
+def delete_ld_course(conn, course_id: int, user: dict = Depends(require_roles(*LD_MANAGE_ROLES))):
     inst_id = need_inst(user)
-    conn = get_db()
     conn.execute("UPDATE ld_courses SET is_active=0 WHERE id=? AND institution_id=?", (course_id, inst_id))
-    conn.commit(); conn.close()
+    conn.commit()
 
 
 # ---------------------------------------------------------------------------
 # Learning & Development — Enrollments
 # ---------------------------------------------------------------------------
 @router.get("/api/ld/enrollments")
-def list_ld_enrollments(status: Optional[str] = None, user: dict = Depends(get_current_user)):
+@db_session
+def list_ld_enrollments(conn, status: Optional[str] = None, user: dict = Depends(get_current_user)):
     inst_id = need_inst(user)
-    conn = get_db()
     q = """
         SELECT en.*, c.title AS course_title, c.category AS course_category, c.cost AS course_cost,
                e.full_name AS employee_name, e.department, e.designation,
@@ -172,30 +174,29 @@ def list_ld_enrollments(status: Optional[str] = None, user: dict = Depends(get_c
         q += " AND en.employee_id=?"; p.append(user.get("employee_id", ""))
     q += " ORDER BY en.created_at DESC"
     rows = conn.execute(q, p).fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
 @router.post("/api/ld/enrollments", status_code=201)
-def create_ld_enrollment(body: LDEnrollIn, user: dict = Depends(get_current_user)):
+@db_session
+def create_ld_enrollment(conn, body: LDEnrollIn, user: dict = Depends(get_current_user)):
     inst_id = need_inst(user)
-    conn = get_db()
     if user["role"] == "employee" and user.get("employee_id") != body.employee_id:
-        conn.close(); raise HTTPException(403, "You can only enroll yourself")
+        raise HTTPException(403, "You can only enroll yourself")
     emp = conn.execute("SELECT * FROM employees WHERE employee_id=? AND institution_id=?",
                         (body.employee_id, inst_id)).fetchone()
     if not emp:
-        conn.close(); raise HTTPException(404, "Employee not found")
+        raise HTTPException(404, "Employee not found")
     course = conn.execute("SELECT * FROM ld_courses WHERE id=? AND institution_id=? AND is_active=1",
                            (body.course_id, inst_id)).fetchone()
     if not course:
-        conn.close(); raise HTTPException(404, "Course not found")
+        raise HTTPException(404, "Course not found")
     existing = conn.execute(
         "SELECT id FROM ld_enrollments WHERE employee_id=? AND course_id=? AND status NOT IN ('Rejected','Completed')",
         (body.employee_id, body.course_id)
     ).fetchone()
     if existing:
-        conn.close(); raise HTTPException(400, "Employee already has an active enrollment for this course")
+        raise HTTPException(400, "Employee already has an active enrollment for this course")
     status = "Pending Approval" if course["cost"] and course["cost"] > 0 else "In Progress"
     conn.execute(
         "INSERT INTO ld_enrollments (institution_id,course_id,employee_id,status,requested_by,notes) VALUES (?,?,?,?,?,?)",
@@ -206,25 +207,24 @@ def create_ld_enrollment(body: LDEnrollIn, user: dict = Depends(get_current_user
            f"Enrolled in '{course['title']}' — status: {status}", user)
     conn.commit()
     row = conn.execute("SELECT * FROM ld_enrollments WHERE id=?", (enr_id,)).fetchone()
-    conn.close()
     return dict(row)
 
 
 @router.patch("/api/ld/enrollments/{enr_id}/status")
-def update_ld_enrollment_status(enr_id: int, body: LDEnrollStatusIn, user: dict = Depends(get_current_user)):
+@db_session
+def update_ld_enrollment_status(conn, enr_id: int, body: LDEnrollStatusIn, user: dict = Depends(get_current_user)):
     inst_id = need_inst(user)
     valid_statuses = ("Pending Approval", "Approved", "Rejected", "In Progress", "Completed")
     if body.status not in valid_statuses:
         raise HTTPException(400, f"status must be one of: {', '.join(valid_statuses)}")
-    conn = get_db()
     enr = conn.execute("SELECT * FROM ld_enrollments WHERE id=? AND institution_id=?", (enr_id, inst_id)).fetchone()
     if not enr:
-        conn.close(); raise HTTPException(404, "Enrollment not found")
+        raise HTTPException(404, "Enrollment not found")
 
     if body.status in ("Approved", "Rejected"):
         can_approve = user["role"] in ("superadmin", "hr_manager", "hr_admin", "manager")
         if not can_approve:
-            conn.close(); raise HTTPException(403, "Only a manager or HR can approve/reject enrollments")
+            raise HTTPException(403, "Only a manager or HR can approve/reject enrollments")
         next_status = "In Progress" if body.status == "Approved" else "Rejected"
         conn.execute(
             "UPDATE ld_enrollments SET status=?,approved_by=?,notes=? WHERE id=?",
@@ -234,7 +234,7 @@ def update_ld_enrollment_status(enr_id: int, body: LDEnrollStatusIn, user: dict 
                f"{body.notes or ''}".strip() or f"Enrollment {body.status.lower()} by {user['username']}", user)
     elif body.status == "Completed":
         if user["role"] == "employee" and user.get("employee_id") != enr["employee_id"]:
-            conn.close(); raise HTTPException(403, "Access denied")
+            raise HTTPException(403, "Access denied")
         conn.execute(
             "UPDATE ld_enrollments SET status='Completed', completed_at=to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS') WHERE id=?",
             (enr_id,)
@@ -249,19 +249,17 @@ def update_ld_enrollment_status(enr_id: int, body: LDEnrollStatusIn, user: dict 
 
     conn.commit()
     row = conn.execute("SELECT * FROM ld_enrollments WHERE id=?", (enr_id,)).fetchone()
-    conn.close()
     return dict(row)
 
 
 @router.get("/api/employees/{employee_id}/ld-history")
-def get_employee_ld_history(employee_id: str, user: dict = Depends(require_roles(*LD_MANAGE_ROLES))):
+@db_session
+def get_employee_ld_history(conn, employee_id: str, user: dict = Depends(require_roles(*LD_MANAGE_ROLES))):
     inst_id = need_inst(user)
-    conn = get_db()
     rows = conn.execute(
         "SELECT * FROM ld_audit_log WHERE employee_id=? AND institution_id=? ORDER BY created_at ASC",
         (employee_id, inst_id)
     ).fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
@@ -283,14 +281,13 @@ def _quiz_for_course(conn, inst_id: int, course_id: int):
 
 
 @router.get("/api/ld/courses/{course_id}/quiz")
-def get_course_quiz(course_id: int, user: dict = Depends(get_current_user)):
+@db_session
+def get_course_quiz(conn, course_id: int, user: dict = Depends(get_current_user)):
     """Returns the quiz for taking. Strips is_correct so answers never reach the client.
     Each option keeps a stable 'id' (its original save-time position) so that shuffled
     display order never breaks grading, which looks answers up by id, not position."""
     inst_id = need_inst(user)
-    conn = get_db()
     quiz = _quiz_for_course(conn, inst_id, course_id)
-    conn.close()
     if not quiz:
         raise HTTPException(404, "No quiz for this course")
     if quiz["randomize_questions"]:
@@ -304,19 +301,19 @@ def get_course_quiz(course_id: int, user: dict = Depends(get_current_user)):
 
 
 @router.get("/api/ld/courses/{course_id}/quiz/manage")
-def get_course_quiz_for_manage(course_id: int, user: dict = Depends(require_roles(*LD_MANAGE_ROLES))):
+@db_session
+def get_course_quiz_for_manage(conn, course_id: int, user: dict = Depends(require_roles(*LD_MANAGE_ROLES))):
     """Returns the quiz with correct answers included, for HR to edit."""
     inst_id = need_inst(user)
-    conn = get_db()
     quiz = _quiz_for_course(conn, inst_id, course_id)
-    conn.close()
     if not quiz:
         raise HTTPException(404, "No quiz for this course")
     return quiz
 
 
 @router.put("/api/ld/courses/{course_id}/quiz")
-def upsert_course_quiz(course_id: int, body: LDQuizIn, user: dict = Depends(require_roles(*LD_MANAGE_ROLES))):
+@db_session
+def upsert_course_quiz(conn, course_id: int, body: LDQuizIn, user: dict = Depends(require_roles(*LD_MANAGE_ROLES))):
     inst_id = need_inst(user)
     if not body.questions:
         raise HTTPException(400, "A quiz needs at least one question")
@@ -328,10 +325,9 @@ def upsert_course_quiz(course_id: int, body: LDQuizIn, user: dict = Depends(requ
             raise HTTPException(400, f"Question '{q.question_text}' has no correct answer marked")
         if q.question_type == "single" and correct_count > 1:
             raise HTTPException(400, f"Question '{q.question_text}' is single-answer but has {correct_count} correct options marked")
-    conn = get_db()
     course = conn.execute("SELECT id FROM ld_courses WHERE id=? AND institution_id=?", (course_id, inst_id)).fetchone()
     if not course:
-        conn.close(); raise HTTPException(404, "Course not found")
+        raise HTTPException(404, "Course not found")
 
     existing = conn.execute("SELECT id FROM ld_quizzes WHERE course_id=? AND institution_id=?", (course_id, inst_id)).fetchone()
     if existing:
@@ -358,32 +354,30 @@ def upsert_course_quiz(course_id: int, body: LDQuizIn, user: dict = Depends(requ
         )
     conn.commit()
     quiz = _quiz_for_course(conn, inst_id, course_id)
-    conn.close()
     return quiz
 
 
 @router.delete("/api/ld/courses/{course_id}/quiz", status_code=204)
-def delete_course_quiz(course_id: int, user: dict = Depends(require_roles(*LD_MANAGE_ROLES))):
+@db_session
+def delete_course_quiz(conn, course_id: int, user: dict = Depends(require_roles(*LD_MANAGE_ROLES))):
     inst_id = need_inst(user)
-    conn = get_db()
     quiz = conn.execute("SELECT id FROM ld_quizzes WHERE course_id=? AND institution_id=?", (course_id, inst_id)).fetchone()
     if quiz:
         conn.execute("DELETE FROM ld_quiz_questions WHERE quiz_id=?", (quiz["id"],))
         conn.execute("DELETE FROM ld_quizzes WHERE id=?", (quiz["id"],))
         conn.commit()
-    conn.close()
 
 
 @router.post("/api/ld/quizzes/{quiz_id}/attempts", status_code=201)
-def submit_quiz_attempt(quiz_id: int, body: LDQuizAttemptIn, user: dict = Depends(get_current_user)):
+@db_session
+def submit_quiz_attempt(conn, quiz_id: int, body: LDQuizAttemptIn, user: dict = Depends(get_current_user)):
     inst_id = need_inst(user)
-    conn = get_db()
     quiz = conn.execute("SELECT * FROM ld_quizzes WHERE id=? AND institution_id=?", (quiz_id, inst_id)).fetchone()
     if not quiz:
-        conn.close(); raise HTTPException(404, "Quiz not found")
+        raise HTTPException(404, "Quiz not found")
 
     if user["role"] != "employee" or not user.get("employee_id"):
-        conn.close(); raise HTTPException(403, "Only the enrolled employee can attempt this quiz")
+        raise HTTPException(403, "Only the enrolled employee can attempt this quiz")
 
     enrollment = conn.execute(
         "SELECT * FROM ld_enrollments WHERE course_id=? AND institution_id=? AND status='In Progress' "
@@ -391,13 +385,13 @@ def submit_quiz_attempt(quiz_id: int, body: LDQuizAttemptIn, user: dict = Depend
         (quiz["course_id"], inst_id, user["employee_id"])
     ).fetchone()
     if not enrollment:
-        conn.close(); raise HTTPException(403, "You don't have an active enrollment for this course")
+        raise HTTPException(403, "You don't have an active enrollment for this course")
 
     prior_attempts = conn.execute(
         "SELECT COUNT(*) FROM ld_quiz_attempts WHERE quiz_id=? AND enrollment_id=?", (quiz_id, enrollment["id"])
     ).fetchone()[0]
     if prior_attempts >= quiz["max_attempts"]:
-        conn.close(); raise HTTPException(400, f"Maximum attempts ({quiz['max_attempts']}) reached for this quiz")
+        raise HTTPException(400, f"Maximum attempts ({quiz['max_attempts']}) reached for this quiz")
 
     questions = conn.execute("SELECT * FROM ld_quiz_questions WHERE quiz_id=?", (quiz_id,)).fetchall()
     total = len(questions)
@@ -433,14 +427,13 @@ def submit_quiz_attempt(quiz_id: int, body: LDQuizAttemptIn, user: dict = Depend
         log_ld(conn, inst_id, enrollment["id"], enrollment["employee_id"], "Quiz Attempt Failed",
                f"Scored {score}% on '{quiz['title']}' (attempt {prior_attempts+1}, needed {quiz['pass_threshold']}%)", user)
     conn.commit()
-    conn.close()
     return {"score": score, "passed": passed, "attempt_number": prior_attempts + 1, "max_attempts": quiz["max_attempts"]}
 
 
 @router.get("/api/ld/quizzes/{quiz_id}/attempts")
-def list_quiz_attempts(quiz_id: int, user: dict = Depends(get_current_user)):
+@db_session
+def list_quiz_attempts(conn, quiz_id: int, user: dict = Depends(get_current_user)):
     inst_id = need_inst(user)
-    conn = get_db()
     if user["role"] == "employee":
         rows = conn.execute(
             "SELECT * FROM ld_quiz_attempts WHERE quiz_id=? AND institution_id=? AND employee_id=? ORDER BY attempt_number",
@@ -451,7 +444,6 @@ def list_quiz_attempts(quiz_id: int, user: dict = Depends(get_current_user)):
             "SELECT * FROM ld_quiz_attempts WHERE quiz_id=? AND institution_id=? ORDER BY employee_id, attempt_number",
             (quiz_id, inst_id)
         ).fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
@@ -459,13 +451,13 @@ def list_quiz_attempts(quiz_id: int, user: dict = Depends(get_current_user)):
 # Learning & Development — Course Modules (content)
 # ---------------------------------------------------------------------------
 @router.get("/api/ld/courses/{course_id}/modules")
-def list_course_modules(course_id: int, enrollment_id: Optional[int] = None,
+@db_session
+def list_course_modules(conn, course_id: int, enrollment_id: Optional[int] = None,
                         user: dict = Depends(get_current_user)):
     """Course content. If enrollment_id given, includes per-module viewed flags."""
     inst_id = need_inst(user)
-    conn = get_db()
     if not conn.execute("SELECT id FROM ld_courses WHERE id=? AND institution_id=?", (course_id, inst_id)).fetchone():
-        conn.close(); raise HTTPException(404, "Course not found")
+        raise HTTPException(404, "Course not found")
     rows = conn.execute(
         "SELECT * FROM ld_course_modules WHERE course_id=? AND institution_id=? ORDER BY order_index",
         (course_id, inst_id)
@@ -478,21 +470,20 @@ def list_course_modules(course_id: int, enrollment_id: Optional[int] = None,
         ).fetchall()}
         for m in modules:
             m["viewed"] = m["id"] in viewed
-    conn.close()
     return modules
 
 
 @router.put("/api/ld/courses/{course_id}/modules")
-def replace_course_modules(course_id: int, body: LDModulesIn,
+@db_session
+def replace_course_modules(conn, course_id: int, body: LDModulesIn,
                            user: dict = Depends(require_roles(*LD_MANAGE_ROLES))):
     """Replace the full ordered module list for a course (same upsert pattern as the quiz)."""
     inst_id = need_inst(user)
     for m in body.modules:
         if m.content_type not in ("text", "video"):
             raise HTTPException(400, "content_type must be text or video")
-    conn = get_db()
     if not conn.execute("SELECT id FROM ld_courses WHERE id=? AND institution_id=?", (course_id, inst_id)).fetchone():
-        conn.close(); raise HTTPException(404, "Course not found")
+        raise HTTPException(404, "Course not found")
     conn.execute(
         "DELETE FROM ld_lesson_progress WHERE module_id IN (SELECT id FROM ld_course_modules WHERE course_id=? AND institution_id=?)",
         (course_id, inst_id)
@@ -508,25 +499,24 @@ def replace_course_modules(course_id: int, body: LDModulesIn,
         "SELECT * FROM ld_course_modules WHERE course_id=? AND institution_id=? ORDER BY order_index",
         (course_id, inst_id)
     ).fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
 @router.post("/api/ld/enrollments/{enr_id}/modules/{module_id}/viewed", status_code=201)
-def mark_module_viewed(enr_id: int, module_id: int, user: dict = Depends(get_current_user)):
+@db_session
+def mark_module_viewed(conn, enr_id: int, module_id: int, user: dict = Depends(get_current_user)):
     inst_id = need_inst(user)
-    conn = get_db()
     enr = conn.execute("SELECT * FROM ld_enrollments WHERE id=? AND institution_id=?", (enr_id, inst_id)).fetchone()
     if not enr:
-        conn.close(); raise HTTPException(404, "Enrollment not found")
+        raise HTTPException(404, "Enrollment not found")
     if user["role"] == "employee" and user.get("employee_id") != enr["employee_id"]:
-        conn.close(); raise HTTPException(403, "Access denied")
+        raise HTTPException(403, "Access denied")
     mod = conn.execute(
         "SELECT id FROM ld_course_modules WHERE id=? AND course_id=? AND institution_id=?",
         (module_id, enr["course_id"], inst_id)
     ).fetchone()
     if not mod:
-        conn.close(); raise HTTPException(404, "Module not found for this course")
+        raise HTTPException(404, "Module not found for this course")
     try:
         conn.execute(
             "INSERT INTO ld_lesson_progress (institution_id,enrollment_id,module_id,employee_id) VALUES (?,?,?,?)",
@@ -534,6 +524,5 @@ def mark_module_viewed(enr_id: int, module_id: int, user: dict = Depends(get_cur
         )
         conn.commit()
     except IntegrityError:
-        conn.rollback()  # already viewed — idempotent
-    conn.close()
+        pass  # already viewed — idempotent
     return {"ok": True}

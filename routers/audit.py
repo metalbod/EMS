@@ -22,14 +22,15 @@ router = APIRouter()
 
 
 @router.get("/api/audit-logs")
+@db_session
 def list_audit_logs(
+    conn,
     employee_id: Optional[str] = None,
     action: Optional[str] = None,
     limit: int = 200,
     user: dict = Depends(require_roles("superadmin", "hr_manager")),
 ):
     inst_id = need_inst(user)
-    conn = get_db()
     q = "SELECT * FROM audit_logs WHERE institution_id=?"
     p = [inst_id]
     if employee_id: q += " AND target_employee_id=?"; p.append(employee_id)
@@ -37,7 +38,6 @@ def list_audit_logs(
     q += " ORDER BY timestamp DESC LIMIT ?"
     p.append(limit)
     rows = conn.execute(q, p).fetchall()
-    conn.close()
     result = []
     for r in rows:
         d = dict(r)

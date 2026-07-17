@@ -25,6 +25,11 @@ try:
 except ImportError:
     from ems.db import get_db
 
+try:
+    from core.db_session import db_session
+except ImportError:
+    from ems.core.db_session import db_session
+
 router = APIRouter()
 
 OB_ROLES = ["employee", "manager", "hr_admin", "hr_manager"]
@@ -68,69 +73,66 @@ class OBItemAddIn(BaseModel):
 # Onboarding / Offboarding — Templates
 # ---------------------------------------------------------------------------
 @router.get("/api/ob/templates")
-def list_ob_templates(type: Optional[str] = None, user: dict = Depends(get_current_user)):
+@db_session
+def list_ob_templates(conn, type: Optional[str] = None, user: dict = Depends(get_current_user)):
     inst_id = need_inst(user)
-    conn = get_db()
     q = "SELECT * FROM ob_templates WHERE institution_id=? AND is_active=1"
     p = [inst_id]
     if type:
         q += " AND type=?"; p.append(type)
     q += " ORDER BY type, order_index"
     rows = conn.execute(q, p).fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
 @router.post("/api/ob/templates", status_code=201)
-def create_ob_template(body: OBTemplateIn, user: dict = Depends(require_roles(*OB_MANAGE_ROLES))):
+@db_session
+def create_ob_template(conn, body: OBTemplateIn, user: dict = Depends(require_roles(*OB_MANAGE_ROLES))):
     inst_id = need_inst(user)
     if body.type not in ("onboarding","offboarding"):
         raise HTTPException(400, "type must be onboarding or offboarding")
     if body.assigned_role not in OB_ROLES:
         raise HTTPException(400, f"assigned_role must be one of: {', '.join(OB_ROLES)}")
-    conn = get_db()
     conn.execute(
         "INSERT INTO ob_templates (institution_id,type,title,description,assigned_role,order_index,linked_ld_course_id) VALUES (?,?,?,?,?,?,?)",
         (inst_id, body.type, body.title, body.description, body.assigned_role, body.order_index, body.linked_ld_course_id)
     )
     conn.commit()
     row = conn.execute("SELECT * FROM ob_templates WHERE id=last_insert_rowid()").fetchone()
-    conn.close()
     return dict(row)
 
 
 @router.put("/api/ob/templates/{tmpl_id}")
-def update_ob_template(tmpl_id: int, body: OBTemplateIn, user: dict = Depends(require_roles(*OB_MANAGE_ROLES))):
+@db_session
+def update_ob_template(conn, tmpl_id: int, body: OBTemplateIn, user: dict = Depends(require_roles(*OB_MANAGE_ROLES))):
     inst_id = need_inst(user)
-    conn = get_db()
     if not conn.execute("SELECT id FROM ob_templates WHERE id=? AND institution_id=?", (tmpl_id, inst_id)).fetchone():
-        conn.close(); raise HTTPException(404, "Template not found")
+        raise HTTPException(404, "Template not found")
     conn.execute(
         "UPDATE ob_templates SET title=?,description=?,assigned_role=?,order_index=?,linked_ld_course_id=? WHERE id=?",
         (body.title, body.description, body.assigned_role, body.order_index, body.linked_ld_course_id, tmpl_id)
     )
     conn.commit()
     row = conn.execute("SELECT * FROM ob_templates WHERE id=?", (tmpl_id,)).fetchone()
-    conn.close()
     return dict(row)
 
 
 @router.delete("/api/ob/templates/{tmpl_id}", status_code=204)
-def delete_ob_template(tmpl_id: int, user: dict = Depends(require_roles(*OB_MANAGE_ROLES))):
+@db_session
+def delete_ob_template(conn, tmpl_id: int, user: dict = Depends(require_roles(*OB_MANAGE_ROLES))):
     inst_id = need_inst(user)
-    conn = get_db()
     conn.execute("UPDATE ob_templates SET is_active=0 WHERE id=? AND institution_id=?", (tmpl_id, inst_id))
-    conn.commit(); conn.close()
+    conn.commit()
 
 
 # ---------------------------------------------------------------------------
 # Onboarding / Offboarding — Checklists
 # ---------------------------------------------------------------------------
 @router.get("/api/ob/checklists")
-def list_ob_checklists(type: Optional[str] = None, status: Optional[str] = None,
+@db_session
+def list_ob_checklists(conn, type: Optional[str] = None, status: Optional[str] = None,
                        user: dict = Depends(get_current_user)):
     inst_id = need_inst(user)
-    conn = get_db()
     q = """
         SELECT c.*, e.full_name AS employee_name, e.department, e.designation,
                COUNT(i.id) AS total_items,
@@ -151,28 +153,27 @@ def list_ob_checklists(type: Optional[str] = None, status: Optional[str] = None,
         q += " AND c.employee_id=?"; p.append(user.get("employee_id",""))
     q += " GROUP BY c.id, e.full_name, e.department, e.designation ORDER BY c.created_at DESC"
     rows = conn.execute(q, p).fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
 @router.post("/api/ob/checklists", status_code=201)
-def start_ob_checklist(body: OBChecklistStartIn, user: dict = Depends(require_roles(*OB_MANAGE_ROLES))):
+@db_session
+def start_ob_checklist(conn, body: OBChecklistStartIn, user: dict = Depends(require_roles(*OB_MANAGE_ROLES))):
     inst_id = need_inst(user)
     if body.type not in ("onboarding","offboarding"):
         raise HTTPException(400, "type must be onboarding or offboarding")
-    conn = get_db()
     # Check employee exists
     emp = conn.execute("SELECT * FROM employees WHERE employee_id=? AND institution_id=?",
                        (body.employee_id, inst_id)).fetchone()
     if not emp:
-        conn.close(); raise HTTPException(404, "Employee not found")
+        raise HTTPException(404, "Employee not found")
     # Check not already active
     existing = conn.execute(
         "SELECT id FROM ob_checklists WHERE employee_id=? AND institution_id=? AND type=? AND status='In Progress'",
         (body.employee_id, inst_id, body.type)
     ).fetchone()
     if existing:
-        conn.close(); raise HTTPException(400, f"An active {body.type} checklist already exists for this employee")
+        raise HTTPException(400, f"An active {body.type} checklist already exists for this employee")
     conn.execute(
         "INSERT INTO ob_checklists (institution_id,employee_id,type,triggered_by,notes) VALUES (?,?,?,?,?)",
         (inst_id, body.employee_id, body.type, user["username"], body.notes)
@@ -198,29 +199,27 @@ def start_ob_checklist(body: OBChecklistStartIn, user: dict = Depends(require_ro
            user)
     conn.commit()
     row = conn.execute("SELECT * FROM ob_checklists WHERE id=?", (cl_id,)).fetchone()
-    conn.close()
     return dict(row)
 
 
 @router.get("/api/ob/checklists/{cl_id}")
-def get_ob_checklist(cl_id: int, user: dict = Depends(get_current_user)):
+@db_session
+def get_ob_checklist(conn, cl_id: int, user: dict = Depends(get_current_user)):
     inst_id = need_inst(user)
-    conn = get_db()
     cl = conn.execute(
         "SELECT c.*, e.full_name AS employee_name, e.department, e.designation FROM ob_checklists c JOIN employees e ON e.employee_id=c.employee_id AND e.institution_id=c.institution_id WHERE c.id=? AND c.institution_id=?",
         (cl_id, inst_id)
     ).fetchone()
     if not cl:
-        conn.close(); raise HTTPException(404, "Checklist not found")
+        raise HTTPException(404, "Checklist not found")
     if user["role"] == "employee" and cl["employee_id"] != user.get("employee_id"):
-        conn.close(); raise HTTPException(403, "Access denied to this checklist")
+        raise HTTPException(403, "Access denied to this checklist")
     if user["role"] == "manager" and not is_self_or_subordinate(conn, inst_id, user.get("employee_id"), cl["employee_id"]):
-        conn.close(); raise HTTPException(403, "Access denied to this checklist")
+        raise HTTPException(403, "Access denied to this checklist")
     items = conn.execute(
         "SELECT * FROM ob_checklist_items WHERE checklist_id=? ORDER BY order_index",
         (cl_id,)
     ).fetchall()
-    conn.close()
     result = dict(cl)
     # Employees only see items assigned to their own role — hide other roles' tasks/notes
     if user["role"] == "employee":
@@ -230,21 +229,21 @@ def get_ob_checklist(cl_id: int, user: dict = Depends(get_current_user)):
 
 
 @router.patch("/api/ob/checklists/{cl_id}/items/{item_id}")
-def update_ob_item(cl_id: int, item_id: int, body: OBItemUpdateIn, user: dict = Depends(get_current_user)):
+@db_session
+def update_ob_item(conn, cl_id: int, item_id: int, body: OBItemUpdateIn, user: dict = Depends(get_current_user)):
     inst_id = need_inst(user)
     if body.status not in ("Pending","Done","N/A"):
         raise HTTPException(400, "status must be Pending, Done or N/A")
-    conn = get_db()
     cl = conn.execute("SELECT * FROM ob_checklists WHERE id=? AND institution_id=?", (cl_id, inst_id)).fetchone()
     if not cl:
-        conn.close(); raise HTTPException(404, "Checklist not found")
+        raise HTTPException(404, "Checklist not found")
     item = conn.execute("SELECT * FROM ob_checklist_items WHERE id=? AND checklist_id=?", (item_id, cl_id)).fetchone()
     if not item:
-        conn.close(); raise HTTPException(404, "Item not found")
+        raise HTTPException(404, "Item not found")
     # Permission: assigned_role must match user role, or HR manager/admin can override
     can_act = (item["assigned_role"] == user["role"] or user["role"] in ("superadmin","hr_manager","hr_admin"))
     if not can_act:
-        conn.close(); raise HTTPException(403, f"This item is assigned to {item['assigned_role']}")
+        raise HTTPException(403, f"This item is assigned to {item['assigned_role']}")
     completed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S") if body.status in ("Done","N/A") else None
     completed_by = user["username"] if body.status in ("Done","N/A") else None
     conn.execute(
@@ -270,14 +269,13 @@ def update_ob_item(cl_id: int, item_id: int, body: OBItemUpdateIn, user: dict = 
                f"All {total} items completed — checklist auto-closed",
                user)
     conn.commit()
-    conn.close()
     return {"ok": True}
 
 
 @router.delete("/api/ob/checklists/{cl_id}", status_code=204)
-def delete_ob_checklist(cl_id: int, user: dict = Depends(require_roles(*OB_MANAGE_ROLES))):
+@db_session
+def delete_ob_checklist(conn, cl_id: int, user: dict = Depends(require_roles(*OB_MANAGE_ROLES))):
     inst_id = need_inst(user)
-    conn = get_db()
     cl = conn.execute("SELECT * FROM ob_checklists WHERE id=? AND institution_id=?", (cl_id, inst_id)).fetchone()
     if cl:
         log_ob(conn, inst_id, cl_id, cl["employee_id"], cl["type"],
@@ -285,20 +283,20 @@ def delete_ob_checklist(cl_id: int, user: dict = Depends(require_roles(*OB_MANAG
         conn.commit()
     conn.execute("DELETE FROM ob_checklist_items WHERE checklist_id=?", (cl_id,))
     conn.execute("DELETE FROM ob_checklists WHERE id=? AND institution_id=?", (cl_id, inst_id))
-    conn.commit(); conn.close()
+    conn.commit()
 
 
 @router.put("/api/ob/checklists/{cl_id}/items/{item_id}")
-def edit_ob_item(cl_id: int, item_id: int, body: OBItemEditIn,
+@db_session
+def edit_ob_item(conn, cl_id: int, item_id: int, body: OBItemEditIn,
                  user: dict = Depends(require_roles(*OB_MANAGE_ROLES))):
     inst_id = need_inst(user)
-    conn = get_db()
     if not conn.execute("SELECT id FROM ob_checklists WHERE id=? AND institution_id=?", (cl_id, inst_id)).fetchone():
-        conn.close(); raise HTTPException(404, "Checklist not found")
+        raise HTTPException(404, "Checklist not found")
     if not conn.execute("SELECT id FROM ob_checklist_items WHERE id=? AND checklist_id=?", (item_id, cl_id)).fetchone():
-        conn.close(); raise HTTPException(404, "Item not found")
+        raise HTTPException(404, "Item not found")
     if body.assigned_role not in OB_ROLES:
-        conn.close(); raise HTTPException(400, f"assigned_role must be one of: {', '.join(OB_ROLES)}")
+        raise HTTPException(400, f"assigned_role must be one of: {', '.join(OB_ROLES)}")
     old = conn.execute("SELECT * FROM ob_checklist_items WHERE id=? AND checklist_id=?", (item_id, cl_id)).fetchone()
     cl2 = conn.execute("SELECT * FROM ob_checklists WHERE id=?", (cl_id,)).fetchone()
     conn.execute(
@@ -310,20 +308,20 @@ def edit_ob_item(cl_id: int, item_id: int, body: OBItemEditIn,
                "Item Edited",
                f"'{old['title'] if old else item_id}' → title='{body.title}', role={body.assigned_role}",
                user)
-    conn.commit(); conn.close()
+    conn.commit()
     return {"ok": True}
 
 
 @router.post("/api/ob/checklists/{cl_id}/items", status_code=201)
-def add_ob_item(cl_id: int, body: OBItemAddIn,
+@db_session
+def add_ob_item(conn, cl_id: int, body: OBItemAddIn,
                 user: dict = Depends(require_roles(*OB_MANAGE_ROLES))):
     inst_id = need_inst(user)
-    conn = get_db()
     cl = conn.execute("SELECT * FROM ob_checklists WHERE id=? AND institution_id=?", (cl_id, inst_id)).fetchone()
     if not cl:
-        conn.close(); raise HTTPException(404, "Checklist not found")
+        raise HTTPException(404, "Checklist not found")
     if body.assigned_role not in OB_ROLES:
-        conn.close(); raise HTTPException(400, f"assigned_role must be one of: {', '.join(OB_ROLES)}")
+        raise HTTPException(400, f"assigned_role must be one of: {', '.join(OB_ROLES)}")
     max_order = conn.execute("SELECT MAX(order_index) FROM ob_checklist_items WHERE checklist_id=?", (cl_id,)).fetchone()[0] or 0
     enrollment_id = None
     if body.linked_ld_course_id:
@@ -337,34 +335,32 @@ def add_ob_item(cl_id: int, body: OBItemAddIn,
     log_ob(conn, inst_id, cl_id, cl["employee_id"], cl["type"],
            "Item Added", f"New item '{body.title}' assigned to {body.assigned_role}", user)
     conn.commit()
-    conn.close()
     return dict(row)
 
 
 @router.delete("/api/ob/checklists/{cl_id}/items/{item_id}", status_code=204)
-def delete_ob_item(cl_id: int, item_id: int,
+@db_session
+def delete_ob_item(conn, cl_id: int, item_id: int,
                    user: dict = Depends(require_roles(*OB_MANAGE_ROLES))):
     inst_id = need_inst(user)
-    conn = get_db()
     cl = conn.execute("SELECT * FROM ob_checklists WHERE id=? AND institution_id=?", (cl_id, inst_id)).fetchone()
     item = conn.execute("SELECT * FROM ob_checklist_items WHERE id=? AND checklist_id=?", (item_id, cl_id)).fetchone()
     if not cl:
-        conn.close(); raise HTTPException(404, "Checklist not found")
+        raise HTTPException(404, "Checklist not found")
     if item and cl:
         log_ob(conn, inst_id, cl_id, cl["employee_id"], cl["type"],
                "Item Removed", f"Item '{item['title']}' removed from checklist", user)
         conn.commit()
     conn.execute("DELETE FROM ob_checklist_items WHERE id=? AND checklist_id=?", (item_id, cl_id))
-    conn.commit(); conn.close()
+    conn.commit()
 
 
 @router.get("/api/employees/{employee_id}/ob-history")
-def get_employee_ob_history(employee_id: str, user: dict = Depends(require_roles(*OB_MANAGE_ROLES))):
+@db_session
+def get_employee_ob_history(conn, employee_id: str, user: dict = Depends(require_roles(*OB_MANAGE_ROLES))):
     inst_id = need_inst(user)
-    conn = get_db()
     rows = conn.execute(
         "SELECT * FROM ob_audit_log WHERE employee_id=? AND institution_id=? ORDER BY created_at ASC",
         (employee_id, inst_id)
     ).fetchall()
-    conn.close()
     return [dict(r) for r in rows]

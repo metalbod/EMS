@@ -33,23 +33,22 @@ class HolidayIn(BaseModel):
 
 
 @router.get("/api/holidays")
-def list_holidays(year: Optional[int] = None, user: dict = Depends(get_current_user)):
+@db_session
+def list_holidays(conn, year: Optional[int] = None, user: dict = Depends(get_current_user)):
     inst_id = need_inst(user)
-    conn = get_db()
     q = "SELECT * FROM holidays WHERE institution_id=?"
     p = [inst_id]
     if year:
         q += " AND year=?"; p.append(year)
     q += " ORDER BY date"
     rows = conn.execute(q, p).fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
 @router.post("/api/holidays", status_code=201)
-def create_holiday(body: HolidayIn, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))):
+@db_session
+def create_holiday(conn, body: HolidayIn, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))):
     inst_id = need_inst(user)
-    conn = get_db()
     try:
         conn.execute(
             "INSERT INTO holidays (institution_id,name,date,year,created_by) VALUES (?,?,?,?,?)",
@@ -57,16 +56,14 @@ def create_holiday(body: HolidayIn, user: dict = Depends(require_roles(*LEAVE_MA
         )
         conn.commit()
     except IntegrityError as e:
-        conn.rollback(); conn.close()
         raise HTTPException(400, "A holiday already exists on this date")
     row = conn.execute("SELECT * FROM holidays WHERE id=last_insert_rowid()").fetchone()
-    conn.close()
     return dict(row)
 
 
 @router.delete("/api/holidays/{holiday_id}", status_code=204)
-def delete_holiday(holiday_id: int, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))):
+@db_session
+def delete_holiday(conn, holiday_id: int, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))):
     inst_id = need_inst(user)
-    conn = get_db()
     conn.execute("DELETE FROM holidays WHERE id=? AND institution_id=?", (holiday_id, inst_id))
-    conn.commit(); conn.close()
+    conn.commit()

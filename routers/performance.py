@@ -184,11 +184,11 @@ def _log_appraisal(conn, inst_id, appraisal_id, employee_id, action, detail, use
 
 # --- Cycles ---
 @router.get("/api/performance/cycles")
-def list_performance_cycles(user: dict = Depends(get_current_user)):
+@db_session
+def list_performance_cycles(conn, user: dict = Depends(get_current_user)):
     inst_id = need_inst(user)
     if user["role"] == "superadmin":
         return []
-    conn = get_db()
     rows = conn.execute(
         "SELECT * FROM performance_cycles WHERE institution_id=? ORDER BY period_start DESC", (inst_id,)
     ).fetchall()
@@ -197,11 +197,11 @@ def list_performance_cycles(user: dict = Depends(get_current_user)):
 
 
 @router.post("/api/performance/cycles", status_code=201)
-def create_performance_cycle(body: PerformanceCycleIn, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))):
+@db_session
+def create_performance_cycle(conn, body: PerformanceCycleIn, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))):
     inst_id = need_inst(user)
     if body.period_end <= body.period_start:
         raise HTTPException(400, "Period end must be after period start")
-    conn = get_db()
     conn.execute(
         "INSERT INTO performance_cycles (institution_id,name,period_start,period_end,created_by) VALUES (?,?,?,?,?)",
         (inst_id, body.name, body.period_start, body.period_end, user["username"])
@@ -213,13 +213,13 @@ def create_performance_cycle(body: PerformanceCycleIn, user: dict = Depends(requ
 
 
 @router.patch("/api/performance/cycles/{cycle_id}/activate")
-def activate_performance_cycle(cycle_id: int, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))):
+@db_session
+def activate_performance_cycle(conn, cycle_id: int, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))):
     inst_id = need_inst(user)
-    conn = get_db()
     cycle = conn.execute("SELECT * FROM performance_cycles WHERE id=? AND institution_id=?", (cycle_id, inst_id)).fetchone()
-    if not cycle: conn.close(); raise HTTPException(404, "Cycle not found")
+    if not cycle: raise HTTPException(404, "Cycle not found")
     if cycle["status"] != "Draft":
-        conn.close(); raise HTTPException(400, f"Cycle is already {cycle['status']}")
+        raise HTTPException(400, f"Cycle is already {cycle['status']}")
     employees = conn.execute("SELECT employee_id FROM employees WHERE institution_id=? AND status='Active'", (inst_id,)).fetchall()
     for e in employees:
         conn.execute(
@@ -234,13 +234,13 @@ def activate_performance_cycle(cycle_id: int, user: dict = Depends(require_roles
 
 
 @router.patch("/api/performance/cycles/{cycle_id}/open-calibration")
-def open_calibration(cycle_id: int, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))):
+@db_session
+def open_calibration(conn, cycle_id: int, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))):
     inst_id = need_inst(user)
-    conn = get_db()
     cycle = conn.execute("SELECT * FROM performance_cycles WHERE id=? AND institution_id=?", (cycle_id, inst_id)).fetchone()
-    if not cycle: conn.close(); raise HTTPException(404, "Cycle not found")
+    if not cycle: raise HTTPException(404, "Cycle not found")
     if cycle["status"] != "Active":
-        conn.close(); raise HTTPException(400, f"Cycle must be Active to open calibration (currently {cycle['status']})")
+        raise HTTPException(400, f"Cycle must be Active to open calibration (currently {cycle['status']})")
     conn.execute("UPDATE performance_cycles SET status='Calibration' WHERE id=?", (cycle_id,))
     conn.commit()
     row = conn.execute("SELECT * FROM performance_cycles WHERE id=?", (cycle_id,)).fetchone()
@@ -249,18 +249,18 @@ def open_calibration(cycle_id: int, user: dict = Depends(require_roles(*PERFORMA
 
 
 @router.patch("/api/performance/cycles/{cycle_id}/close")
-def close_performance_cycle(cycle_id: int, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))):
+@db_session
+def close_performance_cycle(conn, cycle_id: int, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))):
     inst_id = need_inst(user)
-    conn = get_db()
     cycle = conn.execute("SELECT * FROM performance_cycles WHERE id=? AND institution_id=?", (cycle_id, inst_id)).fetchone()
-    if not cycle: conn.close(); raise HTTPException(404, "Cycle not found")
+    if not cycle: raise HTTPException(404, "Cycle not found")
     if cycle["status"] != "Calibration":
-        conn.close(); raise HTTPException(400, f"Cycle must be in Calibration to close (currently {cycle['status']})")
+        raise HTTPException(400, f"Cycle must be in Calibration to close (currently {cycle['status']})")
     not_ready = conn.execute(
         "SELECT COUNT(*) FROM appraisals WHERE cycle_id=? AND status NOT IN ('Calibration','Finalized')", (cycle_id,)
     ).fetchone()[0]
     if not_ready:
-        conn.close(); raise HTTPException(400, f"{not_ready} appraisal(s) have not completed manager review yet")
+        raise HTTPException(400, f"{not_ready} appraisal(s) have not completed manager review yet")
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     conn.execute("""
         UPDATE appraisals SET
@@ -277,14 +277,14 @@ def close_performance_cycle(cycle_id: int, user: dict = Depends(require_roles(*P
 
 # --- Goals ---
 @router.get("/api/performance/goals")
-def list_goals(cycle_id: int, employee_id: Optional[str] = None, user: dict = Depends(get_current_user)):
+@db_session
+def list_goals(conn, cycle_id: int, employee_id: Optional[str] = None, user: dict = Depends(get_current_user)):
     inst_id = need_inst(user)
     if user["role"] == "superadmin":
         return []
-    conn = get_db()
     if employee_id:
         if not _can_access_employee_performance(conn, inst_id, user, employee_id):
-            conn.close(); raise HTTPException(403, "Access denied")
+            raise HTTPException(403, "Access denied")
         rows = conn.execute(
             "SELECT * FROM goals WHERE institution_id=? AND cycle_id=? AND employee_id=? ORDER BY created_at",
             (inst_id, cycle_id, employee_id)
@@ -318,15 +318,15 @@ def list_goals(cycle_id: int, employee_id: Optional[str] = None, user: dict = De
 
 
 @router.post("/api/performance/goals", status_code=201)
-def create_goal(body: GoalIn, user: dict = Depends(get_current_user)):
+@db_session
+def create_goal(conn, body: GoalIn, user: dict = Depends(get_current_user)):
     inst_id = need_inst(user)
-    conn = get_db()
     if not _can_access_employee_performance(conn, inst_id, user, body.employee_id):
-        conn.close(); raise HTTPException(403, "Access denied")
+        raise HTTPException(403, "Access denied")
     cycle = conn.execute("SELECT * FROM performance_cycles WHERE id=? AND institution_id=?", (body.cycle_id, inst_id)).fetchone()
-    if not cycle: conn.close(); raise HTTPException(404, "Cycle not found")
+    if not cycle: raise HTTPException(404, "Cycle not found")
     if cycle["status"] != "Active":
-        conn.close(); raise HTTPException(400, f"Goals can only be added while the cycle is Active (currently {cycle['status']})")
+        raise HTTPException(400, f"Goals can only be added while the cycle is Active (currently {cycle['status']})")
     conn.execute("""
         INSERT INTO goals (institution_id,cycle_id,employee_id,goal_type,title,description,weight,target_value,actual_value,unit,created_by)
         VALUES (?,?,?,?,?,?,?,?,?,?,?)
@@ -339,16 +339,16 @@ def create_goal(body: GoalIn, user: dict = Depends(get_current_user)):
 
 
 @router.put("/api/performance/goals/{goal_id}")
-def update_goal(goal_id: int, body: GoalUpdateIn, user: dict = Depends(get_current_user)):
+@db_session
+def update_goal(conn, goal_id: int, body: GoalUpdateIn, user: dict = Depends(get_current_user)):
     inst_id = need_inst(user)
-    conn = get_db()
     goal = conn.execute("SELECT * FROM goals WHERE id=? AND institution_id=?", (goal_id, inst_id)).fetchone()
-    if not goal: conn.close(); raise HTTPException(404, "Goal not found")
+    if not goal: raise HTTPException(404, "Goal not found")
     if not _can_access_employee_performance(conn, inst_id, user, goal["employee_id"]):
-        conn.close(); raise HTTPException(403, "Access denied")
+        raise HTTPException(403, "Access denied")
     cycle = conn.execute("SELECT status FROM performance_cycles WHERE id=?", (goal["cycle_id"],)).fetchone()
     if cycle["status"] != "Active":
-        conn.close(); raise HTTPException(400, "Goals can only be edited while the cycle is Active")
+        raise HTTPException(400, "Goals can only be edited while the cycle is Active")
     title = body.title if body.title is not None else goal["title"]
     description = body.description if body.description is not None else goal["description"]
     weight = body.weight if body.weight is not None else goal["weight"]
@@ -366,31 +366,31 @@ def update_goal(goal_id: int, body: GoalUpdateIn, user: dict = Depends(get_curre
 
 
 @router.delete("/api/performance/goals/{goal_id}", status_code=204)
-def delete_goal(goal_id: int, user: dict = Depends(get_current_user)):
+@db_session
+def delete_goal(conn, goal_id: int, user: dict = Depends(get_current_user)):
     inst_id = need_inst(user)
-    conn = get_db()
     goal = conn.execute("SELECT * FROM goals WHERE id=? AND institution_id=?", (goal_id, inst_id)).fetchone()
-    if not goal: conn.close(); raise HTTPException(404, "Goal not found")
+    if not goal: raise HTTPException(404, "Goal not found")
     if not _can_access_employee_performance(conn, inst_id, user, goal["employee_id"]):
-        conn.close(); raise HTTPException(403, "Access denied")
+        raise HTTPException(403, "Access denied")
     cycle = conn.execute("SELECT status FROM performance_cycles WHERE id=?", (goal["cycle_id"],)).fetchone()
     if cycle["status"] != "Active":
-        conn.close(); raise HTTPException(400, "Goals can only be deleted while the cycle is Active")
+        raise HTTPException(400, "Goals can only be deleted while the cycle is Active")
     conn.execute("DELETE FROM okr_key_results WHERE goal_id=?", (goal_id,))
     conn.execute("DELETE FROM goals WHERE id=?", (goal_id,))
-    conn.commit(); conn.close()
+    conn.commit()
 
 
 @router.post("/api/performance/goals/{goal_id}/key-results", status_code=201)
-def add_key_result(goal_id: int, body: KeyResultIn, user: dict = Depends(get_current_user)):
+@db_session
+def add_key_result(conn, goal_id: int, body: KeyResultIn, user: dict = Depends(get_current_user)):
     inst_id = need_inst(user)
-    conn = get_db()
     goal = conn.execute("SELECT * FROM goals WHERE id=? AND institution_id=?", (goal_id, inst_id)).fetchone()
-    if not goal: conn.close(); raise HTTPException(404, "Goal not found")
+    if not goal: raise HTTPException(404, "Goal not found")
     if goal["goal_type"] != "OKR":
-        conn.close(); raise HTTPException(400, "Key results can only be added to OKR goals")
+        raise HTTPException(400, "Key results can only be added to OKR goals")
     if not _can_access_employee_performance(conn, inst_id, user, goal["employee_id"]):
-        conn.close(); raise HTTPException(403, "Access denied")
+        raise HTTPException(403, "Access denied")
     conn.execute(
         "INSERT INTO okr_key_results (goal_id,description,target_value,actual_value) VALUES (?,?,?,?)",
         (goal_id, body.description, body.target_value, body.actual_value)
@@ -402,14 +402,14 @@ def add_key_result(goal_id: int, body: KeyResultIn, user: dict = Depends(get_cur
 
 
 @router.put("/api/performance/key-results/{kr_id}")
-def update_key_result(kr_id: int, body: KeyResultIn, user: dict = Depends(get_current_user)):
+@db_session
+def update_key_result(conn, kr_id: int, body: KeyResultIn, user: dict = Depends(get_current_user)):
     inst_id = need_inst(user)
-    conn = get_db()
     kr = conn.execute("SELECT * FROM okr_key_results WHERE id=?", (kr_id,)).fetchone()
-    if not kr: conn.close(); raise HTTPException(404, "Key result not found")
+    if not kr: raise HTTPException(404, "Key result not found")
     goal = conn.execute("SELECT * FROM goals WHERE id=?", (kr["goal_id"],)).fetchone()
     if goal["institution_id"] != inst_id or not _can_access_employee_performance(conn, inst_id, user, goal["employee_id"]):
-        conn.close(); raise HTTPException(403, "Access denied")
+        raise HTTPException(403, "Access denied")
     conn.execute(
         "UPDATE okr_key_results SET description=?,target_value=?,actual_value=? WHERE id=?",
         (body.description, body.target_value, body.actual_value, kr_id)
@@ -421,25 +421,25 @@ def update_key_result(kr_id: int, body: KeyResultIn, user: dict = Depends(get_cu
 
 
 @router.delete("/api/performance/key-results/{kr_id}", status_code=204)
-def delete_key_result(kr_id: int, user: dict = Depends(get_current_user)):
+@db_session
+def delete_key_result(conn, kr_id: int, user: dict = Depends(get_current_user)):
     inst_id = need_inst(user)
-    conn = get_db()
     kr = conn.execute("SELECT * FROM okr_key_results WHERE id=?", (kr_id,)).fetchone()
-    if not kr: conn.close(); raise HTTPException(404, "Key result not found")
+    if not kr: raise HTTPException(404, "Key result not found")
     goal = conn.execute("SELECT * FROM goals WHERE id=?", (kr["goal_id"],)).fetchone()
     if goal["institution_id"] != inst_id or not _can_access_employee_performance(conn, inst_id, user, goal["employee_id"]):
-        conn.close(); raise HTTPException(403, "Access denied")
+        raise HTTPException(403, "Access denied")
     conn.execute("DELETE FROM okr_key_results WHERE id=?", (kr_id,))
-    conn.commit(); conn.close()
+    conn.commit()
 
 
 # --- Appraisals ---
 @router.get("/api/performance/appraisals")
-def list_appraisals(cycle_id: int, user: dict = Depends(get_current_user)):
+@db_session
+def list_appraisals(conn, cycle_id: int, user: dict = Depends(get_current_user)):
     inst_id = need_inst(user)
     if user["role"] == "superadmin":
         return []
-    conn = get_db()
     base = """
         SELECT a.*, e.full_name, e.department, e.designation
         FROM appraisals a JOIN employees e ON e.employee_id=a.employee_id AND e.institution_id=a.institution_id
@@ -457,17 +457,17 @@ def list_appraisals(cycle_id: int, user: dict = Depends(get_current_user)):
 
 
 @router.get("/api/performance/appraisals/{appraisal_id}")
-def get_appraisal(appraisal_id: int, user: dict = Depends(get_current_user)):
+@db_session
+def get_appraisal(conn, appraisal_id: int, user: dict = Depends(get_current_user)):
     inst_id = need_inst(user)
-    conn = get_db()
     ap = conn.execute("""
         SELECT a.*, e.full_name, e.department, e.designation
         FROM appraisals a JOIN employees e ON e.employee_id=a.employee_id AND e.institution_id=a.institution_id
         WHERE a.id=? AND a.institution_id=?
     """, (appraisal_id, inst_id)).fetchone()
-    if not ap: conn.close(); raise HTTPException(404, "Appraisal not found")
+    if not ap: raise HTTPException(404, "Appraisal not found")
     if not _can_access_employee_performance(conn, inst_id, user, ap["employee_id"]):
-        conn.close(); raise HTTPException(403, "Access denied")
+        raise HTTPException(403, "Access denied")
     goals = conn.execute(
         "SELECT * FROM goals WHERE institution_id=? AND cycle_id=? AND employee_id=? ORDER BY created_at",
         (inst_id, ap["cycle_id"], ap["employee_id"])
@@ -490,15 +490,15 @@ def get_appraisal(appraisal_id: int, user: dict = Depends(get_current_user)):
 
 
 @router.post("/api/performance/appraisals/{appraisal_id}/self-review")
-def submit_self_review(appraisal_id: int, body: SelfReviewIn, user: dict = Depends(get_current_user)):
+@db_session
+def submit_self_review(conn, appraisal_id: int, body: SelfReviewIn, user: dict = Depends(get_current_user)):
     inst_id = need_inst(user)
-    conn = get_db()
     ap = conn.execute("SELECT * FROM appraisals WHERE id=? AND institution_id=?", (appraisal_id, inst_id)).fetchone()
-    if not ap: conn.close(); raise HTTPException(404, "Appraisal not found")
+    if not ap: raise HTTPException(404, "Appraisal not found")
     if user.get("employee_id") != ap["employee_id"]:
-        conn.close(); raise HTTPException(403, "You can only submit your own self-review")
+        raise HTTPException(403, "You can only submit your own self-review")
     if ap["status"] != "SelfReview":
-        conn.close(); raise HTTPException(400, f"Appraisal is not awaiting self-review (current status: {ap['status']})")
+        raise HTTPException(400, f"Appraisal is not awaiting self-review (current status: {ap['status']})")
     rating = _compute_weighted_rating(conn, ap["cycle_id"], ap["employee_id"])
     conn.execute(
         "UPDATE appraisals SET self_rating=?, self_comments=?, status='ManagerReview' WHERE id=?",
@@ -512,19 +512,19 @@ def submit_self_review(appraisal_id: int, body: SelfReviewIn, user: dict = Depen
 
 
 @router.post("/api/performance/appraisals/{appraisal_id}/manager-review")
-def submit_manager_review(appraisal_id: int, body: ManagerReviewIn, user: dict = Depends(get_current_user)):
+@db_session
+def submit_manager_review(conn, appraisal_id: int, body: ManagerReviewIn, user: dict = Depends(get_current_user)):
     inst_id = need_inst(user)
-    conn = get_db()
     ap = conn.execute("SELECT * FROM appraisals WHERE id=? AND institution_id=?", (appraisal_id, inst_id)).fetchone()
-    if not ap: conn.close(); raise HTTPException(404, "Appraisal not found")
+    if not ap: raise HTTPException(404, "Appraisal not found")
     if user["role"] not in ("manager", "hr_manager"):
-        conn.close(); raise HTTPException(403, "Only a manager or HR can submit a manager review")
+        raise HTTPException(403, "Only a manager or HR can submit a manager review")
     if user.get("employee_id") == ap["employee_id"]:
-        conn.close(); raise HTTPException(403, "You cannot manager-review your own appraisal")
+        raise HTTPException(403, "You cannot manager-review your own appraisal")
     if not _can_access_employee_performance(conn, inst_id, user, ap["employee_id"]):
-        conn.close(); raise HTTPException(403, "Access denied")
+        raise HTTPException(403, "Access denied")
     if ap["status"] != "ManagerReview":
-        conn.close(); raise HTTPException(400, f"Appraisal is not awaiting manager review (current status: {ap['status']})")
+        raise HTTPException(400, f"Appraisal is not awaiting manager review (current status: {ap['status']})")
     rating = body.manager_rating if body.manager_rating is not None else _compute_weighted_rating(conn, ap["cycle_id"], ap["employee_id"])
     conn.execute(
         "UPDATE appraisals SET manager_rating=?, manager_comments=?, status='Calibration' WHERE id=?",
@@ -538,13 +538,13 @@ def submit_manager_review(appraisal_id: int, body: ManagerReviewIn, user: dict =
 
 
 @router.post("/api/performance/appraisals/{appraisal_id}/calibrate")
-def calibrate_appraisal(appraisal_id: int, body: CalibrateIn, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))):
+@db_session
+def calibrate_appraisal(conn, appraisal_id: int, body: CalibrateIn, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))):
     inst_id = need_inst(user)
-    conn = get_db()
     ap = conn.execute("SELECT * FROM appraisals WHERE id=? AND institution_id=?", (appraisal_id, inst_id)).fetchone()
-    if not ap: conn.close(); raise HTTPException(404, "Appraisal not found")
+    if not ap: raise HTTPException(404, "Appraisal not found")
     if ap["status"] != "Calibration":
-        conn.close(); raise HTTPException(400, f"Appraisal is not awaiting calibration (current status: {ap['status']})")
+        raise HTTPException(400, f"Appraisal is not awaiting calibration (current status: {ap['status']})")
     conn.execute(
         "UPDATE appraisals SET calibrated_rating=?, calibration_notes=? WHERE id=?",
         (body.calibrated_rating, body.calibration_notes, appraisal_id)
@@ -561,20 +561,20 @@ def calibrate_appraisal(appraisal_id: int, body: CalibrateIn, user: dict = Depen
 # Performance -> Payroll integration (Phase 2)
 # ---------------------------------------------------------------------------
 @router.post("/api/performance/appraisals/{appraisal_id}/merit-increment", status_code=201)
-def apply_merit_increment(appraisal_id: int, body: MeritIncrementIn, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))):
+@db_session
+def apply_merit_increment(conn, appraisal_id: int, body: MeritIncrementIn, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))):
     inst_id = need_inst(user)
-    conn = get_db()
     ap = conn.execute("SELECT * FROM appraisals WHERE id=? AND institution_id=?", (appraisal_id, inst_id)).fetchone()
-    if not ap: conn.close(); raise HTTPException(404, "Appraisal not found")
+    if not ap: raise HTTPException(404, "Appraisal not found")
     if ap["status"] != "Finalized":
-        conn.close(); raise HTTPException(400, "Merit increments can only be applied to a Finalized appraisal")
+        raise HTTPException(400, "Merit increments can only be applied to a Finalized appraisal")
     existing = conn.execute(
         "SELECT id FROM performance_payouts WHERE appraisal_id=? AND payout_type='MeritIncrement'", (appraisal_id,)
     ).fetchone()
     if existing:
-        conn.close(); raise HTTPException(400, "A merit increment has already been applied for this appraisal")
+        raise HTTPException(400, "A merit increment has already been applied for this appraisal")
     emp = conn.execute("SELECT * FROM employees WHERE institution_id=? AND employee_id=?", (inst_id, ap["employee_id"])).fetchone()
-    if not emp: conn.close(); raise HTTPException(404, "Employee not found")
+    if not emp: raise HTTPException(404, "Employee not found")
     old_salary = emp["basic_salary"] or 0.0
     delta = round(old_salary * body.increment_pct / 100, 2)
     new_salary = round(old_salary + delta, 2)
@@ -594,13 +594,13 @@ def apply_merit_increment(appraisal_id: int, body: MeritIncrementIn, user: dict 
 
 
 @router.post("/api/performance/appraisals/{appraisal_id}/bonus", status_code=201)
-def queue_bonus_payout(appraisal_id: int, body: BonusPayoutIn, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))):
+@db_session
+def queue_bonus_payout(conn, appraisal_id: int, body: BonusPayoutIn, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))):
     inst_id = need_inst(user)
-    conn = get_db()
     ap = conn.execute("SELECT * FROM appraisals WHERE id=? AND institution_id=?", (appraisal_id, inst_id)).fetchone()
-    if not ap: conn.close(); raise HTTPException(404, "Appraisal not found")
+    if not ap: raise HTTPException(404, "Appraisal not found")
     if ap["status"] != "Finalized":
-        conn.close(); raise HTTPException(400, "Bonuses can only be queued for a Finalized appraisal")
+        raise HTTPException(400, "Bonuses can only be queued for a Finalized appraisal")
     conn.execute("""
         INSERT INTO performance_payouts (institution_id, appraisal_id, employee_id, payout_type, amount, status, created_by)
         VALUES (?,?,?,?,?,?,?)
@@ -616,9 +616,9 @@ def queue_bonus_payout(appraisal_id: int, body: BonusPayoutIn, user: dict = Depe
 
 
 @router.get("/api/performance/payouts")
-def list_performance_payouts(status: Optional[str] = None, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES, *PAYROLL_VIEW_ROLES))):
+@db_session
+def list_performance_payouts(conn, status: Optional[str] = None, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES, *PAYROLL_VIEW_ROLES))):
     inst_id = need_inst(user)
-    conn = get_db()
     sql = """
         SELECT po.*, e.full_name, e.department, e.designation
         FROM performance_payouts po
@@ -636,13 +636,13 @@ def list_performance_payouts(status: Optional[str] = None, user: dict = Depends(
 
 
 @router.delete("/api/performance/payouts/{payout_id}", status_code=204)
-def cancel_bonus_payout(payout_id: int, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))):
+@db_session
+def cancel_bonus_payout(conn, payout_id: int, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))):
     inst_id = need_inst(user)
-    conn = get_db()
     payout = conn.execute("SELECT * FROM performance_payouts WHERE id=? AND institution_id=?", (payout_id, inst_id)).fetchone()
-    if not payout: conn.close(); raise HTTPException(404, "Payout not found")
+    if not payout: raise HTTPException(404, "Payout not found")
     if payout["status"] != "Pending":
-        conn.close(); raise HTTPException(400, "Only a Pending bonus payout can be cancelled")
+        raise HTTPException(400, "Only a Pending bonus payout can be cancelled")
     conn.execute("DELETE FROM performance_payouts WHERE id=?", (payout_id,))
     _log_appraisal(conn, inst_id, payout["appraisal_id"], payout["employee_id"], "Bonus Cancelled",
                     f"RM {payout['amount']:.2f} cancelled before payout", user)
