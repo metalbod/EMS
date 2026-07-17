@@ -251,7 +251,7 @@ def test_export_bank_csv_success(payroll_manager_auth, client, make_test_employe
     res = client.post("/api/payroll/runs", headers=payroll_manager_auth,
                        json={"period_start": start, "period_end": end})
     run = res.json()
-    csv_res = client.get(f"/api/payroll/runs/{run['id']}/bank-csv", headers=payroll_manager_auth)
+    csv_res = client.get(f"/api/payroll/runs/{run['run_id']}/bank-csv", headers=payroll_manager_auth)
     assert csv_res.status_code == 200
     assert emp["employee_id"] in csv_res.text
     assert "Maybank" in csv_res.text
@@ -279,7 +279,7 @@ def test_get_payslip_view_only_role_can_access_any(payroll_manager_auth, hr_mana
     res = client.post("/api/payroll/runs", headers=payroll_manager_auth,
                        json={"period_start": start, "period_end": end})
     run = res.json()
-    detail = client.get(f"/api/payroll/runs/{run['id']}", headers=payroll_manager_auth).json()
+    detail = client.get(f"/api/payroll/runs/{run['run_id']}", headers=payroll_manager_auth).json()
     slip_id = detail["payslips"][0]["id"]
 
     # hr_manager is in PAYROLL_VIEW_ROLES, so it can view any payslip
