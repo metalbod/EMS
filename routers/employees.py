@@ -257,7 +257,7 @@ def list_employees(
 def _insert_new_employee(conn, inst_id, emp: EmployeeIn, user: dict, ip: Optional[str]):
     """Core employee-creation logic, shared by the single Add Employee form and bulk upload.
     Raises HTTPException on business-rule violations; lets IntegrityError propagate to the caller."""
-    if emp.employee_id and user["role"] == "hr_manager":
+    if emp.employee_id and user.get("role") == "hr_manager":
         emp_id = emp.employee_id
         if conn.execute(
             "SELECT id FROM employees WHERE institution_id=? AND employee_id=?", (inst_id, emp_id)
