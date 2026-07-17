@@ -197,7 +197,6 @@ def list_performance_cycles(conn, user: dict = Depends(get_current_user)) -> Lis
     rows = conn.execute(
         "SELECT * FROM performance_cycles WHERE institution_id=? ORDER BY period_start DESC", (inst_id,)
     ).fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
@@ -213,7 +212,6 @@ def create_performance_cycle(conn, body: PerformanceCycleIn, user: dict = Depend
     )
     conn.commit()
     row = conn.execute("SELECT * FROM performance_cycles WHERE id=last_insert_rowid()").fetchone()
-    conn.close()
     return dict(row)
 
 
@@ -234,7 +232,6 @@ def activate_performance_cycle(conn, cycle_id: int, user: dict = Depends(require
     conn.execute("UPDATE performance_cycles SET status='Active' WHERE id=?", (cycle_id,))
     conn.commit()
     row = conn.execute("SELECT * FROM performance_cycles WHERE id=?", (cycle_id,)).fetchone()
-    conn.close()
     return dict(row)
 
 
@@ -249,7 +246,6 @@ def open_calibration(conn, cycle_id: int, user: dict = Depends(require_roles(*PE
     conn.execute("UPDATE performance_cycles SET status='Calibration' WHERE id=?", (cycle_id,))
     conn.commit()
     row = conn.execute("SELECT * FROM performance_cycles WHERE id=?", (cycle_id,)).fetchone()
-    conn.close()
     return dict(row)
 
 
@@ -276,7 +272,6 @@ def close_performance_cycle(conn, cycle_id: int, user: dict = Depends(require_ro
     conn.execute("UPDATE performance_cycles SET status='Closed' WHERE id=?", (cycle_id,))
     conn.commit()
     row = conn.execute("SELECT * FROM performance_cycles WHERE id=?", (cycle_id,)).fetchone()
-    conn.close()
     return dict(row)
 
 
@@ -318,7 +313,6 @@ def list_goals(conn, cycle_id: int, employee_id: Optional[str] = None, user: dic
             krs = conn.execute("SELECT * FROM okr_key_results WHERE goal_id=?", (g["id"],)).fetchall()
             d["key_results"] = [dict(k) for k in krs]
         result.append(d)
-    conn.close()
     return result
 
 
@@ -339,7 +333,6 @@ def create_goal(conn, body: GoalIn, user: dict = Depends(get_current_user)) -> D
           body.weight, body.target_value, body.actual_value, body.unit, user["username"]))
     conn.commit()
     row = conn.execute("SELECT * FROM goals WHERE id=last_insert_rowid()").fetchone()
-    conn.close()
     return dict(row)
 
 
@@ -366,7 +359,6 @@ def update_goal(conn, goal_id: int, body: GoalUpdateIn, user: dict = Depends(get
     )
     conn.commit()
     row = conn.execute("SELECT * FROM goals WHERE id=?", (goal_id,)).fetchone()
-    conn.close()
     return dict(row)
 
 
@@ -402,7 +394,6 @@ def add_key_result(conn, goal_id: int, body: KeyResultIn, user: dict = Depends(g
     )
     conn.commit()
     row = conn.execute("SELECT * FROM okr_key_results WHERE id=last_insert_rowid()").fetchone()
-    conn.close()
     return dict(row)
 
 
@@ -421,7 +412,6 @@ def update_key_result(conn, kr_id: int, body: KeyResultIn, user: dict = Depends(
     )
     conn.commit()
     row = conn.execute("SELECT * FROM okr_key_results WHERE id=?", (kr_id,)).fetchone()
-    conn.close()
     return dict(row)
 
 
@@ -457,7 +447,6 @@ def list_appraisals(conn, cycle_id: int, user: dict = Depends(get_current_user))
         rows = conn.execute(base + f" AND a.employee_id IN {frag} ORDER BY e.full_name", [inst_id, cycle_id, *fp]).fetchall()
     else:
         rows = conn.execute(base + " AND a.employee_id=? ORDER BY e.full_name", (inst_id, cycle_id, user.get("employee_id", ""))).fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
@@ -490,7 +479,6 @@ def get_appraisal(conn, appraisal_id: int, user: dict = Depends(get_current_user
     result["goals"] = goal_list
     result["total_weight"] = total_weight
     result["live_computed_rating"] = _compute_weighted_rating(conn, ap["cycle_id"], ap["employee_id"])
-    conn.close()
     return result
 
 
@@ -512,7 +500,6 @@ def submit_self_review(conn, appraisal_id: int, body: SelfReviewIn, user: dict =
     _log_appraisal(conn, inst_id, appraisal_id, ap["employee_id"], "Self-Review Submitted", f"Self rating: {rating}", user)
     conn.commit()
     row = conn.execute("SELECT * FROM appraisals WHERE id=?", (appraisal_id,)).fetchone()
-    conn.close()
     return dict(row)
 
 
@@ -538,7 +525,6 @@ def submit_manager_review(conn, appraisal_id: int, body: ManagerReviewIn, user: 
     _log_appraisal(conn, inst_id, appraisal_id, ap["employee_id"], "Manager Review Submitted", f"Manager rating: {rating}", user)
     conn.commit()
     row = conn.execute("SELECT * FROM appraisals WHERE id=?", (appraisal_id,)).fetchone()
-    conn.close()
     return dict(row)
 
 
@@ -558,7 +544,6 @@ def calibrate_appraisal(conn, appraisal_id: int, body: CalibrateIn, user: dict =
                     f"Calibrated rating: {body.calibrated_rating}" if body.calibrated_rating is not None else "No override", user)
     conn.commit()
     row = conn.execute("SELECT * FROM appraisals WHERE id=?", (appraisal_id,)).fetchone()
-    conn.close()
     return dict(row)
 
 
@@ -594,7 +579,6 @@ def apply_merit_increment(conn, appraisal_id: int, body: MeritIncrementIn, user:
                     f"{body.increment_pct}% (+{delta:.2f}), new basic salary {new_salary:.2f}", user)
     conn.commit()
     row = conn.execute("SELECT * FROM performance_payouts WHERE appraisal_id=? AND payout_type='MeritIncrement'", (appraisal_id,)).fetchone()
-    conn.close()
     return dict(row)
 
 
@@ -616,7 +600,6 @@ def queue_bonus_payout(conn, appraisal_id: int, body: BonusPayoutIn, user: dict 
     row = conn.execute(
         "SELECT * FROM performance_payouts WHERE appraisal_id=? AND payout_type='Bonus' ORDER BY id DESC LIMIT 1", (appraisal_id,)
     ).fetchone()
-    conn.close()
     return dict(row)
 
 
@@ -636,7 +619,6 @@ def list_performance_payouts(conn, status: Optional[str] = None, user: dict = De
         params.append(status)
     sql += " ORDER BY po.created_at DESC"
     rows = conn.execute(sql, tuple(params)).fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
@@ -652,4 +634,3 @@ def cancel_bonus_payout(conn, payout_id: int, user: dict = Depends(require_roles
     _log_appraisal(conn, inst_id, payout["appraisal_id"], payout["employee_id"], "Bonus Cancelled",
                     f"RM {payout['amount']:.2f} cancelled before payout", user)
     conn.commit()
-    conn.close()
