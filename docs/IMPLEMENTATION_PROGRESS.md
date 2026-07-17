@@ -10,30 +10,19 @@
 
 ### Task 1: Enable Supabase Automated Backups ⏱️ 5 min
 
-**Status**: 🟡 PENDING
+**Status**: ⏭️ SKIPPED
 
-**Steps**:
-- [ ] Log in to Supabase dashboard: https://app.supabase.com
-- [ ] Select your EMS project
-- [ ] Navigate to: Settings → Backups
-- [ ] Click "Automated backups" toggle → ON
-- [ ] Confirm retention period (7+ days)
-- [ ] Wait for first backup to complete (up to 24 hours)
-- [ ] Screenshot status page and save reference
-- [ ] Verify: Last backup timestamp shows recent time
+**Reason**: Requires Supabase paid plan upgrade (deferred)
 
-**Verification**:
-```bash
-# After enabling, check:
-# Supabase Dashboard → Settings → Backups
-# Look for:
-# ✅ Status: "Enabled"
-# ✅ Last backup: [recent timestamp]
-# ✅ Next backup: [scheduled time]
-```
+**Alternative**: Manual backup procedure available in BACKUP_POLICY.md  
+**Future**: Can upgrade and enable automated backups anytime
 
-**Completed**: _____ (Date/Time)  
-**Notes**: ________________________
+**Decision**: Focusing on Secrets Rotation + Monitoring instead  
+**Risk**: Data recovery without automated backups (manual backups still possible)  
+**Mitigation**: Monitoring + alerts will detect issues quickly
+
+**Completed**: SKIPPED (2026-07-17)  
+**Notes**: Supabase paid plan required; decision to defer backup automation
 
 ---
 
