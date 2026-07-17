@@ -26,6 +26,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+# Configure Celery to execute tasks synchronously during tests (no Redis/worker needed)
+os.environ.setdefault("CELERY_TASK_ALWAYS_EAGER", "true")
+os.environ.setdefault("CELERY_TASK_EAGER_PROPAGATES", "true")
+
 import pytest
 from fastapi.testclient import TestClient
 

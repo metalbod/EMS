@@ -61,11 +61,13 @@ def test_create_payroll_run_generates_payslip_for_monthly_employee(
     start, end = _period(2)
     res = client.post("/api/payroll/runs", headers=payroll_manager_auth,
                        json={"period_start": start, "period_end": end})
-    assert res.status_code == 201, res.text
-    run = res.json()
-    assert run["status"] == "Draft"
+    assert res.status_code == 202, res.text
+    resp_data = res.json()
+    assert "run_id" in resp_data, resp_data
+    run_id = resp_data["run_id"]
+    assert resp_data["status"] == "pending"
 
-    detail = client.get(f"/api/payroll/runs/{run['id']}", headers=payroll_manager_auth)
+    detail = client.get(f"/api/payroll/runs/{run_id}", headers=payroll_manager_auth)
     assert detail.status_code == 200
     payslips = {p["employee_id"]: p for p in detail.json()["payslips"]}
     assert emp["employee_id"] in payslips
@@ -92,7 +94,7 @@ def test_create_payroll_run_duplicate_period_returns_400(payroll_manager_auth, c
     start, end = _period(3)
     res1 = client.post("/api/payroll/runs", headers=payroll_manager_auth,
                         json={"period_start": start, "period_end": end})
-    assert res1.status_code == 201, res1.text
+    assert res1.status_code == 202, res1.text
     res2 = client.post("/api/payroll/runs", headers=payroll_manager_auth,
                         json={"period_start": start, "period_end": end})
     assert res2.status_code == 400
@@ -150,9 +152,10 @@ def test_hourly_employee_payslip_splits_overtime(
 
     res = client.post("/api/payroll/runs", headers=payroll_manager_auth,
                        json={"period_start": start, "period_end": end})
-    assert res.status_code == 201, res.text
-    run = res.json()
-    detail = client.get(f"/api/payroll/runs/{run['id']}", headers=payroll_manager_auth)
+    assert res.status_code == 202, res.text
+    resp_data = res.json()
+    run_id = resp_data["run_id"]
+    detail = client.get(f"/api/payroll/runs/{run_id}", headers=payroll_manager_auth)
     payslips = {p["employee_id"]: p for p in detail.json()["payslips"]}
     slip = payslips[emp["employee_id"]]
     assert slip["salary_type"] == "Hourly"
@@ -172,8 +175,9 @@ def test_adjust_payslip_recomputes_deductions(
     start, end = _period(5)
     res = client.post("/api/payroll/runs", headers=payroll_manager_auth,
                        json={"period_start": start, "period_end": end})
-    run = res.json()
-    detail = client.get(f"/api/payroll/runs/{run['id']}", headers=payroll_manager_auth).json()
+    resp_data = res.json()
+    run_id = resp_data["run_id"]
+    detail = client.get(f"/api/payroll/runs/{run_id}", headers=payroll_manager_auth).json()
     slip = next(p for p in detail["payslips"] if p["employee_id"] == emp["employee_id"])
 
     adjust = client.put(f"/api/payroll/payslips/{slip['id']}", headers=payroll_manager_auth,
@@ -196,19 +200,20 @@ def test_finalize_payroll_run_locks_editing(payroll_manager_auth, client, make_t
     start, end = _period(6)
     res = client.post("/api/payroll/runs", headers=payroll_manager_auth,
                        json={"period_start": start, "period_end": end})
-    run = res.json()
+    resp_data = res.json()
+    run_id = resp_data["run_id"]
 
-    finalize = client.patch(f"/api/payroll/runs/{run['id']}/finalize", headers=payroll_manager_auth)
+    finalize = client.patch(f"/api/payroll/runs/{run_id}/finalize", headers=payroll_manager_auth)
     assert finalize.status_code == 200, finalize.text
     assert finalize.json()["status"] == "Finalized"
 
-    detail = client.get(f"/api/payroll/runs/{run['id']}", headers=payroll_manager_auth).json()
+    detail = client.get(f"/api/payroll/runs/{run_id}", headers=payroll_manager_auth).json()
     slip = next(p for p in detail["payslips"] if p["employee_id"] == emp["employee_id"])
     adjust = client.put(f"/api/payroll/payslips/{slip['id']}", headers=payroll_manager_auth,
                          json={"basic_salary": 9999.0})
     assert adjust.status_code == 400
 
-    finalize_again = client.patch(f"/api/payroll/runs/{run['id']}/finalize", headers=payroll_manager_auth)
+    finalize_again = client.patch(f"/api/payroll/runs/{run_id}/finalize", headers=payroll_manager_auth)
     assert finalize_again.status_code == 400
 
 
@@ -221,10 +226,11 @@ def test_delete_payroll_run_success(payroll_manager_auth, client):
     start, end = _period(7)
     res = client.post("/api/payroll/runs", headers=payroll_manager_auth,
                        json={"period_start": start, "period_end": end})
-    run = res.json()
-    delete = client.delete(f"/api/payroll/runs/{run['id']}", headers=payroll_manager_auth)
+    resp_data = res.json()
+    run_id = resp_data["run_id"]
+    delete = client.delete(f"/api/payroll/runs/{run_id}", headers=payroll_manager_auth)
     assert delete.status_code == 204
-    get = client.get(f"/api/payroll/runs/{run['id']}", headers=payroll_manager_auth)
+    get = client.get(f"/api/payroll/runs/{run_id}", headers=payroll_manager_auth)
     assert get.status_code == 404
 
 
@@ -232,9 +238,10 @@ def test_delete_finalized_payroll_run_returns_400(payroll_manager_auth, client):
     start, end = _period(8)
     res = client.post("/api/payroll/runs", headers=payroll_manager_auth,
                        json={"period_start": start, "period_end": end})
-    run = res.json()
-    client.patch(f"/api/payroll/runs/{run['id']}/finalize", headers=payroll_manager_auth)
-    delete = client.delete(f"/api/payroll/runs/{run['id']}", headers=payroll_manager_auth)
+    resp_data = res.json()
+    run_id = resp_data["run_id"]
+    client.patch(f"/api/payroll/runs/{run_id}/finalize", headers=payroll_manager_auth)
+    delete = client.delete(f"/api/payroll/runs/{run_id}", headers=payroll_manager_auth)
     assert delete.status_code == 400
 
 
