@@ -28,6 +28,11 @@ try:
 except ImportError:
     from ems.db import get_db
 
+try:
+    from core.db_session import db_session
+except ImportError:
+    from ems.core.db_session import db_session
+
 router = APIRouter()
 logger = logging.getLogger("ems")
 
@@ -72,11 +77,11 @@ def _clear_login_failures(key: str):
 
 
 @router.post("/api/auth/login", response_model=TokenResponse, tags=["auth"])
-def login(body: LoginIn, request: Request):
+@db_session
+def login(conn, body: LoginIn, request: Request):
     rate_key = _login_rate_key(request, body.username)
     _check_login_rate_limit(rate_key)
 
-    conn = get_db()
     code = body.institution_code.strip().upper() if body.institution_code and body.institution_code.strip() else None
 
     if code:
@@ -85,7 +90,6 @@ def login(body: LoginIn, request: Request):
             "SELECT id, name, code, status, logo_url FROM institutions WHERE code=?", (code,)
         ).fetchone()
         if not inst_row:
-            conn.close()
             _record_login_failure(rate_key)
             raise HTTPException(401, "Invalid company code, username or password")
         user = conn.execute(
@@ -100,7 +104,6 @@ def login(body: LoginIn, request: Request):
         ).fetchone()
         inst = None
 
-    conn.close()
     if not user or not verify_password(body.password, user["password_hash"]):
         _record_login_failure(rate_key)
         raise HTTPException(401, "Invalid company code, username or password")
@@ -129,20 +132,17 @@ def login(body: LoginIn, request: Request):
 
 
 @router.post("/api/auth/switch-role", response_model=TokenResponse, tags=["auth"])
-def switch_role(body: SwitchRoleIn, user: dict = Depends(get_current_user)):
-    conn = get_db()
+@db_session
+def switch_role(conn, body: SwitchRoleIn, user: dict = Depends(get_current_user)):
     row = conn.execute("SELECT * FROM users WHERE id=?", (user["id"],)).fetchone()
     if not row:
-        conn.close()
         raise HTTPException(404, "User not found")
     allowed = [r.strip() for r in (row["roles"] or row["role"]).split(",") if r.strip()]
     if body.role not in allowed:
-        conn.close()
         raise HTTPException(403, f"Role '{body.role}' is not assigned to this user")
     inst_row = conn.execute(
         "SELECT id, name, code, status, logo_url FROM institutions WHERE id=?", (row["institution_id"],)
     ).fetchone() if row["institution_id"] else None
-    conn.close()
     user_dict = dict(row)
     user_dict["role"] = body.role
     token = make_token(user_dict)

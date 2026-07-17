@@ -30,6 +30,11 @@ try:
 except ImportError:
     from ems.db import get_db
 
+try:
+    from core.db_session import db_session
+except ImportError:
+    from ems.core.db_session import db_session
+
 router = APIRouter()
 
 

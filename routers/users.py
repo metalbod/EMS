@@ -19,6 +19,11 @@ try:
 except ImportError:
     from ems.db import get_db, IntegrityError
 
+try:
+    from core.db_session import db_session
+except ImportError:
+    from ems.core.db_session import db_session
+
 router = APIRouter()
 
 CAN_MANAGE_USERS = ("superadmin", "hr_manager")
@@ -58,8 +63,8 @@ class UserUpdate(BaseModel):
 
 
 @router.get("/api/users")
-def list_users(user: dict = Depends(require_roles(*CAN_MANAGE_USERS))):
-    conn = get_db()
+@db_session
+def list_users(conn, user: dict = Depends(require_roles(*CAN_MANAGE_USERS))):
     if user["role"] == "superadmin":
         inst_id = user.get("active_institution_id")
         if inst_id:
@@ -83,7 +88,6 @@ def list_users(user: dict = Depends(require_roles(*CAN_MANAGE_USERS))):
             "SELECT id,institution_id,username,full_name,email,role,roles,employee_id,is_active,created_at,must_change_password "
             "FROM users WHERE institution_id=? ORDER BY created_at DESC", (inst_id,)
         ).fetchall()
-    conn.close()
     result = []
     for r in rows:
         d = dict(r)
@@ -94,7 +98,8 @@ def list_users(user: dict = Depends(require_roles(*CAN_MANAGE_USERS))):
 
 
 @router.post("/api/users", status_code=201)
-def create_user(body: UserIn, user: dict = Depends(require_roles(*CAN_MANAGE_USERS))):
+@db_session
+def create_user(conn, body: UserIn, user: dict = Depends(require_roles(*CAN_MANAGE_USERS))):
     # Determine which institution this user belongs to
     if user["role"] == "superadmin":
         inst_id = body.institution_id or user.get("active_institution_id")
@@ -108,7 +113,6 @@ def create_user(body: UserIn, user: dict = Depends(require_roles(*CAN_MANAGE_USE
         inst_id = user["institution_id"]
 
     roles_str = ",".join(body.roles) if body.roles else body.role
-    conn = get_db()
     try:
         conn.execute("""
             INSERT INTO users (institution_id, username, full_name, email, password_hash, role, roles, employee_id)
@@ -122,23 +126,25 @@ def create_user(body: UserIn, user: dict = Depends(require_roles(*CAN_MANAGE_USE
         ).fetchone()
         return dict(row)
     except IntegrityError:
-        conn.rollback(); raise HTTPException(400, "Username already exists")
-    finally:
-        conn.close()
+        conn.rollback()
+        raise HTTPException(400, "Username already exists")
 
 
 @router.put("/api/users/{user_id}")
-def update_user(user_id: int, body: UserUpdate, user: dict = Depends(require_roles(*CAN_MANAGE_USERS))):
-    conn = get_db()
+@db_session
+def update_user(conn, user_id: int, body: UserUpdate, user: dict = Depends(require_roles(*CAN_MANAGE_USERS))):
     target = conn.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
-    if not target: conn.close(); raise HTTPException(404, "User not found")
+    if not target:
+        raise HTTPException(404, "User not found")
     if user["role"] == "hr_manager":
-        if target["role"] == "superadmin": conn.close(); raise HTTPException(403, "Cannot edit Platform Admin")
-        if body.role == "superadmin":      conn.close(); raise HTTPException(403, "Cannot assign Platform Admin role")
+        if target["role"] == "superadmin":
+            raise HTTPException(403, "Cannot edit Platform Admin")
+        if body.role == "superadmin":
+            raise HTTPException(403, "Cannot assign Platform Admin role")
         if target["institution_id"] != user["institution_id"]:
-            conn.close(); raise HTTPException(403, "Access denied to this user")
+            raise HTTPException(403, "Access denied to this user")
     if user_id == user["id"] and body.role != user["role"]:
-        conn.close(); raise HTTPException(400, "Cannot change your own role")
+        raise HTTPException(400, "Cannot change your own role")
     new_hash = hash_password(body.password) if body.password else target["password_hash"]
     # Any real password change (not just leaving it unset) clears a pending
     # forced-rotation flag — see main.py's superadmin seeding.
@@ -154,19 +160,18 @@ def update_user(user_id: int, body: UserUpdate, user: dict = Depends(require_rol
         "SELECT id,institution_id,username,full_name,email,role,roles,employee_id,is_active,created_at "
         "FROM users WHERE id=?", (user_id,)
     ).fetchone()
-    conn.close()
     return dict(row)
 
 
 @router.delete("/api/users/{user_id}", status_code=204)
-def delete_user(user_id: int, user: dict = Depends(require_roles("superadmin", "hr_manager"))):
+@db_session
+def delete_user(conn, user_id: int, user: dict = Depends(require_roles("superadmin", "hr_manager"))):
     if user_id == user["id"]:
         raise HTTPException(400, "Cannot delete your own account")
-    conn = get_db()
     target = conn.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
-    if not target: conn.close(); raise HTTPException(404, "User not found")
+    if not target:
+        raise HTTPException(404, "User not found")
     if user["role"] == "hr_manager" and target["institution_id"] != user["institution_id"]:
-        conn.close(); raise HTTPException(403, "Access denied")
+        raise HTTPException(403, "Access denied")
     conn.execute("DELETE FROM users WHERE id=?", (user_id,))
     conn.commit()
-    conn.close()

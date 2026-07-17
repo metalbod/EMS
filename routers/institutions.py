@@ -15,6 +15,11 @@ except ImportError:
     from ems.db import get_db, IntegrityError
 
 try:
+    from core.db_session import db_session
+except ImportError:
+    from ems.core.db_session import db_session
+
+try:
     from core.onboarding_seed import seed_ob_templates
     from core.validators import validate_logo_url
 except ImportError:
@@ -66,8 +71,8 @@ class InstStatusIn(BaseModel):
 
 
 @router.get("/api/institutions")
-def list_institutions(user: dict = Depends(require_roles("superadmin"))):
-    conn = get_db()
+@db_session
+def list_institutions(conn, user: dict = Depends(require_roles("superadmin"))):
     rows = conn.execute("""
         SELECT i.*,
                COUNT(DISTINCT e.id)  AS employee_count,
@@ -78,13 +83,12 @@ def list_institutions(user: dict = Depends(require_roles("superadmin"))):
         GROUP BY i.id
         ORDER BY i.created_at DESC
     """).fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
 @router.post("/api/institutions", status_code=201)
-def create_institution(body: InstitutionIn, user: dict = Depends(require_roles("superadmin"))):
-    conn = get_db()
+@db_session
+def create_institution(conn, body: InstitutionIn, user: dict = Depends(require_roles("superadmin"))):
     try:
         code = body.code.upper()
         if conn.execute("SELECT id FROM institutions WHERE code=?", (code,)).fetchone():
@@ -112,13 +116,11 @@ def create_institution(body: InstitutionIn, user: dict = Depends(require_roles("
     except IntegrityError as e:
         conn.rollback()
         raise HTTPException(400, str(e))
-    finally:
-        conn.close()
 
 
 @router.get("/api/institutions/{inst_id}")
-def get_institution(inst_id: int, user: dict = Depends(require_roles("superadmin"))):
-    conn = get_db()
+@db_session
+def get_institution(conn, inst_id: int, user: dict = Depends(require_roles("superadmin"))):
     row = conn.execute("""
         SELECT i.*,
                COUNT(DISTINCT e.id) AS employee_count,
@@ -128,16 +130,16 @@ def get_institution(inst_id: int, user: dict = Depends(require_roles("superadmin
         LEFT JOIN users     u ON u.institution_id = i.id
         WHERE i.id=? GROUP BY i.id
     """, (inst_id,)).fetchone()
-    conn.close()
-    if not row: raise HTTPException(404, "Institution not found")
+    if not row:
+        raise HTTPException(404, "Institution not found")
     return dict(row)
 
 
 @router.put("/api/institutions/{inst_id}")
-def update_institution(inst_id: int, body: InstitutionUpdate, user: dict = Depends(require_roles("superadmin"))):
-    conn = get_db()
+@db_session
+def update_institution(conn, inst_id: int, body: InstitutionUpdate, user: dict = Depends(require_roles("superadmin"))):
     if not conn.execute("SELECT id FROM institutions WHERE id=?", (inst_id,)).fetchone():
-        conn.close(); raise HTTPException(404, "Institution not found")
+        raise HTTPException(404, "Institution not found")
     conn.execute("""
         UPDATE institutions SET name=?,contact_name=?,contact_email=?,phone=?,address=?,plan=?,max_employees=?,logo_url=?
         WHERE id=?
@@ -145,17 +147,15 @@ def update_institution(inst_id: int, body: InstitutionUpdate, user: dict = Depen
           body.address, body.plan, body.max_employees, body.logo_url, inst_id))
     conn.commit()
     row = conn.execute("SELECT * FROM institutions WHERE id=?", (inst_id,)).fetchone()
-    conn.close()
     return dict(row)
 
 
 @router.patch("/api/institutions/{inst_id}/status")
-def toggle_inst_status(inst_id: int, body: InstStatusIn, user: dict = Depends(require_roles("superadmin"))):
+@db_session
+def toggle_inst_status(conn, inst_id: int, body: InstStatusIn, user: dict = Depends(require_roles("superadmin"))):
     if body.status not in ("Active", "Suspended"):
         raise HTTPException(400, "Status must be Active or Suspended")
-    conn = get_db()
     conn.execute("UPDATE institutions SET status=? WHERE id=?", (body.status, inst_id))
     conn.commit()
     row = conn.execute("SELECT * FROM institutions WHERE id=?", (inst_id,)).fetchone()
-    conn.close()
     return dict(row)
