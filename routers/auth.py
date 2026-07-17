@@ -18,8 +18,10 @@ from pydantic import BaseModel
 
 try:
     from core.deps import get_current_user, make_token, verify_password
+    from core.schemas import TokenResponse
 except ImportError:
     from ems.core.deps import get_current_user, make_token, verify_password
+    from ems.core.schemas import TokenResponse
 
 try:
     from db import get_db
@@ -69,7 +71,7 @@ def _clear_login_failures(key: str):
     _login_failures.pop(key, None)
 
 
-@router.post("/api/auth/login")
+@router.post("/api/auth/login", response_model=TokenResponse, tags=["auth"])
 def login(body: LoginIn, request: Request):
     rate_key = _login_rate_key(request, body.username)
     _check_login_rate_limit(rate_key)
@@ -126,7 +128,7 @@ def login(body: LoginIn, request: Request):
     }
 
 
-@router.post("/api/auth/switch-role")
+@router.post("/api/auth/switch-role", response_model=TokenResponse, tags=["auth"])
 def switch_role(body: SwitchRoleIn, user: dict = Depends(get_current_user)):
     conn = get_db()
     row = conn.execute("SELECT * FROM users WHERE id=?", (user["id"],)).fetchone()
