@@ -193,12 +193,12 @@ def payroll_manager_auth(make_test_user, test_institution):
     }
 
 
-# Salted with a timestamp (milliseconds) per process plus a per-process counter,
+# Salted with high-resolution time (nanoseconds) per process plus a per-process counter,
 # so IC numbers are unique both within a run and across separate pytest invocations —
 # a prior run's leftover test employees (e.g. from an interrupted run) must never
-# collide with a fresh run's. Timestamp-based salt (not random) is collision-proof.
+# collide with a fresh run's. Nanosecond-precision salt ensures near-zero collision risk.
 _ic_counter = itertools.count(1)
-_ic_run_salt = int(time.time() * 1000) % 10000
+_ic_run_salt = int(time.time_ns()) % 10000
 
 
 def _unique_ic():
