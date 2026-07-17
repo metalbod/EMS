@@ -601,8 +601,7 @@ def submit_score(conn, int_id: int, body: ScoreIn, user: dict = Depends(get_curr
               body.culture_fit_score, body.overall_score, body.recommendation, body.comments))
         conn.commit()
     except IntegrityError as e:
-        pass; raise HTTPException(400, str(e))
-    finally:
+        raise HTTPException(400, str(e))
     return {"ok": True}
 
 
