@@ -476,7 +476,7 @@ def list_course_modules(conn, course_id: int, enrollment_id: Optional[int] = Non
 @router.put("/api/ld/courses/{course_id}/modules")
 @db_session
 def replace_course_modules(conn, course_id: int, body: LDModulesIn,
-                           user: dict = Depends(require_roles(*LD_MANAGE_ROLES))) -> Dict[str, Any]:
+                           user: dict = Depends(require_roles(*LD_MANAGE_ROLES))) -> List[Dict[str, Any]]:
     """Replace the full ordered module list for a course (same upsert pattern as the quiz)."""
     inst_id = need_inst(user)
     for m in body.modules:

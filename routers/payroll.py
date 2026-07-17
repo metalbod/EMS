@@ -207,7 +207,7 @@ def create_payroll_run(conn, body: PayrollRunIn, user: dict = Depends(require_ro
 
         return {
             "task_id": task.id,
-            "id": run["id"],
+            "run_id": run["id"],
             "status": "pending",
             "message": "Payroll run is being generated. Check task status with GET /api/tasks/{task_id}",
         }

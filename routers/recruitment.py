@@ -1,6 +1,6 @@
 """Recruitment module: Job Requisitions, Candidates/ATS, Interviews, and Offers."""
 from datetime import datetime
-from typing import Any, Dict,  Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -607,7 +607,7 @@ def submit_score(conn, int_id: int, body: ScoreIn, user: dict = Depends(get_curr
 
 @router.get("/api/recruitment/interviews/{int_id}/scores")
 @db_session
-def get_scores(conn, int_id: int, user: dict = Depends(get_current_user)) -> Optional[Dict[str, Any]]:
+def get_scores(conn, int_id: int, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
     rows = conn.execute(
         "SELECT * FROM interview_scores WHERE interview_id=? AND institution_id=? ORDER BY created_at",
@@ -770,7 +770,7 @@ def recruitment_meta(conn, user: dict = Depends(get_current_user)) -> Dict[str, 
 
 @router.get("/api/recruitment/candidates/{cand_id}/audit-log")
 @db_session
-def get_candidate_audit(conn, cand_id: int, user: dict = Depends(require_roles("superadmin","hr_manager","hr_admin"))) -> Optional[Dict[str, Any]]:
+def get_candidate_audit(conn, cand_id: int, user: dict = Depends(require_roles("superadmin","hr_manager","hr_admin"))) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
     _get_candidate(conn, inst_id, cand_id)
     rows = conn.execute(
