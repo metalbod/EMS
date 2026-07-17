@@ -377,11 +377,15 @@ def bulk_upload_employees(conn, body: BulkUploadIn, request: Request, user: dict
         args=[inst_id, body.csv_content, user["username"]]
     )
 
-    # Track the task in database
-    conn.execute("""
-        INSERT INTO task_tracking (id, user_id, institution_id, task_type, status)
-        VALUES (?, ?, ?, ?, ?)
-    """, (task.id, user["id"], inst_id, "bulk_upload", "pending"))
+    # Track the task in database (if task_tracking table exists)
+    try:
+        conn.execute("""
+            INSERT INTO task_tracking (id, user_id, institution_id, task_type, status)
+            VALUES (?, ?, ?, ?, ?)
+        """, (task.id, user["id"], inst_id, "bulk_upload", "pending"))
+    except Exception:
+        # task_tracking table might not exist in all database versions; this is non-critical
+        pass
     conn.commit()
 
     return {

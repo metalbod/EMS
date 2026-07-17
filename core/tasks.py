@@ -9,12 +9,19 @@ logger = logging.getLogger("ems")
 
 # Redis connection string: redis://[:password]@host:port/db
 # Default for local dev: redis://localhost:6379/0
+# In test mode with CELERY_TASK_ALWAYS_EAGER, skip broker/backend since results are immediate
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+ALWAYS_EAGER = os.environ.get("CELERY_TASK_ALWAYS_EAGER", "false").lower() == "true"
+
+# In eager mode, tasks execute immediately and return directly (no need for a broker/backend).
+# Use a dummy broker/backend to avoid connection attempts. In production, Redis is used.
+BROKER_URL = "memory://" if ALWAYS_EAGER else REDIS_URL
+BACKEND_URL = "cache+memory://" if ALWAYS_EAGER else REDIS_URL
 
 app = Celery(
     "ems",
-    broker=REDIS_URL,
-    backend=REDIS_URL,
+    broker=BROKER_URL,
+    backend=BACKEND_URL,
 )
 
 app.conf.update(
@@ -27,6 +34,9 @@ app.conf.update(
     task_time_limit=30 * 60,  # 30 minute hard limit
     task_soft_time_limit=25 * 60,  # 25 minute soft limit (send SIGTERM)
     worker_prefetch_multiplier=1,  # Process one task at a time
+    task_always_eager=ALWAYS_EAGER,
+    task_eager_propagates=ALWAYS_EAGER,
+    task_store_eager_result=ALWAYS_EAGER,  # Store results for eager tasks so AsyncResult works
 )
 
 

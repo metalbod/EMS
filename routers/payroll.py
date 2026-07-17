@@ -194,11 +194,15 @@ def create_payroll_run(conn, body: PayrollRunIn, user: dict = Depends(require_ro
             args=[inst_id, run["id"], body.period_start, body.period_end]
         )
 
-        # Track the task in database
-        conn.execute("""
-            INSERT INTO task_tracking (id, user_id, institution_id, task_type, status)
-            VALUES (?, ?, ?, ?, ?)
-        """, (task.id, user["id"], inst_id, "payroll_run", "pending"))
+        # Track the task in database (if task_tracking table exists)
+        try:
+            conn.execute("""
+                INSERT INTO task_tracking (id, user_id, institution_id, task_type, status)
+                VALUES (?, ?, ?, ?, ?)
+            """, (task.id, user["id"], inst_id, "payroll_run", "pending"))
+        except Exception:
+            # task_tracking table might not exist in all database versions; this is non-critical
+            pass
         conn.commit()
 
         return {

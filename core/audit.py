@@ -13,5 +13,5 @@ def write_audit(conn, actor, inst_id, emp_id, emp_name, action, changes, ip=None
             (institution_id, actor_id, actor_username, actor_role,
              target_employee_id, target_employee_name, action, changes, ip_address)
         VALUES (?,?,?,?,?,?,?,?,?)
-    """, (inst_id, actor["id"], actor["username"], actor["role"],
+    """, (inst_id, actor.get("id"), actor.get("username"), actor.get("role"),
           emp_id, emp_name, action, json.dumps(changes) if changes else None, ip))
