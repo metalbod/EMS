@@ -183,6 +183,18 @@ The client polls `GET /api/tasks/{task_id}` to check progress:
 
 Possible statuses: `PENDING`, `STARTED`, `SUCCESS`, `FAILURE`, `RETRY`.
 
+### Implemented Async Endpoints
+
+- **POST /api/payroll/runs** (202 Accepted): Generate payslips for a payroll run
+  - Long-running operation: processes all active employees in the institution
+  - Task result: `{"run_id": int, "employee_count": int, ...}`
+
+- **POST /api/employees/bulk-upload** (202 Accepted): Bulk import employees from CSV
+  - Long-running operation: validates and inserts many rows with retry logic
+  - Task result: `{"created": [...], "errors": [...], "summary": "..."}`
+
+Both endpoints follow the same 202 Accepted pattern: queue work, return task_id, and client polls status.
+
 ## Testing
 
 ### Backend (Python/pytest)
