@@ -435,6 +435,41 @@
               </div>
             </div>
           </div>
+          <!-- Locations Overview (HR Manager / HR Admin only) -->
+          <div id="locDashSection" class="hidden mt-6">
+            <div class="flex items-center gap-2 mb-3">
+              <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+              <h3 class="font-semibold text-slate-700">Locations Overview</h3>
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+              <div class="bg-white rounded-xl border border-slate-200 p-4 cursor-pointer hover:border-blue-300 transition" onclick="showPage('settings-locations')">
+                <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Total Locations</p>
+                <p id="locStatTotal" class="text-2xl font-bold text-blue-600">0</p>
+              </div>
+              <div class="bg-white rounded-xl border border-slate-200 p-4">
+                <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Avg Utilization</p>
+                <p id="locStatAvgUtil" class="text-2xl font-bold text-emerald-600">0%</p>
+              </div>
+              <div class="bg-white rounded-xl border border-slate-200 p-4">
+                <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Total Employees</p>
+                <p id="locStatEmpCount" class="text-2xl font-bold text-violet-600">0</p>
+              </div>
+              <div class="bg-white rounded-xl border border-slate-200 p-4">
+                <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">With Managers</p>
+                <p id="locStatManaged" class="text-2xl font-bold text-amber-600">0</p>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div class="bg-white rounded-xl border border-slate-200 p-5">
+                <h3 class="font-semibold mb-3 text-sm">Employee Distribution</h3>
+                <div id="locEmpDistribution" class="space-y-2"></div>
+              </div>
+              <div class="bg-white rounded-xl border border-slate-200 p-5">
+                <h3 class="font-semibold mb-3 text-sm">Capacity Utilization</h3>
+                <div id="locCapacityChart" class="space-y-2"></div>
+              </div>
+            </div>
+          </div>
           <!-- Project Utilization (HR Manager / superadmin only) -->
           <div id="utilDashSection" class="hidden mt-6">
             <div class="flex items-center gap-2 mb-3">

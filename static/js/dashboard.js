@@ -102,6 +102,78 @@ function renderDashboard() {
     });
   }
 
+  // Locations overview — HR Manager / HR Admin only
+  const canViewLoc = ['hr_manager','hr_admin'].includes(currentUser?.role);
+  const locSection = document.getElementById('locDashSection');
+  locSection.classList.toggle('hidden', !canViewLoc);
+  if (canViewLoc) {
+    api('/api/institutions/' + currentUser.institution_id + '/location-summary').then(async res => {
+      if (!res || !res.ok) return;
+      const s = await res.json();
+
+      // Summary stats
+      document.getElementById('locStatTotal').textContent = s.total_locations || 0;
+
+      // Average utilization
+      const avgUtil = s.locations && s.locations.length > 0
+        ? Math.round(s.locations.reduce((sum, loc) => sum + (loc.utilization_percent || 0), 0) / s.locations.length)
+        : 0;
+      document.getElementById('locStatAvgUtil').textContent = avgUtil + '%';
+
+      // Total employees across locations
+      const totalEmpInLoc = s.locations ? s.locations.reduce((sum, loc) => sum + (loc.employee_count || 0), 0) : 0;
+      document.getElementById('locStatEmpCount').textContent = totalEmpInLoc;
+
+      // Locations with managers
+      const withManager = s.locations ? s.locations.filter(loc => loc.manager_user_id).length : 0;
+      document.getElementById('locStatManaged').textContent = withManager;
+
+      // Employee distribution by location
+      if (s.locations && s.locations.length > 0) {
+        const maxEmps = Math.max(...s.locations.map(l => l.employee_count || 0)) || 1;
+        document.getElementById('locEmpDistribution').innerHTML = s.locations
+          .sort((a, b) => (b.employee_count || 0) - (a.employee_count || 0))
+          .map(loc => `
+            <div class="flex items-center gap-2">
+              <div class="w-32 text-xs text-slate-600 truncate" title="${esc(loc.location_name)}">${esc(loc.location_name)}</div>
+              <div class="flex-1 bg-slate-100 rounded-full h-2">
+                <div class="bg-blue-500 h-2 rounded-full" style="width:${Math.round((loc.employee_count || 0)/maxEmps*100)}%"></div>
+              </div>
+              <div class="text-xs text-slate-500 w-6 text-right">${loc.employee_count || 0}</div>
+            </div>
+          `).join('');
+      } else {
+        document.getElementById('locEmpDistribution').innerHTML = '<p class="text-slate-400 text-sm">No locations yet.</p>';
+      }
+
+      // Capacity utilization
+      if (s.locations && s.locations.length > 0) {
+        const locWithCap = s.locations.filter(l => l.capacity && l.capacity > 0);
+        if (locWithCap.length > 0) {
+          document.getElementById('locCapacityChart').innerHTML = locWithCap
+            .sort((a, b) => (b.utilization_percent || 0) - (a.utilization_percent || 0))
+            .map(loc => {
+              const util = loc.utilization_percent || 0;
+              const color = util > 90 ? 'bg-red-500' : util > 70 ? 'bg-amber-500' : 'bg-emerald-500';
+              return `
+                <div class="flex items-center gap-2">
+                  <div class="w-32 text-xs text-slate-600 truncate" title="${esc(loc.location_name)}">${esc(loc.location_name)}</div>
+                  <div class="flex-1 bg-slate-100 rounded-full h-2">
+                    <div class="${color} h-2 rounded-full" style="width:${util}%"></div>
+                  </div>
+                  <div class="text-xs text-slate-500 w-10 text-right">${util}%</div>
+                </div>
+              `;
+            }).join('');
+        } else {
+          document.getElementById('locCapacityChart').innerHTML = '<p class="text-slate-400 text-sm">No capacity data.</p>';
+        }
+      } else {
+        document.getElementById('locCapacityChart').innerHTML = '<p class="text-slate-400 text-sm">No locations yet.</p>';
+      }
+    });
+  }
+
   // Project utilization — HR Manager / superadmin only
   const canViewUtil = ['superadmin','hr_manager'].includes(currentUser?.role);
   const utilSection = document.getElementById('utilDashSection');
