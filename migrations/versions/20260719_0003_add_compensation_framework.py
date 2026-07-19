@@ -9,6 +9,13 @@ from alembic import op
 import sqlalchemy as sa
 
 
+# revision identifiers, used by Alembic.
+revision = '20260719_0003'
+down_revision = '20260719_0002'
+branch_labels = None
+table_prefix = ''
+
+
 def upgrade():
     """Create compensation framework tables."""
 
