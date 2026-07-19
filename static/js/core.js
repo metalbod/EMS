@@ -9,7 +9,7 @@ let openGroups = new Set(['empMgmt']);
 const TABS = ['personal','employment','statutory'];
 const VIEW_TABS = ['vt-personal','vt-employment','vt-locations','vt-statutory','vt-notes'];
 const HR_NOTE_ROLES = ['superadmin','hr_manager','hr_admin'];
-const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','leave-my','leave-approvals','leave-holidays','projects','timesheet-my','timesheet-approvals','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','settings-compensation','payroll-runs','payroll-my','perf-my','perf-team','perf-cycles','perf-calibration','coming-soon'];
+const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','leave-my','leave-approvals','leave-holidays','projects','timesheet-my','timesheet-approvals','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','comp-paygrades','comp-joblevels','comp-jobroles','comp-meritcycles','comp-payequity','payroll-runs','payroll-my','perf-my','perf-team','perf-cycles','perf-calibration','coming-soon'];
 
 // ---------------------------------------------------------------------------
 // API helper
@@ -148,12 +148,17 @@ function applyRoleUI() {
   const canNotify = ['hr_manager','hr_admin'].includes(role);
   const canBulkUpload = role === 'hr_manager';
   const canLocations = ['hr_manager','hr_admin'].includes(role);
-  const canCompensation = ['hr_manager','hr_admin'].includes(role);
-  document.getElementById('nav-settings-wrap')?.classList.toggle('hidden', hideEmp || !(canAudit || canUsers || canNotify || canBulkUpload || canLocations || canCompensation));
+  document.getElementById('nav-settings-wrap')?.classList.toggle('hidden', hideEmp || !(canAudit || canUsers || canNotify || canBulkUpload || canLocations));
   document.getElementById('nav-settings-notifications')?.classList.toggle('hidden', !canNotify);
   document.getElementById('nav-bulk-upload')?.classList.toggle('hidden', !canBulkUpload);
   document.getElementById('nav-locations')?.classList.toggle('hidden', !canLocations);
-  document.getElementById('nav-compensation')?.classList.toggle('hidden', !canCompensation);
+
+  // Compensation: its own top-level menu, visible only to HR Manager and
+  // Payroll Manager — explicitly excludes HR Admin (previously included,
+  // now revoked) and superadmin (unlike most other groups, which superadmin
+  // can see whenever an institution is selected).
+  const canCompensation = ['hr_manager','payroll_manager'].includes(role);
+  document.getElementById('nav-compensation-group')?.classList.toggle('hidden', !canCompensation);
 
   const canPayrollView = ['payroll_manager','hr_manager'].includes(role);
   document.getElementById('nav-payroll-group')?.classList.toggle('hidden', hideEmp);
@@ -250,7 +255,11 @@ function showPage(page) {
     'settings-system-notifications':'System-Wide Notifications',
     'settings-bulk-upload':'Bulk Upload Employees',
     'settings-locations':'Locations',
-    'settings-compensation':'Settings — Compensation',
+    'comp-paygrades':'Compensation — Pay Grades',
+    'comp-joblevels':'Compensation — Job Levels',
+    'comp-jobroles':'Compensation — Job Roles',
+    'comp-meritcycles':'Compensation — Merit Cycles',
+    'comp-payequity':'Compensation — Pay Equity',
     'payroll-runs':'Payroll Runs', 'payroll-my':'My Payslips',
     'perf-my':'My Goals & Appraisal', 'perf-team':'Team Appraisals',
     'perf-cycles':'Performance Cycles', 'perf-calibration':'Calibration'
@@ -282,7 +291,11 @@ function showPage(page) {
   if (page === 'payroll-my')   loadMyPayslips();
   if (page === 'settings-bulk-upload') resetBulkUploadUI();
   if (page === 'settings-locations') loadLocations();
-  if (page === 'settings-compensation') initCompensationPage();
+  if (page === 'comp-paygrades')  loadPayGrades();
+  if (page === 'comp-joblevels')  loadJobLevels();
+  if (page === 'comp-jobroles')   loadJobRolesPage();
+  if (page === 'comp-meritcycles') loadMeritCycles();
+  if (page === 'comp-payequity') loadPayEquityReport();
   if (page === 'perf-my')          loadMyPerformancePage();
   if (page === 'perf-team')        loadTeamAppraisalsPage();
   if (page === 'perf-cycles')      loadPerformanceCycles();

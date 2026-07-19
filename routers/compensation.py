@@ -23,11 +23,15 @@ logger = logging.getLogger("ems.compensation")
 router = APIRouter(prefix="/api/compensation", tags=["compensation"])
 
 
-# Helper: Check HR permissions
+# Helper: Check compensation access permissions
 def require_hr_role(current_user: dict):
-    """Require HR Manager or HR Admin role."""
-    if current_user.get("role") not in ["superadmin", "hr_manager", "hr_admin"]:
-        raise HTTPException(403, detail="HR Manager or Admin access required")
+    """Require HR Manager or Payroll Manager role.
+
+    Deliberately excludes hr_admin (previously included) — matches the
+    frontend nav visibility change, so this isn't just a hidden menu with
+    the API still wide open to a role that shouldn't see it."""
+    if current_user.get("role") not in ["superadmin", "hr_manager", "payroll_manager"]:
+        raise HTTPException(403, detail="HR Manager or Payroll Manager access required")
 
 
 def _add_hr_note(conn, inst_id: int, employee_id: str, body: str, username: str):

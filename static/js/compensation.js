@@ -574,20 +574,21 @@ async function loadPayEquityReport() {
 // INITIALIZATION
 // ============================================================================
 
-async function initCompensationPage() {
-  // Pay grades and job levels must resolve before job roles renders, since
-  // its table and "New Job Role" form both look up level/grade names from
-  // the payGrades/jobLevels arrays populated by those two calls.
+// Compensation now lives as 5 separate top-level pages (Pay Grades, Job
+// Levels, Job Roles, Merit Cycles, Pay Equity) rather than one long scroll,
+// each wired individually into core.js's showPage() dispatch. Job Roles is
+// the one exception that needs a small wrapper: its table and "New Job
+// Role" form both look up level/grade names from the payGrades/jobLevels
+// arrays, which won't be populated yet if the user navigates here directly
+// without visiting those other pages first.
+async function loadJobRolesPage() {
   await Promise.all([loadPayGrades(), loadJobLevels()]);
   loadJobRoles();
-  loadMeritCycles();
-  loadPayEquityReport();
 }
 
-// Note: this page is only loaded (script tag present) once the app shell is
-// already up, and core.js's showPage() calls initCompensationPage() itself
-// whenever the user navigates to Settings → Compensation — so no
-// DOMContentLoaded auto-run here. Running it unconditionally at script-load
-// used to fire these requests before any institution was selected (a
-// superadmin's active_institution_id is null pre-selection), silently
-// returning empty results that then went stale and never refreshed.
+// Note: no DOMContentLoaded auto-run here — core.js's showPage() calls the
+// relevant load function itself whenever the user navigates to one of the
+// 5 Compensation pages. Running it unconditionally at script-load used to
+// fire these requests before any institution was selected (a superadmin's
+// active_institution_id is null pre-selection), silently returning empty
+// results that then went stale and never refreshed.
