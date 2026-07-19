@@ -139,28 +139,19 @@ app = FastAPI(
     openapi_url="/api/openapi.json",
 )
 
-# Run database migrations on startup
 @app.on_event("startup")
-def run_migrations():
-    """Run Alembic migrations and seed data on app startup."""
-    try:
-        import subprocess
-        result = subprocess.run(
-            ["alembic", "upgrade", "head"],
-            cwd=os.path.dirname(os.path.abspath(__file__)),
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        if result.returncode == 0:
-            logger.info("Database migrations completed successfully")
-        else:
-            logger.error(f"Migration failed: {result.stderr}")
-    except Exception as e:
-        logger.error(f"Error running migrations: {e}")
-        # Don't fail app startup if migrations error - DB might already be up to date
+def run_seed():
+    """Seed initial data (superadmin user, OB templates) on app startup.
 
-    # Seed initial data after migrations
+    Schema migrations are applied separately via `alembic upgrade head`
+    (run manually / in CI before deploy) — NOT here. An earlier version of
+    this hook shelled out to `alembic upgrade head` synchronously, which
+    blocks the asyncio event loop for the full subprocess duration since
+    on_event startup handlers run directly on the loop, not in a thread.
+    That call could hang indefinitely on lock contention with a concurrent
+    migration run, keeping uvicorn from ever accepting connections — do not
+    reintroduce it here.
+    """
     try:
         _init_db_seed()
     except Exception as e:
