@@ -2,7 +2,7 @@
 import logging
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from db import get_db, IntegrityError
 from core.deps import get_current_user
 from core.location_schemas import (
@@ -23,7 +23,7 @@ logger = logging.getLogger("ems.locations")
 router = APIRouter(prefix="/api", tags=["locations"])
 
 
-@router.post("/locations")
+@router.post("/locations", status_code=status.HTTP_201_CREATED)
 async def create_location(
     location_data: LocationCreate,
     current_user: dict = Depends(get_current_user),
@@ -66,7 +66,7 @@ async def create_location(
                 location_data.capacity,
             ),
         )
-        location_id = conn.lastrowid
+        location_id = conn._last_id
         conn.commit()
 
         # Fetch and return created location
@@ -363,7 +363,7 @@ async def get_institution_location_summary(
 
 # Employee Location Assignment endpoints
 
-@router.post("/employees/{employee_id}/locations")
+@router.post("/employees/{employee_id}/locations", status_code=status.HTTP_201_CREATED)
 async def assign_employee_to_location(
     employee_id: str,
     assignment: EmployeeLocationAssignmentCreate,
@@ -423,7 +423,7 @@ async def assign_employee_to_location(
                 assignment.department_at_location,
             ),
         )
-        assignment_id = conn.lastrowid
+        assignment_id = conn._last_id
         conn.commit()
 
         # Return created assignment
@@ -466,7 +466,7 @@ async def get_employee_locations(
             SELECT ela.*, l.name as location_name, l.code as location_code
             FROM employee_location_assignments ela
             JOIN locations l ON ela.location_id = l.id
-            WHERE ela.employee_id = ? AND ela.institution_id = ?
+            WHERE ela.employee_id = ? AND ela.institution_id = ? AND ela.is_active = 1
             ORDER BY CASE WHEN ela.assignment_type = 'primary' THEN 1 ELSE 2 END,
                      ela.start_date DESC
             """,
