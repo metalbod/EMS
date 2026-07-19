@@ -439,10 +439,15 @@ async def set_employee_compensation(
         if not employee:
             raise HTTPException(404, detail="Employee not found")
 
-        # Mark previous record as not current
+        # Mark previous record as not current. employee_id alone is not a
+        # safe filter here — it's only unique per institution (composite
+        # unique with institution_id), so a bare WHERE employee_id=? could
+        # match a same-numbered employee in a different institution for a
+        # superadmin (bypass_rls=true) connection, where RLS itself won't
+        # catch the cross-tenant row.
         conn.execute(
-            "UPDATE employee_compensation SET is_current = 0, end_date = ? WHERE employee_id = ? AND is_current = 1",
-            (payload.effective_date, employee_id),
+            "UPDATE employee_compensation SET is_current = 0, end_date = ? WHERE employee_id = ? AND institution_id = ? AND is_current = 1",
+            (payload.effective_date, employee_id, inst_id),
         )
 
         now = datetime.utcnow().isoformat()
@@ -759,7 +764,7 @@ async def get_pay_equity_report(
             """
             SELECT e.gender, COUNT(*) as count, AVG(ec.base_salary) as avg_salary
             FROM employee_compensation ec
-            JOIN employees e ON ec.employee_id = e.employee_id
+            JOIN employees e ON ec.employee_id = e.employee_id AND ec.institution_id = e.institution_id
             WHERE ec.institution_id = ? AND ec.is_current = 1
             GROUP BY e.gender
             """,
@@ -789,7 +794,7 @@ async def get_pay_equity_report(
             """
             SELECT e.department, COUNT(*) as count, AVG(ec.base_salary) as avg_salary
             FROM employee_compensation ec
-            JOIN employees e ON ec.employee_id = e.employee_id
+            JOIN employees e ON ec.employee_id = e.employee_id AND ec.institution_id = e.institution_id
             WHERE ec.institution_id = ? AND ec.is_current = 1
             GROUP BY e.department
             ORDER BY avg_salary DESC
