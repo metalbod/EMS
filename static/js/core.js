@@ -153,11 +153,12 @@ function applyRoleUI() {
   document.getElementById('nav-bulk-upload')?.classList.toggle('hidden', !canBulkUpload);
   document.getElementById('nav-locations')?.classList.toggle('hidden', !canLocations);
 
-  // Compensation: its own top-level menu, visible only to HR Manager and
-  // Payroll Manager — explicitly excludes HR Admin (previously included,
-  // now revoked) and superadmin (unlike most other groups, which superadmin
-  // can see whenever an institution is selected).
-  const canCompensation = ['hr_manager','payroll_manager'].includes(role);
+  // Compensation: its own top-level menu, visible to HR Manager, Payroll
+  // Manager, and the dedicated Compensation Manager role — explicitly
+  // excludes HR Admin (previously included, now revoked) and superadmin
+  // (unlike most other groups, which superadmin can see whenever an
+  // institution is selected).
+  const canCompensation = ['hr_manager','payroll_manager','compensation_manager'].includes(role);
   document.getElementById('nav-compensation-group')?.classList.toggle('hidden', !canCompensation);
 
   const canPayrollView = ['payroll_manager','hr_manager'].includes(role);

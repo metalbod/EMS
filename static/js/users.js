@@ -12,7 +12,7 @@ function renderUserTable() {
   const empty=document.getElementById('userEmpty');
   if(!users.length){tbody.innerHTML='';empty.classList.remove('hidden');return;}
   empty.classList.add('hidden');
-  const rc={superadmin:'bg-purple-100 text-purple-700',hr_manager:'bg-blue-100 text-blue-700',hr_admin:'bg-cyan-100 text-cyan-700',manager:'bg-amber-100 text-amber-700',payroll_manager:'bg-emerald-100 text-emerald-700',employee:'bg-slate-100 text-slate-600'};
+  const rc={superadmin:'bg-purple-100 text-purple-700',hr_manager:'bg-blue-100 text-blue-700',hr_admin:'bg-cyan-100 text-cyan-700',manager:'bg-amber-100 text-amber-700',payroll_manager:'bg-emerald-100 text-emerald-700',compensation_manager:'bg-pink-100 text-pink-700',employee:'bg-slate-100 text-slate-600'};
   tbody.innerHTML=users.map(u=>`
     <tr class="hover:bg-slate-50 transition">
       <td class="px-4 py-3">
