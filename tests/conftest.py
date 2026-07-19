@@ -235,8 +235,13 @@ def _valid_location_payload(institution_id, **overrides):
     random_suffix = random.randint(1000, 9999)
     payload = {
         "name": f"Test Location {random_suffix}",
-        "address": f"{random_suffix} Test Street, Kuala Lumpur",
+        "code": f"LOC_{random_suffix}",
+        "address": f"{random_suffix} Test Street",
+        "city": "Kuala Lumpur",
         "state": "KL",
+        "postal_code": "50050",
+        "phone": "+60312345678",
+        "location_type": "branch",
         "capacity": 50,
         "capacity_warning_threshold": 75,
         "capacity_critical_threshold": 95,

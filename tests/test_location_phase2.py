@@ -1,25 +1,60 @@
 """Tests for Phase 2 location features: transfers, payroll dashboards, trends."""
 import pytest
-from fastapi.testclient import TestClient
 from datetime import datetime, timedelta
-from main import app
 from tests.conftest import _valid_employee_payload, _valid_location_payload
 
 
-client = TestClient(app)
+@pytest.fixture
+def setup_phase2_data(client, hr_manager_auth, test_institution):
+    """Set up test data for Phase 2 tests."""
+    inst_id = test_institution["id"]
+
+    # Create location
+    loc_res = client.post(
+        "/api/locations",
+        headers=hr_manager_auth,
+        json=_valid_location_payload(inst_id),
+    )
+    assert loc_res.status_code == 201
+    location = loc_res.json()
+
+    # Create employee
+    emp_payload = _valid_employee_payload()
+    emp_res = client.post(
+        "/api/employees",
+        headers=hr_manager_auth,
+        json=emp_payload,
+    )
+    assert emp_res.status_code in [200, 201]
+    employee = emp_res.json()
+
+    return {
+        "institution": test_institution,
+        "location": location,
+        "employee": employee,
+        "client": client,
+        "auth_headers": hr_manager_auth,
+    }
 
 
 class TestLocationTransferWorkflow:
     """Test location transfer request workflow."""
 
-    def test_request_location_transfer(self, auth_headers, created_institution, created_employee, created_location):
+    def test_request_location_transfer(self, setup_phase2_data):
         """Test requesting a location transfer."""
+        data = setup_phase2_data
+        client = data["client"]
+        auth_headers = data["auth_headers"]
+        employee = data["employee"]
+        location = data["location"]
+        institution = data["institution"]
+
         # Assign employee to a location first
         response = client.post(
-            "/api/employees/assign-location",
+            f"/api/employees/{employee['employee_id']}/locations",
             json={
-                "employee_id": created_employee["employee_id"],
-                "location_id": created_location["id"],
+                "employee_id": employee["employee_id"],
+                "location_id": location["id"],
                 "assignment_type": "primary",
                 "start_date": "2024-01-01",
             },
@@ -28,7 +63,7 @@ class TestLocationTransferWorkflow:
         assert response.status_code == 201
 
         # Create another location
-        location_payload = _valid_location_payload(created_institution["id"])
+        location_payload = _valid_location_payload(institution["id"])
         loc_response = client.post(
             "/api/locations",
             json=location_payload,
@@ -39,7 +74,7 @@ class TestLocationTransferWorkflow:
 
         # Request transfer
         response = client.post(
-            f"/api/employees/{created_employee['employee_id']}/transfer-request",
+            f"/api/employees/{employee['employee_id']}/transfer-request",
             json={
                 "to_location_id": target_location["id"],
                 "transfer_date": (datetime.utcnow().date() + timedelta(days=7)).isoformat(),
@@ -49,17 +84,23 @@ class TestLocationTransferWorkflow:
         assert response.status_code == 201
         body = response.json()
         assert body["status"] == "Pending"
-        assert body["employee_id"] == created_employee["employee_id"]
+        assert body["employee_id"] == employee["employee_id"]
         assert body["to_location_id"] == target_location["id"]
 
-    def test_get_employee_transfer_requests(self, auth_headers, created_employee, created_location):
+    def test_get_employee_transfer_requests(self, setup_phase2_data):
         """Test retrieving transfer requests for an employee."""
+        data = setup_phase2_data
+        client = data["client"]
+        auth_headers = data["auth_headers"]
+        employee = data["employee"]
+        location = data["location"]
+
         # Assign to location
         client.post(
             "/api/employees/assign-location",
             json={
-                "employee_id": created_employee["employee_id"],
-                "location_id": created_location["id"],
+                "employee_id": employee["employee_id"],
+                "location_id": location["id"],
                 "assignment_type": "primary",
                 "start_date": "2024-01-01",
             },
@@ -68,30 +109,37 @@ class TestLocationTransferWorkflow:
 
         # Request transfer
         response = client.post(
-            f"/api/employees/{created_employee['employee_id']}/transfer-request",
-            json={"to_location_id": created_location["id"]},
+            f"/api/employees/{employee['employee_id']}/transfer-request",
+            json={"to_location_id": location["id"]},
             headers=auth_headers,
         )
         assert response.status_code == 201
 
         # Get transfer requests
         response = client.get(
-            f"/api/employees/{created_employee['employee_id']}/transfer-requests",
+            f"/api/employees/{employee['employee_id']}/transfer-requests",
             headers=auth_headers,
         )
         assert response.status_code == 200
         body = response.json()
         assert len(body) > 0
-        assert body[0]["employee_id"] == created_employee["employee_id"]
+        assert body[0]["employee_id"] == employee["employee_id"]
 
-    def test_approve_transfer_request(self, auth_headers, created_employee, created_location, created_institution):
+    def test_approve_transfer_request(self, setup_phase2_data):
         """Test approving a transfer request."""
+        data = setup_phase2_data
+        client = data["client"]
+        auth_headers = data["auth_headers"]
+        employee = data["employee"]
+        location = data["location"]
+        institution = data["institution"]
+
         # Assign to location
         client.post(
             "/api/employees/assign-location",
             json={
-                "employee_id": created_employee["employee_id"],
-                "location_id": created_location["id"],
+                "employee_id": employee["employee_id"],
+                "location_id": location["id"],
                 "assignment_type": "primary",
                 "start_date": "2024-01-01",
             },
@@ -99,7 +147,7 @@ class TestLocationTransferWorkflow:
         )
 
         # Create target location
-        location_payload = _valid_location_payload(created_institution["id"])
+        location_payload = _valid_location_payload(institution["id"])
         loc_response = client.post(
             "/api/locations",
             json=location_payload,
@@ -109,7 +157,7 @@ class TestLocationTransferWorkflow:
 
         # Request transfer
         response = client.post(
-            f"/api/employees/{created_employee['employee_id']}/transfer-request",
+            f"/api/employees/{employee['employee_id']}/transfer-request",
             json={
                 "to_location_id": target_location["id"],
                 "transfer_date": datetime.utcnow().date().isoformat(),
@@ -127,14 +175,20 @@ class TestLocationTransferWorkflow:
         body = response.json()
         assert body["status"] in ["Approved", "Completed"]
 
-    def test_reject_transfer_request(self, auth_headers, created_employee, created_location):
+    def test_reject_transfer_request(self, setup_phase2_data):
         """Test rejecting a transfer request."""
+        data = setup_phase2_data
+        client = data["client"]
+        auth_headers = data["auth_headers"]
+        employee = data["employee"]
+        location = data["location"]
+
         # Assign to location
         client.post(
             "/api/employees/assign-location",
             json={
-                "employee_id": created_employee["employee_id"],
-                "location_id": created_location["id"],
+                "employee_id": employee["employee_id"],
+                "location_id": location["id"],
                 "assignment_type": "primary",
                 "start_date": "2024-01-01",
             },
@@ -143,8 +197,8 @@ class TestLocationTransferWorkflow:
 
         # Request transfer
         response = client.post(
-            f"/api/employees/{created_employee['employee_id']}/transfer-request",
-            json={"to_location_id": created_location["id"]},
+            f"/api/employees/{employee['employee_id']}/transfer-request",
+            json={"to_location_id": location["id"]},
             headers=auth_headers,
         )
         transfer_id = response.json()["id"]
@@ -164,56 +218,68 @@ class TestLocationTransferWorkflow:
 class TestLocationPayrollDashboard:
     """Test location-based payroll dashboards."""
 
-    def test_get_location_payroll_dashboard(self, auth_headers, created_location):
+    def test_get_location_payroll_dashboard(self, setup_phase2_data):
         """Test getting payroll dashboard for a location."""
+        data = setup_phase2_data
+        client = data["client"]
+        auth_headers = data["auth_headers"]
+        location = data["location"]
+
         response = client.get(
-            f"/api/payroll/location/{created_location['id']}/dashboard",
+            f"/api/payroll/location/{location['id']}/dashboard",
             headers=auth_headers,
         )
         assert response.status_code == 200
         body = response.json()
         assert "location_id" in body
-        assert body["location_id"] == created_location["id"]
+        assert body["location_id"] == location["id"]
         assert "summary" in body
         assert "departments" in body
         assert isinstance(body["summary"]["total_employees"], int)
         assert isinstance(body["summary"]["total_gross_pay"], (int, float))
 
-    def test_get_institution_payroll_summary(self, auth_headers, created_institution):
+    def test_get_institution_payroll_summary(self, setup_phase2_data):
         """Test getting institution-wide payroll summary."""
+        data = setup_phase2_data
+        client = data["client"]
+        auth_headers = data["auth_headers"]
+        institution = data["institution"]
+
         response = client.get(
-            f"/api/payroll/institution/{created_institution['id']}/summary",
+            f"/api/payroll/institution/{institution['id']}/summary",
             headers=auth_headers,
         )
         assert response.status_code == 200
         body = response.json()
         assert "institution_id" in body
-        assert body["institution_id"] == created_institution["id"]
+        assert body["institution_id"] == institution["id"]
         assert "locations" in body
         assert isinstance(body["locations"], list)
         assert "total_employees" in body
 
-    def test_payroll_dashboard_includes_multiple_locations(self, auth_headers, created_institution, auth_headers_user2):
+    def test_payroll_dashboard_includes_multiple_locations(self, client, hr_manager_auth, test_institution):
         """Test payroll summary aggregates across multiple locations."""
+        inst_id = test_institution["id"]
+
         # Create two locations
         loc1_response = client.post(
             "/api/locations",
-            json=_valid_location_payload(created_institution["id"]),
-            headers=auth_headers,
+            json=_valid_location_payload(inst_id),
+            headers=hr_manager_auth,
         )
         loc1 = loc1_response.json()
 
         loc2_response = client.post(
             "/api/locations",
-            json=_valid_location_payload(created_institution["id"]),
-            headers=auth_headers,
+            json=_valid_location_payload(inst_id),
+            headers=hr_manager_auth,
         )
         loc2 = loc2_response.json()
 
         # Get institution summary
         response = client.get(
-            f"/api/payroll/institution/{created_institution['id']}/summary",
-            headers=auth_headers,
+            f"/api/payroll/institution/{inst_id}/summary",
+            headers=hr_manager_auth,
         )
         assert response.status_code == 200
         body = response.json()
@@ -223,10 +289,15 @@ class TestLocationPayrollDashboard:
 class TestCapacityUtilizationTrends:
     """Test capacity utilization tracking."""
 
-    def test_get_utilization_history(self, auth_headers, created_location):
+    def test_get_utilization_history(self, setup_phase2_data):
         """Test retrieving capacity utilization history."""
+        data = setup_phase2_data
+        client = data["client"]
+        auth_headers = data["auth_headers"]
+        location = data["location"]
+
         response = client.get(
-            f"/api/locations/{created_location['id']}/utilization-history?days=30",
+            f"/api/locations/{location['id']}/utilization-history?days=30",
             headers=auth_headers,
         )
         assert response.status_code == 200
@@ -238,16 +309,21 @@ class TestCapacityUtilizationTrends:
             assert "capacity" in body[0]
             assert "utilization_percent" in body[0]
 
-    def test_get_utilization_trends(self, auth_headers, created_location):
+    def test_get_utilization_trends(self, setup_phase2_data):
         """Test getting utilization trends and analysis."""
+        data = setup_phase2_data
+        client = data["client"]
+        auth_headers = data["auth_headers"]
+        location = data["location"]
+
         response = client.get(
-            f"/api/locations/{created_location['id']}/utilization-trends",
+            f"/api/locations/{location['id']}/utilization-trends",
             headers=auth_headers,
         )
         assert response.status_code == 200
         body = response.json()
         assert "location_id" in body
-        assert body["location_id"] == created_location["id"]
+        assert body["location_id"] == location["id"]
         assert "current_utilization" in body
         assert "current_employees" in body
         assert "capacity" in body
@@ -255,14 +331,20 @@ class TestCapacityUtilizationTrends:
         assert "recommendation" in body
         assert isinstance(body["current_utilization"], (int, float))
 
-    def test_utilization_trends_recommendation_logic(self, auth_headers, created_location, created_employee):
+    def test_utilization_trends_recommendation_logic(self, setup_phase2_data):
         """Test that recommendation changes based on utilization."""
+        data = setup_phase2_data
+        client = data["client"]
+        auth_headers = data["auth_headers"]
+        employee = data["employee"]
+        location = data["location"]
+
         # Assign employee to location
         client.post(
             "/api/employees/assign-location",
             json={
-                "employee_id": created_employee["employee_id"],
-                "location_id": created_location["id"],
+                "employee_id": employee["employee_id"],
+                "location_id": location["id"],
                 "assignment_type": "primary",
                 "start_date": "2024-01-01",
             },
@@ -270,7 +352,7 @@ class TestCapacityUtilizationTrends:
         )
 
         response = client.get(
-            f"/api/locations/{created_location['id']}/utilization-trends",
+            f"/api/locations/{location['id']}/utilization-trends",
             headers=auth_headers,
         )
         assert response.status_code == 200
@@ -289,14 +371,21 @@ class TestCapacityUtilizationTrends:
 class TestPhase2IntegrationWorkflows:
     """Test complex workflows across Phase 2 features."""
 
-    def test_transfer_and_payroll_workflow(self, auth_headers, created_employee, created_location, created_institution):
+    def test_transfer_and_payroll_workflow(self, setup_phase2_data):
         """Test complete transfer workflow and payroll reporting."""
+        data = setup_phase2_data
+        client = data["client"]
+        auth_headers = data["auth_headers"]
+        employee = data["employee"]
+        location = data["location"]
+        institution = data["institution"]
+
         # 1. Assign employee to original location
         client.post(
             "/api/employees/assign-location",
             json={
-                "employee_id": created_employee["employee_id"],
-                "location_id": created_location["id"],
+                "employee_id": employee["employee_id"],
+                "location_id": location["id"],
                 "assignment_type": "primary",
                 "start_date": "2024-01-01",
             },
@@ -305,14 +394,13 @@ class TestPhase2IntegrationWorkflows:
 
         # 2. View payroll dashboard
         response = client.get(
-            f"/api/payroll/location/{created_location['id']}/dashboard",
+            f"/api/payroll/location/{location['id']}/dashboard",
             headers=auth_headers,
         )
         assert response.status_code == 200
-        dashboard_before = response.json()
 
         # 3. Request transfer
-        location_payload = _valid_location_payload(created_institution["id"])
+        location_payload = _valid_location_payload(institution["id"])
         loc_response = client.post(
             "/api/locations",
             json=location_payload,
@@ -321,7 +409,7 @@ class TestPhase2IntegrationWorkflows:
         target_location = loc_response.json()
 
         response = client.post(
-            f"/api/employees/{created_employee['employee_id']}/transfer-request",
+            f"/api/employees/{employee['employee_id']}/transfer-request",
             json={
                 "to_location_id": target_location["id"],
                 "transfer_date": datetime.utcnow().date().isoformat(),
@@ -343,34 +431,44 @@ class TestPhase2IntegrationWorkflows:
         )
         assert response.status_code == 200
 
-    def test_multi_location_payroll_analysis(self, auth_headers, created_institution, created_employee):
+    def test_multi_location_payroll_analysis(self, client, hr_manager_auth, test_institution):
         """Test payroll analysis across multiple locations."""
+        inst_id = test_institution["id"]
+
         # Create multiple locations
         locations = []
         for i in range(3):
             response = client.post(
                 "/api/locations",
-                json=_valid_location_payload(created_institution["id"]),
-                headers=auth_headers,
+                json=_valid_location_payload(inst_id),
+                headers=hr_manager_auth,
             )
             locations.append(response.json())
 
-        # Assign employee to first location
+        # Create and assign an employee
+        emp_payload = _valid_employee_payload()
+        emp_res = client.post(
+            "/api/employees",
+            headers=hr_manager_auth,
+            json=emp_payload,
+        )
+        employee = emp_res.json()
+
         client.post(
             "/api/employees/assign-location",
             json={
-                "employee_id": created_employee["employee_id"],
+                "employee_id": employee["employee_id"],
                 "location_id": locations[0]["id"],
                 "assignment_type": "primary",
                 "start_date": "2024-01-01",
             },
-            headers=auth_headers,
+            headers=hr_manager_auth,
         )
 
         # Get institution summary
         response = client.get(
-            f"/api/payroll/institution/{created_institution['id']}/summary",
-            headers=auth_headers,
+            f"/api/payroll/institution/{inst_id}/summary",
+            headers=hr_manager_auth,
         )
         assert response.status_code == 200
         body = response.json()
@@ -381,15 +479,22 @@ class TestPhase2IntegrationWorkflows:
         for location in locations:
             response = client.get(
                 f"/api/payroll/location/{location['id']}/dashboard",
-                headers=auth_headers,
+                headers=hr_manager_auth,
             )
             assert response.status_code == 200
 
-    def test_capacity_and_transfer_workflow(self, auth_headers, created_employee, created_location, created_institution):
+    def test_capacity_and_transfer_workflow(self, setup_phase2_data):
         """Test capacity planning with transfers."""
+        data = setup_phase2_data
+        client = data["client"]
+        auth_headers = data["auth_headers"]
+        employee = data["employee"]
+        location = data["location"]
+        institution = data["institution"]
+
         # Check initial utilization
         response = client.get(
-            f"/api/locations/{created_location['id']}/utilization-trends",
+            f"/api/locations/{location['id']}/utilization-trends",
             headers=auth_headers,
         )
         assert response.status_code == 200
@@ -399,8 +504,8 @@ class TestPhase2IntegrationWorkflows:
         client.post(
             "/api/employees/assign-location",
             json={
-                "employee_id": created_employee["employee_id"],
-                "location_id": created_location["id"],
+                "employee_id": employee["employee_id"],
+                "location_id": location["id"],
                 "assignment_type": "primary",
                 "start_date": "2024-01-01",
             },
@@ -409,14 +514,14 @@ class TestPhase2IntegrationWorkflows:
 
         # Check updated utilization
         response = client.get(
-            f"/api/locations/{created_location['id']}/utilization-trends",
+            f"/api/locations/{location['id']}/utilization-trends",
             headers=auth_headers,
         )
         updated_utilization = response.json()["current_utilization"]
         assert updated_utilization > initial_utilization
 
         # Create new location and request transfer
-        location_payload = _valid_location_payload(created_institution["id"])
+        location_payload = _valid_location_payload(institution["id"])
         loc_response = client.post(
             "/api/locations",
             json=location_payload,
@@ -425,7 +530,7 @@ class TestPhase2IntegrationWorkflows:
         target_location = loc_response.json()
 
         response = client.post(
-            f"/api/employees/{created_employee['employee_id']}/transfer-request",
+            f"/api/employees/{employee['employee_id']}/transfer-request",
             json={"to_location_id": target_location["id"]},
             headers=auth_headers,
         )
@@ -437,35 +542,40 @@ class TestPhase2IntegrationWorkflows:
             headers=auth_headers,
         )
 
-        # Check utilization is back down on original location
+        # Check utilization is back down on original location (if transfer completed)
         response = client.get(
-            f"/api/locations/{created_location['id']}/utilization-trends",
+            f"/api/locations/{location['id']}/utilization-trends",
             headers=auth_headers,
         )
-        final_utilization = response.json()["current_utilization"]
-        # After transfer completion, utilization may decrease if employee was moved
+        assert response.status_code == 200
 
 
 class TestPhase2ErrorHandling:
     """Test error handling in Phase 2 endpoints."""
 
-    def test_transfer_nonexistent_employee(self, auth_headers):
+    def test_transfer_nonexistent_employee(self, client, hr_manager_auth):
         """Test transferring nonexistent employee."""
         response = client.post(
             "/api/employees/EMP999/transfer-request",
             json={"to_location_id": 1},
-            headers=auth_headers,
+            headers=hr_manager_auth,
         )
         assert response.status_code == 404
 
-    def test_transfer_to_nonexistent_location(self, auth_headers, created_employee, created_location):
+    def test_transfer_to_nonexistent_location(self, setup_phase2_data):
         """Test transferring to nonexistent location."""
+        data = setup_phase2_data
+        client = data["client"]
+        auth_headers = data["auth_headers"]
+        employee = data["employee"]
+        location = data["location"]
+
         # Assign to location first
         client.post(
             "/api/employees/assign-location",
             json={
-                "employee_id": created_employee["employee_id"],
-                "location_id": created_location["id"],
+                "employee_id": employee["employee_id"],
+                "location_id": location["id"],
                 "assignment_type": "primary",
                 "start_date": "2024-01-01",
             },
@@ -473,34 +583,34 @@ class TestPhase2ErrorHandling:
         )
 
         response = client.post(
-            f"/api/employees/{created_employee['employee_id']}/transfer-request",
+            f"/api/employees/{employee['employee_id']}/transfer-request",
             json={"to_location_id": 99999},
             headers=auth_headers,
         )
         assert response.status_code == 404
 
-    def test_approve_nonexistent_transfer(self, auth_headers):
+    def test_approve_nonexistent_transfer(self, client, hr_manager_auth):
         """Test approving nonexistent transfer."""
         response = client.put(
             "/api/transfer-requests/99999/approve",
-            headers=auth_headers,
+            headers=hr_manager_auth,
         )
         assert response.status_code == 404
 
-    def test_get_nonexistent_location_dashboard(self, auth_headers):
+    def test_get_nonexistent_location_dashboard(self, client, hr_manager_auth):
         """Test dashboard for nonexistent location."""
         response = client.get(
             "/api/payroll/location/99999/dashboard",
-            headers=auth_headers,
+            headers=hr_manager_auth,
         )
         assert response.status_code == 404
 
-    def test_institution_payroll_access_denied(self, auth_headers, created_institution):
+    def test_institution_payroll_access_denied(self, client, hr_manager_auth):
         """Test cross-institution access denial."""
-        # Try to access different institution (institution_id won't match)
+        # Try to access different institution
         response = client.get(
             f"/api/payroll/institution/99999/summary",
-            headers=auth_headers,
+            headers=hr_manager_auth,
         )
         # Should either be 404 (not found) or 403 (forbidden)
         assert response.status_code in [404, 403]
