@@ -588,8 +588,8 @@ async def get_employee_report_by_location(
                 "status": emp["status"],
                 "primary_location": location["name"] if emp["assignment_type"] == "primary" else None,
                 "all_locations": [l["name"] for l in all_locs],
-                "phone": emp.get("phone"),
-                "email": emp.get("work_email"),
+                "phone": emp["phone"],
+                "email": emp["work_email"],
             }
             report_rows.append(row)
 
