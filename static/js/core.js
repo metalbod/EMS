@@ -148,10 +148,12 @@ function applyRoleUI() {
   const canNotify = ['hr_manager','hr_admin'].includes(role);
   const canBulkUpload = role === 'hr_manager';
   const canLocations = ['hr_manager','hr_admin'].includes(role);
-  document.getElementById('nav-settings-wrap')?.classList.toggle('hidden', hideEmp || !(canAudit || canUsers || canNotify || canBulkUpload || canLocations));
+  const canCompensation = ['hr_manager','hr_admin'].includes(role);
+  document.getElementById('nav-settings-wrap')?.classList.toggle('hidden', hideEmp || !(canAudit || canUsers || canNotify || canBulkUpload || canLocations || canCompensation));
   document.getElementById('nav-settings-notifications')?.classList.toggle('hidden', !canNotify);
   document.getElementById('nav-bulk-upload')?.classList.toggle('hidden', !canBulkUpload);
   document.getElementById('nav-locations')?.classList.toggle('hidden', !canLocations);
+  document.getElementById('nav-compensation')?.classList.toggle('hidden', !canCompensation);
 
   const canPayrollView = ['payroll_manager','hr_manager'].includes(role);
   document.getElementById('nav-payroll-group')?.classList.toggle('hidden', hideEmp);
