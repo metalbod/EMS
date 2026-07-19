@@ -293,16 +293,20 @@ async function submitJobRoleForm(e) {
 // MERIT CYCLES
 // ============================================================================
 
+let meritCycles = [];
+let meritRecommendations = [];
+let currentMeritCycleId = null;
+
 async function loadMeritCycles() {
   const res = await api('/api/compensation/merit-cycles');
   if (!res || !res.ok) return;
-  const cycles = await res.json();
+  meritCycles = await res.json();
 
   const tbody = document.getElementById('meritCyclesTableBody');
-  document.getElementById('meritCyclesEmptyState')?.classList.toggle('hidden', cycles.length > 0);
+  document.getElementById('meritCyclesEmptyState')?.classList.toggle('hidden', meritCycles.length > 0);
   if (tbody) {
-    tbody.innerHTML = cycles.map(cycle => `
-      <tr class="hover:bg-slate-50 transition">
+    tbody.innerHTML = meritCycles.map(cycle => `
+      <tr class="hover:bg-slate-50 transition cursor-pointer" onclick="openMeritCycleDetail(${cycle.id})">
         <td class="px-4 py-3">
           <p class="font-medium">${esc(cycle.cycle_name)}</p>
           <p class="text-xs text-slate-500">${cycle.review_year}</p>
@@ -322,6 +326,143 @@ async function loadMeritCycles() {
       </tr>
     `).join('');
   }
+}
+
+// ============================================================================
+// MERIT RECOMMENDATIONS (per cycle, viewed via the cycle detail modal)
+// ============================================================================
+
+async function openMeritCycleDetail(cycleId) {
+  const cycle = meritCycles.find(c => c.id === cycleId);
+  if (!cycle) return;
+  currentMeritCycleId = cycleId;
+
+  document.getElementById('meritDetailTitle').textContent = cycle.cycle_name;
+  document.getElementById('meritDetailSubtitle').textContent =
+    `${cycle.cycle_start_date} to ${cycle.cycle_end_date} — ${cycle.status}`;
+
+  document.getElementById('meritRecForm').classList.add('hidden');
+  document.getElementById('meritRecForm').reset();
+
+  if (!employees || employees.length === 0) await loadEmployees();
+  const empSelect = document.getElementById('mrEmployee');
+  const activeEmployees = (employees || []).filter(e => e.status === 'Active');
+  empSelect.innerHTML = activeEmployees.map(e =>
+    `<option value="${esc(e.employee_id)}">${esc(e.full_name)} (${esc(e.employee_id)})</option>`
+  ).join('');
+
+  await loadMeritRecommendations(cycleId);
+  document.getElementById('compensationMeritDetailModal').classList.remove('hidden');
+}
+
+function closeMeritDetailModal() {
+  document.getElementById('compensationMeritDetailModal').classList.add('hidden');
+  currentMeritCycleId = null;
+}
+
+function toggleMeritRecForm() {
+  document.getElementById('meritRecForm').classList.toggle('hidden');
+}
+
+async function onMeritRecEmployeeChange() {
+  const employeeId = document.getElementById('mrEmployee').value;
+  if (!employeeId) return;
+  const res = await api(`/api/compensation/employees/${employeeId}/compensation`);
+  if (res && res.ok) {
+    const comp = await res.json();
+    document.getElementById('mrCurrentSalary').value = comp.base_salary;
+    computeMeritNewSalary();
+  }
+}
+
+function computeMeritNewSalary() {
+  const current = parseFloat(document.getElementById('mrCurrentSalary').value);
+  const percent = parseFloat(document.getElementById('mrPercent').value);
+  if (!isNaN(current) && !isNaN(percent)) {
+    document.getElementById('mrNewSalary').value = (current * (1 + percent / 100)).toFixed(2);
+  }
+}
+
+async function loadMeritRecommendations(cycleId) {
+  const res = await api(`/api/compensation/merit-cycles/${cycleId}/recommendations`);
+  if (!res || !res.ok) return;
+  meritRecommendations = await res.json();
+  renderMeritRecTable();
+}
+
+function renderMeritRecTable() {
+  const tbody = document.getElementById('meritRecTableBody');
+  if (!tbody) return;
+  document.getElementById('meritRecEmptyState')?.classList.toggle('hidden', meritRecommendations.length > 0);
+
+  const statusBadge = status => {
+    if (status === 'Approved') return 'bg-emerald-100 text-emerald-700';
+    if (status === 'Rejected') return 'bg-red-100 text-red-700';
+    return 'bg-amber-100 text-amber-700';
+  };
+
+  tbody.innerHTML = meritRecommendations.map(rec => `
+    <tr class="hover:bg-slate-50 transition">
+      <td class="px-4 py-3">
+        <p class="font-medium">${esc(rec.employee_name || rec.employee_id)}</p>
+        <p class="text-xs text-slate-500">${esc(rec.employee_id)}</p>
+      </td>
+      <td class="px-4 py-3 text-right">RM ${Number(rec.current_salary).toLocaleString('en-MY', {minimumFractionDigits: 2})}</td>
+      <td class="px-4 py-3 text-center">${Number(rec.recommended_increase_percent).toFixed(2)}%</td>
+      <td class="px-4 py-3 text-right">RM ${Number(rec.recommended_new_salary).toLocaleString('en-MY', {minimumFractionDigits: 2})}</td>
+      <td class="px-4 py-3">
+        <span class="badge ${statusBadge(rec.approval_status)}">${esc(rec.approval_status)}</span>
+        ${rec.reason ? `<p class="text-xs text-slate-500 mt-1">${esc(rec.reason)}</p>` : ''}
+      </td>
+      <td class="px-4 py-3 text-right">
+        ${rec.approval_status === 'Pending' ? `
+          <button onclick="decideMeritRec(${rec.id}, 'Approved')" class="text-xs text-emerald-700 hover:underline mr-3">Approve</button>
+          <button onclick="decideMeritRec(${rec.id}, 'Rejected')" class="text-xs text-red-700 hover:underline">Reject</button>
+        ` : '<span class="text-xs text-slate-400">—</span>'}
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function submitMeritRecommendation(e) {
+  e.preventDefault();
+  const g = id => document.getElementById(id).value;
+
+  const body = {
+    employee_id: g('mrEmployee'),
+    current_salary: parseFloat(g('mrCurrentSalary')),
+    recommended_increase_percent: parseFloat(g('mrPercent')),
+    recommended_new_salary: parseFloat(g('mrNewSalary')),
+    reason: g('mrReason').trim() || null,
+  };
+
+  const res = await api(`/api/compensation/merit-recommendations?merit_cycle_id=${currentMeritCycleId}`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+
+  if (!res || !res.ok) {
+    alert('Error: ' + (await res.json()).detail);
+    return;
+  }
+
+  document.getElementById('meritRecForm').classList.add('hidden');
+  document.getElementById('meritRecForm').reset();
+  loadMeritRecommendations(currentMeritCycleId);
+}
+
+async function decideMeritRec(recId, approvalStatus) {
+  const res = await api(`/api/compensation/merit-recommendations/${recId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ approval_status: approvalStatus }),
+  });
+
+  if (!res || !res.ok) {
+    alert('Error updating recommendation');
+    return;
+  }
+
+  loadMeritRecommendations(currentMeritCycleId);
 }
 
 async function openMeritCycleForm() {

@@ -14,6 +14,7 @@ from core.compensation_schemas import (
     SalaryChangeCreate, SalaryChangeResponse,
     MeritReviewCycleCreate, MeritReviewCycleResponse,
     MeritRecommendationCreate, MeritRecommendationApprove, MeritRecommendationResponse,
+    MeritRecommendationWithEmployee,
     PayEquityReport, PayEquityItem,
     BulkMeritIncrease,
 )
@@ -644,6 +645,43 @@ async def list_merit_cycles(
             (inst_id,),
         ).fetchall()
         return [MeritReviewCycleResponse(**dict(c)) for c in cycles]
+    finally:
+        conn.close()
+
+
+@router.get("/merit-cycles/{cycle_id}/recommendations")
+async def list_merit_recommendations(
+    cycle_id: int,
+    current_user: dict = Depends(get_current_user),
+) -> List[MeritRecommendationWithEmployee]:
+    """List merit recommendations for a review cycle, with employee names joined in."""
+    require_hr_role(current_user)
+    conn = get_db()
+    try:
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+
+        cycle = conn.execute(
+            "SELECT * FROM merit_review_cycles WHERE id = ? AND institution_id = ?",
+            (cycle_id, inst_id),
+        ).fetchone()
+        if not cycle:
+            raise HTTPException(404, detail="Merit review cycle not found")
+
+        # employee_id is only unique per institution, so the join must also
+        # match institution_id — see the pay-equity report fix for the same
+        # pattern (a bare employee_id join fans out across every tenant
+        # reusing that code, e.g. auto-generated EMP0001/EMP0002/...).
+        rows = conn.execute(
+            """
+            SELECT r.*, e.full_name AS employee_name
+            FROM merit_recommendations r
+            JOIN employees e ON r.employee_id = e.employee_id AND r.institution_id = e.institution_id
+            WHERE r.merit_review_cycle_id = ? AND r.institution_id = ?
+            ORDER BY r.created_at DESC
+            """,
+            (cycle_id, inst_id),
+        ).fetchall()
+        return [MeritRecommendationWithEmployee(**dict(r)) for r in rows]
     finally:
         conn.close()
 

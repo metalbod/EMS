@@ -327,6 +327,11 @@ class MeritRecommendationResponse(MeritRecommendationBase):
         from_attributes = True
 
 
+class MeritRecommendationWithEmployee(MeritRecommendationResponse):
+    """Merit recommendation response with the employee's display name joined in."""
+    employee_name: Optional[str] = None
+
+
 # ============================================================================
 # PAY EQUITY ANALYSIS
 # ============================================================================
