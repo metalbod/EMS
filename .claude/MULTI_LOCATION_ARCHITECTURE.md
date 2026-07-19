@@ -71,7 +71,7 @@ CREATE TABLE locations (
     postal_code         TEXT,
     country             TEXT    DEFAULT 'Malaysia',
     phone               TEXT,
-    manager_user_id     INTEGER REFERENCES users(id), -- Location manager
+    manager_user_id     INTEGER REFERENCES users(id), -- Location manager (OPTIONAL)
     location_type       TEXT    DEFAULT 'branch',     -- "hq", "branch", "warehouse", "outlet"
     is_active           INTEGER DEFAULT 1,            -- Soft-delete via status
     capacity            INTEGER,                      -- How many employees this location can have
@@ -86,6 +86,8 @@ CREATE TABLE locations (
 CREATE INDEX idx_locations_institution ON locations(institution_id);
 CREATE INDEX idx_locations_active ON locations(institution_id, is_active);
 ```
+
+**Note:** `manager_user_id` is nullable (can be NULL). Locations can exist without an assigned manager.
 
 ### 2. New Table: `employee_location_assignments`
 
@@ -416,18 +418,19 @@ async def get_institution_location_summary(inst_id: int):
    └──────────────────────────────┘
    ```
 
-4. **Location Manager Widget**
+4. **Location Manager Widget** (Optional)
    ```
    ┌──────────────────────────────┐
-   │ Location Managers            │
+   │ Location Managers (Optional) │
    │                              │
    │ KL HQ          John Doe      │
    │ PJ Branch      Jane Smith    │
-   │ Shah Alam      (Unassigned)  │
+   │ Shah Alam      —             │  (No manager assigned)
    │                              │
    │ [Assign Managers]            │
    └──────────────────────────────┘
    ```
+   *Manager field is optional. Locations can operate without assigned managers.*
 
 #### Dashboard Component Structure
 
@@ -731,9 +734,9 @@ def test_leave_request_by_location():
 
 ### Step 2: Data Population
 ```sql
--- Create "Main" location for each institution
-INSERT INTO locations (institution_id, name, code, is_active)
-SELECT id, CONCAT(name, ' - Main'), CONCAT(code, '_MAIN'), 1
+-- Create "Main" location for each institution (no manager required)
+INSERT INTO locations (institution_id, name, code, is_active, manager_user_id)
+SELECT id, CONCAT(name, ' - Main'), CONCAT(code, '_MAIN'), 1, NULL
 FROM institutions;
 
 -- Assign all employees to their institution's main location
@@ -743,6 +746,8 @@ FROM employees e
 JOIN institutions i ON e.institution_id = i.id
 JOIN locations l ON l.institution_id = i.id AND l.code LIKE '%_MAIN';
 ```
+
+**Note:** Location managers are optional - set to NULL by default. Assign managers later if needed.
 
 ### Step 3: Gradual API Adoption
 - Add location endpoints
@@ -799,9 +804,11 @@ CREATE INDEX idx_assignments_active_date ON employee_location_assignments(is_act
 ### Permission Levels
 1. **Superadmin** - Full access to all locations in all institutions
 2. **Institution Admin** - Full access to all locations in their institution
-3. **Location Manager** - Manage only their assigned location
+3. **Location Manager** (Optional) - Can manage their assigned location (if assigned)
 4. **HR Manager** - View all locations, manage assignments
 5. **Employee** - View only their own locations
+
+*Note: Location manager role is optional. Institutions may operate all locations without individual managers.*
 
 ---
 
@@ -819,13 +826,15 @@ CREATE INDEX idx_assignments_active_date ON employee_location_assignments(is_act
    - Current design: Optional (department_at_location field)
    - Allows org structure to vary by location
 
-4. **How are leaves/timesheets handled for multi-location employees?**
-   - Question: Should leave be tracked per location or institution-wide?
-   - Recommendation: Requested at employee level, approved by location manager
+4. **Are location managers mandatory?**
+   - ✅ **Decision: NO - Location managers are OPTIONAL**
+   - Locations can operate without assigned managers
+   - Manager assignment is optional per location
+   - All management can be handled centrally by institution admins
 
-5. **Should location managers have RLS restrictions?**
-   - Question: Can location manager X see location manager Y's data?
-   - Recommendation: YES - location managers can see all locations (just can't create/delete)
+5. **How are leaves/timesheets handled for multi-location employees?**
+   - Question: Should leave be tracked per location or institution-wide?
+   - Recommendation: Requested at employee level, approved by institution admin or location manager (if assigned)
 
 ---
 
