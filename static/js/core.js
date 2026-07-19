@@ -248,6 +248,7 @@ function showPage(page) {
     'settings-system-notifications':'System-Wide Notifications',
     'settings-bulk-upload':'Bulk Upload Employees',
     'settings-locations':'Locations',
+    'settings-compensation':'Settings — Compensation',
     'payroll-runs':'Payroll Runs', 'payroll-my':'My Payslips',
     'perf-my':'My Goals & Appraisal', 'perf-team':'Team Appraisals',
     'perf-cycles':'Performance Cycles', 'perf-calibration':'Calibration'
@@ -279,6 +280,7 @@ function showPage(page) {
   if (page === 'payroll-my')   loadMyPayslips();
   if (page === 'settings-bulk-upload') resetBulkUploadUI();
   if (page === 'settings-locations') loadLocations();
+  if (page === 'settings-compensation') initCompensationPage();
   if (page === 'perf-my')          loadMyPerformancePage();
   if (page === 'perf-team')        loadTeamAppraisalsPage();
   if (page === 'perf-cycles')      loadPerformanceCycles();

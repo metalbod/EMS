@@ -337,6 +337,38 @@ async def list_job_roles(
         conn.close()
 
 
+@router.get("/job-roles/{role_id}/pay-grades")
+async def list_role_pay_grades(
+    role_id: int,
+    current_user: dict = Depends(get_current_user),
+):
+    """List pay grades mapped to a job role."""
+    require_hr_role(current_user)
+    conn = get_db()
+    try:
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+        role = conn.execute(
+            "SELECT * FROM job_roles WHERE id = ? AND institution_id = ?",
+            (role_id, inst_id),
+        ).fetchone()
+        if not role:
+            raise HTTPException(404, detail="Job role not found")
+
+        rows = conn.execute(
+            """
+            SELECT g.id, g.grade_code, g.grade_name, m.is_primary
+            FROM job_role_pay_grades m
+            JOIN pay_grades g ON g.id = m.pay_grade_id
+            WHERE m.job_role_id = ?
+            ORDER BY m.is_primary DESC, g.grade_level
+            """,
+            (role_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
 @router.post("/job-roles/{role_id}/pay-grades/{grade_id}", status_code=201)
 async def map_role_to_grade(
     role_id: int,

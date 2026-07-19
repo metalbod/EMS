@@ -1078,7 +1078,7 @@
                 </thead>
                 <tbody id="payGradesTableBody" class="divide-y divide-slate-100"></tbody>
               </table>
-              <p class="text-center text-slate-400 text-sm py-12">No pay grades yet.</p>
+              <p id="payGradesEmptyState" class="text-center text-slate-400 text-sm py-12">No pay grades yet.</p>
             </div>
           </div>
 
@@ -1103,7 +1103,34 @@
                 </thead>
                 <tbody id="jobLevelsTableBody" class="divide-y divide-slate-100"></tbody>
               </table>
-              <p class="text-center text-slate-400 text-sm py-12">No job levels yet.</p>
+              <p id="jobLevelsEmptyState" class="text-center text-slate-400 text-sm py-12">No job levels yet.</p>
+            </div>
+          </div>
+
+          <!-- Job Roles Section -->
+          <div>
+            <div class="flex justify-between items-center mb-4">
+              <h3 class="text-lg font-semibold">Job Roles</h3>
+              <button onclick="openJobRoleForm()" class="btn-primary text-sm flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                New Job Role
+              </button>
+            </div>
+            <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+              <table class="w-full text-sm">
+                <thead class="bg-slate-50 border-b border-slate-200">
+                  <tr>
+                    <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Code</th>
+                    <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Role Name</th>
+                    <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Level</th>
+                    <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Department</th>
+                    <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Pay Grades</th>
+                    <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+                  </tr>
+                </thead>
+                <tbody id="jobRolesTableBody" class="divide-y divide-slate-100"></tbody>
+              </table>
+              <p id="jobRolesEmptyState" class="text-center text-slate-400 text-sm py-12">No job roles yet.</p>
             </div>
           </div>
 
@@ -1128,7 +1155,7 @@
                 </thead>
                 <tbody id="meritCyclesTableBody" class="divide-y divide-slate-100"></tbody>
               </table>
-              <p class="text-center text-slate-400 text-sm py-12">No merit cycles yet.</p>
+              <p id="meritCyclesEmptyState" class="text-center text-slate-400 text-sm py-12">No merit cycles yet.</p>
             </div>
           </div>
 
@@ -2600,6 +2627,36 @@
       <div class="flex gap-2">
         <button type="submit" class="btn-primary">Save Job Level</button>
         <button type="button" onclick="closeJobLevelModal()" class="btn-ghost">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Compensation: Job Role Modal -->
+<div id="compensationJobRoleModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 class="text-base font-semibold">Create New Job Role</h2>
+      <button onclick="closeJobRoleModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form id="jobRoleForm" onsubmit="submitJobRoleForm(event)" class="p-6 space-y-4">
+      <div class="grid grid-cols-2 gap-4">
+        <div><label class="lbl">Code</label><input id="jrCode" type="text" class="inp" placeholder="ENG_2" required/></div>
+        <div><label class="lbl">Job Level</label><select id="jrLevel" class="inp" required></select></div>
+      </div>
+      <div><label class="lbl">Role Name</label><input id="jrName" type="text" class="inp" placeholder="Software Engineer II" required/></div>
+      <div class="grid grid-cols-2 gap-4">
+        <div><label class="lbl">Department</label><input id="jrDept" type="text" class="inp" placeholder="Engineering"/></div>
+        <div><label class="lbl">Req. Experience (yrs)</label><input id="jrExp" type="number" class="inp" placeholder="3"/></div>
+      </div>
+      <div><label class="lbl">Description</label><textarea id="jrDesc" class="inp" rows="2"></textarea></div>
+      <div>
+        <label class="lbl">Pay Grades <span class="text-slate-400 font-normal">(check to assign, select one as primary)</span></label>
+        <div id="jrGradesList" class="border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-40 overflow-y-auto"></div>
+      </div>
+      <div class="flex gap-2">
+        <button type="submit" class="btn-primary">Save Job Role</button>
+        <button type="button" onclick="closeJobRoleModal()" class="btn-ghost">Cancel</button>
       </div>
     </form>
   </div>

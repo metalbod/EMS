@@ -20,6 +20,7 @@ async function loadPayGrades() {
 function renderPayGradesTable() {
   const tbody = document.getElementById('payGradesTableBody');
   if (!tbody) return;
+  document.getElementById('payGradesEmptyState')?.classList.toggle('hidden', payGrades.length > 0);
 
   tbody.innerHTML = payGrades.map(grade => `
     <tr class="hover:bg-slate-50 transition cursor-pointer" onclick="editPayGrade(${grade.id})">
@@ -127,6 +128,7 @@ async function loadJobLevels() {
 function renderJobLevelsTable() {
   const tbody = document.getElementById('jobLevelsTableBody');
   if (!tbody) return;
+  document.getElementById('jobLevelsEmptyState')?.classList.toggle('hidden', jobLevels.length > 0);
 
   tbody.innerHTML = jobLevels.map(level => `
     <tr class="hover:bg-slate-50 transition">
@@ -183,6 +185,111 @@ function closeJobLevelModal() {
 }
 
 // ============================================================================
+// JOB ROLES MANAGEMENT
+// ============================================================================
+
+async function loadJobRoles() {
+  const res = await api('/api/compensation/job-roles');
+  if (!res || !res.ok) return;
+  jobRoles = await res.json();
+  await renderJobRolesTable();
+}
+
+async function renderJobRolesTable() {
+  const tbody = document.getElementById('jobRolesTableBody');
+  if (!tbody) return;
+  document.getElementById('jobRolesEmptyState')?.classList.toggle('hidden', jobRoles.length > 0);
+
+  // Grade mappings aren't included in the list response, so fetch them
+  // per-role (there's no bulk endpoint) and render once all resolve.
+  const gradesByRole = await Promise.all(jobRoles.map(async role => {
+    const res = await api(`/api/compensation/job-roles/${role.id}/pay-grades`);
+    return (res && res.ok) ? await res.json() : [];
+  }));
+
+  tbody.innerHTML = jobRoles.map((role, i) => {
+    const level = jobLevels.find(l => l.id === role.job_level_id);
+    const grades = gradesByRole[i];
+    const gradesLabel = grades.length
+      ? grades.map(g => g.is_primary ? `<strong>${esc(g.grade_code)}</strong>` : esc(g.grade_code)).join(', ')
+      : '<span class="text-slate-400">—</span>';
+    return `
+    <tr class="hover:bg-slate-50 transition">
+      <td class="px-4 py-3"><p class="font-medium">${esc(role.role_code)}</p></td>
+      <td class="px-4 py-3"><p class="text-sm">${esc(role.role_name)}</p></td>
+      <td class="px-4 py-3"><p class="text-sm">${level ? esc(level.level_name) : '—'}</p></td>
+      <td class="px-4 py-3"><p class="text-sm">${role.department ? esc(role.department) : '—'}</p></td>
+      <td class="px-4 py-3"><p class="text-sm">${gradesLabel}</p></td>
+      <td class="px-4 py-3 text-center">
+        <span class="badge ${role.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}">
+          ${role.is_active ? 'Active' : 'Inactive'}
+        </span>
+      </td>
+    </tr>
+  `;
+  }).join('');
+}
+
+function openJobRoleForm() {
+  document.getElementById('jobRoleForm').reset();
+
+  const levelSelect = document.getElementById('jrLevel');
+  levelSelect.innerHTML = jobLevels.map(l => `<option value="${l.id}">${esc(l.level_name)} (${esc(l.level_code)})</option>`).join('');
+
+  const gradesList = document.getElementById('jrGradesList');
+  gradesList.innerHTML = payGrades.map(g => `
+    <label class="flex items-center gap-3 px-3 py-2 text-sm hover:bg-slate-50">
+      <input type="checkbox" class="jr-grade-check" value="${g.id}"/>
+      <span class="flex-1">${esc(g.grade_code)} — ${esc(g.grade_name)}</span>
+      <span class="flex items-center gap-1 text-xs text-slate-500">
+        <input type="radio" name="jrPrimaryGrade" value="${g.id}"/> primary
+      </span>
+    </label>
+  `).join('');
+
+  document.getElementById('compensationJobRoleModal').classList.remove('hidden');
+}
+
+function closeJobRoleModal() {
+  document.getElementById('compensationJobRoleModal').classList.add('hidden');
+}
+
+async function submitJobRoleForm(e) {
+  e.preventDefault();
+  const g = id => document.getElementById(id).value;
+
+  const body = {
+    role_code: g('jrCode').trim(),
+    role_name: g('jrName').trim(),
+    job_level_id: parseInt(g('jrLevel')),
+    department: g('jrDept').trim() || null,
+    required_experience_years: g('jrExp') ? parseInt(g('jrExp')) : null,
+    description: g('jrDesc').trim() || null,
+  };
+
+  const res = await api('/api/compensation/job-roles', { method: 'POST', body: JSON.stringify(body) });
+  if (!res || !res.ok) {
+    alert('Error: ' + (await res.json()).detail);
+    return;
+  }
+  const role = await res.json();
+
+  const primaryGradeId = document.querySelector('input[name="jrPrimaryGrade"]:checked')?.value;
+  const checkedGrades = Array.from(document.querySelectorAll('.jr-grade-check:checked')).map(el => el.value);
+
+  for (const gradeId of checkedGrades) {
+    const isPrimary = gradeId === primaryGradeId;
+    await api(`/api/compensation/job-roles/${role.id}/pay-grades/${gradeId}?is_primary=${isPrimary}`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
+  closeJobRoleModal();
+  loadJobRoles();
+}
+
+// ============================================================================
 // MERIT CYCLES
 // ============================================================================
 
@@ -192,6 +299,7 @@ async function loadMeritCycles() {
   const cycles = await res.json();
 
   const tbody = document.getElementById('meritCyclesTableBody');
+  document.getElementById('meritCyclesEmptyState')?.classList.toggle('hidden', cycles.length > 0);
   if (tbody) {
     tbody.innerHTML = cycles.map(cycle => `
       <tr class="hover:bg-slate-50 transition">
@@ -325,16 +433,20 @@ async function loadPayEquityReport() {
 // INITIALIZATION
 // ============================================================================
 
-function initCompensationPage() {
-  loadPayGrades();
-  loadJobLevels();
+async function initCompensationPage() {
+  // Pay grades and job levels must resolve before job roles renders, since
+  // its table and "New Job Role" form both look up level/grade names from
+  // the payGrades/jobLevels arrays populated by those two calls.
+  await Promise.all([loadPayGrades(), loadJobLevels()]);
+  loadJobRoles();
   loadMeritCycles();
   loadPayEquityReport();
 }
 
-// Load when page loads
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initCompensationPage);
-} else {
-  initCompensationPage();
-}
+// Note: this page is only loaded (script tag present) once the app shell is
+// already up, and core.js's showPage() calls initCompensationPage() itself
+// whenever the user navigates to Settings → Compensation — so no
+// DOMContentLoaded auto-run here. Running it unconditionally at script-load
+// used to fire these requests before any institution was selected (a
+// superadmin's active_institution_id is null pre-selection), silently
+// returning empty results that then went stale and never refreshed.
