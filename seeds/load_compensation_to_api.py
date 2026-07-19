@@ -24,7 +24,7 @@ from seeds.compensation_setup_software import SAMPLE_DATA
 
 
 class CompensationSeeder:
-    def __init__(self, api_url: str, token: str, verbose: bool = False):
+    def __init__(self, api_url: str, token: str, institution_id: str = "4", verbose: bool = False):
         self.api_url = api_url.rstrip('/')
         self.token = token
         self.verbose = verbose
@@ -32,6 +32,11 @@ class CompensationSeeder:
         self.session.headers.update({
             'Authorization': f'Bearer {token}',
             'Content-Type': 'application/json',
+            # Required for superadmin tokens (institution_id claim is null) —
+            # without this, active_institution_id resolves to None and the
+            # compensation endpoints fail inserting NULL into a NOT NULL
+            # institution_id column (surfaces as a generic 500).
+            'X-Institution-Id': institution_id,
         })
         self.created_ids = {
             'pay_grades': {},
@@ -253,6 +258,11 @@ def main():
         action='store_true',
         help='Verbose output'
     )
+    parser.add_argument(
+        '--institution-id',
+        default='4',
+        help='Target institution ID for X-Institution-Id header, needed for superadmin tokens (default: 4, Mandrill Demo)'
+    )
 
     args = parser.parse_args()
 
@@ -270,7 +280,7 @@ def main():
         print("  export COMPENSATION_SEED_TOKEN=<your-token>")
         sys.exit(1)
 
-    seeder = CompensationSeeder(args.api_url, token, verbose=args.verbose)
+    seeder = CompensationSeeder(args.api_url, token, institution_id=args.institution_id, verbose=args.verbose)
     success = seeder.run()
     sys.exit(0 if success else 1)
 
