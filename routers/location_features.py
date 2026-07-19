@@ -53,7 +53,7 @@ async def get_location_payroll_runs(
         # Get payroll runs that include employees from this location
         query = """
             SELECT DISTINCT pr.id, pr.institution_id, pr.period_start, pr.period_end,
-                   pr.created_by, pr.status, pr.created_at, pr.updated_at
+                   pr.created_by, pr.created_at
             FROM payroll_runs pr
             JOIN payslips ps ON pr.id = ps.payroll_run_id
             JOIN employees e ON ps.employee_id = e.employee_id
@@ -80,9 +80,7 @@ async def get_location_payroll_runs(
                 "period_start": run["period_start"],
                 "period_end": run["period_end"],
                 "created_by": run["created_by"],
-                "status": run.get("status", "active"),
                 "created_at": run["created_at"],
-                "updated_at": run["updated_at"],
             }
             for run in runs
         ]
@@ -112,12 +110,12 @@ async def get_location_payroll_summary(
         if not location:
             raise HTTPException(404, detail="Location not found")
 
-        # Get payroll summary
+        # Get payroll summary (use computed deductions or default to 0)
         query = """
             SELECT
                 COUNT(DISTINCT ps.employee_id) as total_employees,
                 SUM(ps.gross_pay) as total_gross_pay,
-                SUM(ps.total_deductions) as total_deductions,
+                SUM(COALESCE(ps.gross_pay - ps.net_pay, 0)) as total_deductions,
                 SUM(ps.net_pay) as total_net_pay,
                 AVG(ps.gross_pay) as average_salary,
                 pr.period_start, pr.period_end
@@ -241,8 +239,8 @@ async def get_employee_assignment_history(
                 assignment_type=asg["assignment_type"],
                 start_date=asg["start_date"],
                 end_date=asg["end_date"],
-                ended_by_user_id=asg.get("ended_by_user_id"),
-                end_reason=asg.get("end_reason"),
+                ended_by_user_id=asg["ended_by_user_id"],
+                end_reason=asg["end_reason"],
                 is_active=bool(asg["is_active"]),
                 created_at=asg["created_at"],
                 updated_at=asg["updated_at"],
@@ -372,10 +370,10 @@ async def get_location_capacity_alerts(
                 location_id=alert["location_id"],
                 alert_level=alert["alert_level"],
                 triggered_at=alert["triggered_at"],
-                acknowledged_at=alert.get("acknowledged_at"),
-                acknowledged_by_user_id=alert.get("acknowledged_by_user_id"),
-                is_resolved=bool(alert.get("is_resolved")),
-                resolved_at=alert.get("resolved_at"),
+                acknowledged_at=alert["acknowledged_at"],
+                acknowledged_by_user_id=alert["acknowledged_by_user_id"],
+                is_resolved=bool(alert["is_resolved"]),
+                resolved_at=alert["resolved_at"],
             )
             for alert in alerts
         ]
@@ -421,10 +419,10 @@ async def acknowledge_capacity_alert(
             location_id=alert["location_id"],
             alert_level=alert["alert_level"],
             triggered_at=alert["triggered_at"],
-            acknowledged_at=alert.get("acknowledged_at"),
-            acknowledged_by_user_id=alert.get("acknowledged_by_user_id"),
-            is_resolved=bool(alert.get("is_resolved")),
-            resolved_at=alert.get("resolved_at"),
+            acknowledged_at=alert["acknowledged_at"],
+            acknowledged_by_user_id=alert["acknowledged_by_user_id"],
+            is_resolved=bool(alert["is_resolved"]),
+            resolved_at=alert["resolved_at"],
         )
 
     finally:
@@ -459,11 +457,11 @@ async def check_and_trigger_capacity_alerts(
             (location_id, inst_id),
         ).fetchone()[0]
 
-        capacity = location.get("capacity") or 100
+        capacity = (location["capacity"] if location["capacity"] else None) or 100
         utilization = (emp_count / capacity * 100) if capacity > 0 else 0
 
-        warning_threshold = location.get("capacity_warning_threshold") or 80
-        critical_threshold = location.get("capacity_critical_threshold") or 95
+        warning_threshold = (location["capacity_warning_threshold"] if location["capacity_warning_threshold"] else None) or 80
+        critical_threshold = (location["capacity_critical_threshold"] if location["capacity_critical_threshold"] else None) or 95
 
         alert_triggered = False
         alert_level = None
@@ -647,11 +645,11 @@ async def get_location_capacity_status(
             (location_id, inst_id),
         ).fetchone()[0]
 
-        capacity = location.get("capacity") or 100
+        capacity = (location["capacity"] if location["capacity"] else None) or 100
         utilization = (emp_count / capacity * 100) if capacity > 0 else 0
 
-        warning_threshold = location.get("capacity_warning_threshold") or 80
-        critical_threshold = location.get("capacity_critical_threshold") or 95
+        warning_threshold = (location["capacity_warning_threshold"] if location["capacity_warning_threshold"] else None) or 80
+        critical_threshold = (location["capacity_critical_threshold"] if location["capacity_critical_threshold"] else None) or 95
 
         # Determine status
         if utilization >= critical_threshold:
@@ -726,7 +724,7 @@ async def get_location_capacity_dashboard(
             (location_id, inst_id),
         ).fetchone()[0]
 
-        capacity = location.get("capacity") or 100
+        capacity = (location["capacity"] if location["capacity"] else None) or 100
         utilization = (emp_count / capacity * 100) if capacity > 0 else 0
 
         # Get alerts
@@ -758,8 +756,8 @@ async def get_location_capacity_dashboard(
                 current_employees=emp_count,
                 capacity=capacity,
                 utilization_percent=round(utilization, 1),
-                warning_threshold=location.get("capacity_warning_threshold", 80),
-                critical_threshold=location.get("capacity_critical_threshold", 95),
+                warning_threshold=(location["capacity_warning_threshold"] or 80),
+                critical_threshold=(location["capacity_critical_threshold"] or 95),
                 status="Critical" if utilization >= 95 else "Warning" if utilization >= 80 else "Healthy",
                 alert_triggered=len(alerts) > 0,
                 recommendation=None,
@@ -782,10 +780,10 @@ async def get_location_capacity_dashboard(
                     location_id=alert["location_id"],
                     alert_level=alert["alert_level"],
                     triggered_at=alert["triggered_at"],
-                    acknowledged_at=alert.get("acknowledged_at"),
-                    acknowledged_by_user_id=alert.get("acknowledged_by_user_id"),
-                    is_resolved=bool(alert.get("is_resolved")),
-                    resolved_at=alert.get("resolved_at"),
+                    acknowledged_at=alert["acknowledged_at"],
+                    acknowledged_by_user_id=alert["acknowledged_by_user_id"],
+                    is_resolved=bool(alert["is_resolved"]),
+                    resolved_at=alert["resolved_at"],
                 )
                 for alert in alerts
             ],
