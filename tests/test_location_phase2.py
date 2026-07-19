@@ -75,7 +75,7 @@ class TestLocationTransferWorkflow:
         # Request transfer
         response = client.post(
             f"/api/employees/{employee['employee_id']}/transfer-request",
-            json={
+            params={
                 "to_location_id": target_location["id"],
                 "transfer_date": (datetime.utcnow().date() + timedelta(days=7)).isoformat(),
             },
@@ -110,7 +110,7 @@ class TestLocationTransferWorkflow:
         # Request transfer
         response = client.post(
             f"/api/employees/{employee['employee_id']}/transfer-request",
-            json={"to_location_id": location["id"]},
+            params={"to_location_id": location["id"]},
             headers=auth_headers,
         )
         assert response.status_code == 201
@@ -158,7 +158,7 @@ class TestLocationTransferWorkflow:
         # Request transfer
         response = client.post(
             f"/api/employees/{employee['employee_id']}/transfer-request",
-            json={
+            params={
                 "to_location_id": target_location["id"],
                 "transfer_date": datetime.utcnow().date().isoformat(),
             },
@@ -198,7 +198,7 @@ class TestLocationTransferWorkflow:
         # Request transfer
         response = client.post(
             f"/api/employees/{employee['employee_id']}/transfer-request",
-            json={"to_location_id": location["id"]},
+            params={"to_location_id": location["id"]},
             headers=auth_headers,
         )
         transfer_id = response.json()["id"]
@@ -410,7 +410,7 @@ class TestPhase2IntegrationWorkflows:
 
         response = client.post(
             f"/api/employees/{employee['employee_id']}/transfer-request",
-            json={
+            params={
                 "to_location_id": target_location["id"],
                 "transfer_date": datetime.utcnow().date().isoformat(),
             },

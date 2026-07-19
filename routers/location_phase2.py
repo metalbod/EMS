@@ -177,7 +177,8 @@ async def approve_transfer_request(
         )
 
         # If transfer_date is today or earlier, mark as Completed and update assignments
-        if transfer["transfer_date"] <= datetime.utcnow().date().isoformat():
+        transfer_date_str = transfer["transfer_date"] if isinstance(transfer["transfer_date"], str) else transfer["transfer_date"].isoformat()
+        if transfer_date_str <= datetime.utcnow().date().isoformat():
             # End old assignment
             if transfer["from_location_id"]:
                 conn.execute(
