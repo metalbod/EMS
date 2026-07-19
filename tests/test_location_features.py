@@ -66,16 +66,17 @@ def setup_location_features(client, hr_manager_auth, test_institution):
     assert emp2_res.status_code == 201, emp2_res.text
     emp2_id = emp2_res.json()["employee_id"]
 
-    # Assign employees to locations
+    # Assign employees to locations (with required start_date)
     asg1_res = client.post(
         f"/api/employees/{emp1_id}/locations",
         headers=hr_manager_auth,
         json={
             "location_id": loc1_id,
             "assignment_type": "primary",
+            "start_date": "2024-01-01",
         },
     )
-    assert asg1_res.status_code == 201
+    assert asg1_res.status_code == 201, asg1_res.text
 
     asg2_res = client.post(
         f"/api/employees/{emp2_id}/locations",
@@ -83,9 +84,10 @@ def setup_location_features(client, hr_manager_auth, test_institution):
         json={
             "location_id": loc2_id,
             "assignment_type": "primary",
+            "start_date": "2024-01-01",
         },
     )
-    assert asg2_res.status_code == 201
+    assert asg2_res.status_code == 201, asg2_res.text
 
     return {
         "inst_id": inst_id,
