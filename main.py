@@ -41,6 +41,7 @@ try:
     from routers.employees import router as employees_router
     from routers.locations import router as locations_router
     from routers.location_features import router as location_features_router
+    from routers.location_phase2 import router as location_phase2_router
     from routers.auth import router as auth_router
     from routers.meta import router as meta_router
     from routers.frontend import router as frontend_router, STATIC_DIR
@@ -68,6 +69,7 @@ except ImportError:
     from ems.routers.performance import router as performance_router
     from ems.routers.employees import router as employees_router
     from ems.routers.location_features import router as location_features_router
+    from ems.routers.location_phase2 import router as location_phase2_router
     from ems.routers.auth import router as auth_router
     from ems.routers.meta import router as meta_router
     from ems.routers.frontend import router as frontend_router, STATIC_DIR
@@ -153,6 +155,7 @@ app.include_router(performance_router)
 app.include_router(employees_router)
 app.include_router(locations_router)
 app.include_router(location_features_router)
+app.include_router(location_phase2_router)
 app.include_router(auth_router)
 app.include_router(meta_router)
 app.include_router(tasks_router)

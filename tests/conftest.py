@@ -229,6 +229,22 @@ def _valid_employee_payload(**overrides):
     return payload
 
 
+def _valid_location_payload(institution_id, **overrides):
+    """Generate valid location payload for testing."""
+    import random
+    random_suffix = random.randint(1000, 9999)
+    payload = {
+        "name": f"Test Location {random_suffix}",
+        "address": f"{random_suffix} Test Street, Kuala Lumpur",
+        "state": "KL",
+        "capacity": 50,
+        "capacity_warning_threshold": 75,
+        "capacity_critical_threshold": 95,
+    }
+    payload.update(overrides)
+    return payload
+
+
 @pytest.fixture
 def make_test_employee(client, hr_manager_auth):
     """Factory fixture: creates a disposable employee (via the hr_manager_auth
