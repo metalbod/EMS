@@ -9,7 +9,7 @@ let openGroups = new Set(['empMgmt']);
 const TABS = ['personal','employment','statutory'];
 const VIEW_TABS = ['vt-personal','vt-employment','vt-statutory','vt-notes'];
 const HR_NOTE_ROLES = ['superadmin','hr_manager','hr_admin'];
-const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','leave-my','leave-approvals','leave-holidays','projects','timesheet-my','timesheet-approvals','settings-notifications','settings-system-notifications','settings-bulk-upload','payroll-runs','payroll-my','perf-my','perf-team','perf-cycles','perf-calibration','coming-soon'];
+const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','leave-my','leave-approvals','leave-holidays','projects','timesheet-my','timesheet-approvals','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','payroll-runs','payroll-my','perf-my','perf-team','perf-cycles','perf-calibration','coming-soon'];
 
 // ---------------------------------------------------------------------------
 // API helper
@@ -147,9 +147,11 @@ function applyRoleUI() {
   document.getElementById('nav-projects')?.classList.toggle('hidden', !['superadmin','hr_manager'].includes(role));
   const canNotify = ['hr_manager','hr_admin'].includes(role);
   const canBulkUpload = role === 'hr_manager';
-  document.getElementById('nav-settings-wrap')?.classList.toggle('hidden', hideEmp || !(canAudit || canUsers || canNotify || canBulkUpload));
+  const canLocations = ['hr_manager','hr_admin'].includes(role);
+  document.getElementById('nav-settings-wrap')?.classList.toggle('hidden', hideEmp || !(canAudit || canUsers || canNotify || canBulkUpload || canLocations));
   document.getElementById('nav-settings-notifications')?.classList.toggle('hidden', !canNotify);
   document.getElementById('nav-bulk-upload')?.classList.toggle('hidden', !canBulkUpload);
+  document.getElementById('nav-locations')?.classList.toggle('hidden', !canLocations);
 
   const canPayrollView = ['payroll_manager','hr_manager'].includes(role);
   document.getElementById('nav-payroll-group')?.classList.toggle('hidden', hideEmp);
@@ -245,6 +247,7 @@ function showPage(page) {
     'settings-notifications':'Settings — Notifications',
     'settings-system-notifications':'System-Wide Notifications',
     'settings-bulk-upload':'Bulk Upload Employees',
+    'settings-locations':'Locations',
     'payroll-runs':'Payroll Runs', 'payroll-my':'My Payslips',
     'perf-my':'My Goals & Appraisal', 'perf-team':'Team Appraisals',
     'perf-cycles':'Performance Cycles', 'perf-calibration':'Calibration'
@@ -275,6 +278,7 @@ function showPage(page) {
   if (page === 'payroll-runs') loadPayrollRuns();
   if (page === 'payroll-my')   loadMyPayslips();
   if (page === 'settings-bulk-upload') resetBulkUploadUI();
+  if (page === 'settings-locations') loadLocations();
   if (page === 'perf-my')          loadMyPerformancePage();
   if (page === 'perf-team')        loadTeamAppraisalsPage();
   if (page === 'perf-cycles')      loadPerformanceCycles();

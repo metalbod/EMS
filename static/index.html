@@ -280,6 +280,10 @@
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"/></svg>
             Bulk Upload
           </div>
+          <div id="nav-locations" class="hidden nav-sub-item" onclick="showPage('settings-locations');closeBurgerMenu();" data-page="settings-locations">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+            Locations
+          </div>
         </div>
       </div>
       <!-- Performance -->
@@ -986,6 +990,32 @@
         </div>
       </div>
 
+      <!-- SETTINGS: Locations (HR Manager / HR Admin) -->
+      <div id="page-settings-locations" class="hidden">
+        <div class="flex justify-end mb-4">
+          <button onclick="openLocationModal()" class="btn-primary flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Add Location
+          </button>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Location</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase hidden md:table-cell">Code</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase hidden lg:table-cell">Type</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase hidden md:table-cell">City</th>
+                <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Employees</th>
+                <th class="px-4 py-3"></th>
+              </tr>
+            </thead>
+            <tbody id="locTableBody" class="divide-y divide-slate-100"></tbody>
+          </table>
+          <p id="locEmpty" class="hidden text-center text-slate-400 text-sm py-12">No locations yet.</p>
+        </div>
+      </div>
+
       <!-- PAYROLL RUNS (payroll_manager edit, hr_manager view-only) -->
       <div id="page-payroll-runs" class="hidden">
         <div class="flex items-center justify-between mb-5">
@@ -1509,6 +1539,9 @@
         <div><label class="block text-sm font-medium text-slate-700 mb-1">Reports To</label>
           <select id="fReportsTo" class="inp"><option value="">None (Top Level)</option><option value="SELF">⭐ Self (CEO / Top of Org)</option></select>
         </div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Primary Location</label>
+          <select id="fDefaultLocation" class="inp" onchange="loadLocationDropdown()"><option value="">No Location</option></select>
+        </div>
       </div>
       <div id="tab-statutory" class="tab-panel hidden grid grid-cols-1 md:grid-cols-2 gap-4">
         <div><label class="block text-sm font-medium text-slate-700 mb-1">EPF Number</label><input id="fEpfNumber" type="text" class="inp"/></div>
@@ -1588,6 +1621,66 @@
       <div class="flex-1"></div>
       <button onclick="closeViewModal()" class="btn-ghost">Close</button>
     </div>
+  </div>
+</div>
+
+<!-- Location Modal (Add/Edit) -->
+<div id="locModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 id="locModalTitle" class="text-base font-semibold">Add Location</h2>
+      <button onclick="closeLocationModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form onsubmit="submitLocationForm(event)" class="p-6 space-y-4">
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="lbl">Location Name <span class="text-red-500">*</span></label>
+          <input id="fLocName" type="text" class="inp" placeholder="e.g. Kuala Lumpur HQ" required/>
+        </div>
+        <div>
+          <label class="lbl">Code <span class="text-red-500">*</span></label>
+          <input id="fLocCode" type="text" class="inp" placeholder="e.g. KL_HQ" style="text-transform:uppercase" required/>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="lbl">City</label>
+          <input id="fLocCity" type="text" class="inp" placeholder="e.g. Kuala Lumpur"/>
+        </div>
+        <div>
+          <label class="lbl">State</label>
+          <input id="fLocState" type="text" class="inp" placeholder="e.g. KL"/>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="lbl">Location Type</label>
+          <select id="fLocType" class="inp">
+            <option value="branch">Branch</option>
+            <option value="hq">HQ</option>
+            <option value="warehouse">Warehouse</option>
+            <option value="outlet">Outlet</option>
+          </select>
+        </div>
+        <div>
+          <label class="lbl">Capacity</label>
+          <input id="fLocCapacity" type="number" class="inp" placeholder="e.g. 100" min="0"/>
+        </div>
+      </div>
+      <div>
+        <label class="lbl">Address</label>
+        <textarea id="fLocAddress" class="inp" rows="2" placeholder="Full address…"></textarea>
+      </div>
+      <div>
+        <label class="lbl">Phone</label>
+        <input id="fLocPhone" type="tel" class="inp" placeholder="e.g. +603-1234-5678"/>
+      </div>
+      <p id="locFormErr" class="hidden text-sm text-red-600"></p>
+      <div class="flex justify-end gap-2 pt-4">
+        <button type="button" onclick="closeLocationModal()" class="btn-ghost">Cancel</button>
+        <button type="submit" class="btn-primary">Save Location</button>
+      </div>
+    </form>
   </div>
 </div>
 
@@ -2350,6 +2443,7 @@
 <script src="/static/js/notifications.js?v=48"></script>
 <script src="/static/js/payroll.js?v=48"></script>
 <script src="/static/js/bulk-upload.js?v=48"></script>
+<script src="/static/js/locations.js?v=48"></script>
 <script src="/static/js/performance.js?v=48"></script>
 <script src="/static/js/app-init.js?v=48"></script>
 </body>

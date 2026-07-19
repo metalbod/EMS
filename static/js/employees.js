@@ -337,6 +337,7 @@ function openAddModal() {
   const rt=document.getElementById('fReportsTo');
   while(rt.options.length>2) rt.remove(2);
   employees.filter(e=>e.status==='Active').forEach(e=>{const o=document.createElement('option');o.value=e.employee_id;o.textContent=`${e.employee_id} — ${e.full_name}`;rt.appendChild(o);});
+  loadLocationDropdown();
   currentTab='personal'; switchTab('personal');
   document.getElementById('empModal').classList.remove('hidden');
 }
@@ -366,6 +367,8 @@ function openEditModal(e) {
   while(rt.options.length>2) rt.remove(2);
   employees.filter(em=>em.status==='Active'&&em.employee_id!==e.employee_id).forEach(em=>{const o=document.createElement('option');o.value=em.employee_id;o.textContent=`${em.employee_id} — ${em.full_name}`;rt.appendChild(o);});
   rt.value=e.reports_to===e.employee_id?'SELF':(e.reports_to||'');
+  loadLocationDropdown();
+  f('fDefaultLocation').value=e.default_location_id||'';
   currentTab='personal'; switchTab('personal');
   document.getElementById('empModal').classList.remove('hidden');
 }
@@ -411,6 +414,7 @@ async function submitEmpForm(e) {
     salary_type:g('fSalaryType'),
     hourly_rate:parseFloat(g('fHourlyRate'))||0,
     reports_to:g('fReportsTo')||null,
+    default_location_id:parseInt(g('fDefaultLocation'))||null,
   };
   const url=currentEmpId?`/api/employees/${currentEmpId}`:'/api/employees';
   const res=await api(url,{method:currentEmpId?'PUT':'POST',body:JSON.stringify(body)});
