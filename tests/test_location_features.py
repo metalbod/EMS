@@ -335,6 +335,82 @@ def test_get_location_capacity_dashboard_not_found(
 
 
 # ============================================================================
+# PAYROLL SCOPING TESTS
+# ============================================================================
+
+def test_get_location_payroll_runs(
+    client, setup_location_features, hr_manager_auth
+):
+    """Test retrieving payroll runs for a location."""
+    data = setup_location_features
+    response = client.get(
+        f"/api/locations/{data['loc1_id']}/payroll-runs",
+        headers=hr_manager_auth,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert isinstance(body, list)
+
+
+def test_get_location_payroll_runs_with_filters(
+    client, setup_location_features, hr_manager_auth
+):
+    """Test payroll runs with period filters."""
+    data = setup_location_features
+    response = client.get(
+        f"/api/locations/{data['loc1_id']}/payroll-runs?period_start=2024-01-01&period_end=2024-12-31",
+        headers=hr_manager_auth,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert isinstance(body, list)
+
+
+def test_get_location_payroll_runs_not_found(
+    client, setup_location_features, hr_manager_auth
+):
+    """Test payroll runs for non-existent location."""
+    data = setup_location_features
+    response = client.get(
+        "/api/locations/99999/payroll-runs",
+        headers=hr_manager_auth,
+    )
+    assert response.status_code == 404
+
+
+def test_get_location_payroll_summary(
+    client, setup_location_features, hr_manager_auth
+):
+    """Test getting location payroll summary."""
+    data = setup_location_features
+    response = client.get(
+        f"/api/locations/{data['loc1_id']}/payroll-summary",
+        headers=hr_manager_auth,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["location_id"] == data["loc1_id"]
+    assert "location_name" in body
+    assert "total_employees" in body
+    assert "total_gross_pay" in body
+    assert "total_deductions" in body
+    assert "total_net_pay" in body
+    assert "average_salary" in body
+
+
+def test_get_location_payroll_summary_not_found(
+    client, setup_location_features, hr_manager_auth
+):
+    """Test payroll summary for non-existent location."""
+    data = setup_location_features
+    response = client.get(
+        "/api/locations/99999/payroll-summary",
+        headers=hr_manager_auth,
+    )
+    assert response.status_code == 404
+
+
+# ============================================================================
 # INTEGRATION TESTS
 # ============================================================================
 
@@ -445,3 +521,95 @@ def test_multi_location_capacity_comparison(
     assert status2["location_id"] == data["loc2_id"]
     assert status1["status"] in ["Healthy", "Warning", "Critical"]
     assert status2["status"] in ["Healthy", "Warning", "Critical"]
+
+
+def test_payroll_workflow(client, setup_location_features, hr_manager_auth):
+    """Test complete payroll workflow for a location."""
+    data = setup_location_features
+
+    # Get payroll runs for location
+    response = client.get(
+        f"/api/locations/{data['loc1_id']}/payroll-runs",
+        headers=hr_manager_auth,
+    )
+    assert response.status_code == 200
+    runs = response.json()
+    assert isinstance(runs, list)
+
+    # Get payroll summary
+    response = client.get(
+        f"/api/locations/{data['loc1_id']}/payroll-summary",
+        headers=hr_manager_auth,
+    )
+    assert response.status_code == 200
+    summary = response.json()
+    assert summary["location_id"] == data["loc1_id"]
+    assert summary["total_employees"] >= 0
+    assert summary["total_gross_pay"] >= 0
+
+
+def test_complete_location_feature_workflow(
+    client, setup_location_features, hr_manager_auth
+):
+    """Test all Phase 1 features in a complete workflow."""
+    data = setup_location_features
+
+    # 1. Check assignment history
+    response = client.get(
+        f"/api/employees/{data['emp1_id']}/locations/history",
+        headers=hr_manager_auth,
+    )
+    assert response.status_code == 200
+    assert response.json()["employee_id"] == data["emp1_id"]
+
+    # 2. Check location assignment history
+    response = client.get(
+        f"/api/locations/{data['loc1_id']}/assignment-history",
+        headers=hr_manager_auth,
+    )
+    assert response.status_code == 200
+    assert response.json()["location_id"] == data["loc1_id"]
+
+    # 3. Check capacity status
+    response = client.get(
+        f"/api/locations/{data['loc1_id']}/capacity-status",
+        headers=hr_manager_auth,
+    )
+    assert response.status_code == 200
+    assert response.json()["location_id"] == data["loc1_id"]
+
+    # 4. Check capacity alerts
+    response = client.get(
+        f"/api/locations/{data['loc1_id']}/capacity-alerts",
+        headers=hr_manager_auth,
+    )
+    assert response.status_code == 200
+    assert isinstance(response.json(), list)
+
+    # 5. Get employee report
+    response = client.post(
+        f"/api/reports/location/{data['loc1_id']}/employees",
+        json={"location_id": data["loc1_id"], "include_inactive": False},
+        headers=hr_manager_auth,
+    )
+    assert response.status_code == 200
+    assert response.json()["location_id"] == data["loc1_id"]
+
+    # 6. Get payroll data
+    response = client.get(
+        f"/api/locations/{data['loc1_id']}/payroll-summary",
+        headers=hr_manager_auth,
+    )
+    assert response.status_code == 200
+    assert response.json()["location_id"] == data["loc1_id"]
+
+    # 7. Get full dashboard
+    response = client.get(
+        f"/api/locations/{data['loc1_id']}/capacity-dashboard",
+        headers=hr_manager_auth,
+    )
+    assert response.status_code == 200
+    dashboard = response.json()
+    assert dashboard["location_id"] == data["loc1_id"]
+    assert "current_status" in dashboard
+    assert "forecast" in dashboard

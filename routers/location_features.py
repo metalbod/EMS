@@ -26,6 +26,174 @@ router = APIRouter(prefix="/api", tags=["location-features"])
 
 
 # ============================================================================
+# PAYROLL SCOPING ENDPOINTS
+# ============================================================================
+
+@router.get("/locations/{location_id}/payroll-runs")
+async def get_location_payroll_runs(
+    location_id: int,
+    period_start: Optional[str] = None,
+    period_end: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+) -> List[dict]:
+    """Get payroll runs for a specific location."""
+    conn = get_db()
+    try:
+        inst_id = current_user.get("institution_id")
+
+        # Verify location exists
+        location = conn.execute(
+            "SELECT * FROM locations WHERE id = ? AND institution_id = ?",
+            (location_id, inst_id),
+        ).fetchone()
+
+        if not location:
+            raise HTTPException(404, detail="Location not found")
+
+        # Get payroll runs that include employees from this location
+        query = """
+            SELECT DISTINCT pr.id, pr.institution_id, pr.period_start, pr.period_end,
+                   pr.created_by, pr.status, pr.created_at, pr.updated_at
+            FROM payroll_runs pr
+            JOIN payslips ps ON pr.id = ps.payroll_run_id
+            JOIN employees e ON ps.employee_id = e.employee_id
+            JOIN employee_location_assignments ela ON e.employee_id = ela.employee_id
+            WHERE ela.location_id = ? AND pr.institution_id = ? AND ela.is_active = 1
+        """
+        params = [location_id, inst_id]
+
+        if period_start:
+            query += " AND pr.period_start >= ?"
+            params.append(period_start)
+
+        if period_end:
+            query += " AND pr.period_end <= ?"
+            params.append(period_end)
+
+        query += " ORDER BY pr.period_start DESC LIMIT 100"
+
+        runs = conn.execute(query, params).fetchall()
+
+        return [
+            {
+                "id": run["id"],
+                "period_start": run["period_start"],
+                "period_end": run["period_end"],
+                "created_by": run["created_by"],
+                "status": run.get("status", "active"),
+                "created_at": run["created_at"],
+                "updated_at": run["updated_at"],
+            }
+            for run in runs
+        ]
+
+    finally:
+        conn.close()
+
+
+@router.get("/locations/{location_id}/payroll-summary")
+async def get_location_payroll_summary(
+    location_id: int,
+    period_start: Optional[str] = None,
+    period_end: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+) -> LocationPayrollSummary:
+    """Get payroll summary for a location."""
+    conn = get_db()
+    try:
+        inst_id = current_user.get("institution_id")
+
+        # Verify location exists
+        location = conn.execute(
+            "SELECT * FROM locations WHERE id = ? AND institution_id = ?",
+            (location_id, inst_id),
+        ).fetchone()
+
+        if not location:
+            raise HTTPException(404, detail="Location not found")
+
+        # Get payroll summary
+        query = """
+            SELECT
+                COUNT(DISTINCT ps.employee_id) as total_employees,
+                SUM(ps.gross_pay) as total_gross_pay,
+                SUM(ps.total_deductions) as total_deductions,
+                SUM(ps.net_pay) as total_net_pay,
+                AVG(ps.gross_pay) as average_salary,
+                pr.period_start, pr.period_end
+            FROM payslips ps
+            JOIN payroll_runs pr ON ps.payroll_run_id = pr.id
+            JOIN employees e ON ps.employee_id = e.employee_id
+            JOIN employee_location_assignments ela ON e.employee_id = ela.employee_id
+            WHERE ela.location_id = ? AND pr.institution_id = ? AND ela.is_active = 1
+        """
+        params = [location_id, inst_id]
+
+        if period_start:
+            query += " AND pr.period_start >= ?"
+            params.append(period_start)
+
+        if period_end:
+            query += " AND pr.period_end <= ?"
+            params.append(period_end)
+
+        query += " GROUP BY pr.period_start, pr.period_end ORDER BY pr.period_end DESC LIMIT 1"
+
+        result = conn.execute(query, params).fetchone()
+
+        if not result:
+            return LocationPayrollSummary(
+                location_id=location_id,
+                location_name=location["name"],
+                location_code=location["code"],
+                report_period="N/A",
+                total_employees=0,
+                payroll_run_status=None,
+                total_gross_pay=0.0,
+                total_deductions=0.0,
+                total_net_pay=0.0,
+                average_salary=0.0,
+                budget_allocated=None,
+                budget_variance=None,
+                variance_percent=None,
+            )
+
+        # Check budget for this location
+        budget = conn.execute(
+            """
+            SELECT budget_amount, actual_amount FROM location_budgets
+            WHERE location_id = ? AND period_start = ? AND period_end = ?
+            """,
+            (location_id, result["period_start"], result["period_end"]),
+        ).fetchone()
+
+        budget_variance = None
+        variance_percent = None
+        if budget and result["total_gross_pay"]:
+            budget_variance = budget["budget_amount"] - result["total_gross_pay"]
+            variance_percent = (budget_variance / budget["budget_amount"] * 100) if budget["budget_amount"] > 0 else None
+
+        return LocationPayrollSummary(
+            location_id=location_id,
+            location_name=location["name"],
+            location_code=location["code"],
+            report_period=f"{result['period_start']} to {result['period_end']}",
+            total_employees=result["total_employees"] or 0,
+            payroll_run_status="active",
+            total_gross_pay=float(result["total_gross_pay"] or 0),
+            total_deductions=float(result["total_deductions"] or 0),
+            total_net_pay=float(result["total_net_pay"] or 0),
+            average_salary=float(result["average_salary"] or 0),
+            budget_allocated=float(budget["budget_amount"]) if budget else None,
+            budget_variance=budget_variance,
+            variance_percent=variance_percent,
+        )
+
+    finally:
+        conn.close()
+
+
+# ============================================================================
 # ASSIGNMENT HISTORY ENDPOINTS
 # ============================================================================
 
@@ -629,4 +797,4 @@ async def get_location_capacity_dashboard(
         conn.close()
 
 
-logger.info("Location features router registered with 8 endpoints")
+logger.info("Location features router registered with 10 Phase 1 endpoints")
