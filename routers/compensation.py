@@ -42,7 +42,7 @@ async def create_pay_grade(
     require_hr_role(current_user)
     conn = get_db()
     try:
-        inst_id = current_user.get("institution_id")
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         now = datetime.utcnow().isoformat()
 
         # Validate salary progression
@@ -78,7 +78,7 @@ async def list_pay_grades(
     require_hr_role(current_user)
     conn = get_db()
     try:
-        inst_id = current_user.get("institution_id")
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         grades = conn.execute(
             "SELECT * FROM pay_grades WHERE institution_id = ? AND is_active = 1 ORDER BY grade_level",
             (inst_id,),
@@ -97,7 +97,7 @@ async def get_pay_grade(
     require_hr_role(current_user)
     conn = get_db()
     try:
-        inst_id = current_user.get("institution_id")
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         grade = conn.execute(
             "SELECT * FROM pay_grades WHERE id = ? AND institution_id = ?",
             (grade_id, inst_id),
@@ -119,7 +119,7 @@ async def update_pay_grade(
     require_hr_role(current_user)
     conn = get_db()
     try:
-        inst_id = current_user.get("institution_id")
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         grade = conn.execute(
             "SELECT * FROM pay_grades WHERE id = ? AND institution_id = ?",
             (grade_id, inst_id),
@@ -170,7 +170,7 @@ async def create_job_level(
     require_hr_role(current_user)
     conn = get_db()
     try:
-        inst_id = current_user.get("institution_id")
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         now = datetime.utcnow().isoformat()
 
         conn.execute(
@@ -200,7 +200,7 @@ async def list_job_levels(
     require_hr_role(current_user)
     conn = get_db()
     try:
-        inst_id = current_user.get("institution_id")
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         levels = conn.execute(
             "SELECT * FROM job_levels WHERE institution_id = ? AND is_active = 1 ORDER BY level_order",
             (inst_id,),
@@ -219,7 +219,7 @@ async def get_job_level(
     require_hr_role(current_user)
     conn = get_db()
     try:
-        inst_id = current_user.get("institution_id")
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         level = conn.execute(
             "SELECT * FROM job_levels WHERE id = ? AND institution_id = ?",
             (level_id, inst_id),
@@ -241,7 +241,7 @@ async def update_job_level(
     require_hr_role(current_user)
     conn = get_db()
     try:
-        inst_id = current_user.get("institution_id")
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         level = conn.execute(
             "SELECT * FROM job_levels WHERE id = ? AND institution_id = ?",
             (level_id, inst_id),
@@ -287,7 +287,7 @@ async def create_job_role(
     require_hr_role(current_user)
     conn = get_db()
     try:
-        inst_id = current_user.get("institution_id")
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         now = datetime.utcnow().isoformat()
 
         # Verify job level exists
@@ -327,7 +327,7 @@ async def list_job_roles(
     require_hr_role(current_user)
     conn = get_db()
     try:
-        inst_id = current_user.get("institution_id")
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         roles = conn.execute(
             "SELECT * FROM job_roles WHERE institution_id = ? AND is_active = 1",
             (inst_id,),
@@ -348,7 +348,7 @@ async def map_role_to_grade(
     require_hr_role(current_user)
     conn = get_db()
     try:
-        inst_id = current_user.get("institution_id")
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
 
         # Verify role exists
         role = conn.execute(
@@ -397,7 +397,7 @@ async def set_employee_compensation(
     require_hr_role(current_user)
     conn = get_db()
     try:
-        inst_id = current_user.get("institution_id")
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
 
         # Verify employee exists
         employee = conn.execute(
@@ -447,7 +447,7 @@ async def get_employee_compensation(
     require_hr_role(current_user)
     conn = get_db()
     try:
-        inst_id = current_user.get("institution_id")
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
 
         comp = conn.execute(
             """
@@ -499,7 +499,7 @@ async def record_salary_change(
     require_hr_role(current_user)
     conn = get_db()
     try:
-        inst_id = current_user.get("institution_id")
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
 
         # Verify employee exists
         employee = conn.execute(
@@ -542,7 +542,7 @@ async def get_salary_history(
     require_hr_role(current_user)
     conn = get_db()
     try:
-        inst_id = current_user.get("institution_id")
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         changes = conn.execute(
             """
             SELECT * FROM salary_changes
@@ -569,7 +569,7 @@ async def create_merit_cycle(
     require_hr_role(current_user)
     conn = get_db()
     try:
-        inst_id = current_user.get("institution_id")
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         now = datetime.utcnow().isoformat()
 
         conn.execute(
@@ -601,7 +601,7 @@ async def list_merit_cycles(
     require_hr_role(current_user)
     conn = get_db()
     try:
-        inst_id = current_user.get("institution_id")
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         cycles = conn.execute(
             "SELECT * FROM merit_review_cycles WHERE institution_id = ? ORDER BY review_year DESC",
             (inst_id,),
@@ -621,7 +621,7 @@ async def create_merit_recommendation(
     require_hr_role(current_user)
     conn = get_db()
     try:
-        inst_id = current_user.get("institution_id")
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         user_id = current_user.get("id")
 
         # Verify cycle exists
@@ -676,7 +676,7 @@ async def approve_merit_recommendation(
     require_hr_role(current_user)
     conn = get_db()
     try:
-        inst_id = current_user.get("institution_id")
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         user_id = current_user.get("id")
 
         rec = conn.execute(
@@ -719,7 +719,7 @@ async def get_pay_equity_report(
     require_hr_role(current_user)
     conn = get_db()
     try:
-        inst_id = current_user.get("institution_id")
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         analysis_date = datetime.utcnow().isoformat()
 
         # Gender gap analysis
