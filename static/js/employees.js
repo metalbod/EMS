@@ -87,6 +87,7 @@ function viewEmployee(id) {
     ['Basic Salary',e.basic_salary?`RM ${Number(e.basic_salary).toLocaleString('en-MY',{minimumFractionDigits:2})}`:' —'],
     ['Bank Name',e.bank_name||'—'],['Bank Account',e.bank_account||'—',true],
   ]);
+  loadEmployeeLocations(id);
   switchViewTab('vt-personal');
   document.getElementById('viewModal').classList.remove('hidden');
 }
@@ -111,6 +112,52 @@ function switchViewTab(name) {
 }
 
 function closeViewModal() { document.getElementById('viewModal').classList.add('hidden'); viewingId=null; }
+
+async function loadEmployeeLocations(empId) {
+  const el = document.getElementById('vt-locations');
+  if (!el) return;
+  try {
+    const res = await api(`/api/employees/${empId}/locations`);
+    if (!res || !res.ok) {
+      el.innerHTML = '<p class="text-slate-500">No locations assigned</p>';
+      return;
+    }
+    const data = await res.json();
+    if (!data.locations || data.locations.length === 0) {
+      el.innerHTML = '<p class="text-slate-500">No locations assigned</p>';
+      return;
+    }
+    el.innerHTML = `
+      <div class="space-y-4">
+        <h3 class="font-medium text-slate-800">Location Assignments</h3>
+        <div class="grid gap-3">
+          ${data.locations.map(loc => `
+            <div class="border border-slate-200 rounded-lg p-4 hover:bg-slate-50 transition">
+              <div class="flex items-start justify-between">
+                <div>
+                  <p class="font-medium text-slate-800">${esc(loc.name)}</p>
+                  <p class="text-xs text-slate-500 mt-1">
+                    <span class="inline-block mr-3">📍 ${esc(loc.city)}</span>
+                    <span class="inline-block">${esc(loc.state)}</span>
+                  </p>
+                  <div class="mt-2 space-y-1 text-sm text-slate-600">
+                    <p><strong>Type:</strong> ${esc(loc.assignment_type)}</p>
+                    <p><strong>Start:</strong> ${loc.start_date || '—'}</p>
+                    ${loc.end_date ? `<p><strong>End:</strong> ${loc.end_date}</p>` : ''}
+                    <p><strong>Status:</strong> <span class="badge ${loc.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}">${loc.is_active ? 'Active' : 'Inactive'}</span></p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  } catch (err) {
+    console.error('Error loading locations:', err);
+    el.innerHTML = '<p class="text-red-600">Error loading locations</p>';
+  }
+}
 
 async function loadRelatedContracts(empId) {
   const el=document.getElementById('relatedContracts');

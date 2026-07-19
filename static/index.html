@@ -1627,11 +1627,13 @@
     <div class="flex border-b border-slate-200 px-6 gap-1">
       <button class="view-tab-btn view-tab-active px-4 py-3 text-sm" data-vtab="vt-personal" onclick="switchViewTab('vt-personal')">Personal Info</button>
       <button class="view-tab-btn px-4 py-3 text-sm text-slate-500" data-vtab="vt-employment" onclick="switchViewTab('vt-employment')">Employment</button>
+      <button class="view-tab-btn px-4 py-3 text-sm text-slate-500" data-vtab="vt-locations" onclick="switchViewTab('vt-locations')">Locations</button>
       <button class="view-tab-btn px-4 py-3 text-sm text-slate-500" data-vtab="vt-statutory" onclick="switchViewTab('vt-statutory')">Statutory &amp; Payroll</button>
       <button id="vt-notes-btn" class="view-tab-btn px-4 py-3 text-sm text-slate-500 hidden" data-vtab="vt-notes" onclick="switchViewTab('vt-notes')">HR Notes 🔒</button>
     </div>
     <div id="vt-personal" class="view-tab-panel p-6"></div>
     <div id="vt-employment" class="view-tab-panel p-6 hidden"></div>
+    <div id="vt-locations" class="view-tab-panel p-6 hidden"></div>
     <div id="vt-statutory" class="view-tab-panel p-6 hidden"></div>
     <div id="vt-notes" class="view-tab-panel p-6 hidden">
       <div id="noteForm" class="mb-5 bg-slate-50 border border-slate-200 rounded-xl p-4">
