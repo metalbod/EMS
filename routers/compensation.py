@@ -30,6 +30,18 @@ def require_hr_role(current_user: dict):
         raise HTTPException(403, detail="HR Manager or Admin access required")
 
 
+def _add_hr_note(conn, inst_id: int, employee_id: str, body: str, username: str):
+    """Log a compensation event (merit recommendation created/decided, salary
+    adjusted) as an HR note on the employee's record, so it shows up in the
+    same history HR already reviews on the employee profile — matches the
+    existing note_type values used by routers/hr_notes.py's UI dropdown
+    (General/Disciplinary/Performance/Warning/Commendation)."""
+    conn.execute(
+        "INSERT INTO hr_notes (institution_id, employee_id, note_type, body, created_by) VALUES (?, ?, ?, ?, ?)",
+        (inst_id, employee_id, "performance", body, username),
+    )
+
+
 # ============================================================================
 # PAY GRADES ENDPOINTS
 # ============================================================================
@@ -440,6 +452,14 @@ async def set_employee_compensation(
         if not employee:
             raise HTTPException(404, detail="Employee not found")
 
+        # Capture the outgoing salary (if any) before superseding it, so the
+        # HR note below can record "from X to Y" rather than just the new
+        # figure.
+        prev_comp = conn.execute(
+            "SELECT base_salary FROM employee_compensation WHERE employee_id = ? AND institution_id = ? AND is_current = 1",
+            (employee_id, inst_id),
+        ).fetchone()
+
         # Mark previous record as not current. employee_id alone is not a
         # safe filter here — it's only unique per institution (composite
         # unique with institution_id), so a bare WHERE employee_id=? could
@@ -463,8 +483,20 @@ async def set_employee_compensation(
              payload.pay_grade_id, payload.salary_structure_id, payload.base_salary,
              payload.effective_date, now, now),
         )
-        conn.commit()
+        # Capture this INSERT's id before the HR note INSERT overwrites
+        # conn._last_id.
         comp_id = conn._last_id
+
+        if prev_comp and prev_comp["base_salary"] is not None:
+            note_body = (
+                f"Salary adjusted from RM {float(prev_comp['base_salary']):,.2f} to "
+                f"RM {payload.base_salary:,.2f}, effective {payload.effective_date}."
+            )
+        else:
+            note_body = f"Salary set to RM {payload.base_salary:,.2f}, effective {payload.effective_date}."
+        _add_hr_note(conn, inst_id, employee_id, note_body, current_user["username"])
+
+        conn.commit()
 
         comp = conn.execute(
             "SELECT * FROM employee_compensation WHERE id = ?",
@@ -728,8 +760,20 @@ async def create_merit_recommendation(
              payload.recommended_increase_percent, payload.recommended_new_salary,
              payload.reason, user_id, now, now),
         )
-        conn.commit()
+        # Capture this INSERT's id before any other statement runs — _last_id
+        # gets overwritten by the next INSERT (the HR note) otherwise.
         rec_id = conn._last_id
+
+        note_body = (
+            f"Merit recommendation submitted under '{cycle['cycle_name']}': "
+            f"{payload.recommended_increase_percent:g}% increase "
+            f"(RM {payload.current_salary:,.2f} → RM {payload.recommended_new_salary:,.2f})."
+        )
+        if payload.reason:
+            note_body += f" Reason: {payload.reason}"
+        _add_hr_note(conn, inst_id, payload.employee_id, note_body, current_user["username"])
+
+        conn.commit()
 
         rec = conn.execute(
             "SELECT * FROM merit_recommendations WHERE id = ?",
@@ -761,6 +805,12 @@ async def approve_merit_recommendation(
         if not rec:
             raise HTTPException(404, detail="Recommendation not found")
 
+        cycle = conn.execute(
+            "SELECT cycle_name FROM merit_review_cycles WHERE id = ?",
+            (rec["merit_review_cycle_id"],),
+        ).fetchone()
+        cycle_name = cycle["cycle_name"] if cycle else "merit cycle"
+
         now = datetime.utcnow().isoformat()
         conn.execute(
             """
@@ -770,6 +820,14 @@ async def approve_merit_recommendation(
             """,
             (payload.approval_status, user_id, payload.approval_date or now, now, recommendation_id),
         )
+
+        note_body = (
+            f"Merit recommendation ({rec['recommended_increase_percent']:g}% increase, "
+            f"RM {rec['current_salary']:,.2f} → RM {rec['recommended_new_salary']:,.2f}) "
+            f"under '{cycle_name}' was {payload.approval_status.lower()} by {current_user['username']}."
+        )
+        _add_hr_note(conn, inst_id, rec["employee_id"], note_body, current_user["username"])
+
         conn.commit()
 
         updated = conn.execute(
