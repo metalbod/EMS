@@ -1,5 +1,5 @@
 """Pydantic schemas for Compensation Framework."""
-from typing import Optional, List
+from typing import Optional, List, Literal
 from pydantic import BaseModel, Field
 from datetime import date
 
@@ -308,7 +308,7 @@ class MeritRecommendationCreate(MeritRecommendationBase):
 
 class MeritRecommendationApprove(BaseModel):
     """Approve merit recommendation."""
-    approval_status: str = Field(..., description="'Approved' or 'Rejected'")
+    approval_status: Literal["Approved", "Rejected"]
     approval_date: Optional[str] = None
 
 
