@@ -39,6 +39,7 @@ try:
     from routers.payroll import router as payroll_router
     from routers.performance import router as performance_router
     from routers.employees import router as employees_router
+    from routers.locations import router as locations_router
     from routers.auth import router as auth_router
     from routers.meta import router as meta_router
     from routers.frontend import router as frontend_router, STATIC_DIR
@@ -148,6 +149,7 @@ app.include_router(dashboard_router)
 app.include_router(payroll_router)
 app.include_router(performance_router)
 app.include_router(employees_router)
+app.include_router(locations_router)
 app.include_router(auth_router)
 app.include_router(meta_router)
 app.include_router(tasks_router)
