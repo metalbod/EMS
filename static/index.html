@@ -1051,6 +1051,96 @@
         </div>
       </div>
 
+      <!-- SETTINGS: Compensation Framework (HR Manager / HR Admin) -->
+      <div id="page-settings-compensation" class="hidden">
+        <div class="space-y-6">
+
+          <!-- Pay Grades Section -->
+          <div>
+            <div class="flex justify-between items-center mb-4">
+              <h3 class="text-lg font-semibold">Pay Grades & Salary Bands</h3>
+              <button onclick="openPayGradeForm()" class="btn-primary text-sm flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                New Pay Grade
+              </button>
+            </div>
+            <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+              <table class="w-full text-sm">
+                <thead class="bg-slate-50 border-b border-slate-200">
+                  <tr>
+                    <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Grade</th>
+                    <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Level</th>
+                    <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Min Salary</th>
+                    <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Midpoint</th>
+                    <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Max Salary</th>
+                    <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+                  </tr>
+                </thead>
+                <tbody id="payGradesTableBody" class="divide-y divide-slate-100"></tbody>
+              </table>
+              <p class="text-center text-slate-400 text-sm py-12">No pay grades yet.</p>
+            </div>
+          </div>
+
+          <!-- Job Levels Section -->
+          <div>
+            <div class="flex justify-between items-center mb-4">
+              <h3 class="text-lg font-semibold">Job Levels & Hierarchy</h3>
+              <button onclick="openJobLevelForm()" class="btn-primary text-sm flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                New Job Level
+              </button>
+            </div>
+            <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+              <table class="w-full text-sm">
+                <thead class="bg-slate-50 border-b border-slate-200">
+                  <tr>
+                    <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Code</th>
+                    <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Level Name</th>
+                    <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Order</th>
+                    <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+                  </tr>
+                </thead>
+                <tbody id="jobLevelsTableBody" class="divide-y divide-slate-100"></tbody>
+              </table>
+              <p class="text-center text-slate-400 text-sm py-12">No job levels yet.</p>
+            </div>
+          </div>
+
+          <!-- Merit Cycles Section -->
+          <div>
+            <div class="flex justify-between items-center mb-4">
+              <h3 class="text-lg font-semibold">Merit Review Cycles</h3>
+              <button onclick="openMeritCycleForm()" class="btn-primary text-sm flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                New Cycle
+              </button>
+            </div>
+            <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+              <table class="w-full text-sm">
+                <thead class="bg-slate-50 border-b border-slate-200">
+                  <tr>
+                    <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Cycle Name</th>
+                    <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Period</th>
+                    <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Budget</th>
+                    <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+                  </tr>
+                </thead>
+                <tbody id="meritCyclesTableBody" class="divide-y divide-slate-100"></tbody>
+              </table>
+              <p class="text-center text-slate-400 text-sm py-12">No merit cycles yet.</p>
+            </div>
+          </div>
+
+          <!-- Pay Equity Analysis -->
+          <div>
+            <h3 class="text-lg font-semibold mb-4">Pay Equity Analysis</h3>
+            <div id="payEquityAnalysis" class="bg-white rounded-xl border border-slate-200 p-6"></div>
+          </div>
+
+        </div>
+      </div>
+
       <!-- PAYROLL RUNS (payroll_manager edit, hr_manager view-only) -->
       <div id="page-payroll-runs" class="hidden">
         <div class="flex items-center justify-between mb-5">
@@ -2465,6 +2555,81 @@
   </div>
 </div>
 
+<!-- Compensation: Pay Grade Modal -->
+<div id="compensationPayGradeModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 id="payGradeFormTitle" class="text-base font-semibold">Create New Pay Grade</h2>
+      <button onclick="closePayGradeModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form id="payGradeForm" onsubmit="submitPayGradeForm(event)" class="p-6 space-y-4">
+      <input type="hidden" id="payGradeId"/>
+      <div class="grid grid-cols-2 gap-4">
+        <div><label class="lbl">Code</label><input id="pgCode" type="text" class="inp" placeholder="A1" required/></div>
+        <div><label class="lbl">Level</label><input id="pgLevel" type="number" class="inp" placeholder="1" required/></div>
+      </div>
+      <div><label class="lbl">Grade Name</label><input id="pgName" type="text" class="inp" placeholder="Entry Level" required/></div>
+      <div class="grid grid-cols-3 gap-3">
+        <div><label class="lbl">Min</label><input id="pgMin" type="number" class="inp" step="0.01" placeholder="2500" required/></div>
+        <div><label class="lbl">Midpoint</label><input id="pgMid" type="number" class="inp" step="0.01" placeholder="3000" required/></div>
+        <div><label class="lbl">Max</label><input id="pgMax" type="number" class="inp" step="0.01" placeholder="3500" required/></div>
+      </div>
+      <div><label class="lbl">Description</label><textarea id="pgDesc" class="inp" rows="3"></textarea></div>
+      <div class="flex gap-2">
+        <button type="submit" class="btn-primary">Save Pay Grade</button>
+        <button type="button" onclick="closePayGradeModal()" class="btn-ghost">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Compensation: Job Level Modal -->
+<div id="compensationJobLevelModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 class="text-base font-semibold">Create New Job Level</h2>
+      <button onclick="closeJobLevelModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form id="jobLevelForm" onsubmit="submitJobLevelForm(event)" class="p-6 space-y-4">
+      <div class="grid grid-cols-2 gap-4">
+        <div><label class="lbl">Code</label><input id="jlCode" type="text" class="inp" placeholder="IC1" required/></div>
+        <div><label class="lbl">Order</label><input id="jlOrder" type="number" class="inp" placeholder="1" required/></div>
+      </div>
+      <div><label class="lbl">Level Name</label><input id="jlName" type="text" class="inp" placeholder="Individual Contributor" required/></div>
+      <div><label class="lbl">Description</label><textarea id="jlDesc" class="inp" rows="3"></textarea></div>
+      <div class="flex gap-2">
+        <button type="submit" class="btn-primary">Save Job Level</button>
+        <button type="button" onclick="closeJobLevelModal()" class="btn-ghost">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Compensation: Merit Cycle Modal -->
+<div id="compensationMeritModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 class="text-base font-semibold">Create New Merit Cycle</h2>
+      <button onclick="closeMeritModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form id="meritCycleForm" onsubmit="submitMeritCycleForm(event)" class="p-6 space-y-4">
+      <div><label class="lbl">Cycle Name</label><input id="mcName" type="text" class="inp" placeholder="2026 Annual Merit Review" required/></div>
+      <div class="grid grid-cols-3 gap-3">
+        <div><label class="lbl">Year</label><input id="mcYear" type="number" class="inp" placeholder="2026" required/></div>
+        <div><label class="lbl">Start</label><input id="mcStart" type="date" class="inp" required/></div>
+        <div><label class="lbl">End</label><input id="mcEnd" type="date" class="inp" required/></div>
+      </div>
+      <div><label class="lbl">Submission Deadline</label><input id="mcDeadline" type="date" class="inp" required/></div>
+      <div><label class="lbl">Budget Pool (RM)</label><input id="mcBudget" type="number" class="inp" step="0.01" placeholder="500000"/></div>
+      <div><label class="lbl">Description</label><textarea id="mcDesc" class="inp" rows="3"></textarea></div>
+      <div class="flex gap-2">
+        <button type="submit" class="btn-primary">Create Cycle</button>
+        <button type="button" onclick="closeMeritModal()" class="btn-ghost">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <script src="/static/js/core.js?v=48"></script>
 <script src="/static/js/dashboard.js?v=48"></script>
 <script src="/static/js/institutions.js?v=48"></script>
@@ -2481,6 +2646,7 @@
 <script src="/static/js/payroll.js?v=48"></script>
 <script src="/static/js/bulk-upload.js?v=48"></script>
 <script src="/static/js/locations.js?v=48"></script>
+<script src="/static/js/compensation.js?v=48"></script>
 <script src="/static/js/performance.js?v=48"></script>
 <script src="/static/js/app-init.js?v=48"></script>
 </body>

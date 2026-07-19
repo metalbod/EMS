@@ -9,7 +9,7 @@ let openGroups = new Set(['empMgmt']);
 const TABS = ['personal','employment','statutory'];
 const VIEW_TABS = ['vt-personal','vt-employment','vt-locations','vt-statutory','vt-notes'];
 const HR_NOTE_ROLES = ['superadmin','hr_manager','hr_admin'];
-const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','leave-my','leave-approvals','leave-holidays','projects','timesheet-my','timesheet-approvals','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','payroll-runs','payroll-my','perf-my','perf-team','perf-cycles','perf-calibration','coming-soon'];
+const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','leave-my','leave-approvals','leave-holidays','projects','timesheet-my','timesheet-approvals','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','settings-compensation','payroll-runs','payroll-my','perf-my','perf-team','perf-cycles','perf-calibration','coming-soon'];
 
 // ---------------------------------------------------------------------------
 // API helper
