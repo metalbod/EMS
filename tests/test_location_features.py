@@ -2,6 +2,7 @@
 import pytest
 from datetime import datetime, timedelta
 from db import get_db
+from tests.conftest import _valid_employee_payload
 
 
 @pytest.fixture
@@ -40,35 +41,29 @@ def setup_location_features(client, hr_manager_auth, test_institution):
     assert loc2_res.status_code == 201
     loc2_id = loc2_res.json()["id"]
 
-    # Create employees using make_test_employee
+    # Create employees with all required fields
     emp1_res = client.post(
         "/api/employees",
         headers=hr_manager_auth,
-        json={
-            "employee_id": "EMP_" + str(datetime.utcnow().timestamp()).replace(".", "")[:10],
-            "full_name": "John Doe",
-            "designation": "Manager",
-            "department": "Operations",
-            "employment_type": "Full-time",
-            "start_date": "2024-01-01",
-        },
+        json=_valid_employee_payload(
+            full_name="John Doe",
+            designation="Manager",
+            department="Operations",
+        ),
     )
-    assert emp1_res.status_code == 201
+    assert emp1_res.status_code == 201, emp1_res.text
     emp1_id = emp1_res.json()["employee_id"]
 
     emp2_res = client.post(
         "/api/employees",
         headers=hr_manager_auth,
-        json={
-            "employee_id": "EMP_" + str(datetime.utcnow().timestamp()).replace(".", "")[:10],
-            "full_name": "Jane Smith",
-            "designation": "Team Lead",
-            "department": "HR",
-            "employment_type": "Full-time",
-            "start_date": "2024-02-15",
-        },
+        json=_valid_employee_payload(
+            full_name="Jane Smith",
+            designation="Team Lead",
+            department="HR",
+        ),
     )
-    assert emp2_res.status_code == 201
+    assert emp2_res.status_code == 201, emp2_res.text
     emp2_id = emp2_res.json()["employee_id"]
 
     # Assign employees to locations
