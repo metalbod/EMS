@@ -264,69 +264,17 @@ def upgrade():
         sa.Index('ix_pay_equity_flagged', 'flagged'),
     )
 
-    # Create triggers for automatic timestamps
-    op.execute("""
-    CREATE TRIGGER pay_grades_update_timestamp
-    BEFORE UPDATE ON pay_grades
-    FOR EACH ROW
-    BEGIN
-      NEW.updated_at = datetime('now');
-    END;
-    """)
-
-    op.execute("""
-    CREATE TRIGGER job_levels_update_timestamp
-    BEFORE UPDATE ON job_levels
-    FOR EACH ROW
-    BEGIN
-      NEW.updated_at = datetime('now');
-    END;
-    """)
-
-    op.execute("""
-    CREATE TRIGGER job_roles_update_timestamp
-    BEFORE UPDATE ON job_roles
-    FOR EACH ROW
-    BEGIN
-      NEW.updated_at = datetime('now');
-    END;
-    """)
-
-    op.execute("""
-    CREATE TRIGGER salary_structures_update_timestamp
-    BEFORE UPDATE ON salary_structures
-    FOR EACH ROW
-    BEGIN
-      NEW.updated_at = datetime('now');
-    END;
-    """)
-
-    op.execute("""
-    CREATE TRIGGER employee_compensation_update_timestamp
-    BEFORE UPDATE ON employee_compensation
-    FOR EACH ROW
-    BEGIN
-      NEW.updated_at = datetime('now');
-    END;
-    """)
-
-    op.execute("""
-    CREATE TRIGGER merit_review_cycles_update_timestamp
-    BEFORE UPDATE ON merit_review_cycles
-    FOR EACH ROW
-    BEGIN
-      NEW.updated_at = datetime('now');
-    END;
-    """)
-
-    op.execute("""
-    CREATE TRIGGER merit_recommendations_update_timestamp
-    BEFORE UPDATE ON merit_recommendations
-    FOR EACH ROW
-    BEGIN
-      NEW.updated_at = datetime('now');
-    END;
-    """)
+    # Create triggers for automatic timestamps (uses the shared set_updated_at()
+    # trigger function defined in 20260717_0001_full_schema_ddl.py)
+    for table in (
+        'pay_grades', 'job_levels', 'job_roles', 'salary_structures',
+        'employee_compensation', 'merit_review_cycles', 'merit_recommendations',
+    ):
+        op.execute(f"DROP TRIGGER IF EXISTS trg_{table}_upd ON {table}")
+        op.execute(f"""
+            CREATE TRIGGER trg_{table}_upd BEFORE UPDATE ON {table}
+            FOR EACH ROW EXECUTE FUNCTION set_updated_at()
+        """)
 
 
 def downgrade():
