@@ -192,24 +192,19 @@ async function loadJobRoles() {
   const res = await api('/api/compensation/job-roles');
   if (!res || !res.ok) return;
   jobRoles = await res.json();
-  await renderJobRolesTable();
+  renderJobRolesTable();
 }
 
-async function renderJobRolesTable() {
+function renderJobRolesTable() {
   const tbody = document.getElementById('jobRolesTableBody');
   if (!tbody) return;
   document.getElementById('jobRolesEmptyState')?.classList.toggle('hidden', jobRoles.length > 0);
 
-  // Grade mappings aren't included in the list response, so fetch them
-  // per-role (there's no bulk endpoint) and render once all resolve.
-  const gradesByRole = await Promise.all(jobRoles.map(async role => {
-    const res = await api(`/api/compensation/job-roles/${role.id}/pay-grades`);
-    return (res && res.ok) ? await res.json() : [];
-  }));
-
-  tbody.innerHTML = jobRoles.map((role, i) => {
+  // Grade mappings now come embedded in each role from /job-roles itself
+  // (see JobRoleListItem on the backend) — no more one request per role.
+  tbody.innerHTML = jobRoles.map(role => {
     const level = jobLevels.find(l => l.id === role.job_level_id);
-    const grades = gradesByRole[i];
+    const grades = role.pay_grades || [];
     const gradesLabel = grades.length
       ? grades.map(g => g.is_primary ? `<strong>${esc(g.grade_code)}</strong>` : esc(g.grade_code)).join(', ')
       : '<span class="text-slate-400">—</span>';

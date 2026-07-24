@@ -8,7 +8,7 @@ from core.deps import get_current_user
 from core.compensation_schemas import (
     PayGradeCreate, PayGradeResponse, PayGradeUpdate,
     JobLevelCreate, JobLevelResponse, JobLevelUpdate,
-    JobRoleCreate, JobRoleResponse, JobRoleUpdate, JobRoleWithGrades,
+    JobRoleCreate, JobRoleResponse, JobRoleUpdate, JobRoleWithGrades, JobRoleListItem,
     SalaryStructureCreate, SalaryStructureResponse, SalaryStructureUpdate,
     EmployeeCompensationCreate, EmployeeCompensationResponse, EmployeeCompensationDetail,
     SalaryChangeCreate, SalaryChangeResponse,
@@ -345,8 +345,16 @@ async def create_job_role(
 @router.get("/job-roles")
 async def list_job_roles(
     current_user: dict = Depends(get_current_user),
-) -> List[JobRoleResponse]:
-    """List all job roles."""
+) -> List[JobRoleListItem]:
+    """List all job roles, with each role's pay-grade mappings embedded.
+
+    Previously returned bare roles and made the frontend fetch
+    /job-roles/{id}/pay-grades separately for every single role (an N+1
+    pattern — 40 roles meant 41 sequential-feeling round trips, each paying
+    its own JWT-decode + RLS-context-setup + DB-connection-pool-wait
+    overhead on top of the actual query). One extra JOIN query here,
+    grouped in Python, replaces all of that.
+    """
     require_hr_role(current_user)
     conn = get_db()
     try:
@@ -355,7 +363,33 @@ async def list_job_roles(
             "SELECT * FROM job_roles WHERE institution_id = ? AND is_active = 1",
             (inst_id,),
         ).fetchall()
-        return [JobRoleResponse(**dict(r)) for r in roles]
+
+        # job_role_pay_grades has no institution_id of its own, so scoping
+        # goes through the job_roles join (same reasoning as
+        # list_role_pay_grades's per-role query, just for all roles at once).
+        mapping_rows = conn.execute(
+            """
+            SELECT m.job_role_id, g.id, g.grade_code, g.grade_name, m.is_primary
+            FROM job_role_pay_grades m
+            JOIN pay_grades g ON g.id = m.pay_grade_id
+            JOIN job_roles r ON r.id = m.job_role_id
+            WHERE r.institution_id = ?
+            ORDER BY m.is_primary DESC, g.grade_level
+            """,
+            (inst_id,),
+        ).fetchall()
+
+        grades_by_role = {}
+        for row in mapping_rows:
+            grades_by_role.setdefault(row["job_role_id"], []).append({
+                "id": row["id"], "grade_code": row["grade_code"],
+                "grade_name": row["grade_name"], "is_primary": row["is_primary"],
+            })
+
+        return [
+            JobRoleListItem(**dict(r), pay_grades=grades_by_role.get(r["id"], []))
+            for r in roles
+        ]
     finally:
         conn.close()
 

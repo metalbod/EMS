@@ -126,6 +126,22 @@ class JobRoleWithGrades(JobRoleResponse):
     pay_grades: List[PayGradeResponse] = []
 
 
+class JobRoleGradeMapping(BaseModel):
+    """Lightweight grade reference for the job-roles list — just enough to
+    render the 'Pay Grades' column (code/name + primary flag) without the
+    full PayGradeResponse (salary bounds, description, etc.)."""
+    id: int
+    grade_code: str
+    grade_name: str
+    is_primary: int
+
+
+class JobRoleListItem(JobRoleResponse):
+    """Job role list entry with grade mappings embedded, so the frontend
+    doesn't need a separate request per role to render them."""
+    pay_grades: List[JobRoleGradeMapping] = []
+
+
 # ============================================================================
 # SALARY STRUCTURES
 # ============================================================================
