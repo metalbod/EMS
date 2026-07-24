@@ -12,6 +12,24 @@ const HR_NOTE_ROLES = ['superadmin','hr_manager','hr_admin'];
 const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','leave-my','leave-approvals','leave-holidays','projects','timesheet-my','timesheet-approvals','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','comp-paygrades','comp-joblevels','comp-jobroles','comp-meritcycles','comp-payequity','payroll-runs','payroll-my','perf-my','perf-team','perf-cycles','perf-calibration','coming-soon'];
 
 // ---------------------------------------------------------------------------
+// Global loading indicator
+// ---------------------------------------------------------------------------
+// A counter, not a boolean, because pages routinely fire several api() calls
+// at once (Promise.all) — the bar must stay visible until the LAST of them
+// settles, not disappear when the first one happens to finish.
+let pendingRequestCount = 0;
+function showGlobalLoading() {
+  pendingRequestCount++;
+  document.getElementById('globalLoadingBar')?.classList.remove('hidden');
+}
+function hideGlobalLoading() {
+  pendingRequestCount = Math.max(0, pendingRequestCount - 1);
+  if (pendingRequestCount === 0) {
+    document.getElementById('globalLoadingBar')?.classList.add('hidden');
+  }
+}
+
+// ---------------------------------------------------------------------------
 // API helper
 // ---------------------------------------------------------------------------
 async function api(path, opts = {}) {
@@ -25,9 +43,14 @@ async function api(path, opts = {}) {
   if (opts.body && typeof opts.body === 'string' && !headers['Content-Type']) {
     headers['Content-Type'] = 'application/json';
   }
-  const res = await fetch(path, {...opts, headers});
-  if (res.status === 401) { doLogout(); return null; }
-  return res;
+  showGlobalLoading();
+  try {
+    const res = await fetch(path, {...opts, headers});
+    if (res.status === 401) { doLogout(); return null; }
+    return res;
+  } finally {
+    hideGlobalLoading();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -37,19 +60,24 @@ async function doLogin(e) {
   e.preventDefault();
   const err = document.getElementById('loginErr');
   err.classList.add('hidden');
-  const res = await fetch('/api/auth/login', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({
-      username: document.getElementById('loginUser').value.trim(),
-      password: document.getElementById('loginPass').value,
-      institution_code: document.getElementById('loginCode').value.trim() || null,
-    })
-  });
-  const data = await res.json();
-  if (!res.ok) { err.textContent = data.detail || 'Login failed'; err.classList.remove('hidden'); return; }
-  localStorage.setItem('token', data.access_token);
-  currentUser = data.user;
-  bootApp();
+  showGlobalLoading();
+  try {
+    const res = await fetch('/api/auth/login', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        username: document.getElementById('loginUser').value.trim(),
+        password: document.getElementById('loginPass').value,
+        institution_code: document.getElementById('loginCode').value.trim() || null,
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) { err.textContent = data.detail || 'Login failed'; err.classList.remove('hidden'); return; }
+    localStorage.setItem('token', data.access_token);
+    currentUser = data.user;
+    bootApp();
+  } finally {
+    hideGlobalLoading();
+  }
 }
 
 function doLogout() {

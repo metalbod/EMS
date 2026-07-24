@@ -73,7 +73,13 @@ document.querySelectorAll('[data-page]').forEach(el => {
 (async()=>{
   const token=localStorage.getItem('token');
   if(!token) return;
-  const res=await fetch('/api/auth/me',{headers:{Authorization:`Bearer ${token}`}});
+  showGlobalLoading();
+  let res;
+  try {
+    res=await fetch('/api/auth/me',{headers:{Authorization:`Bearer ${token}`}});
+  } finally {
+    hideGlobalLoading();
+  }
   if(!res.ok){localStorage.removeItem('token');return;}
   currentUser=await res.json();
   bootApp();

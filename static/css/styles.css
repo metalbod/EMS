@@ -1,4 +1,7 @@
 .hidden{display:none!important}
+#globalLoadingBar{position:fixed;top:0;left:0;right:0;height:3px;z-index:9999;overflow:hidden;background:transparent;pointer-events:none}
+#globalLoadingBar .bar{position:absolute;top:0;height:100%;width:30%;background:#2563eb;animation:globalLoadingSlide 1s ease-in-out infinite}
+@keyframes globalLoadingSlide{0%{left:-30%}100%{left:100%}}
 @media print{
   body *{visibility:hidden}
   #payslipPrintArea,#payslipPrintArea *{visibility:visible}
