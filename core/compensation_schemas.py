@@ -351,6 +351,84 @@ class MeritRecommendationWithEmployee(MeritRecommendationResponse):
 
 
 # ============================================================================
+# VARIABLE PAY: BONUS / INCENTIVE PLANS
+# ============================================================================
+
+class BonusPlanBase(BaseModel):
+    """Base bonus/incentive plan."""
+    plan_name: str = Field(..., min_length=1, max_length=150)
+    plan_type: Literal["Annual", "Spot", "Sign-on", "Retention", "Referral", "Other"]
+    plan_year: Optional[int] = None
+    period_start: Optional[str] = Field(None, description="YYYY-MM-DD")
+    period_end: Optional[str] = Field(None, description="YYYY-MM-DD")
+    budget_pool_amount: Optional[float] = None
+    description: Optional[str] = None
+
+
+class BonusPlanCreate(BonusPlanBase):
+    """Create bonus plan."""
+    pass
+
+
+class BonusPlanUpdate(BaseModel):
+    """Update bonus plan."""
+    plan_name: Optional[str] = None
+    status: Optional[Literal["Draft", "Active", "Closed"]] = None
+    budget_pool_amount: Optional[float] = None
+    description: Optional[str] = None
+
+
+class BonusPlanResponse(BonusPlanBase):
+    """Bonus plan response."""
+    id: int
+    status: str
+    created_at: str
+    updated_at: str
+
+    class Config:
+        from_attributes = True
+
+
+class BonusPayoutBase(BaseModel):
+    """Base bonus payout."""
+    employee_id: str
+    target_amount: Optional[float] = None
+    awarded_amount: float = Field(..., gt=0)
+    reason: Optional[str] = None
+
+
+class BonusPayoutCreate(BonusPayoutBase):
+    """Create a bonus payout under a plan."""
+    pass
+
+
+class BonusPayoutDecide(BaseModel):
+    """Approve or reject a bonus payout."""
+    status: Literal["Approved", "Rejected"]
+
+
+class BonusPayoutResponse(BonusPayoutBase):
+    """Bonus payout response."""
+    id: int
+    bonus_plan_id: int
+    status: str
+    recommended_by_user_id: Optional[int] = None
+    approved_by_user_id: Optional[int] = None
+    approval_date: Optional[str] = None
+    payout_date: Optional[str] = None
+    created_at: str
+    updated_at: str
+
+    class Config:
+        from_attributes = True
+
+
+class BonusPayoutWithEmployee(BonusPayoutResponse):
+    """Bonus payout with the employee's display name joined in."""
+    employee_name: Optional[str] = None
+
+
+# ============================================================================
 # PAY EQUITY ANALYSIS
 # ============================================================================
 

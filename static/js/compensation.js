@@ -498,6 +498,229 @@ function closeMeritModal() {
 }
 
 // ============================================================================
+// VARIABLE PAY: BONUS / INCENTIVE PLANS
+// ============================================================================
+
+let bonusPlans = [];
+let bonusPayouts = [];
+let currentBonusPlanId = null;
+
+async function loadBonusPlans() {
+  const res = await api('/api/compensation/bonus-plans');
+  if (!res || !res.ok) return;
+  bonusPlans = await res.json();
+  renderBonusPlansTable();
+}
+
+function renderBonusPlansTable() {
+  const tbody = document.getElementById('bonusPlansTableBody');
+  if (!tbody) return;
+  document.getElementById('bonusPlansEmptyState')?.classList.toggle('hidden', bonusPlans.length > 0);
+
+  const statusBadge = status => {
+    if (status === 'Active') return 'bg-blue-100 text-blue-700';
+    if (status === 'Closed') return 'bg-emerald-100 text-emerald-700';
+    return 'bg-slate-100 text-slate-600';
+  };
+
+  tbody.innerHTML = bonusPlans.map(plan => `
+    <tr class="hover:bg-slate-50 transition cursor-pointer" onclick="openBonusPlanDetail(${plan.id})">
+      <td class="px-4 py-3">
+        <p class="font-medium">${esc(plan.plan_name)}</p>
+        ${plan.plan_year ? `<p class="text-xs text-slate-500">${plan.plan_year}</p>` : ''}
+      </td>
+      <td class="px-4 py-3"><span class="badge bg-purple-100 text-purple-700">${esc(plan.plan_type)}</span></td>
+      <td class="px-4 py-3">
+        <p class="text-sm">${plan.period_start && plan.period_end ? `${plan.period_start} to ${plan.period_end}` : '—'}</p>
+      </td>
+      <td class="px-4 py-3">
+        ${plan.budget_pool_amount ? `<p>Budget: RM ${Number(plan.budget_pool_amount).toLocaleString('en-MY', {maximumFractionDigits: 0})}</p>` : '<p>—</p>'}
+      </td>
+      <td class="px-4 py-3 text-center">
+        <span class="badge ${statusBadge(plan.status)}">${esc(plan.status)}</span>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function openBonusPlanForm() {
+  document.getElementById('bonusPlanForm').reset();
+  document.getElementById('compensationBonusPlanModal').classList.remove('hidden');
+}
+
+function closeBonusPlanModal() {
+  document.getElementById('compensationBonusPlanModal').classList.add('hidden');
+}
+
+async function submitBonusPlanForm(e) {
+  e.preventDefault();
+  const g = id => document.getElementById(id).value;
+
+  const body = {
+    plan_name: g('bpName').trim(),
+    plan_type: g('bpType'),
+    plan_year: parseInt(g('bpYear')) || null,
+    period_start: g('bpStart') || null,
+    period_end: g('bpEnd') || null,
+    budget_pool_amount: parseFloat(g('bpBudget')) || null,
+    description: g('bpDesc').trim() || null,
+  };
+
+  const res = await api('/api/compensation/bonus-plans', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+
+  if (!res || !res.ok) {
+    alert('Error: ' + (await res.json()).detail);
+    return;
+  }
+
+  closeBonusPlanModal();
+  loadBonusPlans();
+}
+
+async function openBonusPlanDetail(planId) {
+  const plan = bonusPlans.find(p => p.id === planId);
+  if (!plan) return;
+  currentBonusPlanId = planId;
+
+  document.getElementById('bonusDetailTitle').textContent = plan.plan_name;
+  document.getElementById('bonusDetailSubtitle').textContent =
+    `${plan.plan_type}${plan.plan_year ? ' · ' + plan.plan_year : ''}${plan.period_start && plan.period_end ? ' · ' + plan.period_start + ' to ' + plan.period_end : ''}`;
+  document.getElementById('bonusPlanStatusSelect').value = plan.status;
+
+  document.getElementById('bonusPayoutForm').classList.add('hidden');
+  document.getElementById('bonusPayoutForm').reset();
+
+  if (!employees || employees.length === 0) await loadEmployees();
+  const empSelect = document.getElementById('bpoEmployee');
+  const activeEmployees = (employees || []).filter(e => e.status === 'Active');
+  empSelect.innerHTML = activeEmployees.map(e =>
+    `<option value="${esc(e.employee_id)}">${esc(e.full_name)} (${esc(e.employee_id)})</option>`
+  ).join('');
+
+  await loadBonusPayouts(planId);
+  document.getElementById('compensationBonusDetailModal').classList.remove('hidden');
+}
+
+function closeBonusDetailModal() {
+  document.getElementById('compensationBonusDetailModal').classList.add('hidden');
+  currentBonusPlanId = null;
+}
+
+function toggleBonusPayoutForm() {
+  document.getElementById('bonusPayoutForm').classList.toggle('hidden');
+}
+
+async function changeBonusPlanStatus() {
+  const status = document.getElementById('bonusPlanStatusSelect').value;
+  const res = await api(`/api/compensation/bonus-plans/${currentBonusPlanId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ status }),
+  });
+  if (!res || !res.ok) {
+    alert('Error updating plan status');
+    return;
+  }
+  const updated = await res.json();
+  const idx = bonusPlans.findIndex(p => p.id === currentBonusPlanId);
+  if (idx >= 0) bonusPlans[idx] = updated;
+  renderBonusPlansTable();
+}
+
+async function loadBonusPayouts(planId) {
+  const res = await api(`/api/compensation/bonus-plans/${planId}/payouts`);
+  if (!res || !res.ok) return;
+  bonusPayouts = await res.json();
+  renderBonusPayoutTable();
+}
+
+function renderBonusPayoutTable() {
+  const tbody = document.getElementById('bonusPayoutTableBody');
+  if (!tbody) return;
+  document.getElementById('bonusPayoutEmptyState')?.classList.toggle('hidden', bonusPayouts.length > 0);
+
+  const statusBadge = status => {
+    if (status === 'Approved') return 'bg-blue-100 text-blue-700';
+    if (status === 'Paid') return 'bg-emerald-100 text-emerald-700';
+    if (status === 'Rejected') return 'bg-red-100 text-red-700';
+    return 'bg-amber-100 text-amber-700';
+  };
+
+  tbody.innerHTML = bonusPayouts.map(payout => `
+    <tr class="hover:bg-slate-50 transition">
+      <td class="px-4 py-3">
+        <p class="font-medium">${esc(payout.employee_name || payout.employee_id)}</p>
+        <p class="text-xs text-slate-500">${esc(payout.employee_id)}</p>
+      </td>
+      <td class="px-4 py-3 text-right">${payout.target_amount ? 'RM ' + Number(payout.target_amount).toLocaleString('en-MY', {minimumFractionDigits: 2}) : '—'}</td>
+      <td class="px-4 py-3 text-right">RM ${Number(payout.awarded_amount).toLocaleString('en-MY', {minimumFractionDigits: 2})}</td>
+      <td class="px-4 py-3">
+        <span class="badge ${statusBadge(payout.status)}">${esc(payout.status)}</span>
+        ${payout.reason ? `<p class="text-xs text-slate-500 mt-1">${esc(payout.reason)}</p>` : ''}
+        ${payout.payout_date ? `<p class="text-xs text-slate-400 mt-1">Paid ${payout.payout_date}</p>` : ''}
+      </td>
+      <td class="px-4 py-3 text-right">
+        ${payout.status === 'Pending' ? `
+          <button onclick="decideBonusPayout(${payout.id}, 'Approved')" class="text-xs text-emerald-700 hover:underline mr-3">Approve</button>
+          <button onclick="decideBonusPayout(${payout.id}, 'Rejected')" class="text-xs text-red-700 hover:underline">Reject</button>
+        ` : payout.status === 'Approved' ? `
+          <button onclick="markBonusPayoutPaid(${payout.id})" class="text-xs text-blue-700 hover:underline">Mark Paid</button>
+        ` : '<span class="text-xs text-slate-400">—</span>'}
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function submitBonusPayout(e) {
+  e.preventDefault();
+  const g = id => document.getElementById(id).value;
+
+  const body = {
+    employee_id: g('bpoEmployee'),
+    target_amount: parseFloat(g('bpoTarget')) || null,
+    awarded_amount: parseFloat(g('bpoAwarded')),
+    reason: g('bpoReason').trim() || null,
+  };
+
+  const res = await api(`/api/compensation/bonus-payouts?bonus_plan_id=${currentBonusPlanId}`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+
+  if (!res || !res.ok) {
+    alert('Error: ' + (await res.json()).detail);
+    return;
+  }
+
+  document.getElementById('bonusPayoutForm').classList.add('hidden');
+  document.getElementById('bonusPayoutForm').reset();
+  loadBonusPayouts(currentBonusPlanId);
+}
+
+async function decideBonusPayout(payoutId, status) {
+  const res = await api(`/api/compensation/bonus-payouts/${payoutId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ status }),
+  });
+  if (!res || !res.ok) {
+    alert('Error updating payout');
+    return;
+  }
+  loadBonusPayouts(currentBonusPlanId);
+}
+
+async function markBonusPayoutPaid(payoutId) {
+  const res = await api(`/api/compensation/bonus-payouts/${payoutId}/pay`, { method: 'PUT' });
+  if (!res || !res.ok) {
+    alert('Error marking payout as paid');
+    return;
+  }
+  loadBonusPayouts(currentBonusPlanId);
+}
+
+// ============================================================================
 // PAY EQUITY ANALYSIS
 // ============================================================================
 

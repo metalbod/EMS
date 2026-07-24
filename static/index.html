@@ -315,6 +315,10 @@
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
             Merit Cycles
           </div>
+          <div class="nav-sub-item" onclick="showPage('comp-bonusplans');closeBurgerMenu();" data-page="comp-bonusplans">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V6m0 2v8m0 0v2m0-2c-1.11 0-2.08-.402-2.599-1M5 12a7 7 0 1114 0 7 7 0 01-14 0z"/></svg>
+            Bonus Plans
+          </div>
           <div class="nav-sub-item" onclick="showPage('comp-payequity');closeBurgerMenu();" data-page="comp-payequity">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
             Pay Equity
@@ -1187,6 +1191,32 @@
             <tbody id="meritCyclesTableBody" class="divide-y divide-slate-100"></tbody>
           </table>
           <p id="meritCyclesEmptyState" class="text-center text-slate-400 text-sm py-12">No merit cycles yet.</p>
+        </div>
+      </div>
+
+      <!-- COMPENSATION: Bonus / Incentive Plans (Variable Pay) -->
+      <div id="page-comp-bonusplans" class="hidden">
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="text-lg font-semibold">Bonus & Incentive Plans</h3>
+          <button onclick="openBonusPlanForm()" class="btn-primary text-sm flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            New Plan
+          </button>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Plan Name</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Type</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Period</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Budget</th>
+                <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+              </tr>
+            </thead>
+            <tbody id="bonusPlansTableBody" class="divide-y divide-slate-100"></tbody>
+          </table>
+          <p id="bonusPlansEmptyState" class="text-center text-slate-400 text-sm py-12">No bonus plans yet.</p>
         </div>
       </div>
 
@@ -2768,6 +2798,101 @@
           <tbody id="meritRecTableBody" class="divide-y divide-slate-100"></tbody>
         </table>
         <p id="meritRecEmptyState" class="text-center text-slate-400 text-sm py-12">No recommendations yet.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Compensation: Bonus Plan Modal -->
+<div id="compensationBonusPlanModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 class="text-base font-semibold">Create New Bonus Plan</h2>
+      <button onclick="closeBonusPlanModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form id="bonusPlanForm" onsubmit="submitBonusPlanForm(event)" class="p-6 space-y-4">
+      <div><label class="lbl">Plan Name</label><input id="bpName" type="text" class="inp" placeholder="2026 Annual Performance Bonus" required/></div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="lbl">Plan Type</label>
+          <select id="bpType" class="inp" required>
+            <option value="Annual">Annual</option>
+            <option value="Spot">Spot</option>
+            <option value="Sign-on">Sign-on</option>
+            <option value="Retention">Retention</option>
+            <option value="Referral">Referral</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div><label class="lbl">Year</label><input id="bpYear" type="number" class="inp" placeholder="2026"/></div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="lbl">Period Start</label><input id="bpStart" type="date" class="inp"/></div>
+        <div><label class="lbl">Period End</label><input id="bpEnd" type="date" class="inp"/></div>
+      </div>
+      <div><label class="lbl">Budget Pool (RM)</label><input id="bpBudget" type="number" class="inp" step="0.01" placeholder="500000"/></div>
+      <div><label class="lbl">Description</label><textarea id="bpDesc" class="inp" rows="3"></textarea></div>
+      <div class="flex gap-2">
+        <button type="submit" class="btn-primary">Create Plan</button>
+        <button type="button" onclick="closeBonusPlanModal()" class="btn-ghost">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Compensation: Bonus Plan Detail / Payouts Modal -->
+<div id="compensationBonusDetailModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-3xl">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <div>
+        <h2 id="bonusDetailTitle" class="text-base font-semibold">Bonus Plan</h2>
+        <p id="bonusDetailSubtitle" class="text-xs text-slate-500"></p>
+      </div>
+      <button onclick="closeBonusDetailModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <div class="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+      <div class="flex justify-between items-center flex-wrap gap-2">
+        <h3 class="text-sm font-semibold text-slate-700">Payouts</h3>
+        <div class="flex gap-2">
+          <select id="bonusPlanStatusSelect" class="inp text-sm" onchange="changeBonusPlanStatus()">
+            <option value="Draft">Draft</option>
+            <option value="Active">Active</option>
+            <option value="Closed">Closed</option>
+          </select>
+          <button type="button" onclick="toggleBonusPayoutForm()" class="btn-primary text-sm flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Add Payout
+          </button>
+        </div>
+      </div>
+
+      <form id="bonusPayoutForm" onsubmit="submitBonusPayout(event)" class="hidden border border-slate-200 rounded-lg p-4 space-y-3 bg-slate-50">
+        <div class="grid grid-cols-2 gap-3">
+          <div><label class="lbl">Employee</label><select id="bpoEmployee" class="inp" required></select></div>
+          <div><label class="lbl">Target Amount (RM)</label><input id="bpoTarget" type="number" class="inp" step="0.01" placeholder="Optional"/></div>
+        </div>
+        <div><label class="lbl">Awarded Amount (RM)</label><input id="bpoAwarded" type="number" class="inp" step="0.01" required/></div>
+        <div><label class="lbl">Reason</label><textarea id="bpoReason" class="inp" rows="2"></textarea></div>
+        <div class="flex gap-2">
+          <button type="submit" class="btn-primary text-sm">Submit Payout</button>
+          <button type="button" onclick="toggleBonusPayoutForm()" class="btn-ghost text-sm">Cancel</button>
+        </div>
+      </form>
+
+      <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-50 border-b border-slate-200">
+            <tr>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Employee</th>
+              <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Target</th>
+              <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Awarded</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+              <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="bonusPayoutTableBody" class="divide-y divide-slate-100"></tbody>
+        </table>
+        <p id="bonusPayoutEmptyState" class="text-center text-slate-400 text-sm py-12">No payouts yet.</p>
       </div>
     </div>
   </div>

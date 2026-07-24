@@ -9,7 +9,7 @@ let openGroups = new Set(['empMgmt']);
 const TABS = ['personal','employment','statutory'];
 const VIEW_TABS = ['vt-personal','vt-employment','vt-locations','vt-statutory','vt-notes'];
 const HR_NOTE_ROLES = ['superadmin','hr_manager','hr_admin'];
-const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','leave-my','leave-approvals','leave-holidays','projects','timesheet-my','timesheet-approvals','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','comp-paygrades','comp-joblevels','comp-jobroles','comp-meritcycles','comp-payequity','payroll-runs','payroll-my','perf-my','perf-team','perf-cycles','perf-calibration','coming-soon'];
+const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','leave-my','leave-approvals','leave-holidays','projects','timesheet-my','timesheet-approvals','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','comp-paygrades','comp-joblevels','comp-jobroles','comp-meritcycles','comp-bonusplans','comp-payequity','payroll-runs','payroll-my','perf-my','perf-team','perf-cycles','perf-calibration','coming-soon'];
 
 // ---------------------------------------------------------------------------
 // Global loading indicator
@@ -288,6 +288,7 @@ function showPage(page) {
     'comp-joblevels':'Compensation — Job Levels',
     'comp-jobroles':'Compensation — Job Roles',
     'comp-meritcycles':'Compensation — Merit Cycles',
+    'comp-bonusplans':'Compensation — Bonus Plans',
     'comp-payequity':'Compensation — Pay Equity',
     'payroll-runs':'Payroll Runs', 'payroll-my':'My Payslips',
     'perf-my':'My Goals & Appraisal', 'perf-team':'Team Appraisals',
@@ -324,6 +325,7 @@ function showPage(page) {
   if (page === 'comp-joblevels')  loadJobLevels();
   if (page === 'comp-jobroles')   loadJobRolesPage();
   if (page === 'comp-meritcycles') loadMeritCycles();
+  if (page === 'comp-bonusplans') loadBonusPlans();
   if (page === 'comp-payequity') loadPayEquityReport();
   if (page === 'perf-my')          loadMyPerformancePage();
   if (page === 'perf-team')        loadTeamAppraisalsPage();
