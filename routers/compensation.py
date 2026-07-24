@@ -157,6 +157,8 @@ async def update_pay_grade(
             raise HTTPException(400, detail="Min <= Midpoint <= Max required")
 
         updates = {
+            "grade_name": payload.grade_name if payload.grade_name is not None else grade["grade_name"],
+            "grade_level": payload.grade_level if payload.grade_level is not None else grade["grade_level"],
             "min_salary": min_sal,
             "midpoint_salary": mid_sal,
             "max_salary": max_sal,

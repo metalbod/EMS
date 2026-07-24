@@ -26,6 +26,8 @@ class PayGradeCreate(PayGradeBase):
 
 class PayGradeUpdate(BaseModel):
     """Update pay grade."""
+    grade_name: Optional[str] = None
+    grade_level: Optional[int] = None
     min_salary: Optional[float] = None
     midpoint_salary: Optional[float] = None
     max_salary: Optional[float] = None
