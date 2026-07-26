@@ -1,7 +1,10 @@
 # EMS — Employee Management System
 
 Multi-tenant HR platform: employees, recruitment, L&D, leave, timesheets/projects,
-payroll (Malaysia EPF/SOCSO/EIS/PCB), and performance management.
+payroll (Malaysia EPF/SOCSO/EIS/PCB), performance management, compensation
+(pay grades, bonus/commission plans, equity grants), benefits (enrollment,
+dependents, claims, compliance reporting), and attendance (shifts, clock-in/out,
+geofencing, device integrations).
 
 FastAPI + Postgres (Supabase) backend, vanilla JS frontend, deployed to Fly.io.
 
@@ -312,6 +315,69 @@ tenant. These were added in `migrations/versions/8fc32f58e44f_*.py` and cover
 sequential scans even when `institution_id` is highly selective (e.g. a single
 institution rarely has >100k rows of any single entity type across millions of
 rows in the large shared tables).
+
+## Benefits module
+
+`routers/benefits.py` / `core/benefits_schemas.py` / `static/js/benefits.js`.
+Plan catalog → eligibility rules (by job level/pay grade, "no rule = open to
+everyone") → enrollment periods & life-event triggered enrollment → dependents/
+beneficiaries → carrier/claims tracking (modeled internally, no live external
+carrier API) → compliance/cost reporting. HR-side access is gated to
+`hr_manager`/`payroll_manager`/`compensation_manager` (`require_benefits_role`)
+except dependent editing, which is narrower (`hr_manager`/`hr_admin`/
+`superadmin`, matching Edit Employee's own access) since dependents now live in
+the Edit Employee modal's Dependents tab rather than a standalone page.
+Self-service dependent editing (an employee maintaining their own roster) is
+authorized in the same shared `PUT /dependents/{id}` endpoint by comparing the
+dependent's `employee_id` against the caller's own, not via a separate
+self-service endpoint.
+
+Reimbursement-cap plans enforce the cap at claim-approval time (not just
+display) — see `decide_claim`'s cap-check block in `routers/benefits.py`, which
+sums the employee's already-approved/paid claims for the year against the
+enrollment's cost-snapshot cap before allowing an approval through.
+
+## Attendance module
+
+`routers/attendance.py` / `core/attendance_schemas.py` / `static/js/attendance.js`.
+
+- **Shifts** support overnight/cross-midnight schedules. A shift's
+  `crosses_midnight` flag is computed and stored at creation
+  (`end_time <= start_time`); an `attendance_records` row is keyed by
+  `work_date` anchored to the day the shift *starts*, so an overnight punch
+  produces one record, not two fragments split across the calendar boundary.
+  Clock-out doesn't recompute any of this — it just finds the employee's
+  currently-open record (`clock_in_at` set, `clock_out_at` null) and closes it,
+  which sidesteps the midnight-crossing ambiguity entirely.
+- **Clock-in requirement** is opt-in: `attendance_settings` rows scope
+  "required" to a department or a specific employee; no matching rule means
+  not required. An employee-specific rule takes priority over a department
+  rule.
+- **Geofencing** is advisory only, never blocking: a clock-in outside a
+  location's configured radius is flagged (`outside_geofence`, with the
+  computed distance) but still succeeds, since remote/field employees may have
+  no location rule at all.
+- **Absence detection** is lazy — there is no background job/cron in this
+  stack. Late/absent status is computed and materialized the moment the
+  Attendance Review page or HR dashboard loads, by walking back over a rolling
+  window per employee and checking each work day's clock-in deadline
+  (`scheduled_start + grace_period`) against the current time.
+- **HR review** resolves a Late/Absent record as Excused, Confirmed Absent, or
+  Reclassified as Leave — the last option creates a real `leave_applications`
+  row (optionally half-day) linked back to the attendance record, reusing the
+  existing Leave module rather than a parallel approval flow.
+- **Device webhook** (`POST /api/attendance/webhook/clock-event`): external
+  clock-in/out hardware (e.g. a facial-recognition office camera) authenticates
+  with its own API key via the `X-Device-Api-Key` header — a separate auth path
+  from the JWT bearer-token flow every other endpoint uses. A device's key is
+  generated once as `adk_<prefix>_<secret>`; only the `key_prefix` (plaintext,
+  indexed, for fast lookup) and a bcrypt hash of the full key are ever
+  persisted (`attendance_devices` table) — the raw key is shown to HR exactly
+  once at creation and is never retrievable again. The actual face
+  recognition/liveness check is entirely the vendor hardware's responsibility;
+  this endpoint just trusts the `employee_id` the device reports and records
+  the event through the same shift-resolution/geofence logic as self-service
+  clock-in.
 
 ## Deployment (Fly.io)
 
