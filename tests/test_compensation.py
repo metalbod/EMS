@@ -2,6 +2,7 @@
 import pytest
 from fastapi.testclient import TestClient
 from datetime import datetime
+from tests.conftest import _unique_code
 
 
 class TestPayGrades:
@@ -9,10 +10,11 @@ class TestPayGrades:
 
     def test_create_pay_grade(self, client, hr_manager_auth):
         """Test creating a pay grade."""
+        code = _unique_code("A1")
         response = client.post(
             "/api/compensation/pay-grades",
             json={
-                "grade_code": "A1",
+                "grade_code": code,
                 "grade_name": "Entry Level",
                 "grade_level": 1,
                 "min_salary": 2500.00,
@@ -22,19 +24,19 @@ class TestPayGrades:
             },
             headers=hr_manager_auth,
         )
-        assert response.status_code == 201
+        assert response.status_code == 201, response.text
         body = response.json()
-        assert body["grade_code"] == "A1"
+        assert body["grade_code"] == code
         assert body["grade_name"] == "Entry Level"
         assert body["min_salary"] == 2500.00
 
     def test_list_pay_grades(self, client, hr_manager_auth):
         """Test listing pay grades."""
         # Create a pay grade first
-        client.post(
+        response = client.post(
             "/api/compensation/pay-grades",
             json={
-                "grade_code": "B1",
+                "grade_code": _unique_code("B1"),
                 "grade_name": "Senior Level",
                 "grade_level": 2,
                 "min_salary": 5000.00,
@@ -43,6 +45,7 @@ class TestPayGrades:
             },
             headers=hr_manager_auth,
         )
+        assert response.status_code == 201, response.text
 
         response = client.get(
             "/api/compensation/pay-grades",
@@ -58,7 +61,7 @@ class TestPayGrades:
         response = client.post(
             "/api/compensation/pay-grades",
             json={
-                "grade_code": "X1",
+                "grade_code": _unique_code("X1"),
                 "grade_name": "Invalid",
                 "grade_level": 1,
                 "min_salary": 5000.00,
@@ -75,33 +78,35 @@ class TestJobLevels:
 
     def test_create_job_level(self, client, hr_manager_auth):
         """Test creating a job level."""
+        code = _unique_code("IC1")
         response = client.post(
             "/api/compensation/job-levels",
             json={
-                "level_code": "IC1",
+                "level_code": code,
                 "level_name": "Individual Contributor",
                 "level_order": 1,
                 "description": "Entry level IC"
             },
             headers=hr_manager_auth,
         )
-        assert response.status_code == 201
+        assert response.status_code == 201, response.text
         body = response.json()
-        assert body["level_code"] == "IC1"
+        assert body["level_code"] == code
         assert body["level_name"] == "Individual Contributor"
 
     def test_list_job_levels(self, client, hr_manager_auth):
         """Test listing job levels."""
         # Create a job level first
-        client.post(
+        response = client.post(
             "/api/compensation/job-levels",
             json={
-                "level_code": "MGR1",
+                "level_code": _unique_code("MGR1"),
                 "level_name": "Manager",
                 "level_order": 3,
             },
             headers=hr_manager_auth,
         )
+        assert response.status_code == 201, response.text
 
         response = client.get(
             "/api/compensation/job-levels",
@@ -121,12 +126,13 @@ class TestJobRoles:
         level_res = client.post(
             "/api/compensation/job-levels",
             json={
-                "level_code": "IC",
+                "level_code": _unique_code("IC"),
                 "level_name": "Individual Contributor",
                 "level_order": 1,
             },
             headers=hr_manager_auth,
         )
+        assert level_res.status_code == 201, level_res.text
         level_id = level_res.json()["id"]
 
         # Now create a job role
@@ -135,13 +141,13 @@ class TestJobRoles:
             json={
                 "job_level_id": level_id,
                 "role_name": "Software Engineer",
-                "role_code": "SE",
+                "role_code": _unique_code("SE"),
                 "department": "Engineering",
                 "required_experience_years": 2,
             },
             headers=hr_manager_auth,
         )
-        assert response.status_code == 201
+        assert response.status_code == 201, response.text
         body = response.json()
         assert body["role_name"] == "Software Engineer"
         assert body["job_level_id"] == level_id
@@ -152,12 +158,13 @@ class TestJobRoles:
         level_res = client.post(
             "/api/compensation/job-levels",
             json={
-                "level_code": "IC2",
+                "level_code": _unique_code("IC2"),
                 "level_name": "IC Level 2",
                 "level_order": 1,
             },
             headers=hr_manager_auth,
         )
+        assert level_res.status_code == 201, level_res.text
         level_id = level_res.json()["id"]
 
         # Create role
@@ -166,17 +173,18 @@ class TestJobRoles:
             json={
                 "job_level_id": level_id,
                 "role_name": "Engineer",
-                "role_code": "ENG",
+                "role_code": _unique_code("ENG"),
             },
             headers=hr_manager_auth,
         )
+        assert role_res.status_code == 201, role_res.text
         role_id = role_res.json()["id"]
 
         # Create grade
         grade_res = client.post(
             "/api/compensation/pay-grades",
             json={
-                "grade_code": "A2",
+                "grade_code": _unique_code("A2"),
                 "grade_name": "Grade A2",
                 "grade_level": 2,
                 "min_salary": 3600.00,
@@ -185,6 +193,7 @@ class TestJobRoles:
             },
             headers=hr_manager_auth,
         )
+        assert grade_res.status_code == 201, grade_res.text
         grade_id = grade_res.json()["id"]
 
         # Map role to grade
@@ -198,6 +207,13 @@ class TestJobRoles:
         assert body["status"] == "mapped"
 
 
+@pytest.fixture
+def created_employee(make_test_employee):
+    """A disposable employee for compensation tests that need one already
+    on file — thin wrapper around the shared make_test_employee factory."""
+    return make_test_employee()
+
+
 class TestEmployeeCompensation:
     """Test employee compensation assignment."""
 
@@ -207,7 +223,7 @@ class TestEmployeeCompensation:
         grade_res = client.post(
             "/api/compensation/pay-grades",
             json={
-                "grade_code": "A3",
+                "grade_code": _unique_code("A3"),
                 "grade_name": "Grade A3",
                 "grade_level": 3,
                 "min_salary": 5100.00,
@@ -240,7 +256,7 @@ class TestEmployeeCompensation:
         grade_res = client.post(
             "/api/compensation/pay-grades",
             json={
-                "grade_code": "B2",
+                "grade_code": _unique_code("B2"),
                 "grade_name": "Grade B2",
                 "grade_level": 4,
                 "min_salary": 7600.00,
@@ -462,7 +478,7 @@ class TestErrorHandling:
             json={
                 "job_level_id": 99999,  # Non-existent level
                 "role_name": "Test Role",
-                "role_code": "TST",
+                "role_code": _unique_code("TST"),
             },
             headers=hr_manager_auth,
         )

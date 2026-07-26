@@ -229,6 +229,15 @@ def _valid_employee_payload(**overrides):
     return payload
 
 
+def _unique_code(prefix="ZZ"):
+    """A short per-call-unique code (e.g. for grade_code/level_code/role_code
+    in compensation tests), so re-running the suite against the same
+    persistent shared test institution never collides with a previous
+    run's leftover rows — same rationale as _unique_ic/_valid_location_payload."""
+    n = next(_ic_counter)
+    return f"{prefix}{_ic_run_salt:04d}{n:04d}"
+
+
 def _valid_location_payload(institution_id, **overrides):
     """Generate valid location payload for testing."""
     import random
