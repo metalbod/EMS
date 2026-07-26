@@ -239,9 +239,11 @@ def _unique_code(prefix="ZZ"):
 
 
 def _valid_location_payload(institution_id, **overrides):
-    """Generate valid location payload for testing."""
-    import random
-    random_suffix = random.randint(1000, 9999)
+    """Generate valid location payload for testing. Uses the same salted
+    counter as _unique_code/_unique_ic (not random.randint, which only had
+    9000 possible values and collided with leftover rows from earlier CI
+    runs against the same persistent shared test institution)."""
+    random_suffix = _unique_code("")
     payload = {
         "name": f"Test Location {random_suffix}",
         "code": f"LOC_{random_suffix}",
