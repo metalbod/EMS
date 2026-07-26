@@ -6,10 +6,10 @@ let currentInstitution = null;
 let currentEmpId = null, viewingId = null, editingUserId = null;
 let currentTab = 'personal';
 let openGroups = new Set(['empMgmt']);
-const TABS = ['personal','employment','statutory'];
+const TABS = ['personal','employment','statutory','dependents'];
 const VIEW_TABS = ['vt-personal','vt-employment','vt-locations','vt-statutory','vt-notes'];
 const HR_NOTE_ROLES = ['superadmin','hr_manager','hr_admin'];
-const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','leave-my','leave-approvals','leave-holidays','projects','timesheet-my','timesheet-approvals','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','comp-paygrades','comp-joblevels','comp-jobroles','comp-meritcycles','comp-bonusplans','comp-payequity','payroll-runs','payroll-my','perf-my','perf-team','perf-cycles','perf-calibration','coming-soon'];
+const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','leave-my','leave-approvals','leave-holidays','projects','timesheet-my','timesheet-approvals','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','comp-paygrades','comp-joblevels','comp-jobroles','comp-meritcycles','comp-bonusplans','comp-commissions','comp-equity','comp-totalrewards','comp-payequity','ben-plans','ben-periods','ben-lifeevents','ben-claims','ben-compliance','payroll-runs','payroll-my','payroll-mybenefits','perf-my','perf-team','perf-cycles','perf-calibration','attendance-clock','attendance-review','settings-attendance','coming-soon'];
 
 // ---------------------------------------------------------------------------
 // Global loading indicator
@@ -173,13 +173,20 @@ function applyRoleUI() {
   document.getElementById('nav-timesheet-group')?.classList.toggle('hidden', hideEmp);
   document.getElementById('nav-timesheet-approvals')?.classList.toggle('hidden', !['superadmin','hr_manager','hr_admin','manager'].includes(role));
   document.getElementById('nav-projects')?.classList.toggle('hidden', !['superadmin','hr_manager'].includes(role));
+  // Clock In/Out is self-service for anyone with an employee record; the
+  // employee_id-linked check happens on load (see attendance.js), the nav
+  // toggle here just hides it from superadmin (no employee record at all).
+  document.getElementById('nav-attendance-clock')?.classList.toggle('hidden', hideEmp || isSA);
+  const canAttendanceManage = ['superadmin','hr_manager','hr_admin'].includes(role);
+  document.getElementById('nav-attendance-review')?.classList.toggle('hidden', !canAttendanceManage);
   const canNotify = ['hr_manager','hr_admin'].includes(role);
   const canBulkUpload = role === 'hr_manager';
   const canLocations = ['hr_manager','hr_admin'].includes(role);
-  document.getElementById('nav-settings-wrap')?.classList.toggle('hidden', hideEmp || !(canAudit || canUsers || canNotify || canBulkUpload || canLocations));
+  document.getElementById('nav-settings-wrap')?.classList.toggle('hidden', hideEmp || !(canAudit || canUsers || canNotify || canBulkUpload || canLocations || canAttendanceManage));
   document.getElementById('nav-settings-notifications')?.classList.toggle('hidden', !canNotify);
   document.getElementById('nav-bulk-upload')?.classList.toggle('hidden', !canBulkUpload);
   document.getElementById('nav-locations')?.classList.toggle('hidden', !canLocations);
+  document.getElementById('nav-attendance-settings')?.classList.toggle('hidden', !canAttendanceManage);
 
   // Compensation: its own top-level menu, visible to HR Manager, Payroll
   // Manager, and the dedicated Compensation Manager role — explicitly
@@ -189,10 +196,18 @@ function applyRoleUI() {
   const canCompensation = ['hr_manager','payroll_manager','compensation_manager'].includes(role);
   document.getElementById('nav-compensation-group')?.classList.toggle('hidden', !canCompensation);
 
+  // Benefits: its own top-level menu, same access gate as Compensation
+  // (deliberate choice — reuse the existing role set rather than add a
+  // dedicated Benefits Manager role).
+  const canBenefits = ['hr_manager','payroll_manager','compensation_manager'].includes(role);
+  document.getElementById('nav-benefits-group')?.classList.toggle('hidden', !canBenefits);
+
   const canPayrollView = ['payroll_manager','hr_manager'].includes(role);
   document.getElementById('nav-payroll-group')?.classList.toggle('hidden', hideEmp);
   document.getElementById('nav-payroll-runs')?.classList.toggle('hidden', !canPayrollView);
   document.getElementById('nav-payroll-my')?.classList.toggle('hidden', isSA);
+  document.getElementById('nav-payroll-myrewards')?.classList.toggle('hidden', isSA);
+  document.getElementById('nav-payroll-mybenefits')?.classList.toggle('hidden', isSA);
 
   document.getElementById('nav-performance-group')?.classList.toggle('hidden', hideEmp || isSA);
   document.getElementById('nav-perf-team')?.classList.toggle('hidden', !['manager','hr_manager'].includes(role));
@@ -289,10 +304,21 @@ function showPage(page) {
     'comp-jobroles':'Compensation — Job Roles',
     'comp-meritcycles':'Compensation — Merit Cycles',
     'comp-bonusplans':'Compensation — Bonus Plans',
+    'comp-commissions':'Compensation — Commissions',
+    'comp-equity':'Compensation — Equity Grants',
+    'comp-totalrewards':'Compensation — Total Rewards',
     'comp-payequity':'Compensation — Pay Equity',
-    'payroll-runs':'Payroll Runs', 'payroll-my':'My Payslips',
+    'ben-plans':'Benefits — Plan Types',
+    'ben-periods':'Benefits — Enrollment Periods',
+    'ben-lifeevents':'Benefits — Life Events',
+    'ben-claims':'Benefits — Claims',
+    'ben-compliance':'Benefits — Compliance & Reporting',
+    'payroll-mybenefits':'My Benefits',
+    'payroll-runs':'Payroll Runs', 'payroll-my':'My Payslips', 'payroll-myrewards':'My Total Rewards',
     'perf-my':'My Goals & Appraisal', 'perf-team':'Team Appraisals',
-    'perf-cycles':'Performance Cycles', 'perf-calibration':'Calibration'
+    'perf-cycles':'Performance Cycles', 'perf-calibration':'Calibration',
+    'attendance-clock':'Clock In / Out', 'attendance-review':'Attendance Review',
+    'settings-attendance':'Settings — Attendance'
   };
   document.getElementById('pageTitle').textContent = titles[page] || page;
   if (page === 'dashboard')    renderDashboard();
@@ -326,11 +352,24 @@ function showPage(page) {
   if (page === 'comp-jobroles')   loadJobRolesPage();
   if (page === 'comp-meritcycles') loadMeritCycles();
   if (page === 'comp-bonusplans') loadBonusPlans();
+  if (page === 'comp-commissions') loadCommissionPlans();
+  if (page === 'comp-equity') loadEquityGrants();
+  if (page === 'comp-totalrewards') loadHrTotalRewards();
   if (page === 'comp-payequity') loadPayEquityReport();
+  if (page === 'ben-plans') loadBenefitPlans();
+  if (page === 'ben-periods') loadEnrollmentPeriods();
+  if (page === 'ben-lifeevents') loadLifeEvents();
+  if (page === 'ben-claims') loadClaims();
+  if (page === 'ben-compliance') loadComplianceReport();
+  if (page === 'payroll-mybenefits') loadMyBenefitsPage();
+  if (page === 'payroll-myrewards') loadMyTotalRewards();
   if (page === 'perf-my')          loadMyPerformancePage();
   if (page === 'perf-team')        loadTeamAppraisalsPage();
   if (page === 'perf-cycles')      loadPerformanceCycles();
   if (page === 'perf-calibration') loadCalibrationPage();
+  if (page === 'attendance-clock')     loadAttendanceClockPage();
+  if (page === 'attendance-review')    loadAttendanceReview();
+  if (page === 'settings-attendance')  loadAttendanceSettingsPage();
 }
 
 // ---------------------------------------------------------------------------

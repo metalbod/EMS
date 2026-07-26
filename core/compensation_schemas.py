@@ -429,6 +429,195 @@ class BonusPayoutWithEmployee(BonusPayoutResponse):
 
 
 # ============================================================================
+# VARIABLE PAY: COMMISSION STRUCTURES
+# ============================================================================
+
+class CommissionPlanBase(BaseModel):
+    """Base commission plan."""
+    plan_name: str = Field(..., min_length=1, max_length=150)
+    plan_type: Literal["Flat Rate", "Tiered", "Quota-based"]
+    default_rate_percent: Optional[float] = Field(None, ge=0, le=100)
+    plan_year: Optional[int] = None
+    period_start: Optional[str] = Field(None, description="YYYY-MM-DD")
+    period_end: Optional[str] = Field(None, description="YYYY-MM-DD")
+    description: Optional[str] = None
+
+
+class CommissionPlanCreate(CommissionPlanBase):
+    """Create commission plan."""
+    pass
+
+
+class CommissionPlanUpdate(BaseModel):
+    """Update commission plan."""
+    plan_name: Optional[str] = None
+    status: Optional[Literal["Draft", "Active", "Closed"]] = None
+    default_rate_percent: Optional[float] = Field(None, ge=0, le=100)
+    description: Optional[str] = None
+
+
+class CommissionPlanResponse(CommissionPlanBase):
+    """Commission plan response."""
+    id: int
+    status: str
+    created_at: str
+    updated_at: str
+
+    class Config:
+        from_attributes = True
+
+
+class CommissionEntryBase(BaseModel):
+    """Base commission entry."""
+    employee_id: str
+    sales_amount: float = Field(..., gt=0)
+    quota_target: Optional[float] = None
+    commission_rate_percent: float = Field(..., ge=0, le=100)
+    notes: Optional[str] = None
+
+
+class CommissionEntryCreate(CommissionEntryBase):
+    """Create a commission entry under a plan. calculated_commission is
+    derived server-side (sales_amount x commission_rate_percent) rather
+    than trusted from the client."""
+    pass
+
+
+class CommissionEntryDecide(BaseModel):
+    """Approve or reject a commission entry."""
+    status: Literal["Approved", "Rejected"]
+
+
+class CommissionEntryResponse(CommissionEntryBase):
+    """Commission entry response."""
+    id: int
+    commission_plan_id: int
+    calculated_commission: float
+    status: str
+    recommended_by_user_id: Optional[int] = None
+    approved_by_user_id: Optional[int] = None
+    approval_date: Optional[str] = None
+    payout_date: Optional[str] = None
+    created_at: str
+    updated_at: str
+
+    class Config:
+        from_attributes = True
+
+
+class CommissionEntryWithEmployee(CommissionEntryResponse):
+    """Commission entry response with the employee's display name joined in."""
+    employee_name: Optional[str] = None
+
+
+# ============================================================================
+# EQUITY & LONG-TERM INCENTIVES
+# ============================================================================
+
+class EquityGrantBase(BaseModel):
+    """Base equity grant."""
+    employee_id: str
+    grant_type: Literal["ISO", "NSO", "RSU", "ESPP", "Phantom"]
+    grant_date: str = Field(..., description="YYYY-MM-DD")
+    quantity: int = Field(..., gt=0)
+    strike_price: Optional[float] = Field(None, ge=0)
+    fair_market_value_at_grant: Optional[float] = Field(None, ge=0)
+    vesting_start_date: str = Field(..., description="YYYY-MM-DD")
+    vesting_years: int = Field(4, ge=1, le=10)
+    cliff_months: int = Field(12, ge=0, le=48)
+    notes: Optional[str] = None
+
+
+class EquityGrantCreate(EquityGrantBase):
+    """Create an equity grant. Starts life as 'Pending Approval' — vesting
+    events are only generated once HR approves it."""
+    pass
+
+
+class EquityGrantDecide(BaseModel):
+    """Approve or reject an equity grant."""
+    status: Literal["Approved", "Rejected"]
+
+
+class EquityGrantResponse(EquityGrantBase):
+    """Equity grant response."""
+    id: int
+    status: str
+    recommended_by_user_id: Optional[int] = None
+    approved_by_user_id: Optional[int] = None
+    approval_date: Optional[str] = None
+    created_at: str
+    updated_at: str
+
+    class Config:
+        from_attributes = True
+
+
+class EquityGrantWithEmployee(EquityGrantResponse):
+    """Equity grant response with the employee's display name joined in."""
+    employee_name: Optional[str] = None
+
+
+class VestingEventResponse(BaseModel):
+    """A single vesting tranche of an equity grant. settlement_price /
+    cash_payout / payout_date are only populated for Phantom grants, where
+    'Vested' isn't terminal — a further cash-settlement step follows."""
+    id: int
+    equity_grant_id: int
+    vest_date: str
+    quantity_vested: int
+    status: str
+    vested_at: Optional[str] = None
+    settlement_price: Optional[float] = None
+    cash_payout: Optional[float] = None
+    payout_date: Optional[str] = None
+    created_at: str
+    updated_at: str
+
+    class Config:
+        from_attributes = True
+
+
+class VestingEventSettle(BaseModel):
+    """Cash-settle a Vested phantom stock tranche at a given per-unit price."""
+    settlement_price: float = Field(..., ge=0)
+
+
+class EquityGrantDetail(EquityGrantWithEmployee):
+    """Equity grant with its full vesting schedule embedded."""
+    vesting_events: List[VestingEventResponse] = []
+    quantity_vested: int = 0
+    quantity_unvested: int = 0
+
+
+# ============================================================================
+# TOTAL REWARDS STATEMENT
+# ============================================================================
+
+class TotalRewardsStatement(BaseModel):
+    """Aggregated view of an employee's total compensation for a given
+    calendar year: current base salary, plus variable pay actually earned
+    (Approved/Paid bonus + commission), plus the salary-change and merit
+    history that explains how the base salary got to where it is. Not a
+    new table — pure read-side aggregation over pay_grades/employee_compensation,
+    bonus_payouts, commission_entries, salary_changes, and merit_recommendations,
+    the same tables the rest of the compensation module already writes to."""
+    employee_id: str
+    employee_name: str
+    designation: Optional[str] = None
+    department: Optional[str] = None
+    year: int
+    base_salary_monthly: Optional[float] = None
+    base_salary_annualized: Optional[float] = None
+    compensation_effective_date: Optional[str] = None
+    bonus_ytd: float = 0
+    commission_ytd: float = 0
+    total_cash_compensation: float = 0
+    salary_changes: List[SalaryChangeResponse] = []
+    merit_history: List[MeritRecommendationResponse] = []
+
+
+# ============================================================================
 # PAY EQUITY ANALYSIS
 # ============================================================================
 

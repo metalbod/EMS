@@ -9,7 +9,7 @@
      file's mtime — no need to bump these by hand when changing a static
      asset. The literal value here is just a placeholder. -->
 <link rel="stylesheet" href="/static/css/tailwind.css?v=48"/>
-<link rel="stylesheet" href="/static/css/styles.css?v=48"/>
+<link rel="stylesheet" href="/static/css/styles.css?v=49"/>
 </head>
 <body class="bg-slate-50 text-slate-900 font-sans antialiased">
 
@@ -241,6 +241,14 @@
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5"/></svg>
             Projects
           </div>
+          <div id="nav-attendance-clock" class="hidden nav-sub-item" onclick="showPage('attendance-clock');closeBurgerMenu();" data-page="attendance-clock">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15a3 3 0 100-6 3 3 0 000 6z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09A1.65 1.65 0 0015.4 4.6a1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+            Clock In / Out
+          </div>
+          <div id="nav-attendance-review" class="hidden nav-sub-item" onclick="showPage('attendance-review');closeBurgerMenu();" data-page="attendance-review">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+            Attendance Review
+          </div>
         </div>
       </div>
       <!-- Payroll -->
@@ -258,6 +266,14 @@
           <div id="nav-payroll-my" class="hidden nav-sub-item" onclick="showPage('payroll-my');closeBurgerMenu();" data-page="payroll-my">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
             My Payslips
+          </div>
+          <div id="nav-payroll-myrewards" class="hidden nav-sub-item" onclick="showPage('payroll-myrewards');closeBurgerMenu();" data-page="payroll-myrewards">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            My Total Rewards
+          </div>
+          <div id="nav-payroll-mybenefits" class="hidden nav-sub-item" onclick="showPage('payroll-mybenefits');closeBurgerMenu();" data-page="payroll-mybenefits">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+            My Benefits
           </div>
         </div>
       </div>
@@ -289,6 +305,10 @@
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
             Locations
           </div>
+          <div id="nav-attendance-settings" class="hidden nav-sub-item" onclick="showPage('settings-attendance');closeBurgerMenu();" data-page="settings-attendance">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            Attendance Settings
+          </div>
         </div>
       </div>
       <!-- Compensation (HR Manager / Payroll Manager only) -->
@@ -319,9 +339,51 @@
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V6m0 2v8m0 0v2m0-2c-1.11 0-2.08-.402-2.599-1M5 12a7 7 0 1114 0 7 7 0 01-14 0z"/></svg>
             Bonus Plans
           </div>
+          <div class="nav-sub-item" onclick="showPage('comp-commissions');closeBurgerMenu();" data-page="comp-commissions">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/></svg>
+            Commissions
+          </div>
+          <div class="nav-sub-item" onclick="showPage('comp-equity');closeBurgerMenu();" data-page="comp-equity">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"/></svg>
+            Equity Grants
+          </div>
+          <div class="nav-sub-item" onclick="showPage('comp-totalrewards');closeBurgerMenu();" data-page="comp-totalrewards">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            Total Rewards
+          </div>
           <div class="nav-sub-item" onclick="showPage('comp-payequity');closeBurgerMenu();" data-page="comp-payequity">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
             Pay Equity
+          </div>
+        </div>
+      </div>
+      <!-- Benefits -->
+      <div id="nav-benefits-group" class="hidden">
+        <button class="nav-rail-btn" onclick="toggleNavGroup('benefits')" title="Benefits">
+          <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+          <span class="nav-rail-label">Benefits</span>
+          <svg class="nav-rail-chevron w-3 h-3 ml-auto flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+        </button>
+        <div id="submenu-benefits" class="nav-submenu hidden space-y-0.5">
+          <div class="nav-sub-item" onclick="showPage('ben-plans');closeBurgerMenu();" data-page="ben-plans">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+            Plan Types
+          </div>
+          <div class="nav-sub-item" onclick="showPage('ben-periods');closeBurgerMenu();" data-page="ben-periods">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+            Enrollment Periods
+          </div>
+          <div class="nav-sub-item" onclick="showPage('ben-lifeevents');closeBurgerMenu();" data-page="ben-lifeevents">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            Life Events
+          </div>
+          <div class="nav-sub-item" onclick="showPage('ben-claims');closeBurgerMenu();" data-page="ben-claims">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+            Claims
+          </div>
+          <div class="nav-sub-item" onclick="showPage('ben-compliance');closeBurgerMenu();" data-page="ben-compliance">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+            Compliance &amp; Reporting
           </div>
         </div>
       </div>
@@ -517,6 +579,79 @@
             </div>
             <div id="utilProjectList" class="space-y-4"></div>
             <p id="utilEmpty" class="hidden text-slate-400 text-sm">No active projects yet.</p>
+          </div>
+
+          <!-- Benefits Cost & Utilization (HR Manager / Compensation Manager / Manager) -->
+          <div id="benefitsDashSection" class="hidden mt-6">
+            <div class="flex items-center gap-2 mb-3">
+              <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+              <h3 class="font-semibold text-slate-700">Benefits Cost &amp; Utilization</h3>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+              <div class="bg-white rounded-xl border border-slate-200 p-4">
+                <p class="text-xs text-slate-500 uppercase font-semibold">Active Plans</p>
+                <p id="bdActivePlans" class="text-lg font-bold mt-1">—</p>
+              </div>
+              <div class="bg-white rounded-xl border border-slate-200 p-4">
+                <p class="text-xs text-slate-500 uppercase font-semibold">Enrolled Employees</p>
+                <p id="bdEnrolledEmployees" class="text-lg font-bold mt-1">—</p>
+              </div>
+              <div class="bg-white rounded-xl border border-slate-200 p-4">
+                <p class="text-xs text-slate-500 uppercase font-semibold">Monthly Employer Cost</p>
+                <p id="bdEmployerCost" class="text-lg font-bold mt-1">—</p>
+              </div>
+              <div class="bg-white rounded-xl border border-slate-200 p-4">
+                <p class="text-xs text-slate-500 uppercase font-semibold">Claims Paid (YTD)</p>
+                <p id="bdClaimsPaid" class="text-lg font-bold mt-1">—</p>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div class="bg-white rounded-xl border border-slate-200 p-5">
+                <div class="flex items-center justify-between mb-3">
+                  <h4 class="font-medium text-sm text-slate-800">Employer Cost by Department</h4>
+                  <button onclick="exportBenefitsDeptCostCsv()" class="text-xs text-blue-600 hover:underline">Export CSV</button>
+                </div>
+                <div id="bdDeptCostList" class="space-y-2"></div>
+                <p id="bdDeptCostEmpty" class="hidden text-slate-400 text-sm">No department cost data yet.</p>
+              </div>
+              <div class="bg-white rounded-xl border border-slate-200 p-5">
+                <div class="flex items-center justify-between mb-3">
+                  <h4 class="font-medium text-sm text-slate-800">Utilization by Plan</h4>
+                  <button onclick="exportBenefitsUtilizationCsv()" class="text-xs text-blue-600 hover:underline">Export CSV</button>
+                </div>
+                <table class="w-full text-sm">
+                  <thead>
+                    <tr class="text-left text-xs text-slate-400 uppercase">
+                      <th class="font-semibold pb-2">Plan</th>
+                      <th class="font-semibold pb-2 text-right">Claimed</th>
+                      <th class="font-semibold pb-2 text-right">Paid</th>
+                    </tr>
+                  </thead>
+                  <tbody id="bdPlanUtilList"></tbody>
+                </table>
+                <p id="bdPlanUtilEmpty" class="hidden text-slate-400 text-sm">No active plans yet.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- My Benefits (any employee) -->
+          <div id="myBenefitsDashSection" class="hidden mt-6">
+            <div class="flex items-center gap-2 mb-3">
+              <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+              <h3 class="font-semibold text-slate-700">My Benefits</h3>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div class="bg-white rounded-xl border border-slate-200 p-5">
+                <h4 class="font-medium text-sm text-slate-800 mb-3">Recent Claims</h4>
+                <div id="mdClaimsList" class="space-y-2"></div>
+                <p id="mdClaimsEmpty" class="hidden text-slate-400 text-sm">No claims submitted yet.</p>
+              </div>
+              <div class="bg-white rounded-xl border border-slate-200 p-5">
+                <h4 class="font-medium text-sm text-slate-800 mb-3">Unutilized Balances</h4>
+                <div id="mdBalancesList" class="space-y-3"></div>
+                <p id="mdBalancesEmpty" class="hidden text-slate-400 text-sm">No reimbursement-cap benefits enrolled.</p>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -985,6 +1120,55 @@
         <p id="timesheetApprovalEmpty" class="hidden text-center text-slate-400 text-sm py-12">No timesheets to review.</p>
       </div>
 
+      <!-- ATTENDANCE: Clock In / Out (self-service) -->
+      <div id="page-attendance-clock" class="hidden">
+        <div class="max-w-md bg-white rounded-xl border border-slate-200 p-6 mb-6">
+          <p class="text-xs text-slate-400 uppercase font-semibold mb-1">Today</p>
+          <p id="attClockStatus" class="text-lg font-semibold mb-1">—</p>
+          <p id="attClockDetail" class="text-sm text-slate-500 mb-4"></p>
+          <button id="attClockInBtn" onclick="attendanceClockIn()" class="btn-primary text-sm hidden">Clock In</button>
+          <button id="attClockOutBtn" onclick="attendanceClockOut()" class="btn-primary text-sm hidden">Clock Out</button>
+          <p id="attClockGeoNote" class="text-xs text-slate-400 mt-3"></p>
+        </div>
+        <h3 class="text-sm font-semibold text-slate-700 mb-3">My Attendance History</h3>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase">Date</th>
+                <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase">Shift</th>
+                <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase">Clock In</th>
+                <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase">Clock Out</th>
+                <th class="text-right px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase">Worked</th>
+                <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase">Status</th>
+              </tr>
+            </thead>
+            <tbody id="attHistoryList"></tbody>
+          </table>
+          <p id="attHistoryEmpty" class="hidden text-center text-slate-400 text-sm py-12">No attendance records yet.</p>
+        </div>
+      </div>
+
+      <!-- ATTENDANCE: Review (HR Manager / HR Admin) -->
+      <div id="page-attendance-review" class="hidden">
+        <p class="text-sm text-slate-500 mb-4">Days flagged late or absent, pending your review. Reclassifying as leave creates an approved leave application for that day.</p>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase">Employee</th>
+                <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase">Date</th>
+                <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase">Status</th>
+                <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase">Suggested</th>
+                <th class="px-4 py-2.5"></th>
+              </tr>
+            </thead>
+            <tbody id="attReviewList"></tbody>
+          </table>
+          <p id="attReviewEmpty" class="hidden text-center text-slate-400 text-sm py-12">Nothing pending review.</p>
+        </div>
+      </div>
+
       <!-- SETTINGS: Notifications (HR Manager / HR Admin) -->
       <div id="page-settings-notifications" class="hidden">
         <div class="flex items-center justify-between mb-5">
@@ -1087,6 +1271,114 @@
             <tbody id="locTableBody" class="divide-y divide-slate-100"></tbody>
           </table>
           <p id="locEmpty" class="hidden text-center text-slate-400 text-sm py-12">No locations yet.</p>
+        </div>
+      </div>
+
+      <!-- SETTINGS: Attendance (HR Manager / HR Admin) -->
+      <div id="page-settings-attendance" class="hidden">
+        <div class="flex items-center gap-2 mb-5">
+          <button onclick="setAttSettingsTab('rules')" class="btn-ghost text-xs att-tab-btn att-tab-active" data-tab="rules">Rules</button>
+          <button onclick="setAttSettingsTab('shifts')" class="btn-ghost text-xs att-tab-btn" data-tab="shifts">Shifts</button>
+          <button onclick="setAttSettingsTab('assignments')" class="btn-ghost text-xs att-tab-btn" data-tab="assignments">Shift Assignments</button>
+          <button onclick="setAttSettingsTab('devices')" class="btn-ghost text-xs att-tab-btn" data-tab="devices">Devices</button>
+        </div>
+
+        <div id="attTab-rules" class="att-tab-panel">
+          <div class="flex justify-end mb-4">
+            <button onclick="openAttRuleModal()" class="btn-primary text-sm flex items-center gap-2">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+              Add Rule
+            </button>
+          </div>
+          <p class="text-xs text-slate-400 mb-3">A rule scopes clock-in requirement to a department or a specific employee. No matching rule = not required.</p>
+          <div class="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase">Scope</th>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase">Required</th>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase">Default Shift</th>
+                  <th class="px-4 py-2.5"></th>
+                </tr>
+              </thead>
+              <tbody id="attRulesList"></tbody>
+            </table>
+            <p id="attRulesEmpty" class="hidden text-center text-slate-400 text-sm py-12">No rules configured — nobody is required to clock in.</p>
+          </div>
+        </div>
+
+        <div id="attTab-shifts" class="att-tab-panel hidden">
+          <div class="flex justify-end mb-4">
+            <button onclick="openShiftModal()" class="btn-primary text-sm flex items-center gap-2">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+              Add Shift
+            </button>
+          </div>
+          <div class="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase">Name</th>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase">Start</th>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase">End</th>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase">Crosses Midnight</th>
+                  <th class="text-right px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase">Grace (min)</th>
+                  <th class="px-4 py-2.5"></th>
+                </tr>
+              </thead>
+              <tbody id="attShiftsList"></tbody>
+            </table>
+            <p id="attShiftsEmpty" class="hidden text-center text-slate-400 text-sm py-12">No shifts defined yet.</p>
+          </div>
+        </div>
+
+        <div id="attTab-assignments" class="att-tab-panel hidden">
+          <div class="flex justify-end mb-4">
+            <button onclick="openAssignmentModal()" class="btn-primary text-sm flex items-center gap-2">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+              Assign Shift
+            </button>
+          </div>
+          <div class="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase">Employee</th>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase">Shift</th>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase">From</th>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase">To</th>
+                  <th class="px-4 py-2.5"></th>
+                </tr>
+              </thead>
+              <tbody id="attAssignmentsList"></tbody>
+            </table>
+            <p id="attAssignmentsEmpty" class="hidden text-center text-slate-400 text-sm py-12">No shift assignments yet.</p>
+          </div>
+        </div>
+
+        <div id="attTab-devices" class="att-tab-panel hidden">
+          <div class="flex justify-end mb-4">
+            <button onclick="openDeviceModal()" class="btn-primary text-sm flex items-center gap-2">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+              Add Device
+            </button>
+          </div>
+          <p class="text-xs text-slate-400 mb-3">Devices (e.g. a facial-recognition office camera) authenticate with their own API key and POST to <code>/api/attendance/webhook/clock-event</code> — not a user login.</p>
+          <div class="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase">Name</th>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase">Location</th>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase">Key Prefix</th>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase">Last Used</th>
+                  <th class="px-4 py-2.5"></th>
+                </tr>
+              </thead>
+              <tbody id="attDevicesList"></tbody>
+            </table>
+            <p id="attDevicesEmpty" class="hidden text-center text-slate-400 text-sm py-12">No devices registered yet.</p>
+          </div>
         </div>
       </div>
 
@@ -1220,10 +1512,210 @@
         </div>
       </div>
 
+      <!-- COMPENSATION: Commission Structures (Variable Pay) -->
+      <div id="page-comp-commissions" class="hidden">
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="text-lg font-semibold">Commission Plans</h3>
+          <button onclick="openCommissionPlanForm()" class="btn-primary text-sm flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            New Plan
+          </button>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Plan Name</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Type</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Default Rate</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Period</th>
+                <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+              </tr>
+            </thead>
+            <tbody id="commissionPlansTableBody" class="divide-y divide-slate-100"></tbody>
+          </table>
+          <p id="commissionPlansEmptyState" class="text-center text-slate-400 text-sm py-12">No commission plans yet.</p>
+        </div>
+      </div>
+
+      <!-- COMPENSATION: Equity Grants (Stock Options / RSU) -->
+      <div id="page-comp-equity" class="hidden">
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="text-lg font-semibold">Equity Grants</h3>
+          <button onclick="openEquityGrantForm()" class="btn-primary text-sm flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            New Grant
+          </button>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Employee</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Type</th>
+                <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Quantity</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Vesting</th>
+                <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+              </tr>
+            </thead>
+            <tbody id="equityGrantsTableBody" class="divide-y divide-slate-100"></tbody>
+          </table>
+          <p id="equityGrantsEmptyState" class="text-center text-slate-400 text-sm py-12">No equity grants yet.</p>
+        </div>
+      </div>
+
+      <!-- COMPENSATION: Total Rewards Statement (HR-facing, any employee) -->
+      <div id="page-comp-totalrewards" class="hidden">
+        <div class="flex items-center gap-3 mb-5">
+          <select id="trEmployeeSelect" class="inp" style="max-width:320px" onchange="loadHrTotalRewards()"></select>
+          <select id="trYearSelect" class="inp" style="max-width:120px" onchange="loadHrTotalRewards()"></select>
+        </div>
+        <div id="hrTotalRewardsContent"></div>
+      </div>
+
       <!-- COMPENSATION: Pay Equity Analysis -->
       <div id="page-comp-payequity" class="hidden">
         <h3 class="text-lg font-semibold mb-4">Pay Equity Analysis</h3>
         <div id="payEquityAnalysis" class="bg-white rounded-xl border border-slate-200 p-6"></div>
+      </div>
+
+      <!-- BENEFITS: Plan Types (benefit plan catalog) -->
+      <div id="page-ben-plans" class="hidden">
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="text-lg font-semibold">Benefit Plans</h3>
+          <button onclick="openBenefitPlanForm()" class="btn-primary text-sm flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            New Plan
+          </button>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Plan Name</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Category</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Contribution</th>
+                <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Employee Cost</th>
+                <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Employer Cost</th>
+                <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+              </tr>
+            </thead>
+            <tbody id="benefitPlansTableBody" class="divide-y divide-slate-100"></tbody>
+          </table>
+          <p id="benefitPlansEmptyState" class="text-center text-slate-400 text-sm py-12">No benefit plans yet.</p>
+        </div>
+      </div>
+
+      <!-- BENEFITS: Enrollment Periods (Open Enrollment) -->
+      <div id="page-ben-periods" class="hidden">
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="text-lg font-semibold">Enrollment Periods</h3>
+          <button onclick="openEnrollmentPeriodForm()" class="btn-primary text-sm flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            New Period
+          </button>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Period</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Year</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Window</th>
+                <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+                <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="enrollmentPeriodsTableBody" class="divide-y divide-slate-100"></tbody>
+          </table>
+          <p id="enrollmentPeriodsEmptyState" class="text-center text-slate-400 text-sm py-12">No enrollment periods yet.</p>
+        </div>
+      </div>
+
+      <!-- BENEFITS: Life Events (HR review) -->
+      <div id="page-ben-lifeevents" class="hidden">
+        <h3 class="text-lg font-semibold mb-4">Life Events</h3>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Employee</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Event</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Date</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+                <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="lifeEventsTableBody" class="divide-y divide-slate-100"></tbody>
+          </table>
+          <p id="lifeEventsEmptyState" class="text-center text-slate-400 text-sm py-12">No life events submitted yet.</p>
+        </div>
+      </div>
+
+      <!-- BENEFITS: Claims (HR review) -->
+      <div id="page-ben-claims" class="hidden">
+        <h3 class="text-lg font-semibold mb-4">Benefit Claims</h3>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Employee</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Plan</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Date</th>
+                <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Claimed</th>
+                <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Approved</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+                <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="claimsTableBody" class="divide-y divide-slate-100"></tbody>
+          </table>
+          <p id="claimsEmptyState" class="text-center text-slate-400 text-sm py-12">No claims submitted yet.</p>
+        </div>
+      </div>
+
+      <!-- BENEFITS: Compliance & Reporting -->
+      <div id="page-ben-compliance" class="hidden">
+        <h3 class="text-lg font-semibold mb-4">Compliance &amp; Reporting</h3>
+
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div class="bg-white rounded-xl border border-slate-200 p-4">
+            <p class="text-xs text-slate-500 uppercase font-semibold">Active Plans</p>
+            <p id="crActivePlans" class="text-xl font-bold mt-1">—</p>
+          </div>
+          <div class="bg-white rounded-xl border border-slate-200 p-4">
+            <p class="text-xs text-slate-500 uppercase font-semibold">Enrolled Employees</p>
+            <p id="crEnrolledEmployees" class="text-xl font-bold mt-1">—</p>
+          </div>
+          <div class="bg-white rounded-xl border border-slate-200 p-4">
+            <p class="text-xs text-slate-500 uppercase font-semibold">Monthly Employer Cost</p>
+            <p id="crEmployerCost" class="text-xl font-bold mt-1">—</p>
+          </div>
+          <div class="bg-white rounded-xl border border-slate-200 p-4">
+            <p class="text-xs text-slate-500 uppercase font-semibold">Claims Paid (YTD)</p>
+            <p id="crClaimsPaid" class="text-xl font-bold mt-1">—</p>
+          </div>
+        </div>
+
+        <div id="crComplianceFlags" class="mb-6"></div>
+
+        <h3 class="text-sm font-semibold text-slate-700 mb-3">Utilization by Plan</h3>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Plan</th>
+                <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Enrolled</th>
+                <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Waived</th>
+                <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Participation</th>
+                <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Employer Cost/mo</th>
+                <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Claims Paid (YTD)</th>
+              </tr>
+            </thead>
+            <tbody id="crPlansTableBody" class="divide-y divide-slate-100"></tbody>
+          </table>
+          <p id="crPlansEmptyState" class="hidden text-center text-slate-400 text-sm py-12">No active plans yet.</p>
+        </div>
       </div>
 
       <!-- PAYROLL RUNS (payroll_manager edit, hr_manager view-only) -->
@@ -1256,6 +1748,103 @@
       <div id="page-payroll-my" class="hidden">
         <div id="myPayslipList" class="space-y-2"></div>
         <p id="myPayslipEmpty" class="hidden text-center text-slate-400 text-sm py-12">No payslips available yet.</p>
+      </div>
+
+      <!-- MY TOTAL REWARDS -->
+      <div id="page-payroll-myrewards" class="hidden">
+        <div class="flex items-center gap-3 mb-5">
+          <select id="myTrYearSelect" class="inp" style="max-width:120px" onchange="loadMyTotalRewards()"></select>
+        </div>
+        <div id="myTotalRewardsContent"></div>
+      </div>
+
+      <!-- MY BENEFITS -->
+      <div id="page-payroll-mybenefits" class="hidden">
+        <div id="myBenefitsWindowBanner" class="hidden mb-4 rounded-xl border px-4 py-3 text-sm"></div>
+
+        <h3 class="text-sm font-semibold text-slate-700 mb-3">Eligible Plans</h3>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden mb-6">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Plan</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Category</th>
+                <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Your Cost</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Election</th>
+                <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="myBenefitsPlansTableBody" class="divide-y divide-slate-100"></tbody>
+          </table>
+          <p id="myBenefitsPlansEmptyState" class="hidden text-center text-slate-400 text-sm py-12">No plans available to you yet.</p>
+        </div>
+
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-sm font-semibold text-slate-700">My Life Events</h3>
+          <button onclick="openLifeEventForm()" class="btn-primary text-sm flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Submit Life Event
+          </button>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Event</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Date</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+              </tr>
+            </thead>
+            <tbody id="myLifeEventsTableBody" class="divide-y divide-slate-100"></tbody>
+          </table>
+          <p id="myLifeEventsEmptyState" class="text-center text-slate-400 text-sm py-12">No life events submitted yet.</p>
+        </div>
+
+        <div class="flex items-center justify-between mb-3 mt-6">
+          <h3 class="text-sm font-semibold text-slate-700">My Dependents &amp; Beneficiaries</h3>
+          <button onclick="openDependentForm(null, 'self')" class="btn-primary text-sm flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Add Dependent
+          </button>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Name</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Relationship</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Date of Birth</th>
+                <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Beneficiary</th>
+                <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="myDependentsTableBody" class="divide-y divide-slate-100"></tbody>
+          </table>
+          <p id="myDependentsEmptyState" class="text-center text-slate-400 text-sm py-12">No dependents added yet.</p>
+        </div>
+
+        <div class="flex items-center justify-between mb-3 mt-6">
+          <h3 class="text-sm font-semibold text-slate-700">My Claims</h3>
+          <button onclick="openClaimForm()" class="btn-primary text-sm flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Submit Claim
+          </button>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Plan</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Date</th>
+                <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Claimed</th>
+                <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Approved</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+              </tr>
+            </thead>
+            <tbody id="myClaimsTableBody" class="divide-y divide-slate-100"></tbody>
+          </table>
+          <p id="myClaimsEmptyState" class="text-center text-slate-400 text-sm py-12">No claims submitted yet.</p>
+        </div>
       </div>
 
       <!-- PERFORMANCE: Cycles (hr_manager) -->
@@ -1716,6 +2305,7 @@
       <button class="tab-btn tab-active px-4 py-3 text-sm" data-tab="personal" onclick="switchTab('personal')">Personal Info</button>
       <button class="tab-btn px-4 py-3 text-sm text-slate-500" data-tab="employment" onclick="switchTab('employment')">Employment</button>
       <button class="tab-btn px-4 py-3 text-sm text-slate-500" data-tab="statutory" onclick="switchTab('statutory')">Statutory &amp; Payroll</button>
+      <button id="empDependentsTabBtn" class="hidden tab-btn px-4 py-3 text-sm text-slate-500" data-tab="dependents" onclick="switchTab('dependents')">Dependents</button>
     </div>
     <form id="empForm" onsubmit="submitEmpForm(event)" class="p-6">
       <div id="tab-personal" class="tab-panel grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1750,7 +2340,7 @@
           <select id="fReportsTo" class="inp"><option value="">None (Top Level)</option><option value="SELF">⭐ Self (CEO / Top of Org)</option></select>
         </div>
         <div><label class="block text-sm font-medium text-slate-700 mb-1">Primary Location</label>
-          <select id="fDefaultLocation" class="inp" onchange="loadLocationDropdown()"><option value="">No Location</option></select>
+          <select id="fDefaultLocation" class="inp"><option value="">No Location</option></select>
         </div>
       </div>
       <div id="tab-statutory" class="tab-panel hidden grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1768,6 +2358,29 @@
         <div><label class="block text-sm font-medium text-slate-700 mb-1">Bank Name</label><select id="fBankName" class="inp"><option value="">Select bank</option></select></div>
         <div><label class="block text-sm font-medium text-slate-700 mb-1">Bank Account</label><input id="fBankAccount" type="text" class="inp"/></div>
         <div><label class="block text-sm font-medium text-slate-700 mb-1">No. of Children <span class="text-slate-400 font-normal">(for PCB relief)</span></label><input id="fNumChildren" type="number" step="1" min="0" class="inp" value="0"/></div>
+      </div>
+      <div id="tab-dependents" class="tab-panel hidden">
+        <div class="flex justify-end mb-4">
+          <button type="button" onclick="openDependentForm(null, 'hr', currentEmpId)" class="btn-primary text-sm flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Add Dependent
+          </button>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Name</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Relationship</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Date of Birth</th>
+                <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Beneficiary</th>
+                <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="empDependentsTableBody" class="divide-y divide-slate-100"></tbody>
+          </table>
+          <p id="empDependentsEmptyState" class="hidden text-center text-slate-400 text-sm py-12">No dependents on file for this employee.</p>
+        </div>
       </div>
       <p id="empFormErr" class="hidden text-sm text-red-600 mt-3"></p>
       <div class="flex justify-between items-center pt-4 mt-2 border-t border-slate-100">
@@ -1886,6 +2499,23 @@
       <div>
         <label class="lbl">Phone</label>
         <input id="fLocPhone" type="tel" class="inp" placeholder="e.g. +603-1234-5678"/>
+      </div>
+      <div class="border-t border-slate-100 pt-4">
+        <p class="text-xs text-slate-400 mb-2">Optional — enables geofenced clock-in for employees based at this location. Leave radius blank to skip the geofence check.</p>
+        <div class="grid grid-cols-3 gap-4">
+          <div>
+            <label class="lbl">Latitude</label>
+            <input id="fLocLat" type="number" step="any" class="inp" placeholder="e.g. 3.1390"/>
+          </div>
+          <div>
+            <label class="lbl">Longitude</label>
+            <input id="fLocLng" type="number" step="any" class="inp" placeholder="e.g. 101.6869"/>
+          </div>
+          <div>
+            <label class="lbl">Radius (meters)</label>
+            <input id="fLocRadius" type="number" min="0" class="inp" placeholder="e.g. 200"/>
+          </div>
+        </div>
       </div>
       <p id="locFormErr" class="hidden text-sm text-red-600"></p>
       <div class="flex justify-end gap-2 pt-4">
@@ -2898,24 +3528,651 @@
   </div>
 </div>
 
-<script src="/static/js/core.js?v=48"></script>
-<script src="/static/js/dashboard.js?v=48"></script>
-<script src="/static/js/institutions.js?v=48"></script>
-<script src="/static/js/employees.js?v=48"></script>
-<script src="/static/js/orgchart.js?v=48"></script>
-<script src="/static/js/audit.js?v=48"></script>
-<script src="/static/js/users.js?v=48"></script>
-<script src="/static/js/recruitment.js?v=48"></script>
-<script src="/static/js/onboarding.js?v=48"></script>
-<script src="/static/js/ld.js?v=48"></script>
-<script src="/static/js/leave.js?v=48"></script>
-<script src="/static/js/timesheet.js?v=48"></script>
-<script src="/static/js/notifications.js?v=48"></script>
-<script src="/static/js/payroll.js?v=48"></script>
-<script src="/static/js/bulk-upload.js?v=48"></script>
-<script src="/static/js/locations.js?v=48"></script>
-<script src="/static/js/compensation.js?v=48"></script>
-<script src="/static/js/performance.js?v=48"></script>
-<script src="/static/js/app-init.js?v=48"></script>
+<!-- Compensation: New Commission Plan Modal -->
+<div id="compensationCommissionPlanModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 class="text-base font-semibold">Create New Commission Plan</h2>
+      <button onclick="closeCommissionPlanModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form id="commissionPlanForm" onsubmit="submitCommissionPlanForm(event)" class="p-6 space-y-4">
+      <div><label class="lbl">Plan Name</label><input id="cpName" type="text" class="inp" placeholder="2026 Sales Commission Plan" required/></div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="lbl">Plan Type</label>
+          <select id="cpType" class="inp" required>
+            <option value="Flat Rate">Flat Rate</option>
+            <option value="Tiered">Tiered</option>
+            <option value="Quota-based">Quota-based</option>
+          </select>
+        </div>
+        <div><label class="lbl">Default Rate (%)</label><input id="cpRate" type="number" class="inp" step="0.001" placeholder="5"/></div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="lbl">Year</label><input id="cpYear" type="number" class="inp" placeholder="2026"/></div>
+        <div></div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="lbl">Period Start</label><input id="cpStart" type="date" class="inp"/></div>
+        <div><label class="lbl">Period End</label><input id="cpEnd" type="date" class="inp"/></div>
+      </div>
+      <div><label class="lbl">Description</label><textarea id="cpDesc" class="inp" rows="3"></textarea></div>
+      <div class="flex gap-2">
+        <button type="submit" class="btn-primary">Create Plan</button>
+        <button type="button" onclick="closeCommissionPlanModal()" class="btn-ghost">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Compensation: Commission Plan Detail / Entries Modal -->
+<div id="compensationCommissionDetailModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-3xl">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <div>
+        <h2 id="commissionDetailTitle" class="text-base font-semibold">Commission Plan</h2>
+        <p id="commissionDetailSubtitle" class="text-xs text-slate-500"></p>
+      </div>
+      <button onclick="closeCommissionDetailModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <div class="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+      <div class="flex justify-between items-center flex-wrap gap-2">
+        <h3 class="text-sm font-semibold text-slate-700">Commission Entries</h3>
+        <div class="flex gap-2">
+          <select id="commissionPlanStatusSelect" class="inp text-sm" onchange="changeCommissionPlanStatus()">
+            <option value="Draft">Draft</option>
+            <option value="Active">Active</option>
+            <option value="Closed">Closed</option>
+          </select>
+          <button type="button" onclick="toggleCommissionEntryForm()" class="btn-primary text-sm flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Add Entry
+          </button>
+        </div>
+      </div>
+
+      <form id="commissionEntryForm" onsubmit="submitCommissionEntry(event)" class="hidden border border-slate-200 rounded-lg p-4 space-y-3 bg-slate-50">
+        <div class="grid grid-cols-2 gap-3">
+          <div><label class="lbl">Employee</label><select id="ceEmployee" class="inp" required></select></div>
+          <div><label class="lbl">Quota Target (RM)</label><input id="ceQuota" type="number" class="inp" step="0.01" placeholder="Optional"/></div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div><label class="lbl">Sales Amount (RM)</label><input id="ceSales" type="number" class="inp" step="0.01" required oninput="updateCommissionPreview()"/></div>
+          <div><label class="lbl">Commission Rate (%)</label><input id="ceRate" type="number" class="inp" step="0.001" required oninput="updateCommissionPreview()"/></div>
+        </div>
+        <p id="cePreview" class="text-xs text-slate-500"></p>
+        <div><label class="lbl">Notes</label><textarea id="ceNotes" class="inp" rows="2"></textarea></div>
+        <div class="flex gap-2">
+          <button type="submit" class="btn-primary text-sm">Submit Entry</button>
+          <button type="button" onclick="toggleCommissionEntryForm()" class="btn-ghost text-sm">Cancel</button>
+        </div>
+      </form>
+
+      <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-50 border-b border-slate-200">
+            <tr>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Employee</th>
+              <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Sales</th>
+              <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Rate</th>
+              <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Commission</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+              <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="commissionEntryTableBody" class="divide-y divide-slate-100"></tbody>
+        </table>
+        <p id="commissionEntryEmptyState" class="text-center text-slate-400 text-sm py-12">No commission entries yet.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Compensation: New Equity Grant Modal -->
+<div id="compensationEquityGrantModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 class="text-base font-semibold">New Equity Grant</h2>
+      <button onclick="closeEquityGrantModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form id="equityGrantForm" onsubmit="submitEquityGrantForm(event)" class="p-6 space-y-4">
+      <div><label class="lbl">Employee</label><select id="egEmployee" class="inp" required></select></div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="lbl">Grant Type</label>
+          <select id="egType" class="inp" required>
+            <option value="RSU">RSU</option>
+            <option value="ISO">ISO (Incentive Stock Option)</option>
+            <option value="NSO">NSO (Non-Qualified Stock Option)</option>
+            <option value="ESPP">ESPP</option>
+            <option value="Phantom">Phantom Stock</option>
+          </select>
+        </div>
+        <div><label class="lbl">Grant Date</label><input id="egGrantDate" type="date" class="inp" required/></div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="lbl">Quantity (units)</label><input id="egQuantity" type="number" class="inp" min="1" required/></div>
+        <div><label class="lbl">Strike Price (options only)</label><input id="egStrike" type="number" class="inp" step="0.0001" placeholder="Optional"/></div>
+      </div>
+      <div><label class="lbl">Fair Market Value at Grant (RM)</label><input id="egFmv" type="number" class="inp" step="0.0001" placeholder="Optional"/></div>
+      <div class="grid grid-cols-3 gap-3">
+        <div><label class="lbl">Vesting Start</label><input id="egVestStart" type="date" class="inp" required/></div>
+        <div><label class="lbl">Vesting Years</label><input id="egVestYears" type="number" class="inp" value="4" min="1" max="10" required/></div>
+        <div><label class="lbl">Cliff (months)</label><input id="egCliff" type="number" class="inp" value="12" min="0" max="48" required/></div>
+      </div>
+      <div><label class="lbl">Notes</label><textarea id="egNotes" class="inp" rows="2"></textarea></div>
+      <div class="flex gap-2">
+        <button type="submit" class="btn-primary">Create Grant</button>
+        <button type="button" onclick="closeEquityGrantModal()" class="btn-ghost">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Compensation: Equity Grant Detail / Vesting Schedule Modal -->
+<div id="compensationEquityDetailModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-3xl">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <div>
+        <h2 id="equityDetailTitle" class="text-base font-semibold">Equity Grant</h2>
+        <p id="equityDetailSubtitle" class="text-xs text-slate-500"></p>
+      </div>
+      <button onclick="closeEquityDetailModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <div class="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+      <div id="equityDetailActions" class="flex items-center justify-between flex-wrap gap-2"></div>
+
+      <div class="grid grid-cols-3 gap-3">
+        <div class="bg-white rounded-xl border border-slate-200 p-4">
+          <p class="text-xs text-slate-500 uppercase font-semibold">Total Units</p>
+          <p id="equityTotalUnits" class="text-xl font-bold mt-1">—</p>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 p-4">
+          <p class="text-xs text-slate-500 uppercase font-semibold">Vested</p>
+          <p id="equityVestedUnits" class="text-xl font-bold mt-1 text-emerald-700">—</p>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 p-4">
+          <p class="text-xs text-slate-500 uppercase font-semibold">Unvested</p>
+          <p id="equityUnvestedUnits" class="text-xl font-bold mt-1 text-slate-500">—</p>
+        </div>
+      </div>
+
+      <h3 class="text-sm font-semibold text-slate-700">Vesting Schedule</h3>
+      <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-50 border-b border-slate-200">
+            <tr>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Vest Date</th>
+              <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Units</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+              <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="equityVestingTableBody" class="divide-y divide-slate-100"></tbody>
+        </table>
+        <p id="equityVestingEmptyState" class="text-center text-slate-400 text-sm py-12">No vesting schedule yet — approve the grant to generate one.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Compensation: Settle Phantom Stock Tranche Modal -->
+<div id="equitySettleModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-[60] flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 class="text-base font-semibold">Settle &amp; Pay Tranche</h2>
+      <button onclick="closeEquitySettleModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form id="equitySettleForm" onsubmit="submitEquitySettleForm(event)" class="p-6 space-y-4">
+      <p id="equitySettleInfo" class="text-sm text-slate-500"></p>
+      <div>
+        <label class="lbl">Settlement Price per Unit (RM)</label>
+        <input id="esPrice" type="number" class="inp" step="0.0001" min="0" required oninput="updateEquitySettlePreview()"/>
+      </div>
+      <p id="esPreview" class="text-xs text-slate-500"></p>
+      <div class="flex gap-2">
+        <button type="submit" class="btn-primary text-sm">Confirm &amp; Pay</button>
+        <button type="button" onclick="closeEquitySettleModal()" class="btn-ghost text-sm">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Benefits: New/Edit Benefit Plan Modal -->
+<div id="benefitPlanModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 id="benefitPlanModalTitle" class="text-base font-semibold">New Benefit Plan</h2>
+      <button onclick="closeBenefitPlanModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form id="benefitPlanForm" onsubmit="submitBenefitPlanForm(event)" class="p-6 space-y-4">
+      <input type="hidden" id="benPlanId"/>
+      <div><label class="lbl">Plan Name</label><input id="benPlanName" type="text" class="inp" placeholder="Premier Medical Plan" required/></div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="lbl">Category</label>
+          <select id="benPlanCategory" class="inp" required>
+            <option value="Medical">Medical</option>
+            <option value="Dental">Dental</option>
+            <option value="Vision">Vision</option>
+            <option value="Life">Life Insurance</option>
+            <option value="Disability">Disability Insurance</option>
+            <option value="Retirement">Retirement / Pension</option>
+            <option value="Wellness">Wellness</option>
+            <option value="Perks">Perks</option>
+          </select>
+        </div>
+        <div>
+          <label class="lbl">Contribution Type</label>
+          <select id="benPlanContributionType" class="inp" required>
+            <option value="Fixed Premium">Fixed Premium (RM/month)</option>
+            <option value="Percent of Salary">Percent of Salary</option>
+            <option value="Reimbursement Cap">Reimbursement Cap (RM/year)</option>
+          </select>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="lbl">Employee Cost</label><input id="benPlanEmployeeCost" type="number" class="inp" step="0.0001" placeholder="Optional"/></div>
+        <div><label class="lbl">Employer Cost</label><input id="benPlanEmployerCost" type="number" class="inp" step="0.0001" placeholder="Optional"/></div>
+      </div>
+      <div class="grid grid-cols-3 gap-3">
+        <div><label class="lbl">Plan Year</label><input id="benPlanYear" type="number" class="inp" placeholder="2026"/></div>
+        <div><label class="lbl">Effective Date</label><input id="benPlanEffectiveDate" type="date" class="inp"/></div>
+        <div><label class="lbl">End Date</label><input id="benPlanEndDate" type="date" class="inp"/></div>
+      </div>
+      <div><label class="lbl">Description</label><textarea id="benPlanDesc" class="inp" rows="3"></textarea></div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="lbl">Carrier / Vendor Name</label><input id="benPlanCarrierName" type="text" class="inp" placeholder="Optional"/></div>
+        <div><label class="lbl">Group Policy Number</label><input id="benPlanCarrierPolicy" type="text" class="inp" placeholder="Optional"/></div>
+      </div>
+      <div class="flex items-center gap-2">
+        <input id="benPlanPayrollSync" type="checkbox"/>
+        <label for="benPlanPayrollSync" class="text-sm">Sync employee deductions with payroll</label>
+      </div>
+      <div id="benPlanStatusRow" class="hidden">
+        <label class="lbl">Status</label>
+        <select id="benPlanStatus" class="inp">
+          <option value="Draft">Draft</option>
+          <option value="Active">Active</option>
+          <option value="Closed">Closed</option>
+        </select>
+      </div>
+      <div class="flex gap-2">
+        <button type="submit" class="btn-primary">Save Plan</button>
+        <button type="button" onclick="closeBenefitPlanModal()" class="btn-ghost">Cancel</button>
+      </div>
+    </form>
+    <div id="benPlanEligibilitySection" class="hidden border-t border-slate-200 p-6 space-y-3">
+      <h3 class="text-sm font-semibold text-slate-700">Eligibility</h3>
+      <p class="text-xs text-slate-500">No rules = open to all employees. Add a rule to restrict this plan to a specific job level or pay grade.</p>
+      <div id="benEligibilityRulesList" class="space-y-2"></div>
+      <div class="flex gap-2 items-end flex-wrap">
+        <div>
+          <label class="lbl">Job Level</label>
+          <select id="benEligJobLevel" class="inp text-sm"><option value="">—</option></select>
+        </div>
+        <div>
+          <label class="lbl">Pay Grade</label>
+          <select id="benEligPayGrade" class="inp text-sm"><option value="">—</option></select>
+        </div>
+        <button type="button" onclick="addEligibilityRule()" class="btn-primary text-sm">Add Rule</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Benefits: New Enrollment Period Modal -->
+<div id="enrollmentPeriodModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-md">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 class="text-base font-semibold">New Enrollment Period</h2>
+      <button onclick="closeEnrollmentPeriodModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form id="enrollmentPeriodForm" onsubmit="submitEnrollmentPeriodForm(event)" class="p-6 space-y-4">
+      <div><label class="lbl">Period Name</label><input id="epName" type="text" class="inp" placeholder="2026 Open Enrollment" required/></div>
+      <div><label class="lbl">Plan Year</label><input id="epYear" type="number" class="inp" placeholder="2026" required/></div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="lbl">Start Date</label><input id="epStart" type="date" class="inp" required/></div>
+        <div><label class="lbl">End Date</label><input id="epEnd" type="date" class="inp" required/></div>
+      </div>
+      <div class="flex gap-2">
+        <button type="submit" class="btn-primary">Create Period</button>
+        <button type="button" onclick="closeEnrollmentPeriodModal()" class="btn-ghost">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Benefits: Submit Life Event Modal -->
+<div id="lifeEventModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-md">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 class="text-base font-semibold">Submit Life Event</h2>
+      <button onclick="closeLifeEventModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form id="lifeEventForm" onsubmit="submitLifeEventForm(event)" class="p-6 space-y-4">
+      <div>
+        <label class="lbl">Event Type</label>
+        <select id="leType" class="inp" required>
+          <option value="Marriage">Marriage</option>
+          <option value="Divorce">Divorce</option>
+          <option value="Childbirth">Childbirth</option>
+          <option value="Adoption">Adoption</option>
+          <option value="Death of Dependent">Death of Dependent</option>
+          <option value="Loss of Other Coverage">Loss of Other Coverage</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+      <div><label class="lbl">Event Date</label><input id="leDate" type="date" class="inp" required/></div>
+      <div><label class="lbl">Notes</label><textarea id="leNotes" class="inp" rows="3"></textarea></div>
+      <p class="text-xs text-slate-500">HR will review this event. If approved, you'll get a 30-day window to change your benefit elections.</p>
+      <div class="flex gap-2">
+        <button type="submit" class="btn-primary">Submit</button>
+        <button type="button" onclick="closeLifeEventModal()" class="btn-ghost">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Benefits: Add/Edit Dependent Modal -->
+<div id="dependentModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-md">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 id="dependentModalTitle" class="text-base font-semibold">Add Dependent</h2>
+      <button onclick="closeDependentModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form id="dependentForm" onsubmit="submitDependentForm(event)" class="p-6 space-y-4">
+      <input type="hidden" id="depId"/>
+      <div><label class="lbl">Full Name</label><input id="depName" type="text" class="inp" required/></div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="lbl">Relationship</label>
+          <select id="depRelationship" class="inp" required>
+            <option value="Spouse">Spouse</option>
+            <option value="Child">Child</option>
+            <option value="Domestic Partner">Domestic Partner</option>
+            <option value="Parent">Parent</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div><label class="lbl">Date of Birth</label><input id="depDob" type="date" class="inp"/></div>
+      </div>
+      <div><label class="lbl">National ID / IC Number</label><input id="depNationalId" type="text" class="inp" placeholder="Optional"/></div>
+      <div class="flex items-center gap-2">
+        <input id="depIsBeneficiary" type="checkbox" onchange="toggleBeneficiaryPercentRow()"/>
+        <label for="depIsBeneficiary" class="text-sm">Designate as beneficiary (e.g. for life insurance)</label>
+      </div>
+      <div id="depBeneficiaryPercentRow" class="hidden">
+        <label class="lbl">Beneficiary Allocation (%)</label>
+        <input id="depBeneficiaryPercent" type="number" class="inp" step="1" min="0" max="100" placeholder="100"/>
+      </div>
+      <div><label class="lbl">Notes</label><textarea id="depNotes" class="inp" rows="2"></textarea></div>
+      <div class="flex gap-2">
+        <button type="submit" class="btn-primary">Save Dependent</button>
+        <button type="button" onclick="closeDependentModal()" class="btn-ghost">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Benefits: Submit Claim Modal -->
+<div id="claimModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-md">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 class="text-base font-semibold">Submit Benefit Claim</h2>
+      <button onclick="closeClaimModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form id="claimForm" onsubmit="submitClaimForm(event)" class="p-6 space-y-4">
+      <div><label class="lbl">Plan</label><select id="claimPlan" class="inp" required></select></div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="lbl">Claim Date</label><input id="claimDate" type="date" class="inp" required/></div>
+        <div><label class="lbl">Amount Claimed (RM)</label><input id="claimAmount" type="number" class="inp" step="0.01" required/></div>
+      </div>
+      <div><label class="lbl">Description</label><textarea id="claimDesc" class="inp" rows="3"></textarea></div>
+      <div class="flex gap-2">
+        <button type="submit" class="btn-primary">Submit Claim</button>
+        <button type="button" onclick="closeClaimModal()" class="btn-ghost">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Benefits: Approve Claim Modal (with editable amount, for Reimbursement Cap enforcement) -->
+<div id="claimDecideModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 class="text-base font-semibold">Approve Claim</h2>
+      <button onclick="closeClaimDecideModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form id="claimDecideForm" onsubmit="submitClaimDecideForm(event)" class="p-6 space-y-4">
+      <p id="claimDecideInfo" class="text-sm text-slate-500"></p>
+      <div>
+        <label class="lbl">Approved Amount (RM)</label>
+        <input id="claimDecideAmount" type="number" class="inp" step="0.01" min="0" required/>
+      </div>
+      <div class="flex gap-2">
+        <button type="submit" class="btn-primary text-sm">Confirm Approval</button>
+        <button type="button" onclick="closeClaimDecideModal()" class="btn-ghost text-sm">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Attendance: Shift Modal -->
+<div id="shiftModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 id="shiftModalTitle" class="text-base font-semibold">Add Shift</h2>
+      <button onclick="closeShiftModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form id="shiftForm" onsubmit="submitShiftForm(event)" class="p-6 space-y-4">
+      <input type="hidden" id="shiftId"/>
+      <div>
+        <label class="lbl">Name</label>
+        <input id="shiftName" type="text" class="inp" required/>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="lbl">Start Time</label>
+          <input id="shiftStart" type="time" class="inp" required/>
+        </div>
+        <div>
+          <label class="lbl">End Time</label>
+          <input id="shiftEnd" type="time" class="inp" required/>
+        </div>
+      </div>
+      <p class="text-xs text-slate-400">If end time is before start time, this shift is treated as overnight (crosses midnight).</p>
+      <div>
+        <label class="lbl">Grace Period (minutes)</label>
+        <input id="shiftGrace" type="number" class="inp" min="0" max="480" value="0" required/>
+      </div>
+      <div class="flex gap-2">
+        <button type="submit" class="btn-primary text-sm">Save</button>
+        <button type="button" onclick="closeShiftModal()" class="btn-ghost text-sm">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Attendance: Rule Modal -->
+<div id="attRuleModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 class="text-base font-semibold">Add Attendance Rule</h2>
+      <button onclick="closeAttRuleModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form id="attRuleForm" onsubmit="submitAttRuleForm(event)" class="p-6 space-y-4">
+      <div>
+        <label class="lbl">Scope</label>
+        <select id="attRuleScopeType" class="inp" onchange="toggleAttRuleScopeInput()">
+          <option value="department">Department</option>
+          <option value="employee">Specific Employee</option>
+        </select>
+      </div>
+      <div id="attRuleDeptWrap">
+        <label class="lbl">Department</label>
+        <select id="attRuleDept" class="inp">
+          <option value="">— Select —</option>
+        </select>
+      </div>
+      <div id="attRuleEmpWrap" class="hidden">
+        <label class="lbl">Employee</label>
+        <select id="attRuleEmp" class="inp">
+          <option value="">— Select —</option>
+        </select>
+      </div>
+      <div>
+        <label class="lbl">Default Shift (used if employee has no explicit assignment)</label>
+        <select id="attRuleShift" class="inp">
+          <option value="">— None —</option>
+        </select>
+      </div>
+      <label class="flex items-center gap-2 text-sm">
+        <input id="attRuleRequired" type="checkbox" checked/> Clock-in required
+      </label>
+      <div class="flex gap-2">
+        <button type="submit" class="btn-primary text-sm">Save</button>
+        <button type="button" onclick="closeAttRuleModal()" class="btn-ghost text-sm">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Attendance: Shift Assignment Modal -->
+<div id="assignmentModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 class="text-base font-semibold">Assign Shift</h2>
+      <button onclick="closeAssignmentModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form id="assignmentForm" onsubmit="submitAssignmentForm(event)" class="p-6 space-y-4">
+      <div>
+        <label class="lbl">Employee ID</label>
+        <select id="assignEmp" class="inp" required>
+          <option value="">— Select —</option>
+        </select>
+      </div>
+      <div>
+        <label class="lbl">Shift</label>
+        <select id="assignShift" class="inp" required>
+          <option value="">— Select —</option>
+        </select>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="lbl">Effective From</label>
+          <input id="assignFrom" type="date" class="inp" required/>
+        </div>
+        <div>
+          <label class="lbl">Effective To (optional)</label>
+          <input id="assignTo" type="date" class="inp"/>
+        </div>
+      </div>
+      <div class="flex gap-2">
+        <button type="submit" class="btn-primary text-sm">Save</button>
+        <button type="button" onclick="closeAssignmentModal()" class="btn-ghost text-sm">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Attendance: Device Modal (create form, then one-time API key display) -->
+<div id="deviceModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 class="text-base font-semibold">Add Device</h2>
+      <button onclick="closeDeviceModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form id="deviceForm" onsubmit="submitDeviceForm(event)" class="p-6 space-y-4">
+      <div>
+        <label class="lbl">Device Name</label>
+        <input id="deviceName" type="text" class="inp" placeholder="e.g. Main Entrance Camera" required/>
+      </div>
+      <div>
+        <label class="lbl">Location (optional)</label>
+        <select id="deviceLocation" class="inp">
+          <option value="">— None —</option>
+        </select>
+      </div>
+      <div class="flex gap-2">
+        <button type="submit" class="btn-primary text-sm">Create Device</button>
+        <button type="button" onclick="closeDeviceModal()" class="btn-ghost text-sm">Cancel</button>
+      </div>
+    </form>
+    <div id="deviceKeyReveal" class="hidden p-6 space-y-4">
+      <p class="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">This API key is shown once and cannot be retrieved again. Copy it into the device/vendor configuration now.</p>
+      <div>
+        <label class="lbl">API Key</label>
+        <div class="flex gap-2">
+          <input id="deviceKeyValue" type="text" class="inp font-mono text-xs" readonly/>
+          <button type="button" onclick="copyDeviceKey()" class="btn-ghost text-sm flex-shrink-0">Copy</button>
+        </div>
+      </div>
+      <button type="button" onclick="closeDeviceModal()" class="btn-primary text-sm">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- Attendance: Resolve Review Modal -->
+<div id="attResolveModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 class="text-base font-semibold">Resolve Attendance</h2>
+      <button onclick="closeAttResolveModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form id="attResolveForm" onsubmit="submitAttResolveForm(event)" class="p-6 space-y-4">
+      <p id="attResolveInfo" class="text-sm text-slate-500"></p>
+      <div>
+        <label class="lbl">Action</label>
+        <select id="attResolveAction" class="inp" onchange="toggleAttResolveLeaveFields()">
+          <option value="Excuse">Excuse (mark Present)</option>
+          <option value="ReclassifyAsLeave">Reclassify as Leave</option>
+          <option value="ConfirmAbsent">Confirm Absent (unpaid)</option>
+        </select>
+      </div>
+      <div id="attResolveLeaveWrap" class="hidden space-y-3">
+        <div>
+          <label class="lbl">Leave Type</label>
+          <select id="attResolveLeaveType" class="inp">
+            <option value="">— Select —</option>
+          </select>
+        </div>
+        <label class="flex items-center gap-2 text-sm">
+          <input id="attResolveHalfDay" type="checkbox"/> Half-day only
+        </label>
+      </div>
+      <div>
+        <label class="lbl">Notes</label>
+        <textarea id="attResolveNotes" class="inp" rows="2"></textarea>
+      </div>
+      <div class="flex gap-2">
+        <button type="submit" class="btn-primary text-sm">Confirm</button>
+        <button type="button" onclick="closeAttResolveModal()" class="btn-ghost text-sm">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="/static/js/core.js?v=74"></script>
+<script src="/static/js/dashboard.js?v=74"></script>
+<script src="/static/js/institutions.js?v=74"></script>
+<script src="/static/js/employees.js?v=74"></script>
+<script src="/static/js/orgchart.js?v=74"></script>
+<script src="/static/js/audit.js?v=74"></script>
+<script src="/static/js/users.js?v=74"></script>
+<script src="/static/js/recruitment.js?v=74"></script>
+<script src="/static/js/onboarding.js?v=74"></script>
+<script src="/static/js/ld.js?v=74"></script>
+<script src="/static/js/leave.js?v=74"></script>
+<script src="/static/js/timesheet.js?v=74"></script>
+<script src="/static/js/notifications.js?v=74"></script>
+<script src="/static/js/payroll.js?v=74"></script>
+<script src="/static/js/bulk-upload.js?v=74"></script>
+<script src="/static/js/locations.js?v=74"></script>
+<script src="/static/js/compensation.js?v=74"></script>
+<script src="/static/js/benefits.js?v=74"></script>
+<script src="/static/js/attendance.js?v=74"></script>
+<script src="/static/js/performance.js?v=74"></script>
+<script src="/static/js/app-init.js?v=74"></script>
 </body>
 </html>

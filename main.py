@@ -43,6 +43,8 @@ try:
     from routers.location_features import router as location_features_router
     from routers.location_phase2 import router as location_phase2_router
     from routers.compensation import router as compensation_router
+    from routers.benefits import router as benefits_router
+    from routers.attendance import router as attendance_router
     from routers.auth import router as auth_router
     from routers.meta import router as meta_router
     from routers.frontend import router as frontend_router, STATIC_DIR
@@ -72,6 +74,8 @@ except ImportError:
     from ems.routers.location_features import router as location_features_router
     from ems.routers.location_phase2 import router as location_phase2_router
     from ems.routers.compensation import router as compensation_router
+    from ems.routers.benefits import router as benefits_router
+    from ems.routers.attendance import router as attendance_router
     from ems.routers.auth import router as auth_router
     from ems.routers.meta import router as meta_router
     from ems.routers.frontend import router as frontend_router, STATIC_DIR
@@ -178,6 +182,8 @@ app.include_router(locations_router)
 app.include_router(location_features_router)
 app.include_router(location_phase2_router)
 app.include_router(compensation_router)
+app.include_router(benefits_router)
+app.include_router(attendance_router)
 app.include_router(auth_router)
 app.include_router(meta_router)
 app.include_router(tasks_router)

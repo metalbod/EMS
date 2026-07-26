@@ -73,6 +73,9 @@ function editLocation(locId) {
   f('fLocCapacity').value = loc.capacity || '';
   f('fLocAddress').value = loc.address || '';
   f('fLocPhone').value = loc.phone || '';
+  f('fLocLat').value = loc.latitude ?? '';
+  f('fLocLng').value = loc.longitude ?? '';
+  f('fLocRadius').value = loc.radius_meters ?? '';
 
   document.getElementById('locFormErr').classList.add('hidden');
   document.getElementById('locModal').classList.remove('hidden');
@@ -100,6 +103,9 @@ async function submitLocationForm(e) {
     capacity: parseInt(g('fLocCapacity')) || null,
     address: g('fLocAddress').trim() || null,
     phone: g('fLocPhone').trim() || null,
+    latitude: g('fLocLat').trim() ? parseFloat(g('fLocLat')) : null,
+    longitude: g('fLocLng').trim() ? parseFloat(g('fLocLng')) : null,
+    radius_meters: g('fLocRadius').trim() ? parseInt(g('fLocRadius'), 10) : null,
   };
 
   const url = editingLocationId

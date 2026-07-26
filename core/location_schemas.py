@@ -17,6 +17,9 @@ class LocationBase(BaseModel):
     manager_user_id: Optional[int] = Field(None, description="User ID of location manager (optional)")
     location_type: str = Field(default="branch", description="Type of location: hq, branch, warehouse, outlet")
     capacity: Optional[int] = Field(None, description="Maximum number of employees this location can have")
+    latitude: Optional[float] = Field(None, ge=-90, le=90, description="Used for geofenced clock-in; leave blank to skip geofencing")
+    longitude: Optional[float] = Field(None, ge=-180, le=180)
+    radius_meters: Optional[int] = Field(None, ge=0, description="Geofence radius; null = no geofence check for this location")
 
 
 class LocationCreate(LocationBase):
@@ -35,6 +38,9 @@ class LocationUpdate(BaseModel):
     manager_user_id: Optional[int] = None
     location_type: Optional[str] = None
     capacity: Optional[int] = None
+    latitude: Optional[float] = Field(None, ge=-90, le=90)
+    longitude: Optional[float] = Field(None, ge=-180, le=180)
+    radius_meters: Optional[int] = Field(None, ge=0)
 
 
 class LocationResponse(LocationBase):

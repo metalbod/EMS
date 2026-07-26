@@ -208,6 +208,117 @@ function renderDashboard() {
       }).join('');
     });
   }
+
+  // Benefits cost & utilization — HR Manager / Compensation Manager / Manager
+  let lastBenefitsDashboard = null;
+  const canViewBenefitsDash = ['hr_manager','compensation_manager','manager'].includes(currentUser?.role);
+  document.getElementById('benefitsDashSection')?.classList.toggle('hidden', !canViewBenefitsDash);
+  if (canViewBenefitsDash) {
+    api('/api/benefits/reports/dashboard').then(async res => {
+      if (!res || !res.ok) return;
+      const s = await res.json();
+      lastBenefitsDashboard = s;
+      document.getElementById('bdActivePlans').textContent = s.total_active_plans;
+      document.getElementById('bdEnrolledEmployees').textContent = s.total_enrolled_employees;
+      document.getElementById('bdEmployerCost').textContent = fmtRM(s.total_monthly_employer_cost);
+      document.getElementById('bdClaimsPaid').textContent = fmtRM(s.total_claims_paid_ytd);
+
+      const deptEl = document.getElementById('bdDeptCostList');
+      document.getElementById('bdDeptCostEmpty')?.classList.toggle('hidden', s.department_costs.length > 0);
+      const maxDeptCost = Math.max(...s.department_costs.map(d => d.monthly_employer_cost_total), 1);
+      deptEl.innerHTML = s.department_costs.map(d => `
+        <div class="flex items-center gap-2">
+          <div class="w-28 text-xs text-slate-600 truncate" title="${esc(d.department)}">${esc(d.department)}</div>
+          <div class="flex-1 bg-slate-100 rounded-full h-2">
+            <div class="bg-blue-500 h-2 rounded-full" style="width:${Math.round(d.monthly_employer_cost_total/maxDeptCost*100)}%"></div>
+          </div>
+          <div class="text-xs text-slate-500 w-20 text-right">${fmtRM(d.monthly_employer_cost_total)}</div>
+        </div>`).join('');
+
+      const planEl = document.getElementById('bdPlanUtilList');
+      document.getElementById('bdPlanUtilEmpty')?.classList.toggle('hidden', s.plan_utilization.length > 0);
+      planEl.innerHTML = s.plan_utilization.map(p => `
+        <tr class="border-t border-slate-100">
+          <td class="py-1.5 text-xs text-slate-600 truncate max-w-[9rem]" title="${esc(p.plan_name)}">${esc(p.plan_name)}</td>
+          <td class="py-1.5 text-xs text-slate-700 text-right">${fmtRM(p.claims_claimed_ytd)}</td>
+          <td class="py-1.5 text-xs text-slate-700 text-right">${fmtRM(p.claims_paid_ytd)}</td>
+        </tr>`).join('');
+    });
+  }
+  window.getLastBenefitsDashboard = () => lastBenefitsDashboard;
+
+  // My Benefits — anyone with a linked employee record
+  const myBenefitsSection = document.getElementById('myBenefitsDashSection');
+  const hasEmployeeRecord = !!currentUser?.employee_id;
+  myBenefitsSection?.classList.toggle('hidden', !hasEmployeeRecord);
+  if (hasEmployeeRecord) {
+    api('/api/benefits/dashboard/mine').then(async res => {
+      if (!res || !res.ok) return;
+      const s = await res.json();
+
+      const claimsEl = document.getElementById('mdClaimsList');
+      document.getElementById('mdClaimsEmpty')?.classList.toggle('hidden', s.recent_claims.length > 0);
+      const claimBadge = status => {
+        if (status === 'Approved') return 'bg-blue-100 text-blue-700';
+        if (status === 'Paid') return 'bg-emerald-100 text-emerald-700';
+        if (status === 'Rejected') return 'bg-red-100 text-red-700';
+        return 'bg-amber-100 text-amber-700';
+      };
+      claimsEl.innerHTML = s.recent_claims.map(c => `
+        <div class="flex items-center justify-between py-1.5 border-b border-slate-100 last:border-0">
+          <div>
+            <p class="text-sm text-slate-700">${esc(c.plan_name)}</p>
+            <p class="text-xs text-slate-400">${esc(c.claim_date)} · ${fmtRM(c.amount_claimed)}</p>
+          </div>
+          <span class="badge ${claimBadge(c.status)}">${esc(c.status)}</span>
+        </div>`).join('');
+
+      const balEl = document.getElementById('mdBalancesList');
+      document.getElementById('mdBalancesEmpty')?.classList.toggle('hidden', s.balances.length > 0);
+      balEl.innerHTML = s.balances.map(b => {
+        const pctUsed = b.annual_cap > 0 ? Math.min(100, Math.round(b.used_amount / b.annual_cap * 100)) : 0;
+        return `
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-sm text-slate-700">${esc(b.plan_name)}</span>
+            <span class="text-xs text-slate-500">${fmtRM(b.remaining_amount)} left of ${fmtRM(b.annual_cap)}</span>
+          </div>
+          <div class="bg-slate-100 rounded-full h-2">
+            <div class="bg-emerald-500 h-2 rounded-full" style="width:${pctUsed}%"></div>
+          </div>
+        </div>`;
+      }).join('');
+    });
+  }
+}
+
+function exportBenefitsDeptCostCsv() {
+  const s = window.getLastBenefitsDashboard?.();
+  if (!s) return;
+  const rows = [['Department', 'Enrolled Count', 'Monthly Employer Cost', 'Monthly Employee Cost']];
+  s.department_costs.forEach(d => rows.push([d.department, d.enrolled_count, d.monthly_employer_cost_total, d.monthly_employee_cost_total]));
+  downloadCsv(rows, 'benefits-cost-by-department.csv');
+}
+
+function exportBenefitsUtilizationCsv() {
+  const s = window.getLastBenefitsDashboard?.();
+  if (!s) return;
+  const rows = [['Plan', 'Category', 'Enrolled', 'Waived', 'Claims Claimed YTD', 'Claims Paid YTD']];
+  s.plan_utilization.forEach(p => rows.push([p.plan_name, p.plan_category, p.enrolled_count, p.waived_count, p.claims_claimed_ytd, p.claims_paid_ytd]));
+  downloadCsv(rows, 'benefits-utilization-by-plan.csv');
+}
+
+function downloadCsv(rows, filename) {
+  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 // ---------------------------------------------------------------------------

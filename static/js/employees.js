@@ -385,11 +385,12 @@ function openAddModal() {
   while(rt.options.length>2) rt.remove(2);
   employees.filter(e=>e.status==='Active').forEach(e=>{const o=document.createElement('option');o.value=e.employee_id;o.textContent=`${e.employee_id} — ${e.full_name}`;rt.appendChild(o);});
   loadLocationDropdown();
+  document.getElementById('empDependentsTabBtn').classList.add('hidden'); // dependents need an existing employee_id
   currentTab='personal'; switchTab('personal');
   document.getElementById('empModal').classList.remove('hidden');
 }
 
-function openEditModal(e) {
+async function openEditModal(e) {
   currentEmpId=e.employee_id;
   document.getElementById('empModalTitle').textContent=`Edit — ${e.full_name}`;
   const f=id=>document.getElementById(id);
@@ -414,13 +415,16 @@ function openEditModal(e) {
   while(rt.options.length>2) rt.remove(2);
   employees.filter(em=>em.status==='Active'&&em.employee_id!==e.employee_id).forEach(em=>{const o=document.createElement('option');o.value=em.employee_id;o.textContent=`${em.employee_id} — ${em.full_name}`;rt.appendChild(o);});
   rt.value=e.reports_to===e.employee_id?'SELF':(e.reports_to||'');
-  loadLocationDropdown();
+  await loadLocationDropdown();
   f('fDefaultLocation').value=e.default_location_id||'';
+  document.getElementById('empDependentsTabBtn').classList.remove('hidden');
   currentTab='personal'; switchTab('personal');
   document.getElementById('empModal').classList.remove('hidden');
 }
 
 function closeEmpModal() { document.getElementById('empModal').classList.add('hidden'); currentEmpId=null; }
+
+function activeTabs(){ return currentEmpId ? TABS : TABS.filter(t=>t!=='dependents'); }
 
 function switchTab(name) {
   TABS.forEach(t=>{
@@ -429,13 +433,15 @@ function switchTab(name) {
     if(btn){btn.classList.toggle('tab-active',t===name);btn.classList.toggle('text-slate-500',t!==name);}
   });
   currentTab=name;
-  const idx=TABS.indexOf(name);
+  const tabs=activeTabs();
+  const idx=tabs.indexOf(name);
   document.getElementById('prevTabBtn').classList.toggle('hidden',idx===0);
-  document.getElementById('nextTabBtn').classList.toggle('hidden',idx===TABS.length-1);
-  document.getElementById('empSubmitBtn').classList.toggle('hidden',idx!==TABS.length-1);
+  document.getElementById('nextTabBtn').classList.toggle('hidden',idx===tabs.length-1);
+  document.getElementById('empSubmitBtn').classList.toggle('hidden',idx!==tabs.length-1);
+  if(name==='dependents') loadEmpDependentsTab();
 }
-function nextTab(){const i=TABS.indexOf(currentTab);if(i<TABS.length-1)switchTab(TABS[i+1]);}
-function prevTab(){const i=TABS.indexOf(currentTab);if(i>0)switchTab(TABS[i-1]);}
+function nextTab(){const tabs=activeTabs();const i=tabs.indexOf(currentTab);if(i<tabs.length-1)switchTab(tabs[i+1]);}
+function prevTab(){const tabs=activeTabs();const i=tabs.indexOf(currentTab);if(i>0)switchTab(tabs[i-1]);}
 
 async function submitEmpForm(e) {
   e.preventDefault();

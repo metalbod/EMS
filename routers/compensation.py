@@ -1,7 +1,8 @@
 """API endpoints for Compensation Framework: Pay Grades, Job Levels, Salary Structures."""
+import calendar
 import logging
 from typing import List, Optional
-from datetime import datetime
+from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from db import get_db
 from core.deps import get_current_user
@@ -17,6 +18,11 @@ from core.compensation_schemas import (
     MeritRecommendationWithEmployee,
     BonusPlanCreate, BonusPlanUpdate, BonusPlanResponse,
     BonusPayoutCreate, BonusPayoutDecide, BonusPayoutResponse, BonusPayoutWithEmployee,
+    CommissionPlanCreate, CommissionPlanUpdate, CommissionPlanResponse,
+    CommissionEntryCreate, CommissionEntryDecide, CommissionEntryResponse, CommissionEntryWithEmployee,
+    EquityGrantCreate, EquityGrantDecide, EquityGrantResponse, EquityGrantWithEmployee,
+    EquityGrantDetail, VestingEventResponse, VestingEventSettle,
+    TotalRewardsStatement,
     PayEquityReport, PayEquityItem,
     BulkMeritIncrease,
 )
@@ -872,6 +878,59 @@ async def approve_merit_recommendation(
             f"RM {rec['current_salary']:,.2f} → RM {rec['recommended_new_salary']:,.2f}) "
             f"under '{cycle_name}' was {payload.approval_status.lower()} by {current_user['username']}."
         )
+
+        # An "Approved" merit recommendation previously only produced this HR
+        # note — the employee's actual base salary never moved, so
+        # Total Rewards / payroll / pay grades kept reading the stale
+        # figure. Approving now also supersedes employee_compensation (same
+        # is_current handoff as set_employee_compensation) and records a
+        # salary_changes audit row, already marked Approved since the merit
+        # approval itself *is* the approval — a second manual approval step
+        # would be redundant.
+        if payload.approval_status == "Approved":
+            effective_date = datetime.utcnow().date().isoformat()
+
+            prev_comp = conn.execute(
+                "SELECT * FROM employee_compensation WHERE employee_id = ? AND institution_id = ? AND is_current = 1",
+                (rec["employee_id"], inst_id),
+            ).fetchone()
+
+            conn.execute(
+                "UPDATE employee_compensation SET is_current = 0, end_date = ? WHERE employee_id = ? AND institution_id = ? AND is_current = 1",
+                (effective_date, rec["employee_id"], inst_id),
+            )
+            conn.execute(
+                """
+                INSERT INTO employee_compensation
+                (institution_id, employee_id, job_role_id, job_level_id, pay_grade_id,
+                 salary_structure_id, base_salary, effective_date, is_current, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                """,
+                (inst_id, rec["employee_id"],
+                 prev_comp["job_role_id"] if prev_comp else None,
+                 prev_comp["job_level_id"] if prev_comp else None,
+                 prev_comp["pay_grade_id"] if prev_comp else None,
+                 prev_comp["salary_structure_id"] if prev_comp else None,
+                 rec["recommended_new_salary"], effective_date, now, now),
+            )
+
+            conn.execute(
+                """
+                INSERT INTO salary_changes
+                (institution_id, employee_id, change_type, from_salary, to_salary,
+                 from_pay_grade_id, to_pay_grade_id, from_job_level_id, to_job_level_id,
+                 effective_date, approved_by_user_id, approval_date, reason, status, created_at)
+                VALUES (?, ?, 'merit_increase', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Approved', ?)
+                """,
+                (inst_id, rec["employee_id"], rec["current_salary"], rec["recommended_new_salary"],
+                 prev_comp["pay_grade_id"] if prev_comp else None,
+                 prev_comp["pay_grade_id"] if prev_comp else None,
+                 prev_comp["job_level_id"] if prev_comp else None,
+                 prev_comp["job_level_id"] if prev_comp else None,
+                 effective_date, user_id, now,
+                 f"Merit recommendation under '{cycle_name}'", now),
+            )
+
         _add_hr_note(conn, inst_id, rec["employee_id"], note_body, current_user["username"])
 
         conn.commit()
@@ -1152,6 +1211,793 @@ async def mark_bonus_payout_paid(
         updated = conn.execute("SELECT * FROM bonus_payouts WHERE id = ?", (payout_id,)).fetchone()
         return BonusPayoutResponse(**dict(updated))
 
+    finally:
+        conn.close()
+
+
+# ============================================================================
+# VARIABLE PAY: COMMISSION STRUCTURE ENDPOINTS
+# ============================================================================
+
+@router.post("/commission-plans", status_code=201)
+async def create_commission_plan(
+    payload: CommissionPlanCreate,
+    current_user: dict = Depends(get_current_user),
+) -> CommissionPlanResponse:
+    """Create a commission plan."""
+    require_hr_role(current_user)
+    conn = get_db()
+    try:
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+        now = datetime.utcnow().isoformat()
+
+        conn.execute(
+            """
+            INSERT INTO commission_plans
+            (institution_id, plan_name, plan_type, default_rate_percent, plan_year,
+             period_start, period_end, description, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Draft', ?, ?)
+            """,
+            (inst_id, payload.plan_name, payload.plan_type, payload.default_rate_percent,
+             payload.plan_year, payload.period_start, payload.period_end,
+             payload.description, now, now),
+        )
+        conn.commit()
+        plan_id = conn._last_id
+
+        plan = conn.execute("SELECT * FROM commission_plans WHERE id = ?", (plan_id,)).fetchone()
+        return CommissionPlanResponse(**dict(plan))
+
+    finally:
+        conn.close()
+
+
+@router.get("/commission-plans")
+async def list_commission_plans(
+    current_user: dict = Depends(get_current_user),
+) -> List[CommissionPlanResponse]:
+    """List commission plans."""
+    require_hr_role(current_user)
+    conn = get_db()
+    try:
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+        plans = conn.execute(
+            "SELECT * FROM commission_plans WHERE institution_id = ? ORDER BY plan_year DESC, id DESC",
+            (inst_id,),
+        ).fetchall()
+        return [CommissionPlanResponse(**dict(p)) for p in plans]
+    finally:
+        conn.close()
+
+
+@router.put("/commission-plans/{plan_id}")
+async def update_commission_plan(
+    plan_id: int,
+    payload: CommissionPlanUpdate,
+    current_user: dict = Depends(get_current_user),
+) -> CommissionPlanResponse:
+    """Update a commission plan (name, status, default rate, description)."""
+    require_hr_role(current_user)
+    conn = get_db()
+    try:
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+        plan = conn.execute(
+            "SELECT * FROM commission_plans WHERE id = ? AND institution_id = ?",
+            (plan_id, inst_id),
+        ).fetchone()
+        if not plan:
+            raise HTTPException(404, detail="Commission plan not found")
+
+        updates = {
+            "plan_name": payload.plan_name if payload.plan_name is not None else plan["plan_name"],
+            "status": payload.status if payload.status is not None else plan["status"],
+            "default_rate_percent": payload.default_rate_percent if payload.default_rate_percent is not None else plan["default_rate_percent"],
+            "description": payload.description if payload.description is not None else plan["description"],
+            "updated_at": datetime.utcnow().isoformat(),
+        }
+        set_clause = ", ".join(f"{k} = ?" for k in updates.keys())
+        conn.execute(f"UPDATE commission_plans SET {set_clause} WHERE id = ?", (*updates.values(), plan_id))
+        conn.commit()
+
+        updated = conn.execute("SELECT * FROM commission_plans WHERE id = ?", (plan_id,)).fetchone()
+        return CommissionPlanResponse(**dict(updated))
+
+    finally:
+        conn.close()
+
+
+@router.get("/commission-plans/{plan_id}/entries")
+async def list_commission_entries(
+    plan_id: int,
+    current_user: dict = Depends(get_current_user),
+) -> List[CommissionEntryWithEmployee]:
+    """List commission entries for a plan, with employee names joined in."""
+    require_hr_role(current_user)
+    conn = get_db()
+    try:
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+
+        plan = conn.execute(
+            "SELECT * FROM commission_plans WHERE id = ? AND institution_id = ?",
+            (plan_id, inst_id),
+        ).fetchone()
+        if not plan:
+            raise HTTPException(404, detail="Commission plan not found")
+
+        # employee_id is only unique per institution, so the join must also
+        # match institution_id — see the pay-equity report fix for the same
+        # cross-tenant-fan-out pattern.
+        rows = conn.execute(
+            """
+            SELECT c.*, e.full_name AS employee_name
+            FROM commission_entries c
+            JOIN employees e ON c.employee_id = e.employee_id AND c.institution_id = e.institution_id
+            WHERE c.commission_plan_id = ? AND c.institution_id = ?
+            ORDER BY c.created_at DESC
+            """,
+            (plan_id, inst_id),
+        ).fetchall()
+        return [CommissionEntryWithEmployee(**dict(r)) for r in rows]
+    finally:
+        conn.close()
+
+
+@router.post("/commission-entries", status_code=201)
+async def create_commission_entry(
+    commission_plan_id: int,
+    payload: CommissionEntryCreate,
+    current_user: dict = Depends(get_current_user),
+) -> CommissionEntryResponse:
+    """Record a sales/attainment entry for an employee under a commission
+    plan. The commission amount is calculated server-side from
+    sales_amount x commission_rate_percent and stored, so a later change
+    to the plan's default rate never retroactively alters this entry."""
+    require_hr_role(current_user)
+    conn = get_db()
+    try:
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+        user_id = current_user.get("id")
+
+        plan = conn.execute(
+            "SELECT * FROM commission_plans WHERE id = ? AND institution_id = ?",
+            (commission_plan_id, inst_id),
+        ).fetchone()
+        if not plan:
+            raise HTTPException(404, detail="Commission plan not found")
+
+        employee = conn.execute(
+            "SELECT * FROM employees WHERE employee_id = ? AND institution_id = ?",
+            (payload.employee_id, inst_id),
+        ).fetchone()
+        if not employee:
+            raise HTTPException(404, detail="Employee not found")
+
+        calculated_commission = round(payload.sales_amount * payload.commission_rate_percent / 100, 2)
+
+        now = datetime.utcnow().isoformat()
+        conn.execute(
+            """
+            INSERT INTO commission_entries
+            (institution_id, commission_plan_id, employee_id, sales_amount, quota_target,
+             commission_rate_percent, calculated_commission, notes, recommended_by_user_id,
+             status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?)
+            """,
+            (inst_id, commission_plan_id, payload.employee_id, payload.sales_amount,
+             payload.quota_target, payload.commission_rate_percent, calculated_commission,
+             payload.notes, user_id, now, now),
+        )
+        # Capture this INSERT's id before the HR note INSERT overwrites
+        # conn._last_id.
+        entry_id = conn._last_id
+
+        note_body = (
+            f"Commission entry of RM {calculated_commission:,.2f} "
+            f"(RM {payload.sales_amount:,.2f} sales @ {payload.commission_rate_percent}%) "
+            f"proposed under '{plan['plan_name']}' ({plan['plan_type']})."
+        )
+        if payload.notes:
+            note_body += f" Notes: {payload.notes}"
+        _add_hr_note(conn, inst_id, payload.employee_id, note_body, current_user["username"])
+
+        conn.commit()
+
+        entry = conn.execute("SELECT * FROM commission_entries WHERE id = ?", (entry_id,)).fetchone()
+        return CommissionEntryResponse(**dict(entry))
+
+    finally:
+        conn.close()
+
+
+@router.put("/commission-entries/{entry_id}")
+async def decide_commission_entry(
+    entry_id: int,
+    payload: CommissionEntryDecide,
+    current_user: dict = Depends(get_current_user),
+) -> CommissionEntryResponse:
+    """Approve or reject a commission entry."""
+    require_hr_role(current_user)
+    conn = get_db()
+    try:
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+        user_id = current_user.get("id")
+
+        entry = conn.execute(
+            "SELECT * FROM commission_entries WHERE id = ? AND institution_id = ?",
+            (entry_id, inst_id),
+        ).fetchone()
+        if not entry:
+            raise HTTPException(404, detail="Commission entry not found")
+
+        plan = conn.execute("SELECT plan_name FROM commission_plans WHERE id = ?", (entry["commission_plan_id"],)).fetchone()
+        plan_name = plan["plan_name"] if plan else "commission plan"
+
+        now = datetime.utcnow().isoformat()
+        conn.execute(
+            """
+            UPDATE commission_entries
+            SET status = ?, approved_by_user_id = ?, approval_date = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (payload.status, user_id, now, now, entry_id),
+        )
+
+        note_body = (
+            f"Commission entry of RM {float(entry['calculated_commission']):,.2f} under '{plan_name}' "
+            f"was {payload.status.lower()} by {current_user['username']}."
+        )
+        _add_hr_note(conn, inst_id, entry["employee_id"], note_body, current_user["username"])
+
+        conn.commit()
+
+        updated = conn.execute("SELECT * FROM commission_entries WHERE id = ?", (entry_id,)).fetchone()
+        return CommissionEntryResponse(**dict(updated))
+
+    finally:
+        conn.close()
+
+
+@router.put("/commission-entries/{entry_id}/pay")
+async def mark_commission_entry_paid(
+    entry_id: int,
+    current_user: dict = Depends(get_current_user),
+) -> CommissionEntryResponse:
+    """Mark an approved commission entry as actually paid out."""
+    require_hr_role(current_user)
+    conn = get_db()
+    try:
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+
+        entry = conn.execute(
+            "SELECT * FROM commission_entries WHERE id = ? AND institution_id = ?",
+            (entry_id, inst_id),
+        ).fetchone()
+        if not entry:
+            raise HTTPException(404, detail="Commission entry not found")
+        if entry["status"] != "Approved":
+            raise HTTPException(400, detail="Only an Approved commission entry can be marked as Paid")
+
+        today = datetime.utcnow().date().isoformat()
+        now = datetime.utcnow().isoformat()
+        conn.execute(
+            "UPDATE commission_entries SET status = 'Paid', payout_date = ?, updated_at = ? WHERE id = ?",
+            (today, now, entry_id),
+        )
+
+        note_body = f"Commission payout of RM {float(entry['calculated_commission']):,.2f} paid out on {today}."
+        _add_hr_note(conn, inst_id, entry["employee_id"], note_body, current_user["username"])
+
+        conn.commit()
+
+        updated = conn.execute("SELECT * FROM commission_entries WHERE id = ?", (entry_id,)).fetchone()
+        return CommissionEntryResponse(**dict(updated))
+
+    finally:
+        conn.close()
+
+
+# ============================================================================
+# EQUITY & LONG-TERM INCENTIVES
+# ============================================================================
+
+def _add_months(date_str: str, months: int) -> str:
+    """Add whole calendar months to a YYYY-MM-DD string, clamping the day to
+    the target month's length (e.g. Jan 31 + 1 month -> Feb 28/29, not an
+    invalid Feb 31). No dateutil dependency in this project, so this is the
+    plain-stdlib equivalent of relativedelta(months=+months)."""
+    y, m, d = (int(p) for p in date_str.split('-'))
+    total = y * 12 + (m - 1) + months
+    ny, nm = divmod(total, 12)
+    nm += 1
+    last_day = calendar.monthrange(ny, nm)[1]
+    return date(ny, nm, min(d, last_day)).isoformat()
+
+
+def _generate_vesting_schedule(quantity: int, vesting_start_date: str, vesting_years: int, cliff_months: int):
+    """Standard cliff + quarterly vesting: cliff_months worth of shares vest
+    in one tranche at the cliff date (proportional to time elapsed), then
+    the remainder vests in equal quarterly tranches for the rest of the
+    schedule. The final quarter absorbs any rounding remainder so the
+    tranches always sum to exactly `quantity`. Returns a list of
+    (vest_date, quantity) tuples."""
+    total_months = vesting_years * 12
+    events = []
+
+    cliff_qty = 0
+    if cliff_months > 0:
+        cliff_qty = round(quantity * cliff_months / total_months)
+        if cliff_qty > 0:
+            events.append((_add_months(vesting_start_date, cliff_months), cliff_qty))
+
+    remaining_qty = quantity - cliff_qty
+    remaining_months = total_months - cliff_months
+    num_quarters = remaining_months // 3
+
+    if num_quarters <= 0:
+        if remaining_qty > 0:
+            events.append((_add_months(vesting_start_date, total_months), remaining_qty))
+    else:
+        per_quarter = remaining_qty // num_quarters
+        allocated = 0
+        for i in range(1, num_quarters + 1):
+            qty = per_quarter if i < num_quarters else remaining_qty - allocated
+            allocated += qty
+            if qty > 0:
+                events.append((_add_months(vesting_start_date, cliff_months + 3 * i), qty))
+
+    return events
+
+
+@router.post("/equity-grants", status_code=201)
+async def create_equity_grant(
+    payload: EquityGrantCreate,
+    current_user: dict = Depends(get_current_user),
+) -> EquityGrantResponse:
+    """Create an equity grant (stock option or RSU), pending HR approval.
+    Vesting events aren't generated until the grant is approved."""
+    require_hr_role(current_user)
+    conn = get_db()
+    try:
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+        user_id = current_user.get("id")
+
+        employee = conn.execute(
+            "SELECT * FROM employees WHERE employee_id = ? AND institution_id = ?",
+            (payload.employee_id, inst_id),
+        ).fetchone()
+        if not employee:
+            raise HTTPException(404, detail="Employee not found")
+
+        now = datetime.utcnow().isoformat()
+        conn.execute(
+            """
+            INSERT INTO equity_grants
+            (institution_id, employee_id, grant_type, grant_date, quantity, strike_price,
+             fair_market_value_at_grant, vesting_start_date, vesting_years, cliff_months,
+             notes, recommended_by_user_id, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending Approval', ?, ?)
+            """,
+            (inst_id, payload.employee_id, payload.grant_type, payload.grant_date, payload.quantity,
+             payload.strike_price, payload.fair_market_value_at_grant, payload.vesting_start_date,
+             payload.vesting_years, payload.cliff_months, payload.notes, user_id, now, now),
+        )
+        grant_id = conn._last_id
+
+        note_body = (
+            f"Equity grant proposed: {payload.quantity:,} {payload.grant_type} units, "
+            f"granted {payload.grant_date}, vesting over {payload.vesting_years}y "
+            f"with a {payload.cliff_months}-month cliff."
+        )
+        _add_hr_note(conn, inst_id, payload.employee_id, note_body, current_user["username"])
+
+        conn.commit()
+
+        grant = conn.execute("SELECT * FROM equity_grants WHERE id = ?", (grant_id,)).fetchone()
+        return EquityGrantResponse(**dict(grant))
+
+    finally:
+        conn.close()
+
+
+@router.get("/equity-grants")
+async def list_equity_grants(
+    current_user: dict = Depends(get_current_user),
+) -> List[EquityGrantWithEmployee]:
+    """List all equity grants in the institution, with employee names joined in."""
+    require_hr_role(current_user)
+    conn = get_db()
+    try:
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+        rows = conn.execute(
+            """
+            SELECT g.*, e.full_name AS employee_name
+            FROM equity_grants g
+            JOIN employees e ON g.employee_id = e.employee_id AND g.institution_id = e.institution_id
+            WHERE g.institution_id = ?
+            ORDER BY g.created_at DESC
+            """,
+            (inst_id,),
+        ).fetchall()
+        return [EquityGrantWithEmployee(**dict(r)) for r in rows]
+    finally:
+        conn.close()
+
+
+@router.get("/equity-grants/{grant_id}")
+async def get_equity_grant(
+    grant_id: int,
+    current_user: dict = Depends(get_current_user),
+) -> EquityGrantDetail:
+    """Get a single equity grant with its full vesting schedule."""
+    require_hr_role(current_user)
+    conn = get_db()
+    try:
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+
+        grant = conn.execute(
+            """
+            SELECT g.*, e.full_name AS employee_name
+            FROM equity_grants g
+            JOIN employees e ON g.employee_id = e.employee_id AND g.institution_id = e.institution_id
+            WHERE g.id = ? AND g.institution_id = ?
+            """,
+            (grant_id, inst_id),
+        ).fetchone()
+        if not grant:
+            raise HTTPException(404, detail="Equity grant not found")
+
+        events = conn.execute(
+            "SELECT * FROM equity_vesting_events WHERE equity_grant_id = ? AND institution_id = ? ORDER BY vest_date ASC",
+            (grant_id, inst_id),
+        ).fetchall()
+
+        # "Paid" only occurs for Phantom grants (cash-settled after vesting)
+        # and is still a vested tranche, just further along — it must count
+        # toward vested, not sit in limbo between Scheduled and Vested.
+        vested = sum(e["quantity_vested"] for e in events if e["status"] in ("Vested", "Paid"))
+        unvested = sum(e["quantity_vested"] for e in events if e["status"] == "Scheduled")
+
+        grant_dict = dict(grant)
+        return EquityGrantDetail(
+            **grant_dict,
+            vesting_events=[VestingEventResponse(**dict(e)) for e in events],
+            quantity_vested=vested,
+            quantity_unvested=unvested,
+        )
+    finally:
+        conn.close()
+
+
+@router.put("/equity-grants/{grant_id}/decide")
+async def decide_equity_grant(
+    grant_id: int,
+    payload: EquityGrantDecide,
+    current_user: dict = Depends(get_current_user),
+) -> EquityGrantResponse:
+    """Approve or reject an equity grant. Approving generates the full
+    vesting schedule as equity_vesting_events rows in the same transaction —
+    there's no separate 'activate' step."""
+    require_hr_role(current_user)
+    conn = get_db()
+    try:
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+        user_id = current_user.get("id")
+
+        grant = conn.execute(
+            "SELECT * FROM equity_grants WHERE id = ? AND institution_id = ?",
+            (grant_id, inst_id),
+        ).fetchone()
+        if not grant:
+            raise HTTPException(404, detail="Equity grant not found")
+        if grant["status"] != "Pending Approval":
+            raise HTTPException(400, detail="Only a Pending Approval grant can be approved or rejected")
+
+        now = datetime.utcnow().isoformat()
+        conn.execute(
+            """
+            UPDATE equity_grants
+            SET status = ?, approved_by_user_id = ?, approval_date = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (payload.status, user_id, now, now, grant_id),
+        )
+
+        if payload.status == "Approved":
+            schedule = _generate_vesting_schedule(
+                grant["quantity"], grant["vesting_start_date"], grant["vesting_years"], grant["cliff_months"]
+            )
+            for vest_date, qty in schedule:
+                conn.execute(
+                    """
+                    INSERT INTO equity_vesting_events
+                    (institution_id, equity_grant_id, employee_id, vest_date, quantity_vested,
+                     status, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, 'Scheduled', ?, ?)
+                    """,
+                    (inst_id, grant_id, grant["employee_id"], vest_date, qty, now, now),
+                )
+
+        note_body = (
+            f"Equity grant ({grant['quantity']:,} {grant['grant_type']} units, granted {grant['grant_date']}) "
+            f"was {payload.status.lower()} by {current_user['username']}."
+        )
+        _add_hr_note(conn, inst_id, grant["employee_id"], note_body, current_user["username"])
+
+        conn.commit()
+
+        updated = conn.execute("SELECT * FROM equity_grants WHERE id = ?", (grant_id,)).fetchone()
+        return EquityGrantResponse(**dict(updated))
+
+    finally:
+        conn.close()
+
+
+@router.put("/equity-grants/{grant_id}/cancel")
+async def cancel_equity_grant(
+    grant_id: int,
+    current_user: dict = Depends(get_current_user),
+) -> EquityGrantResponse:
+    """Cancel an equity grant (e.g. on termination before fully vested).
+    Already-vested tranches are left untouched — only remaining Scheduled
+    tranches are cancelled, since vested shares are the employee's regardless
+    of what happens to the grant afterward."""
+    require_hr_role(current_user)
+    conn = get_db()
+    try:
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+
+        grant = conn.execute(
+            "SELECT * FROM equity_grants WHERE id = ? AND institution_id = ?",
+            (grant_id, inst_id),
+        ).fetchone()
+        if not grant:
+            raise HTTPException(404, detail="Equity grant not found")
+        if grant["status"] not in ("Approved",):
+            raise HTTPException(400, detail="Only an Approved grant can be cancelled")
+
+        now = datetime.utcnow().isoformat()
+        conn.execute(
+            "UPDATE equity_grants SET status = 'Cancelled', updated_at = ? WHERE id = ?",
+            (now, grant_id),
+        )
+        conn.execute(
+            "UPDATE equity_vesting_events SET status = 'Cancelled', updated_at = ? WHERE equity_grant_id = ? AND status = 'Scheduled'",
+            (now, grant_id),
+        )
+
+        note_body = f"Equity grant ({grant['quantity']:,} {grant['grant_type']} units, granted {grant['grant_date']}) was cancelled by {current_user['username']}. Unvested tranches forfeited."
+        _add_hr_note(conn, inst_id, grant["employee_id"], note_body, current_user["username"])
+
+        conn.commit()
+
+        updated = conn.execute("SELECT * FROM equity_grants WHERE id = ?", (grant_id,)).fetchone()
+        return EquityGrantResponse(**dict(updated))
+
+    finally:
+        conn.close()
+
+
+@router.put("/vesting-events/{event_id}/vest")
+async def mark_vesting_event_vested(
+    event_id: int,
+    current_user: dict = Depends(get_current_user),
+) -> VestingEventResponse:
+    """Mark a scheduled vesting tranche as actually vested (i.e. its vest
+    date has passed and the shares/units are now the employee's)."""
+    require_hr_role(current_user)
+    conn = get_db()
+    try:
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+
+        event = conn.execute(
+            "SELECT * FROM equity_vesting_events WHERE id = ? AND institution_id = ?",
+            (event_id, inst_id),
+        ).fetchone()
+        if not event:
+            raise HTTPException(404, detail="Vesting event not found")
+        if event["status"] != "Scheduled":
+            raise HTTPException(400, detail="Only a Scheduled vesting event can be marked as Vested")
+
+        now = datetime.utcnow().isoformat()
+        conn.execute(
+            "UPDATE equity_vesting_events SET status = 'Vested', vested_at = ?, updated_at = ? WHERE id = ?",
+            (now, now, event_id),
+        )
+
+        grant = conn.execute("SELECT grant_type FROM equity_grants WHERE id = ?", (event["equity_grant_id"],)).fetchone()
+        note_body = f"{event['quantity_vested']:,} {grant['grant_type'] if grant else ''} units vested on {event['vest_date']}."
+        _add_hr_note(conn, inst_id, event["employee_id"], note_body, current_user["username"])
+
+        conn.commit()
+
+        updated = conn.execute("SELECT * FROM equity_vesting_events WHERE id = ?", (event_id,)).fetchone()
+        return VestingEventResponse(**dict(updated))
+
+    finally:
+        conn.close()
+
+
+@router.put("/vesting-events/{event_id}/settle")
+async def settle_vesting_event(
+    event_id: int,
+    payload: VestingEventSettle,
+    current_user: dict = Depends(get_current_user),
+) -> VestingEventResponse:
+    """Cash-settle a Vested Phantom stock tranche: pay out
+    (settlement_price - fair_market_value_at_grant) x quantity_vested, i.e.
+    the appreciation over the grant's baseline value, clamped at zero (a
+    phantom award pays the *gain*, not a fixed amount — no negative payout
+    if the price dropped). Only meaningful for Phantom grants, since RSU/
+    ISO/NSO/ESPP settle in actual equity, not cash, and 'Vested' is already
+    their terminal state."""
+    require_hr_role(current_user)
+    conn = get_db()
+    try:
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+
+        event = conn.execute(
+            "SELECT * FROM equity_vesting_events WHERE id = ? AND institution_id = ?",
+            (event_id, inst_id),
+        ).fetchone()
+        if not event:
+            raise HTTPException(404, detail="Vesting event not found")
+        if event["status"] != "Vested":
+            raise HTTPException(400, detail="Only a Vested tranche can be settled")
+
+        grant = conn.execute(
+            "SELECT * FROM equity_grants WHERE id = ? AND institution_id = ?",
+            (event["equity_grant_id"], inst_id),
+        ).fetchone()
+        if not grant:
+            raise HTTPException(404, detail="Equity grant not found")
+        if grant["grant_type"] != "Phantom":
+            raise HTTPException(400, detail="Only Phantom stock tranches can be cash-settled")
+
+        baseline = float(grant["fair_market_value_at_grant"] or 0)
+        cash_payout = max(0.0, payload.settlement_price - baseline) * event["quantity_vested"]
+
+        today = datetime.utcnow().date().isoformat()
+        now = datetime.utcnow().isoformat()
+        conn.execute(
+            """
+            UPDATE equity_vesting_events
+            SET status = 'Paid', settlement_price = ?, cash_payout = ?, payout_date = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (payload.settlement_price, cash_payout, today, now, event_id),
+        )
+
+        note_body = (
+            f"Phantom stock tranche ({event['quantity_vested']:,} units, vested {event['vest_date']}) "
+            f"settled at RM {payload.settlement_price:,.4f}/unit — RM {cash_payout:,.2f} paid out on {today}."
+        )
+        _add_hr_note(conn, inst_id, event["employee_id"], note_body, current_user["username"])
+
+        conn.commit()
+
+        updated = conn.execute("SELECT * FROM equity_vesting_events WHERE id = ?", (event_id,)).fetchone()
+        return VestingEventResponse(**dict(updated))
+
+    finally:
+        conn.close()
+
+
+# ============================================================================
+# TOTAL REWARDS STATEMENT
+# ============================================================================
+
+def _build_total_rewards_statement(conn, inst_id: int, employee_id: str, year: int) -> TotalRewardsStatement:
+    """Shared aggregation for both the HR-facing and self-service total
+    rewards endpoints. Raises HTTPException(404) if the employee doesn't
+    exist in this institution."""
+    employee = conn.execute(
+        "SELECT * FROM employees WHERE employee_id = ? AND institution_id = ?",
+        (employee_id, inst_id),
+    ).fetchone()
+    if not employee:
+        raise HTTPException(404, detail="Employee not found")
+
+    comp = conn.execute(
+        "SELECT * FROM employee_compensation WHERE employee_id = ? AND institution_id = ? AND is_current = 1",
+        (employee_id, inst_id),
+    ).fetchone()
+    base_monthly = float(comp["base_salary"]) if comp else None
+    base_annual = base_monthly * 12 if base_monthly is not None else None
+
+    year_prefix = f"{year}-"
+    bonus_row = conn.execute(
+        """
+        SELECT COALESCE(SUM(awarded_amount), 0) AS total FROM bonus_payouts
+        WHERE employee_id = ? AND institution_id = ? AND status IN ('Approved', 'Paid')
+          AND created_at LIKE ?
+        """,
+        (employee_id, inst_id, year_prefix + '%'),
+    ).fetchone()
+    commission_row = conn.execute(
+        """
+        SELECT COALESCE(SUM(calculated_commission), 0) AS total FROM commission_entries
+        WHERE employee_id = ? AND institution_id = ? AND status IN ('Approved', 'Paid')
+          AND created_at LIKE ?
+        """,
+        (employee_id, inst_id, year_prefix + '%'),
+    ).fetchone()
+    bonus_ytd = float(bonus_row["total"])
+    commission_ytd = float(commission_row["total"])
+
+    salary_changes = conn.execute(
+        "SELECT * FROM salary_changes WHERE employee_id = ? AND institution_id = ? ORDER BY created_at DESC LIMIT 10",
+        (employee_id, inst_id),
+    ).fetchall()
+    merit_history = conn.execute(
+        """
+        SELECT * FROM merit_recommendations
+        WHERE employee_id = ? AND institution_id = ? AND approval_status = 'Approved'
+        ORDER BY created_at DESC LIMIT 10
+        """,
+        (employee_id, inst_id),
+    ).fetchall()
+
+    # Since approving a merit recommendation now also writes a salary_changes
+    # row (see approve_merit_recommendation), an approval already represented
+    # there would otherwise show up twice — once as its own salary_changes
+    # entry, once again here. Both inserts share the same approval_date
+    # (written from the same `now` in that transaction), so match on that to
+    # drop the redundant merit_recommendations copy. Approvals from before
+    # this fix existed have no matching salary_changes row and still show.
+    salary_change_approval_dates = {
+        c["approval_date"] for c in salary_changes if c["change_type"] == "merit_increase"
+    }
+    merit_history = [m for m in merit_history if m["approval_date"] not in salary_change_approval_dates]
+
+    return TotalRewardsStatement(
+        employee_id=employee_id,
+        employee_name=employee["full_name"],
+        designation=employee["designation"],
+        department=employee["department"],
+        year=year,
+        base_salary_monthly=base_monthly,
+        base_salary_annualized=base_annual,
+        compensation_effective_date=comp["effective_date"] if comp else None,
+        bonus_ytd=bonus_ytd,
+        commission_ytd=commission_ytd,
+        total_cash_compensation=(base_annual or 0) + bonus_ytd + commission_ytd,
+        salary_changes=[SalaryChangeResponse(**dict(c)) for c in salary_changes],
+        merit_history=[MeritRecommendationResponse(**dict(m)) for m in merit_history],
+    )
+
+
+@router.get("/total-rewards/mine")
+async def get_my_total_rewards(
+    year: int = None,
+    current_user: dict = Depends(get_current_user),
+) -> TotalRewardsStatement:
+    """Self-service: the logged-in employee's own total rewards statement.
+    No require_hr_role gate — every employee can see their own pay, just
+    not anyone else's (employee_id is pinned to current_user, not a
+    caller-supplied param)."""
+    emp_id = current_user.get("employee_id")
+    if not emp_id:
+        raise HTTPException(404, detail="No employee record linked to this account")
+    conn = get_db()
+    try:
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+        return _build_total_rewards_statement(conn, inst_id, emp_id, year or datetime.utcnow().year)
+    finally:
+        conn.close()
+
+
+@router.get("/total-rewards/{employee_id}")
+async def get_employee_total_rewards(
+    employee_id: str,
+    year: int = None,
+    current_user: dict = Depends(get_current_user),
+) -> TotalRewardsStatement:
+    """HR-facing: total rewards statement for any employee in the institution."""
+    require_hr_role(current_user)
+    conn = get_db()
+    try:
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+        return _build_total_rewards_statement(conn, inst_id, employee_id, year or datetime.utcnow().year)
     finally:
         conn.close()
 

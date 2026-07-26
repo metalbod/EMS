@@ -125,6 +125,7 @@ class EmployeeIn(BaseModel):
     hourly_rate: float = 0.0  # used when salary_type == "Hourly"
     reports_to: Optional[str] = None
     employee_id: Optional[str] = None  # HR Manager only — custom/renamed Employee ID
+    default_location_id: Optional[int] = None
 
     @field_validator("salary_type")
     @classmethod
@@ -278,15 +279,15 @@ def _insert_new_employee(conn, inst_id, emp: EmployeeIn, user: dict, ip: Optiona
             personal_email, phone, address, department, designation, employment_type, start_date,
             probation_end_date, contract_end_date, work_email,
             epf_number, socso_number, income_tax_number, bank_name, bank_account, basic_salary, num_children,
-            salary_type, hourly_rate, reports_to
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            salary_type, hourly_rate, reports_to, default_location_id
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     """, (inst_id, emp_id, emp.full_name, emp.preferred_name, emp.ic_number, emp.passport_number,
           emp.nationality, emp.race or '', emp.religion or '', emp.gender or '', emp.date_of_birth or '', emp.marital_status or '',
           emp.personal_email, emp.phone, emp.address, emp.department, emp.designation,
           emp.employment_type, emp.start_date, emp.probation_end_date, emp.contract_end_date,
           emp.work_email, emp.epf_number, emp.socso_number, emp.income_tax_number,
           emp.bank_name, emp.bank_account, emp.basic_salary, emp.num_children,
-          emp.salary_type, emp.hourly_rate, reports_to))
+          emp.salary_type, emp.hourly_rate, reports_to, emp.default_location_id))
     write_audit(conn, user, inst_id, emp_id, emp.full_name, "CREATE", None, ip)
     conn.execute(
         "INSERT INTO hr_notes (institution_id, employee_id, note_type, body, created_by) VALUES (?,?,?,?,?)",
@@ -449,6 +450,10 @@ def update_employee(conn, employee_id: str, emp: EmployeeIn, request: Request,
                 "SELECT id FROM employees WHERE institution_id=? AND employee_id=?", (inst_id, reports_to)
             ).fetchone():
                 raise HTTPException(400, f"Reporting manager '{reports_to}' not found")
+        if emp.default_location_id is not None and not conn.execute(
+            "SELECT id FROM locations WHERE id=? AND institution_id=?", (emp.default_location_id, inst_id)
+        ).fetchone():
+            raise HTTPException(400, "Location not found")
         conn.execute("""
             UPDATE employees SET
                 full_name=?,preferred_name=?,ic_number=?,passport_number=?,
@@ -456,7 +461,8 @@ def update_employee(conn, employee_id: str, emp: EmployeeIn, request: Request,
                 personal_email=?,phone=?,address=?,department=?,designation=?,employment_type=?,
                 start_date=?,probation_end_date=?,contract_end_date=?,work_email=?,
                 epf_number=?,socso_number=?,income_tax_number=?,bank_name=?,bank_account=?,
-                basic_salary=?,num_children=?,salary_type=?,hourly_rate=?,reports_to=?
+                basic_salary=?,num_children=?,salary_type=?,hourly_rate=?,reports_to=?,
+                default_location_id=?
             WHERE institution_id=? AND employee_id=?
         """, (emp.full_name, emp.preferred_name, emp.ic_number, emp.passport_number,
               emp.nationality, emp.race, emp.religion, emp.gender, emp.date_of_birth,
@@ -465,7 +471,7 @@ def update_employee(conn, employee_id: str, emp: EmployeeIn, request: Request,
               emp.probation_end_date, emp.contract_end_date, emp.work_email,
               emp.epf_number, emp.socso_number, emp.income_tax_number,
               emp.bank_name, emp.bank_account, emp.basic_salary, emp.num_children,
-              emp.salary_type, emp.hourly_rate, reports_to,
+              emp.salary_type, emp.hourly_rate, reports_to, emp.default_location_id,
               inst_id, new_id))
         new_row = conn.execute(
             "SELECT * FROM employees WHERE institution_id=? AND employee_id=?", (inst_id, new_id)

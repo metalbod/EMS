@@ -48,8 +48,9 @@ async def create_location(
             """
             INSERT INTO locations (
                 institution_id, name, code, address, city, state, postal_code,
-                country, phone, manager_user_id, location_type, capacity
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                country, phone, manager_user_id, location_type, capacity,
+                latitude, longitude, radius_meters
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 inst_id,
@@ -64,6 +65,9 @@ async def create_location(
                 location_data.manager_user_id,
                 location_data.location_type,
                 location_data.capacity,
+                location_data.latitude,
+                location_data.longitude,
+                location_data.radius_meters,
             ),
         )
         location_id = conn._last_id
@@ -182,7 +186,7 @@ async def update_location(
 
         # Build update statement
         updates = {}
-        for field in ["name", "address", "city", "state", "postal_code", "phone", "manager_user_id", "location_type", "capacity"]:
+        for field in ["name", "address", "city", "state", "postal_code", "phone", "manager_user_id", "location_type", "capacity", "latitude", "longitude", "radius_meters"]:
             value = getattr(location_data, field, None)
             if value is not None:
                 updates[field] = value
