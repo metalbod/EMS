@@ -375,7 +375,7 @@ def bulk_upload_employees(conn, body: BulkUploadIn, request: Request, user: dict
 
     # Queue async task to process bulk upload
     task = bulk_upload_employees_task.apply_async(
-        args=[inst_id, body.csv_content, user["username"]]
+        args=[inst_id, body.csv_content, user["id"], user["username"], user["role"]]
     )
 
     # Track the task in database (if task_tracking table exists)

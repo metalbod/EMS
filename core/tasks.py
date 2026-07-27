@@ -92,7 +92,7 @@ def generate_payroll_run(self, inst_id: int, run_id: int, period_start: str, per
 
 
 @app.task(bind=True)
-def bulk_upload_employees_task(self, inst_id: int, csv_content: str, username: str):
+def bulk_upload_employees_task(self, inst_id: int, csv_content: str, user_id: int, username: str, role: str):
     """Bulk upload employees from CSV content (async). Returns dict with created/errors."""
     try:
         import csv
@@ -148,7 +148,10 @@ def bulk_upload_employees_task(self, inst_id: int, csv_content: str, username: s
                     max_attempts = 5 if not emp.employee_id else 1
                     for attempt in range(max_attempts):
                         try:
-                            emp_id = _insert_new_employee(conn, inst_id, emp, {"username": username}, None)
+                            emp_id = _insert_new_employee(
+                                conn, inst_id, emp,
+                                {"id": user_id, "username": username, "role": role}, None
+                            )
                             conn.commit()
                             break
                         except IntegrityError as e:
