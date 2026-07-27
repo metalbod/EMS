@@ -97,7 +97,7 @@ class TestLocationTransferWorkflow:
 
         # Assign to location
         client.post(
-            "/api/employees/assign-location",
+            f"/api/employees/{employee['employee_id']}/locations",
             json={
                 "employee_id": employee["employee_id"],
                 "location_id": location["id"],
@@ -136,7 +136,7 @@ class TestLocationTransferWorkflow:
 
         # Assign to location
         client.post(
-            "/api/employees/assign-location",
+            f"/api/employees/{employee['employee_id']}/locations",
             json={
                 "employee_id": employee["employee_id"],
                 "location_id": location["id"],
@@ -185,7 +185,7 @@ class TestLocationTransferWorkflow:
 
         # Assign to location
         client.post(
-            "/api/employees/assign-location",
+            f"/api/employees/{employee['employee_id']}/locations",
             json={
                 "employee_id": employee["employee_id"],
                 "location_id": location["id"],
@@ -341,7 +341,7 @@ class TestCapacityUtilizationTrends:
 
         # Assign employee to location
         client.post(
-            "/api/employees/assign-location",
+            f"/api/employees/{employee['employee_id']}/locations",
             json={
                 "employee_id": employee["employee_id"],
                 "location_id": location["id"],
@@ -382,7 +382,7 @@ class TestPhase2IntegrationWorkflows:
 
         # 1. Assign employee to original location
         client.post(
-            "/api/employees/assign-location",
+            f"/api/employees/{employee['employee_id']}/locations",
             json={
                 "employee_id": employee["employee_id"],
                 "location_id": location["id"],
@@ -455,7 +455,7 @@ class TestPhase2IntegrationWorkflows:
         employee = emp_res.json()
 
         client.post(
-            "/api/employees/assign-location",
+            f"/api/employees/{employee['employee_id']}/locations",
             json={
                 "employee_id": employee["employee_id"],
                 "location_id": locations[0]["id"],
@@ -501,8 +501,8 @@ class TestPhase2IntegrationWorkflows:
         initial_utilization = response.json()["current_utilization"]
 
         # Assign employee
-        client.post(
-            "/api/employees/assign-location",
+        assign_res = client.post(
+            f"/api/employees/{employee['employee_id']}/locations",
             json={
                 "employee_id": employee["employee_id"],
                 "location_id": location["id"],
@@ -511,6 +511,7 @@ class TestPhase2IntegrationWorkflows:
             },
             headers=auth_headers,
         )
+        assert assign_res.status_code == 201, assign_res.text
 
         # Check updated utilization
         response = client.get(
@@ -531,9 +532,10 @@ class TestPhase2IntegrationWorkflows:
 
         response = client.post(
             f"/api/employees/{employee['employee_id']}/transfer-request",
-            json={"to_location_id": target_location["id"]},
+            params={"to_location_id": target_location["id"]},
             headers=auth_headers,
         )
+        assert response.status_code == 201, response.text
         transfer_id = response.json()["id"]
 
         # Approve transfer
@@ -557,7 +559,7 @@ class TestPhase2ErrorHandling:
         """Test transferring nonexistent employee."""
         response = client.post(
             "/api/employees/EMP999/transfer-request",
-            json={"to_location_id": 1},
+            params={"to_location_id": 1},
             headers=hr_manager_auth,
         )
         assert response.status_code == 404
@@ -572,7 +574,7 @@ class TestPhase2ErrorHandling:
 
         # Assign to location first
         client.post(
-            "/api/employees/assign-location",
+            f"/api/employees/{employee['employee_id']}/locations",
             json={
                 "employee_id": employee["employee_id"],
                 "location_id": location["id"],
@@ -584,7 +586,7 @@ class TestPhase2ErrorHandling:
 
         response = client.post(
             f"/api/employees/{employee['employee_id']}/transfer-request",
-            json={"to_location_id": 99999},
+            params={"to_location_id": 99999},
             headers=auth_headers,
         )
         assert response.status_code == 404

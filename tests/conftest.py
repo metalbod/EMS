@@ -229,13 +229,23 @@ def _valid_employee_payload(**overrides):
     return payload
 
 
+_code_counter = itertools.count(1)
+# PID + nanosecond timestamp (not just _ic_run_salt's 4-digit modulo, which
+# collided across separate rapid-fire local process invocations — 1/10000
+# odds per pair of runs isn't negligible when the suite gets re-run many
+# times in a short window while debugging) — this has no fixed-width format
+# constraint to respect (unlike IC numbers), so there's no reason to skimp
+# on entropy here.
+_code_run_salt = f"{os.getpid():05d}{time.time_ns() % 100000:05d}"
+
+
 def _unique_code(prefix="ZZ"):
     """A short per-call-unique code (e.g. for grade_code/level_code/role_code
-    in compensation tests), so re-running the suite against the same
-    persistent shared test institution never collides with a previous
-    run's leftover rows — same rationale as _unique_ic/_valid_location_payload."""
-    n = next(_ic_counter)
-    return f"{prefix}{_ic_run_salt:04d}{n:04d}"
+    in compensation tests, or location codes), so re-running the suite
+    against the same persistent shared test institution never collides
+    with a previous run's leftover rows — same rationale as _unique_ic."""
+    n = next(_code_counter)
+    return f"{prefix}{_code_run_salt}{n:04d}"
 
 
 def _valid_location_payload(institution_id, **overrides):
