@@ -1248,7 +1248,7 @@
           </button>
 
           <h3 class="text-sm font-semibold text-slate-700 mb-1">2. Upload the completed file</h3>
-          <p class="text-sm text-slate-500 mb-3">Valid rows are created immediately; any rows with errors are skipped and listed below so you can fix and re-upload just those.</p>
+          <p class="text-sm text-slate-500 mb-3">Rows with a new Employee ID are created; rows whose Employee ID already exists in this institution update that employee's record instead. Any rows with errors are skipped and listed below so you can fix and re-upload just those.</p>
           <div class="flex items-center gap-3">
             <input id="bulkUploadFile" type="file" accept=".csv" class="inp" style="max-width:320px"/>
             <button id="bulkUploadBtn" onclick="submitBulkUpload()" class="btn-primary text-sm" disabled>Upload</button>

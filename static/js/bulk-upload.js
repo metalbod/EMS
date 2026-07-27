@@ -43,7 +43,7 @@ async function submitBulkUpload() {
     }
     const result=await res.json();
     renderBulkUploadResults(result);
-    if(result.created.length) { await loadEmployees(); }
+    if(result.created.length || result.updated.length) { await loadEmployees(); }
   } finally {
     btn.disabled=false; btn.textContent='Upload';
   }
@@ -52,7 +52,9 @@ async function submitBulkUpload() {
 function renderBulkUploadResults(result) {
   document.getElementById('bulkUploadResults').classList.remove('hidden');
   const successEl=document.getElementById('bulkUploadSuccessCount');
-  successEl.textContent=`${result.created.length} employee${result.created.length==1?'':'s'} created`;
+  const parts=[`${result.created.length} employee${result.created.length==1?'':'s'} created`];
+  if(result.updated.length) parts.push(`${result.updated.length} updated`);
+  successEl.textContent=parts.join(', ');
   const errorEl=document.getElementById('bulkUploadErrorCount');
   if(result.errors.length){
     errorEl.textContent=`${result.errors.length} row${result.errors.length==1?'':'s'} failed`;

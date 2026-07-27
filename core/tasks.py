@@ -107,11 +107,11 @@ def bulk_upload_employees_task(self, inst_id: int, csv_content: str, user_id: in
 
         try:
             from routers.employees import (
-                _insert_new_employee, BULK_UPLOAD_REQUIRED, BULK_UPLOAD_COLUMNS, EmployeeIn
+                _insert_new_employee, _update_bulk_employee, BULK_UPLOAD_REQUIRED, BULK_UPLOAD_COLUMNS, EmployeeIn
             )
         except ImportError:
             from ems.routers.employees import (
-                _insert_new_employee, BULK_UPLOAD_REQUIRED, BULK_UPLOAD_COLUMNS, EmployeeIn
+                _insert_new_employee, _update_bulk_employee, BULK_UPLOAD_REQUIRED, BULK_UPLOAD_COLUMNS, EmployeeIn
             )
 
         logger.info(f"Task {self.request.id}: bulk uploading employees for institution {inst_id}")
@@ -126,7 +126,8 @@ def bulk_upload_employees_task(self, inst_id: int, csv_content: str, user_id: in
             if missing_cols:
                 return {"created": [], "errors": [{"row": 0, "reason": f"CSV is missing required column(s): {', '.join(missing_cols)}"}]}
 
-            created, errors = [], []
+            created, updated, errors = [], [], []
+            actor = {"id": user_id, "username": username, "role": role}
             for i, raw_row in enumerate(reader, start=2):  # row 1 is the header
                 row = {k: (v.strip() if isinstance(v, str) else v) for k, v in raw_row.items()}
                 if not any(row.values()):
@@ -142,16 +143,27 @@ def bulk_upload_employees_task(self, inst_id: int, csv_content: str, user_id: in
                     payload["num_children"] = int(float(payload["num_children"]))
                     payload["hourly_rate"] = float(payload["hourly_rate"])
                     emp = EmployeeIn(**payload)
+
+                    # A row whose employee_id already exists in this institution
+                    # updates that record instead of erroring — lets HR re-upload
+                    # the same roster (e.g. an HRIS export) to apply changes in
+                    # bulk, same as re-submitting the single Edit Employee form.
+                    existing = conn.execute(
+                        "SELECT id FROM employees WHERE institution_id=? AND employee_id=?", (inst_id, emp.employee_id)
+                    ).fetchone() if emp.employee_id else None
+                    if existing:
+                        emp_id = _update_bulk_employee(conn, inst_id, emp.employee_id, emp, actor, None)
+                        conn.commit()
+                        updated.append({"row": i, "employee_id": emp_id, "full_name": emp.full_name})
+                        continue
+
                     if existing_count >= (inst["max_employees"] if inst else 10**9):
                         errors.append({"row": i, "reason": f"Employee limit ({inst['max_employees']}) reached for this institution"})
                         continue
                     max_attempts = 5 if not emp.employee_id else 1
                     for attempt in range(max_attempts):
                         try:
-                            emp_id = _insert_new_employee(
-                                conn, inst_id, emp,
-                                {"id": user_id, "username": username, "role": role}, None
-                            )
+                            emp_id = _insert_new_employee(conn, inst_id, emp, actor, None)
                             conn.commit()
                             break
                         except IntegrityError as e:
@@ -175,8 +187,11 @@ def bulk_upload_employees_task(self, inst_id: int, csv_content: str, user_id: in
                     conn.rollback()
                     errors.append({"row": i, "reason": str(e)})
 
-            result = {"created": created, "errors": errors, "summary": f"{len(created)} created, {len(errors)} errors"}
-            logger.info(f"Task {self.request.id}: completed with {len(created)} employees created, {len(errors)} errors")
+            result = {
+                "created": created, "updated": updated, "errors": errors,
+                "summary": f"{len(created)} created, {len(updated)} updated, {len(errors)} errors",
+            }
+            logger.info(f"Task {self.request.id}: completed with {len(created)} created, {len(updated)} updated, {len(errors)} errors")
             return result
         finally:
             conn.close()

@@ -296,6 +296,47 @@ def _insert_new_employee(conn, inst_id, emp: EmployeeIn, user: dict, ip: Optiona
     return emp_id
 
 
+def _update_bulk_employee(conn, inst_id, employee_id: str, emp: EmployeeIn, user: dict, ip: Optional[str]):
+    """Update an existing employee's record from a bulk-upload row whose
+    employee_id matched one already on file. Only touches the fields the
+    bulk CSV can actually supply (BULK_UPLOAD_COLUMNS) — preferred_name and
+    default_location_id aren't part of that template, so they're left
+    untouched rather than being silently cleared to NULL."""
+    old_row = conn.execute(
+        "SELECT * FROM employees WHERE institution_id=? AND employee_id=?", (inst_id, employee_id)
+    ).fetchone()
+    old = dict(old_row)
+    reports_to = employee_id if emp.reports_to == "SELF" else emp.reports_to
+    if reports_to and reports_to != employee_id:
+        if not conn.execute(
+            "SELECT id FROM employees WHERE institution_id=? AND employee_id=?", (inst_id, reports_to)
+        ).fetchone():
+            raise HTTPException(400, f"Reporting manager '{reports_to}' not found")
+    conn.execute("""
+        UPDATE employees SET
+            full_name=?,ic_number=?,passport_number=?,
+            nationality=?,race=?,religion=?,gender=?,date_of_birth=?,marital_status=?,
+            personal_email=?,phone=?,address=?,department=?,designation=?,employment_type=?,
+            start_date=?,probation_end_date=?,contract_end_date=?,work_email=?,
+            epf_number=?,socso_number=?,income_tax_number=?,bank_name=?,bank_account=?,
+            basic_salary=?,num_children=?,salary_type=?,hourly_rate=?,reports_to=?
+        WHERE institution_id=? AND employee_id=?
+    """, (emp.full_name, emp.ic_number, emp.passport_number,
+          emp.nationality, emp.race or '', emp.religion or '', emp.gender or '', emp.date_of_birth or '', emp.marital_status or '',
+          emp.personal_email, emp.phone, emp.address, emp.department, emp.designation,
+          emp.employment_type, emp.start_date, emp.probation_end_date, emp.contract_end_date,
+          emp.work_email, emp.epf_number, emp.socso_number, emp.income_tax_number,
+          emp.bank_name, emp.bank_account, emp.basic_salary, emp.num_children,
+          emp.salary_type, emp.hourly_rate, reports_to,
+          inst_id, employee_id))
+    new_row = conn.execute(
+        "SELECT * FROM employees WHERE institution_id=? AND employee_id=?", (inst_id, employee_id)
+    ).fetchone()
+    changes = diff_employee(old, dict(new_row))
+    write_audit(conn, user, inst_id, employee_id, emp.full_name, "UPDATE", changes, ip)
+    return employee_id
+
+
 @router.post("/api/employees", status_code=201)
 @db_session
 def create_employee(conn, emp: EmployeeIn, request: Request, user: dict = Depends(require_roles(*CAN_WRITE))) -> Dict[str, Any]:

@@ -170,6 +170,28 @@ def test_bulk_upload_creates_employee(client, hr_manager_auth):
         assert "row" in error and "reason" in error
 
 
+def test_bulk_upload_updates_existing_employee(client, hr_manager_auth, make_test_employee):
+    emp = make_test_employee(designation="Sales Rep", basic_salary=3000)
+    header = "employee_id,full_name,ic_number,passport_number,nationality,race,religion,gender,date_of_birth,marital_status,personal_email,phone,address,department,designation,employment_type,start_date,probation_end_date,contract_end_date,work_email,epf_number,socso_number,income_tax_number,bank_name,bank_account,basic_salary,num_children,salary_type,hourly_rate,reports_to"
+    row = f"{emp['employee_id']},{emp['full_name']},{emp['ic_number']},,Malaysian,Chinese,Buddhism,Female,1992-05-05,Single,,+60129998888,,Sales,Senior Sales Rep,Permanent,2026-02-01,,,,,,,,,4500,0,Monthly,0,"
+    csv_content = header + "\n" + row + "\n"
+    res = client.post("/api/employees/bulk-upload", headers=hr_manager_auth, json={"csv_content": csv_content})
+    assert res.status_code == 202, res.text
+    task_id = res.json()["task_id"]
+
+    status_res = client.get(f"/api/tasks/{task_id}", headers=hr_manager_auth)
+    assert status_res.status_code == 200
+    body = status_res.json()["result"]
+    assert body["created"] == []
+    assert body["errors"] == []
+    assert len(body["updated"]) == 1
+    assert body["updated"][0]["employee_id"] == emp["employee_id"]
+
+    updated = client.get(f"/api/employees/{emp['employee_id']}", headers=hr_manager_auth).json()
+    assert updated["designation"] == "Senior Sales Rep"
+    assert float(updated["basic_salary"]) == 4500
+
+
 def test_bulk_upload_reports_row_errors_without_failing_whole_request(client, hr_manager_auth):
     header = "employee_id,full_name,ic_number,passport_number,nationality,race,religion,gender,date_of_birth,marital_status,personal_email,phone,address,department,designation,employment_type,start_date,probation_end_date,contract_end_date,work_email,epf_number,socso_number,income_tax_number,bank_name,bank_account,basic_salary,num_children,salary_type,hourly_rate,reports_to"
     bad_row = ",,bad-ic,,Malaysian,Chinese,Buddhism,Female,1992-05-05,Single,,+60129998888,,Sales,Sales Rep,Permanent,2026-02-01,,,,,,,,,3000,0,Monthly,0,"
