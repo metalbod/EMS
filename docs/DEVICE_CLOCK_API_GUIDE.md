@@ -182,6 +182,13 @@ retrying indefinitely.
   update the hardware's stored key, then deactivate the old device.
 - Devices are scoped to a single institution; a key issued for one
   institution cannot report events for another.
+- **Uniqueness:** the key's prefix (and therefore the key itself) is
+  unique across the *entire* platform, not just within one institution —
+  the database enforces a global unique constraint on it. Scope, however,
+  is still per-institution: each key is permanently tied to the
+  institution it was created for, so a valid key from Institution A is
+  simply rejected (`404 Employee not found for this institution`) if
+  pointed at an `employee_id` belonging to Institution B.
 
 ---
 
