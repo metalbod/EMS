@@ -38,19 +38,83 @@ function removeInstLogo() {
   document.getElementById('instLogoFile').value = '';
 }
 
+let instSortKey = 'created_at';
+let instSortDir = 'desc';
+let instPageSize = 10;
+let instPage = 1;
+
 async function loadInstitutions() {
   const res = await api('/api/institutions');
   if (!res || !res.ok) return;
   institutions = await res.json();
+  instPage = 1;
+}
+
+function setInstSort(key) {
+  if (instSortKey === key) {
+    instSortDir = instSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    instSortKey = key;
+    instSortDir = 'asc';
+  }
+  instPage = 1;
+  renderInstTable();
+}
+
+function setInstPageSize(size) {
+  instPageSize = parseInt(size) || 10;
+  instPage = 1;
+  renderInstTable();
+}
+
+function instPagePrev() {
+  if (instPage > 1) { instPage--; renderInstTable(); }
+}
+
+function instPageNext() {
+  const totalPages = Math.max(1, Math.ceil(institutions.length / instPageSize));
+  if (instPage < totalPages) { instPage++; renderInstTable(); }
+}
+
+function sortedInstitutions() {
+  const dir = instSortDir === 'asc' ? 1 : -1;
+  return [...institutions].sort((a, b) => {
+    let av = a[instSortKey], bv = b[instSortKey];
+    if (instSortKey === 'created_at') { av = new Date(av).getTime(); bv = new Date(bv).getTime(); }
+    else if (typeof av === 'string') { av = (av || '').toLowerCase(); bv = (bv || '').toLowerCase(); }
+    if (av < bv) return -1 * dir;
+    if (av > bv) return 1 * dir;
+    return 0;
+  });
+}
+
+function updateInstSortArrows() {
+  document.querySelectorAll('.inst-sort-arrow').forEach(el => {
+    const key = el.dataset.sortKey;
+    el.textContent = key === instSortKey ? (instSortDir === 'asc' ? ' ▲' : ' ▼') : '';
+  });
 }
 
 function renderInstTable() {
   const tbody = document.getElementById('instTableBody');
   const empty = document.getElementById('instEmpty');
+  const pagination = document.getElementById('instPagination');
   const planColors = {starter:'bg-slate-100 text-slate-600',professional:'bg-blue-100 text-blue-700',enterprise:'bg-violet-100 text-violet-700'};
-  if (!institutions.length) { tbody.innerHTML=''; empty.classList.remove('hidden'); return; }
+  updateInstSortArrows();
+  if (!institutions.length) { tbody.innerHTML=''; empty.classList.remove('hidden'); pagination.classList.add('hidden'); return; }
   empty.classList.add('hidden');
-  tbody.innerHTML = institutions.map(i=>`
+  pagination.classList.remove('hidden');
+  document.getElementById('instPageSize').value = String(instPageSize);
+
+  const sorted = sortedInstitutions();
+  const totalPages = Math.max(1, Math.ceil(sorted.length / instPageSize));
+  if (instPage > totalPages) instPage = totalPages;
+  const start = (instPage - 1) * instPageSize;
+  const pageItems = sorted.slice(start, start + instPageSize);
+  document.getElementById('instPageInfo').textContent =
+    `${start + 1}-${Math.min(start + instPageSize, sorted.length)} of ${sorted.length}`;
+
+  tbody.innerHTML = pageItems.map(i=>`
     <tr class="hover:bg-slate-50 transition">
       <td class="px-4 py-3">
         <div class="flex items-center gap-3">
@@ -59,7 +123,7 @@ function renderInstTable() {
             : `<div class="w-9 h-9 bg-blue-100 rounded-lg flex items-center justify-center text-blue-700 text-xs font-bold flex-shrink-0">${esc(i.code.slice(0,2).toUpperCase())}</div>`}
           <div>
             <p class="font-medium">${esc(i.name)}</p>
-            <p class="text-xs text-slate-400">${esc(i.code)} · ${i.created_at.slice(0,10)}</p>
+            <p class="text-xs text-slate-400">${esc(i.code)}</p>
           </div>
         </div>
       </td>
@@ -73,6 +137,10 @@ function renderInstTable() {
         <p class="text-xs text-slate-400">/ ${i.max_employees}</p>
       </td>
       <td class="px-4 py-3"><span class="badge ${i.status==='Active'?'bg-emerald-100 text-emerald-700':'bg-red-100 text-red-600'}">${i.status}</span></td>
+      <td class="px-4 py-3">
+        <p class="text-sm">${i.created_at.slice(0,10)}</p>
+        <p class="text-xs text-slate-400">${i.created_at.slice(11,19)}</p>
+      </td>
       <td class="px-4 py-3">
         <div class="flex justify-end gap-1 flex-wrap">
           <button onclick="enterInstitutionContext(this.dataset.inst)" data-inst='${JSON.stringify(i).replace(/'/g,"&apos;")}' class="btn-primary" style="font-size:.75rem;padding:.25rem .75rem">Manage</button>

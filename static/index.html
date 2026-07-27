@@ -668,17 +668,33 @@
           <table class="w-full text-sm">
             <thead class="bg-slate-50 border-b border-slate-200">
               <tr>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Company</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase hidden sm:table-cell">Contact</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Plan</th>
-                <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Staff</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none" onclick="setInstSort('name')">Company<span class="inst-sort-arrow" data-sort-key="name"></span></th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase hidden sm:table-cell cursor-pointer select-none" onclick="setInstSort('contact_name')">Contact<span class="inst-sort-arrow" data-sort-key="contact_name"></span></th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none" onclick="setInstSort('plan')">Plan<span class="inst-sort-arrow" data-sort-key="plan"></span></th>
+                <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none" onclick="setInstSort('employee_count')">Staff<span class="inst-sort-arrow" data-sort-key="employee_count"></span></th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none" onclick="setInstSort('status')">Status<span class="inst-sort-arrow" data-sort-key="status"></span></th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none" onclick="setInstSort('created_at')">Created At<span class="inst-sort-arrow" data-sort-key="created_at"></span></th>
                 <th class="px-4 py-3"></th>
               </tr>
             </thead>
             <tbody id="instTableBody" class="divide-y divide-slate-100"></tbody>
           </table>
           <p id="instEmpty" class="hidden text-center text-slate-400 text-sm py-12">No institutions yet. Click "Add Institution" to get started.</p>
+          <div id="instPagination" class="hidden flex items-center justify-between px-4 py-3 border-t border-slate-200 text-sm text-slate-500">
+            <div class="flex items-center gap-2">
+              <span>Rows per page:</span>
+              <select id="instPageSize" onchange="setInstPageSize(this.value)" class="border border-slate-200 rounded-lg text-sm px-2 py-1">
+                <option value="10">10</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+            </div>
+            <div class="flex items-center gap-3">
+              <span id="instPageInfo"></span>
+              <button onclick="instPagePrev()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Prev</button>
+              <button onclick="instPageNext()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Next</button>
+            </div>
+          </div>
         </div>
       </div>
 
