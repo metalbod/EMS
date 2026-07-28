@@ -1412,3 +1412,135 @@ async function loadJobRolesPage() {
 // fire these requests before any institution was selected (a superadmin's
 // active_institution_id is null pre-selection), silently returning empty
 // results that then went stale and never refreshed.
+
+// ============================================================================
+// EMPLOYEE COMPENSATION (assign Job Role / Job Level / Pay Grade to an
+// employee — bridges the Compensation module's taxonomy pages above to an
+// individual employee record, from the employee view modal's Compensation
+// tab in employees.js/index.html)
+// ============================================================================
+
+async function ensureCompLookupsLoaded() {
+  const need = [];
+  if (!jobRoles.length) need.push(loadJobRoles());
+  if (!jobLevels.length) need.push(loadJobLevels());
+  if (!payGrades.length) need.push(loadPayGrades());
+  if (need.length) await Promise.all(need);
+}
+
+async function loadEmployeeCompensationTab(employeeId) {
+  const el = document.getElementById('vt-compensation');
+  if (!el) return;
+  const role = currentUser.role;
+  const canAssign = ['superadmin', 'hr_manager', 'payroll_manager', 'compensation_manager'].includes(role);
+  document.getElementById('vt-compensation-btn')?.classList.toggle('hidden', !canAssign);
+  if (!canAssign) return;
+
+  el.innerHTML = '<p class="text-slate-400 text-sm">Loading…</p>';
+  const res = await api(`/api/compensation/employees/${employeeId}/compensation`);
+  const actionBtn = `<button onclick="openAssignCompModal('${esc(employeeId)}')" class="btn-primary text-sm mt-4">
+    ${res && res.ok ? 'Update Compensation' : 'Assign Compensation'}
+  </button>`;
+
+  if (!res || !res.ok) {
+    el.innerHTML = `<p class="text-slate-400 text-sm">No compensation record on file for this employee yet.</p>${actionBtn}`;
+    return;
+  }
+  const comp = await res.json();
+  el.innerHTML = vgrid([
+    ['Job Role', comp.job_role ? `${comp.job_role.role_name} (${comp.job_role.role_code})` : '—'],
+    ['Job Level', comp.job_level ? `${comp.job_level.level_name} (${comp.job_level.level_code})` : '—'],
+    ['Pay Grade', comp.pay_grade ? `${comp.pay_grade.grade_name} (${comp.pay_grade.grade_code})` : '—'],
+    ['Base Salary', `RM ${Number(comp.base_salary).toLocaleString('en-MY', {minimumFractionDigits: 2})}`],
+    ['Effective Date', comp.effective_date],
+  ]) + actionBtn;
+}
+
+async function openAssignCompModal(employeeId) {
+  await ensureCompLookupsLoaded();
+  document.getElementById('acEmployeeId').value = employeeId;
+  document.getElementById('assignCompForm').reset();
+  document.getElementById('assignCompErr').classList.add('hidden');
+  document.getElementById('acEffectiveDate').value = new Date().toISOString().slice(0, 10);
+
+  const roleSelect = document.getElementById('acJobRole');
+  roleSelect.innerHTML = '<option value="">— No job role —</option>' +
+    jobRoles.filter(r => r.is_active).map(r => `<option value="${r.id}">${esc(r.role_name)} (${esc(r.role_code)})</option>`).join('');
+
+  // Prefill from the employee's current compensation, if any, so "Update"
+  // starts from where they are rather than blank.
+  const current = await api(`/api/compensation/employees/${employeeId}/compensation`);
+  if (current && current.ok) {
+    const comp = await current.json();
+    if (comp.job_role_id) roleSelect.value = comp.job_role_id;
+    onAssignCompRoleChange(comp.pay_grade_id);
+    document.getElementById('acBaseSalary').value = comp.base_salary;
+  } else {
+    onAssignCompRoleChange();
+  }
+
+  document.getElementById('assignCompModal').classList.remove('hidden');
+}
+
+function closeAssignCompModal() {
+  document.getElementById('assignCompModal').classList.add('hidden');
+}
+
+// Job Role determines Job Level (shown read-only) and narrows the Pay
+// Grade choices to that role's own mapped grades — falls back to every
+// pay grade in the institution if the role has none mapped yet, or if no
+// role is selected at all.
+function onAssignCompRoleChange(preselectGradeId) {
+  const roleId = parseInt(document.getElementById('acJobRole').value) || null;
+  const role = roleId ? jobRoles.find(r => r.id === roleId) : null;
+  const level = role ? jobLevels.find(l => l.id === role.job_level_id) : null;
+  document.getElementById('acJobLevelDisplay').value = level ? `${level.level_name} (${level.level_code})` : '';
+
+  const grades = (role && role.pay_grades && role.pay_grades.length) ? role.pay_grades : payGrades;
+  const gradeSelect = document.getElementById('acPayGrade');
+  gradeSelect.innerHTML = '<option value="">— No pay grade —</option>' +
+    grades.map(g => `<option value="${g.id}">${esc(g.grade_name)} (${esc(g.grade_code)})</option>`).join('');
+  if (preselectGradeId) gradeSelect.value = preselectGradeId;
+  onAssignCompGradeChange();
+}
+
+function onAssignCompGradeChange() {
+  const gradeId = parseInt(document.getElementById('acPayGrade').value) || null;
+  const grade = gradeId ? payGrades.find(g => g.id === gradeId) : null;
+  const rangeEl = document.getElementById('acGradeRange');
+  if (!grade) { rangeEl.textContent = ''; return; }
+  const fmt = n => Number(n).toLocaleString('en-MY', {minimumFractionDigits: 2});
+  rangeEl.textContent = `Range: RM ${fmt(grade.min_salary)} – RM ${fmt(grade.max_salary)} (midpoint RM ${fmt(grade.midpoint_salary)})`;
+  if (!document.getElementById('acBaseSalary').value) {
+    document.getElementById('acBaseSalary').value = grade.midpoint_salary;
+  }
+}
+
+async function submitAssignCompForm(e) {
+  e.preventDefault();
+  const employeeId = document.getElementById('acEmployeeId').value;
+  const err = document.getElementById('assignCompErr');
+  err.classList.add('hidden');
+  const body = {
+    job_role_id: parseInt(document.getElementById('acJobRole').value) || null,
+    job_level_id: null,
+    pay_grade_id: parseInt(document.getElementById('acPayGrade').value) || null,
+    base_salary: parseFloat(document.getElementById('acBaseSalary').value),
+    effective_date: document.getElementById('acEffectiveDate').value,
+  };
+  const role = jobRoles.find(r => r.id === body.job_role_id);
+  if (role) body.job_level_id = role.job_level_id;
+
+  const res = await api(`/api/compensation/employees/${employeeId}/compensation`, {
+    method: 'POST', body: JSON.stringify(body),
+  });
+  if (!res) return;
+  if (!res.ok) {
+    const d = await res.json().catch(() => ({}));
+    err.textContent = d.detail || 'Failed to save compensation';
+    err.classList.remove('hidden');
+    return;
+  }
+  closeAssignCompModal();
+  await loadEmployeeCompensationTab(employeeId);
+}

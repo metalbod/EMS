@@ -7,7 +7,7 @@ let currentEmpId = null, viewingId = null, editingUserId = null;
 let currentTab = 'personal';
 let openGroups = new Set(['empMgmt']);
 const TABS = ['personal','employment','statutory','dependents'];
-const VIEW_TABS = ['vt-personal','vt-employment','vt-locations','vt-statutory','vt-notes'];
+const VIEW_TABS = ['vt-personal','vt-employment','vt-locations','vt-statutory','vt-compensation','vt-notes'];
 const HR_NOTE_ROLES = ['superadmin','hr_manager','hr_admin'];
 const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','leave-my','leave-approvals','leave-holidays','projects','timesheet-my','timesheet-approvals','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','comp-paygrades','comp-joblevels','comp-jobroles','comp-meritcycles','comp-bonusplans','comp-commissions','comp-equity','comp-totalrewards','comp-payequity','ben-plans','ben-periods','ben-lifeevents','ben-claims','ben-compliance','payroll-runs','payroll-my','payroll-mybenefits','perf-my','perf-team','perf-cycles','perf-calibration','attendance-clock','attendance-review','settings-attendance','coming-soon'];
 

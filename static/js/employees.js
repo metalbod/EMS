@@ -88,6 +88,7 @@ function viewEmployee(id) {
     ['Bank Name',e.bank_name||'—'],['Bank Account',e.bank_account||'—',true],
   ]);
   loadEmployeeLocations(id);
+  loadEmployeeCompensationTab(id);
   switchViewTab('vt-personal');
   document.getElementById('viewModal').classList.remove('hidden');
 }

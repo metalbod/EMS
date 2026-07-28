@@ -2433,12 +2433,14 @@
       <button class="view-tab-btn px-4 py-3 text-sm text-slate-500" data-vtab="vt-employment" onclick="switchViewTab('vt-employment')">Employment</button>
       <button class="view-tab-btn px-4 py-3 text-sm text-slate-500" data-vtab="vt-locations" onclick="switchViewTab('vt-locations')">Locations</button>
       <button class="view-tab-btn px-4 py-3 text-sm text-slate-500" data-vtab="vt-statutory" onclick="switchViewTab('vt-statutory')">Statutory &amp; Payroll</button>
+      <button id="vt-compensation-btn" class="view-tab-btn px-4 py-3 text-sm text-slate-500 hidden" data-vtab="vt-compensation" onclick="switchViewTab('vt-compensation')">Compensation</button>
       <button id="vt-notes-btn" class="view-tab-btn px-4 py-3 text-sm text-slate-500 hidden" data-vtab="vt-notes" onclick="switchViewTab('vt-notes')">HR Notes 🔒</button>
     </div>
     <div id="vt-personal" class="view-tab-panel p-6"></div>
     <div id="vt-employment" class="view-tab-panel p-6 hidden"></div>
     <div id="vt-locations" class="view-tab-panel p-6 hidden"></div>
     <div id="vt-statutory" class="view-tab-panel p-6 hidden"></div>
+    <div id="vt-compensation" class="view-tab-panel p-6 hidden"></div>
     <div id="vt-notes" class="view-tab-panel p-6 hidden">
       <div id="noteForm" class="mb-5 bg-slate-50 border border-slate-200 rounded-xl p-4">
         <div class="flex gap-3 mb-3">
@@ -3361,6 +3363,45 @@
       <div class="flex gap-2">
         <button type="submit" class="btn-primary">Save Job Role</button>
         <button type="button" onclick="closeJobRoleModal()" class="btn-ghost">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Compensation: Assign Employee Compensation Modal -->
+<div id="assignCompModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 class="text-base font-semibold">Assign Compensation</h2>
+      <button onclick="closeAssignCompModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form id="assignCompForm" onsubmit="submitAssignCompForm(event)" class="p-6 space-y-4">
+      <input id="acEmployeeId" type="hidden"/>
+      <div>
+        <label class="lbl">Job Role</label>
+        <select id="acJobRole" class="inp" onchange="onAssignCompRoleChange()">
+          <option value="">— No job role —</option>
+        </select>
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <div><label class="lbl">Job Level</label><input id="acJobLevelDisplay" type="text" class="inp bg-slate-50" readonly/></div>
+        <div>
+          <label class="lbl">Pay Grade</label>
+          <select id="acPayGrade" class="inp" onchange="onAssignCompGradeChange()">
+            <option value="">— No pay grade —</option>
+          </select>
+        </div>
+      </div>
+      <p id="acGradeRange" class="text-xs text-slate-500"></p>
+      <div class="grid grid-cols-2 gap-4">
+        <div><label class="lbl">Base Salary (RM/month) <span class="text-red-500">*</span></label><input id="acBaseSalary" type="number" step="0.01" min="0.01" class="inp" required/></div>
+        <div><label class="lbl">Effective Date <span class="text-red-500">*</span></label><input id="acEffectiveDate" type="date" class="inp" required/></div>
+      </div>
+      <p class="text-xs text-slate-500">Saving supersedes this employee's current compensation record — the previous one is kept as history, not deleted.</p>
+      <p id="assignCompErr" class="hidden text-xs text-red-600"></p>
+      <div class="flex gap-2">
+        <button type="submit" class="btn-primary">Save Compensation</button>
+        <button type="button" onclick="closeAssignCompModal()" class="btn-ghost">Cancel</button>
       </div>
     </form>
   </div>
