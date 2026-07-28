@@ -29,6 +29,24 @@ function readFileAsText(file) {
   });
 }
 
+function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+// Bulk upload runs as an async Celery task (202 + task_id) — poll
+// GET /api/tasks/{task_id} until it leaves PENDING/STARTED, same pattern
+// any async-task consumer in this app needs to follow.
+async function pollBulkUploadTask(taskId) {
+  const maxAttempts = 60; // ~60s at 1s intervals before giving up
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const res = await api(`/api/tasks/${taskId}`);
+    if (!res?.ok) throw new Error('Failed to check upload status');
+    const status = await res.json();
+    if (status.status === 'SUCCESS') return status.result;
+    if (status.status === 'FAILURE') throw new Error(status.error || 'Bulk upload failed');
+    await sleep(1000);
+  }
+  throw new Error('Bulk upload is taking longer than expected. Check back later or refresh.');
+}
+
 async function submitBulkUpload() {
   const fileInput=document.getElementById('bulkUploadFile');
   const file=fileInput.files[0];
@@ -39,11 +57,17 @@ async function submitBulkUpload() {
     const csv_content=await readFileAsText(file);
     const res=await api('/api/employees/bulk-upload',{method:'POST',body:JSON.stringify({csv_content})});
     if(!res?.ok){
-      const d=await res.json(); alert(d.detail||'Upload failed'); return;
+      let detail='Upload failed';
+      try { detail=(await res.json()).detail||detail; } catch(_) {}
+      alert(detail); return;
     }
-    const result=await res.json();
+    const { task_id } = await res.json();
+    btn.textContent='Processing…';
+    const result=await pollBulkUploadTask(task_id);
     renderBulkUploadResults(result);
     if(result.created.length || result.updated.length) { await loadEmployees(); }
+  } catch (err) {
+    alert(err.message || 'Upload failed');
   } finally {
     btn.disabled=false; btn.textContent='Upload';
   }
