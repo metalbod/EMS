@@ -492,6 +492,7 @@
             <button id="dash-tab-recruitment-btn" class="view-tab-btn hidden px-4 py-3 text-sm text-slate-500" data-dashtab="dash-recruitment" onclick="switchDashTab('dash-recruitment')">Recruitment</button>
             <button id="dash-tab-timesheet-btn" class="view-tab-btn hidden px-4 py-3 text-sm text-slate-500" data-dashtab="dash-timesheet" onclick="switchDashTab('dash-timesheet')">Timesheet</button>
             <button id="dash-tab-compensation-btn" class="view-tab-btn hidden px-4 py-3 text-sm text-slate-500" data-dashtab="dash-compensation" onclick="switchDashTab('dash-compensation')">Compensation &amp; Benefits</button>
+            <button id="dash-tab-leave-btn" class="view-tab-btn hidden px-4 py-3 text-sm text-slate-500" data-dashtab="dash-leave" onclick="switchDashTab('dash-leave')">Leave</button>
           </div>
 
           <!-- General tab: overview stats + locations (always visible, loads immediately) -->
@@ -664,8 +665,32 @@
               </div>
             </div>
           </div>
+
+          <!-- Leave tab (HR Manager / HR Admin only — lazy-loaded) -->
+          <div id="dash-leave" class="dash-tab-panel hidden">
+            <div class="bg-white rounded-xl border border-slate-200 p-5 mb-4">
+              <h3 class="font-semibold mb-3 text-sm">Utilization by Leave Type</h3>
+              <div id="leaveDashByType" class="space-y-2"></div>
+              <p id="leaveDashByTypeEmpty" class="hidden text-slate-400 text-sm">No leave balances recorded yet this year.</p>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div class="bg-white rounded-xl border border-slate-200 p-5">
+                <h3 class="font-semibold mb-3 text-sm">Top 10 Highest Utilization</h3>
+                <div id="leaveDashTopHighest" class="space-y-2"></div>
+                <p id="leaveDashTopHighestEmpty" class="hidden text-slate-400 text-sm">No data yet.</p>
+              </div>
+              <div class="bg-white rounded-xl border border-slate-200 p-5">
+                <h3 class="font-semibold mb-3 text-sm">Top 10 Lowest Utilization</h3>
+                <div id="leaveDashTopLowest" class="space-y-2"></div>
+                <p id="leaveDashTopLowestEmpty" class="hidden text-slate-400 text-sm">No data yet.</p>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
+
+      <!-- Shared floating tooltip for the Leave dashboard's per-employee breakdown on hover -->
+      <div id="leaveEmpTooltip" class="hidden fixed z-50 bg-slate-800 text-white text-xs rounded-lg shadow-lg p-3 pointer-events-none" style="max-width:16rem"></div>
 
       <!-- INSTITUTIONS -->
       <div id="page-institutions" class="hidden">

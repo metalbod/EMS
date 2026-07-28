@@ -392,6 +392,79 @@ def update_leave_status(conn, app_id: int, body: LeaveStatusIn, user: dict = Dep
     return dict(row)
 
 
+@router.get("/api/leave/dashboard/utilization")
+@db_session
+def get_leave_utilization_dashboard(conn, year: Optional[int] = None,
+                                    user: dict = Depends(require_roles("hr_manager", "hr_admin"))) -> Dict[str, Any]:
+    """Institution-wide leave utilization for the HR dashboard's Leave tab:
+    usage by leave type, and the 10 employees with the highest and lowest
+    overall utilization (their leave_balances rows summed across every
+    type they have a balance for). A leave type that shares entitlement
+    with another never has its own balance row (see _balance_leave_type_id),
+    so this naturally aggregates shared usage under the pool's own type —
+    there's no double-counting to guard against."""
+    inst_id = need_inst(user)
+    year = year or datetime.now().year
+
+    by_type = conn.execute("""
+        SELECT lt.id AS leave_type_id, lt.name AS leave_type_name,
+               SUM(b.entitled_days + b.carried_forward_days) AS total_entitled,
+               SUM(b.used_days) AS total_used
+        FROM leave_balances b
+        JOIN leave_types lt ON lt.id = b.leave_type_id
+        WHERE b.institution_id=? AND b.year=?
+        GROUP BY lt.id, lt.name
+        ORDER BY lt.name
+    """, (inst_id, year)).fetchall()
+    by_type_out = [{
+        "leave_type_id": r["leave_type_id"], "leave_type_name": r["leave_type_name"],
+        "total_entitled": r["total_entitled"], "total_used": r["total_used"],
+        "utilization_percent": round(r["total_used"] / r["total_entitled"] * 100, 1) if r["total_entitled"] else 0.0,
+    } for r in by_type]
+
+    emp_rows = conn.execute("""
+        SELECT b.employee_id, e.full_name, e.department,
+               SUM(b.entitled_days + b.carried_forward_days) AS total_entitled,
+               SUM(b.used_days) AS total_used
+        FROM leave_balances b
+        JOIN employees e ON e.employee_id = b.employee_id AND e.institution_id = b.institution_id
+        WHERE b.institution_id=? AND b.year=? AND e.status='Active'
+        GROUP BY b.employee_id, e.full_name, e.department
+        HAVING SUM(b.entitled_days + b.carried_forward_days) > 0
+    """, (inst_id, year)).fetchall()
+
+    def _breakdown(employee_id: str):
+        rows = conn.execute("""
+            SELECT lt.name AS leave_type_name, b.entitled_days, b.carried_forward_days, b.used_days
+            FROM leave_balances b
+            JOIN leave_types lt ON lt.id = b.leave_type_id
+            WHERE b.employee_id=? AND b.institution_id=? AND b.year=?
+            ORDER BY lt.name
+        """, (employee_id, inst_id, year)).fetchall()
+        out = []
+        for r in rows:
+            entitled = r["entitled_days"] + r["carried_forward_days"]
+            out.append({
+                "leave_type_name": r["leave_type_name"], "entitled_days": entitled, "used_days": r["used_days"],
+                "utilization_percent": round(r["used_days"] / entitled * 100, 1) if entitled else 0.0,
+            })
+        return out
+
+    ranked = [{
+        "employee_id": r["employee_id"], "full_name": r["full_name"], "department": r["department"],
+        "total_entitled": r["total_entitled"], "total_used": r["total_used"],
+        "utilization_percent": round(r["total_used"] / r["total_entitled"] * 100, 1),
+    } for r in emp_rows]
+    ranked.sort(key=lambda e: e["utilization_percent"], reverse=True)
+
+    top_highest = ranked[:10]
+    top_lowest = sorted(ranked, key=lambda e: e["utilization_percent"])[:10]
+    for e in top_highest + top_lowest:
+        e["breakdown"] = _breakdown(e["employee_id"])
+
+    return {"year": year, "by_type": by_type_out, "top_highest": top_highest, "top_lowest": top_lowest}
+
+
 @router.get("/api/employees/{employee_id}/leave-history")
 @db_session
 def get_employee_leave_history(conn, employee_id: str, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))) -> List[Dict[str, Any]]:

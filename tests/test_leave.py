@@ -532,3 +532,58 @@ def test_cancel_shared_leave_type_application_refunds_parent_balance(
     balances = client.get("/api/leave/balances", headers=headers, params={"year": 2027}).json()
     parent_bal = next(b for b in balances if b["leave_type_id"] == parent["id"])
     assert parent_bal["used_days"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Leave Utilization Dashboard (HR Manager / HR Admin only)
+# ---------------------------------------------------------------------------
+def test_leave_utilization_dashboard_requires_hr_role(client, employee_with_user):
+    _, headers = employee_with_user
+    res = client.get("/api/leave/dashboard/utilization", headers=headers)
+    assert res.status_code == 403
+
+
+def test_leave_utilization_dashboard_superadmin_denied(client, superadmin_headers):
+    """The dashboard's Leave tab is explicitly HR Manager/HR Admin only —
+    even superadmin, unlike LEAVE_MANAGE_ROLES elsewhere in this router."""
+    res = client.get("/api/leave/dashboard/utilization", headers=superadmin_headers)
+    assert res.status_code == 403
+
+
+def test_leave_utilization_dashboard_reflects_usage_and_breakdown(
+    client, hr_manager_auth, employee_with_user, make_test_leave_type
+):
+    emp, headers = employee_with_user
+    lt = make_test_leave_type(annual_entitlement=10, requires_approval=False)
+    res = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": WORK_WEEK_START, "end_date": WORK_WEEK_END,
+    })
+    assert res.status_code == 201, res.text
+
+    dash = client.get("/api/leave/dashboard/utilization", headers=hr_manager_auth, params={"year": 2027}).json()
+
+    # by_type sums every employee in the institution, unbounded — safe to
+    # assert on directly. lt is a brand-new, disposable leave type this test
+    # just created, so no other employee anywhere could already have a
+    # balance row against it.
+    by_type = next(t for t in dash["by_type"] if t["leave_type_id"] == lt["id"])
+    assert by_type["total_used"] >= 5
+    assert by_type["utilization_percent"] > 0
+
+    # top_highest/top_lowest are capped at 10 each out of every employee this
+    # shared, never-cleaned test institution has ever accumulated a balance
+    # for — this test's own employee isn't guaranteed to make either cut, so
+    # only assert response shape here rather than requiring membership.
+    for entry in dash["top_highest"] + dash["top_lowest"]:
+        assert {"employee_id", "full_name", "total_entitled", "total_used", "utilization_percent", "breakdown"} <= entry.keys()
+        for b in entry["breakdown"]:
+            assert {"leave_type_name", "entitled_days", "used_days", "utilization_percent"} <= b.keys()
+
+    # If this test's employee did happen to land in a ranking (plausible —
+    # 10 slots isn't a small sample), verify their breakdown is correct.
+    match = next((e for e in dash["top_highest"] + dash["top_lowest"] if e["employee_id"] == emp["employee_id"]), None)
+    if match:
+        type_breakdown = next(b for b in match["breakdown"] if b["leave_type_name"] == lt["name"])
+        assert type_breakdown["used_days"] == 5
+        assert type_breakdown["entitled_days"] == 10

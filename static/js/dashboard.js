@@ -7,7 +7,7 @@
 // page. Now only General's own section (which includes Locations Overview)
 // fetches up front; Recruitment/Timesheet/Compensation & Benefits fetch once,
 // on first click, and are cached for the rest of the session.
-const _dashTabLoaded = { recruitment: false, timesheet: false, compensation: false };
+const _dashTabLoaded = { recruitment: false, timesheet: false, compensation: false, leave: false };
 let _lastBenefitsDashboard = null;
 window.getLastBenefitsDashboard = () => _lastBenefitsDashboard;
 
@@ -21,6 +21,7 @@ function switchDashTab(tabId) {
   if (tabId === 'dash-recruitment' && !_dashTabLoaded.recruitment) { _dashTabLoaded.recruitment = true; loadRecruitmentDash(); }
   if (tabId === 'dash-timesheet' && !_dashTabLoaded.timesheet) { _dashTabLoaded.timesheet = true; loadTimesheetDash(); }
   if (tabId === 'dash-compensation' && !_dashTabLoaded.compensation) { _dashTabLoaded.compensation = true; loadCompensationDash(); }
+  if (tabId === 'dash-leave' && !_dashTabLoaded.leave) { _dashTabLoaded.leave = true; loadLeaveDash(); }
 }
 
 function renderDashboard() {
@@ -90,13 +91,16 @@ function renderDashboard() {
   _dashTabLoaded.recruitment = false;
   _dashTabLoaded.timesheet = false;
   _dashTabLoaded.compensation = false;
+  _dashTabLoaded.leave = false;
   const canRecruit = ['superadmin','hr_manager','hr_admin','manager'].includes(currentUser?.role);
   const canViewUtil = ['superadmin','hr_manager'].includes(currentUser?.role);
   const canViewBenefitsDash = ['hr_manager','compensation_manager','manager'].includes(currentUser?.role);
   const hasEmployeeRecord = !!currentUser?.employee_id;
+  const canViewLeaveDash = ['hr_manager','hr_admin'].includes(currentUser?.role);
   document.getElementById('dash-tab-recruitment-btn').classList.toggle('hidden', !canRecruit);
   document.getElementById('dash-tab-timesheet-btn').classList.toggle('hidden', !canViewUtil);
   document.getElementById('dash-tab-compensation-btn').classList.toggle('hidden', !(canViewBenefitsDash || hasEmployeeRecord));
+  document.getElementById('dash-tab-leave-btn').classList.toggle('hidden', !canViewLeaveDash);
   switchDashTab('dash-general');
 }
 
@@ -373,3 +377,62 @@ async function loadDashboardTodos() {
 }
 
 // ---------------------------------------------------------------------------
+
+function loadLeaveDash() {
+  api('/api/leave/dashboard/utilization').then(async res => {
+    if (!res || !res.ok) return;
+    const s = await res.json();
+
+    const byTypeEl = document.getElementById('leaveDashByType');
+    document.getElementById('leaveDashByTypeEmpty').classList.toggle('hidden', s.by_type.length > 0);
+    byTypeEl.innerHTML = s.by_type.map(t => `
+      <div class="flex items-center gap-2">
+        <div class="w-32 text-xs text-slate-600 truncate" title="${esc(t.leave_type_name)}">${esc(t.leave_type_name)}</div>
+        <div class="flex-1 bg-slate-100 rounded-full h-2">
+          <div class="bg-blue-500 h-2 rounded-full" style="width:${Math.min(100, t.utilization_percent)}%"></div>
+        </div>
+        <div class="text-xs text-slate-500 w-32 text-right">${t.total_used}/${t.total_entitled} days (${t.utilization_percent}%)</div>
+      </div>`).join('');
+
+    renderLeaveDashRanking('leaveDashTopHighest', s.top_highest, 'bg-red-500');
+    renderLeaveDashRanking('leaveDashTopLowest', s.top_lowest, 'bg-emerald-500');
+  });
+}
+
+function renderLeaveDashRanking(containerId, list, barColor) {
+  const el = document.getElementById(containerId);
+  document.getElementById(containerId + 'Empty').classList.toggle('hidden', list.length > 0);
+  el.innerHTML = list.map((e, i) => `
+    <div class="flex items-center gap-2">
+      <div class="w-5 text-xs text-slate-400 text-right flex-shrink-0">${i + 1}</div>
+      <div class="w-28 text-xs text-slate-700 truncate cursor-default leave-emp-name" title="${esc(e.full_name)}"
+           data-breakdown='${JSON.stringify({ name: e.full_name, department: e.department, breakdown: e.breakdown }).replace(/'/g,"&apos;")}'>
+        ${esc(e.full_name)}
+      </div>
+      <div class="flex-1 bg-slate-100 rounded-full h-2">
+        <div class="${barColor} h-2 rounded-full" style="width:${Math.min(100, e.utilization_percent)}%"></div>
+      </div>
+      <div class="text-xs text-slate-500 w-28 text-right">${e.total_used}/${e.total_entitled} days (${e.utilization_percent}%)</div>
+    </div>`).join('');
+}
+
+// Shared floating tooltip for the Leave dashboard's top/bottom lists — shows
+// the hovered employee's own leave-type breakdown, since the ranking bar
+// only shows their overall utilization.
+document.addEventListener('mouseover', e => {
+  const target = e.target.closest('.leave-emp-name');
+  if (!target) return;
+  const data = JSON.parse(target.dataset.breakdown);
+  const tooltip = document.getElementById('leaveEmpTooltip');
+  const rows = data.breakdown.map(b =>
+    `<div class="flex justify-between gap-3"><span>${esc(b.leave_type_name)}</span><span>${b.used_days}/${b.entitled_days}d (${b.utilization_percent}%)</span></div>`
+  ).join('') || '<div class="text-slate-300">No leave type balances.</div>';
+  tooltip.innerHTML = `<div class="font-semibold mb-1">${esc(data.name)}${data.department ? ` · ${esc(data.department)}` : ''}</div>${rows}`;
+  const rect = target.getBoundingClientRect();
+  tooltip.style.left = `${rect.left}px`;
+  tooltip.style.top = `${rect.bottom + 6}px`;
+  tooltip.classList.remove('hidden');
+});
+document.addEventListener('mouseout', e => {
+  if (e.target.closest('.leave-emp-name')) document.getElementById('leaveEmpTooltip').classList.add('hidden');
+});
