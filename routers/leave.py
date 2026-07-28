@@ -45,6 +45,7 @@ class LeaveTypeIn(BaseModel):
     requires_attachment: bool = False
     is_paid: bool = True
     is_active: bool = True
+    shares_entitlement_with_id: Optional[int] = None
 
 
 class LeaveBalanceAdjustIn(BaseModel):
@@ -102,6 +103,39 @@ def _compute_leave_days(conn, inst_id: int, start_date: str, end_date: str) -> f
     return float(count)
 
 
+def _balance_leave_type_id(lt) -> int:
+    """A leave type with shares_entitlement_with_id set draws from that
+    other type's balance pool instead of its own — the application record
+    still cites the specific type applied for, but this is the id to use
+    for every balance check/deduction."""
+    return lt["shares_entitlement_with_id"] or lt["id"]
+
+
+def _validate_shares_entitlement(conn, inst_id: int, type_id: Optional[int], shares_with_id: Optional[int], name: str):
+    """One level deep only: a type can't share with something that itself
+    shares with another type, and a type that other types already share
+    with can't be changed to share with something else — either direction
+    would create a chain, which balance resolution doesn't walk."""
+    if shares_with_id is None:
+        return
+    if type_id is not None and shares_with_id == type_id:
+        raise HTTPException(400, "A leave type can't share entitlement with itself")
+    target = conn.execute(
+        "SELECT * FROM leave_types WHERE id=? AND institution_id=? AND is_active=1", (shares_with_id, inst_id)
+    ).fetchone()
+    if not target:
+        raise HTTPException(404, "Shared leave type not found")
+    if target["shares_entitlement_with_id"]:
+        raise HTTPException(400, f"'{target['name']}' already shares entitlement with another leave type — can't chain shares")
+    if type_id is not None:
+        dependents = conn.execute(
+            "SELECT 1 FROM leave_types WHERE shares_entitlement_with_id=? AND institution_id=? AND id!=?",
+            (type_id, inst_id, type_id)
+        ).fetchone()
+        if dependents:
+            raise HTTPException(400, f"'{name}' already has other leave types sharing its entitlement — can't also share with another type")
+
+
 def _get_or_create_leave_balance(conn, inst_id: int, employee_id: str, leave_type_id: int, year: int):
     row = conn.execute(
         "SELECT * FROM leave_balances WHERE employee_id=? AND leave_type_id=? AND year=?",
@@ -138,10 +172,12 @@ def list_leave_types(conn, user: dict = Depends(get_current_user)) -> List[Dict[
 @db_session
 def create_leave_type(conn, body: LeaveTypeIn, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))) -> Dict[str, Any]:
     inst_id = need_inst(user)
+    _validate_shares_entitlement(conn, inst_id, None, body.shares_entitlement_with_id, body.name)
     conn.execute(
-        "INSERT INTO leave_types (institution_id,name,annual_entitlement,requires_approval,requires_attachment,is_paid,is_active) VALUES (?,?,?,?,?,?,?)",
+        "INSERT INTO leave_types (institution_id,name,annual_entitlement,requires_approval,requires_attachment,is_paid,is_active,shares_entitlement_with_id) VALUES (?,?,?,?,?,?,?,?)",
         (inst_id, body.name, body.annual_entitlement, 1 if body.requires_approval else 0,
-         1 if body.requires_attachment else 0, 1 if body.is_paid else 0, 1 if body.is_active else 0)
+         1 if body.requires_attachment else 0, 1 if body.is_paid else 0, 1 if body.is_active else 0,
+         body.shares_entitlement_with_id)
     )
     conn.commit()
     row = conn.execute("SELECT * FROM leave_types WHERE id=last_insert_rowid()").fetchone()
@@ -154,10 +190,12 @@ def update_leave_type(conn, type_id: int, body: LeaveTypeIn, user: dict = Depend
     inst_id = need_inst(user)
     if not conn.execute("SELECT id FROM leave_types WHERE id=? AND institution_id=?", (type_id, inst_id)).fetchone():
         raise HTTPException(404, "Leave type not found")
+    _validate_shares_entitlement(conn, inst_id, type_id, body.shares_entitlement_with_id, body.name)
     conn.execute(
-        "UPDATE leave_types SET name=?,annual_entitlement=?,requires_approval=?,requires_attachment=?,is_paid=?,is_active=? WHERE id=?",
+        "UPDATE leave_types SET name=?,annual_entitlement=?,requires_approval=?,requires_attachment=?,is_paid=?,is_active=?,shares_entitlement_with_id=? WHERE id=?",
         (body.name, body.annual_entitlement, 1 if body.requires_approval else 0,
-         1 if body.requires_attachment else 0, 1 if body.is_paid else 0, 1 if body.is_active else 0, type_id)
+         1 if body.requires_attachment else 0, 1 if body.is_paid else 0, 1 if body.is_active else 0,
+         body.shares_entitlement_with_id, type_id)
     )
     conn.commit()
     row = conn.execute("SELECT * FROM leave_types WHERE id=?", (type_id,)).fetchone()
@@ -201,7 +239,13 @@ def list_leave_balances(conn, employee_id: Optional[str] = None, year: Optional[
     # Ensure every active leave type has a balance row for the employees being viewed, so
     # a type created after an employee joined still shows up with its default entitlement.
     if user["role"] in ("employee",) and user.get("employee_id"):
-        types = conn.execute("SELECT id FROM leave_types WHERE institution_id=? AND is_active=1", (inst_id,)).fetchall()
+        # Types that share entitlement with another type never get their own
+        # balance row — their pool is the shared type's row, which is already
+        # covered by that type's own entry in this loop.
+        types = conn.execute(
+            "SELECT id FROM leave_types WHERE institution_id=? AND is_active=1 AND shares_entitlement_with_id IS NULL",
+            (inst_id,)
+        ).fetchall()
         existing_type_ids = {r["leave_type_id"] for r in rows}
         missing = [t["id"] for t in types if t["id"] not in existing_type_ids]
         if missing:
@@ -275,7 +319,7 @@ def create_leave_application(conn, body: LeaveApplicationIn, user: dict = Depend
         raise HTTPException(400, "Selected date range has no working days to apply (all weekends/public holidays)")
 
     year = datetime.strptime(body.start_date, "%Y-%m-%d").year
-    balance = _get_or_create_leave_balance(conn, inst_id, body.employee_id, body.leave_type_id, year)
+    balance = _get_or_create_leave_balance(conn, inst_id, body.employee_id, _balance_leave_type_id(lt), year)
     available = balance["entitled_days"] + balance["carried_forward_days"] - balance["used_days"]
     if days > available:
         raise HTTPException(400, f"Insufficient balance: requesting {days} day(s), only {available} available")
@@ -318,7 +362,8 @@ def update_leave_status(conn, app_id: int, body: LeaveStatusIn, user: dict = Dep
             raise HTTPException(400, f"Application is already {application['status']}")
         if body.status == "Approved":
             year = datetime.strptime(application["start_date"], "%Y-%m-%d").year
-            balance = _get_or_create_leave_balance(conn, inst_id, application["employee_id"], application["leave_type_id"], year)
+            lt = conn.execute("SELECT * FROM leave_types WHERE id=?", (application["leave_type_id"],)).fetchone()
+            balance = _get_or_create_leave_balance(conn, inst_id, application["employee_id"], _balance_leave_type_id(lt), year)
             conn.execute("UPDATE leave_balances SET used_days=used_days+? WHERE id=?", (application["days_count"], balance["id"]))
         conn.execute("UPDATE leave_applications SET status=?,approved_by=?,notes=? WHERE id=?",
                      (body.status, user["username"], body.notes, app_id))
@@ -329,7 +374,8 @@ def update_leave_status(conn, app_id: int, body: LeaveStatusIn, user: dict = Dep
             raise HTTPException(400, f"Application is already {application['status']}")
         if application["status"] == "Approved":
             year = datetime.strptime(application["start_date"], "%Y-%m-%d").year
-            balance = _get_or_create_leave_balance(conn, inst_id, application["employee_id"], application["leave_type_id"], year)
+            lt = conn.execute("SELECT * FROM leave_types WHERE id=?", (application["leave_type_id"],)).fetchone()
+            balance = _get_or_create_leave_balance(conn, inst_id, application["employee_id"], _balance_leave_type_id(lt), year)
             conn.execute("UPDATE leave_balances SET used_days=used_days-? WHERE id=?", (application["days_count"], balance["id"]))
         conn.execute("UPDATE leave_applications SET status='Cancelled',notes=? WHERE id=?", (body.notes, app_id))
 

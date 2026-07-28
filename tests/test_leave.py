@@ -403,3 +403,104 @@ def test_leave_history_records_apply_action(client, hr_manager_auth, employee_wi
     assert res.status_code == 200
     actions = [entry["action"] for entry in res.json()]
     assert "Applied" in actions
+
+
+# ---------------------------------------------------------------------------
+# Leave Types: shared entitlement (a type draws from another type's balance)
+# ---------------------------------------------------------------------------
+def test_create_leave_type_sharing_with_another(client, hr_manager_auth, make_test_leave_type):
+    parent = make_test_leave_type(annual_entitlement=14)
+    res = client.post("/api/leave/types", headers=hr_manager_auth, json={
+        "name": "ZZ Emergency Leave", "annual_entitlement": 3,
+        "shares_entitlement_with_id": parent["id"],
+    })
+    assert res.status_code == 201, res.text
+    assert res.json()["shares_entitlement_with_id"] == parent["id"]
+
+
+def test_leave_type_cannot_share_with_itself(client, hr_manager_auth, make_test_leave_type):
+    lt = make_test_leave_type()
+    res = client.put(f"/api/leave/types/{lt['id']}", headers=hr_manager_auth, json={
+        "name": lt["name"], "annual_entitlement": 14, "shares_entitlement_with_id": lt["id"],
+    })
+    assert res.status_code == 400
+    assert "itself" in res.json()["detail"]
+
+
+def test_leave_type_cannot_share_with_a_type_that_already_shares(client, hr_manager_auth, make_test_leave_type):
+    root = make_test_leave_type()
+    middle = make_test_leave_type(shares_entitlement_with_id=root["id"])
+    res = client.post("/api/leave/types", headers=hr_manager_auth, json={
+        "name": "ZZ Chained Leave", "annual_entitlement": 1,
+        "shares_entitlement_with_id": middle["id"],
+    })
+    assert res.status_code == 400
+    assert "chain" in res.json()["detail"].lower()
+
+
+def test_leave_type_with_dependents_cannot_itself_share(client, hr_manager_auth, make_test_leave_type):
+    root = make_test_leave_type()
+    make_test_leave_type(shares_entitlement_with_id=root["id"])  # dependent on root
+    other = make_test_leave_type()
+    res = client.put(f"/api/leave/types/{root['id']}", headers=hr_manager_auth, json={
+        "name": root["name"], "annual_entitlement": root["annual_entitlement"],
+        "shares_entitlement_with_id": other["id"],
+    })
+    assert res.status_code == 400
+    assert "other leave types sharing" in res.json()["detail"]
+
+
+def test_shared_leave_type_deducts_from_parent_balance(client, hr_manager_auth, employee_with_user, make_test_leave_type):
+    """Applying for a leave type that shares entitlement with another type
+    should check/deduct the PARENT type's balance, not create its own."""
+    emp, headers = employee_with_user
+    parent = make_test_leave_type(annual_entitlement=10, requires_approval=False)
+    child = make_test_leave_type(annual_entitlement=999, requires_approval=False,
+                                  shares_entitlement_with_id=parent["id"])
+
+    res = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": child["id"],
+        "start_date": WORK_WEEK_START, "end_date": WORK_WEEK_END,
+    })
+    assert res.status_code == 201, res.text
+    app = res.json()
+    assert app["leave_type_id"] == child["id"]  # application itself still cites the specific type
+    assert app["status"] == "Approved"
+
+    balances = client.get("/api/leave/balances", headers=headers, params={"year": 2027}).json()
+    parent_bal = next(b for b in balances if b["leave_type_id"] == parent["id"])
+    assert parent_bal["used_days"] == 5  # 5 working days deducted from the PARENT's balance
+    assert not any(b["leave_type_id"] == child["id"] for b in balances)  # child never gets its own row
+
+
+def test_shared_leave_type_respects_parent_balance_limit(client, employee_with_user, make_test_leave_type):
+    emp, headers = employee_with_user
+    parent = make_test_leave_type(annual_entitlement=2, requires_approval=False)
+    child = make_test_leave_type(annual_entitlement=999, requires_approval=False,
+                                  shares_entitlement_with_id=parent["id"])
+    res = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": child["id"],
+        "start_date": WORK_WEEK_START, "end_date": WORK_WEEK_END,  # 5 working days > parent's 2
+    })
+    assert res.status_code == 400
+    assert "Insufficient balance" in res.json()["detail"]
+
+
+def test_cancel_shared_leave_type_application_refunds_parent_balance(
+    client, hr_manager_auth, employee_with_user, make_test_leave_type
+):
+    emp, headers = employee_with_user
+    parent = make_test_leave_type(annual_entitlement=10, requires_approval=False)
+    child = make_test_leave_type(annual_entitlement=999, requires_approval=False,
+                                  shares_entitlement_with_id=parent["id"])
+    app = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": child["id"],
+        "start_date": WORK_WEEK_START, "end_date": WORK_WEEK_END,
+    }).json()
+
+    res = client.patch(f"/api/leave/applications/{app['id']}/status", headers=headers, json={"status": "Cancelled"})
+    assert res.status_code == 200, res.text
+
+    balances = client.get("/api/leave/balances", headers=headers, params={"year": 2027}).json()
+    parent_bal = next(b for b in balances if b["leave_type_id"] == parent["id"])
+    assert parent_bal["used_days"] == 0

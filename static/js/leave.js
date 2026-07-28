@@ -111,7 +111,11 @@ async function openLeaveApplyModal() {
   }
 
   const typeSel=document.getElementById('leaveApplyTypeId');
-  typeSel.innerHTML=leaveTypesCache.map(t=>`<option value="${t.id}">${esc(t.name)} (${t.annual_entitlement}/yr)</option>`).join('');
+  typeSel.innerHTML=leaveTypesCache.map(t=>{
+    const shared=t.shares_entitlement_with_id?leaveTypesCache.find(x=>x.id===t.shares_entitlement_with_id):null;
+    const label=shared?`${esc(t.name)} (shares with ${esc(shared.name)})`:`${esc(t.name)} (${t.annual_entitlement}/yr)`;
+    return `<option value="${t.id}">${label}</option>`;
+  }).join('');
 
   const empId=(isLeaveManager()||currentUser?.role==='manager')?document.getElementById('leaveApplyEmpId').value:currentUser?.employee_id;
   const res=await api(`/api/leave/balances?year=${new Date().getFullYear()}${empId?`&employee_id=${empId}`:''}`);
@@ -125,14 +129,21 @@ async function openLeaveApplyModal() {
 function updateLeaveApplyBalanceNote() {
   const typeId=parseInt(document.getElementById('leaveApplyTypeId').value);
   const type=leaveTypesCache.find(t=>t.id===typeId);
-  const bal=leaveApplyBalancesCache.find(b=>b.leave_type_id===typeId);
+  // A type that shares entitlement with another never has its own balance
+  // row — its pool lives under the shared type's id.
+  const balanceTypeId=type?.shares_entitlement_with_id||typeId;
+  const sharedType=type?.shares_entitlement_with_id?leaveTypesCache.find(t=>t.id===type.shares_entitlement_with_id):null;
+  const bal=leaveApplyBalancesCache.find(b=>b.leave_type_id===balanceTypeId);
   const note=document.getElementById('leaveApplyBalanceNote');
   const attachWrap=document.getElementById('leaveApplyAttachWrap');
   attachWrap.classList.toggle('hidden', !type?.requires_attachment);
   document.getElementById('leaveApplyAttachFile').required=!!type?.requires_attachment;
+  const sharedSuffix=sharedType?` (shared with ${esc(sharedType.name)})`:'';
   if(bal){
     const available=bal.entitled_days+bal.carried_forward_days-bal.used_days;
-    note.textContent=`${available} day(s) available this year`;
+    note.textContent=`${available} day(s) available this year${sharedSuffix}`;
+  } else if(sharedType){
+    note.textContent=`${sharedType.annual_entitlement} day(s) available this year (new balance)${sharedSuffix}`;
   } else if(type){
     note.textContent=`${type.annual_entitlement} day(s) available this year (new balance)`;
   } else {
@@ -326,20 +337,34 @@ async function deleteHoliday(id) {
 async function loadLeaveTypesForManage() {
   await loadLeaveTypesCache();
   const wrap=document.getElementById('leaveTypeList');
-  wrap.innerHTML=leaveTypesCache.length?leaveTypesCache.map(t=>`
+  wrap.innerHTML=leaveTypesCache.length?leaveTypesCache.map(t=>{
+    const sharedType=t.shares_entitlement_with_id?leaveTypesCache.find(x=>x.id===t.shares_entitlement_with_id):null;
+    return `
     <div class="flex items-center gap-2 py-2 border-b border-slate-100">
       <span class="flex-1 text-sm text-slate-700">${esc(t.name)}</span>
-      <span class="text-xs text-slate-400">${t.annual_entitlement} days/yr</span>
+      ${sharedType
+        ?`<span class="badge text-xs bg-amber-100 text-amber-700">Shares with ${esc(sharedType.name)}</span>`
+        :`<span class="text-xs text-slate-400">${t.annual_entitlement} days/yr</span>`}
       ${t.requires_approval?'<span class="badge text-xs bg-blue-100 text-blue-700">Approval</span>':''}
       ${t.requires_attachment?'<span class="badge text-xs bg-purple-100 text-purple-700">Doc required</span>':''}
       <button onclick="openLeaveTypeModal(${t.id})" class="text-slate-300 hover:text-blue-500"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
       <button onclick="deleteLeaveType(${t.id})" class="text-slate-300 hover:text-red-500"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
-    </div>`).join(''):'<p class="text-sm text-slate-400 text-center py-4">No leave types yet.</p>';
+    </div>`;
+  }).join(''):'<p class="text-sm text-slate-400 text-center py-4">No leave types yet.</p>';
 }
 
 function openLeaveTypeModal(typeId) {
   document.getElementById('leaveTypeId').value=typeId||'';
   document.getElementById('leaveTypeModalTitle').textContent=typeId?'Edit Leave Type':'Add Leave Type';
+
+  // Share-with options: any other active leave type that isn't itself
+  // sharing with something (one level deep only — matches backend validation
+  // in _validate_shares_entitlement), excluding this type itself.
+  const sharesSel=document.getElementById('leaveTypeSharesWith');
+  const options=leaveTypesCache.filter(t=>t.id!==typeId&&!t.shares_entitlement_with_id);
+  sharesSel.innerHTML='<option value="">— No, tracks its own balance —</option>'
+    +options.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');
+
   if(typeId){
     const t=leaveTypesCache.find(x=>x.id===typeId);
     document.getElementById('leaveTypeName').value=t?.name||'';
@@ -347,30 +372,41 @@ function openLeaveTypeModal(typeId) {
     document.getElementById('leaveTypeRequiresApproval').checked=!!t?.requires_approval;
     document.getElementById('leaveTypeRequiresAttachment').checked=!!t?.requires_attachment;
     document.getElementById('leaveTypeIsPaid').checked=t?.is_paid===undefined?true:!!t.is_paid;
+    sharesSel.value=t?.shares_entitlement_with_id||'';
   } else {
     document.getElementById('leaveTypeName').value='';
     document.getElementById('leaveTypeEntitlement').value=14;
     document.getElementById('leaveTypeRequiresApproval').checked=true;
     document.getElementById('leaveTypeRequiresAttachment').checked=false;
     document.getElementById('leaveTypeIsPaid').checked=true;
+    sharesSel.value='';
   }
+  onLeaveTypeSharesChange();
   document.getElementById('leaveTypeModal').classList.remove('hidden');
 }
 function closeLeaveTypeModal() { document.getElementById('leaveTypeModal').classList.add('hidden'); }
 
+function onLeaveTypeSharesChange() {
+  const sharing=!!document.getElementById('leaveTypeSharesWith').value;
+  document.getElementById('leaveTypeEntitlementWrap').classList.toggle('hidden', sharing);
+}
+
 async function submitLeaveType(e) {
   e.preventDefault();
   const id=document.getElementById('leaveTypeId').value;
+  const sharesWith=document.getElementById('leaveTypeSharesWith').value;
   const body={
     name: document.getElementById('leaveTypeName').value.trim(),
     annual_entitlement: parseFloat(document.getElementById('leaveTypeEntitlement').value)||0,
     requires_approval: document.getElementById('leaveTypeRequiresApproval').checked,
     requires_attachment: document.getElementById('leaveTypeRequiresAttachment').checked,
     is_paid: document.getElementById('leaveTypeIsPaid').checked,
+    shares_entitlement_with_id: sharesWith?parseInt(sharesWith):null,
   };
   const url=id?`/api/leave/types/${id}`:'/api/leave/types';
   const res=await api(url,{method:id?'PUT':'POST',body:JSON.stringify(body)});
   if(res?.ok){ closeLeaveTypeModal(); loadLeaveTypesForManage(); }
+  else if(res){ const d=await res.json().catch(()=>({})); alert(d.detail||'Failed to save leave type'); }
 }
 
 async function deleteLeaveType(id) {

@@ -2817,7 +2817,14 @@
     <form onsubmit="submitLeaveType(event)" class="p-6 space-y-4">
       <input type="hidden" id="leaveTypeId"/>
       <div><label class="lbl">Name <span class="text-red-500">*</span></label><input id="leaveTypeName" class="inp" required placeholder="e.g. Annual Leave"/></div>
-      <div><label class="lbl">Annual Entitlement (days)</label><input id="leaveTypeEntitlement" type="number" step="0.5" min="0" class="inp" value="14"/></div>
+      <div>
+        <label class="lbl">Shares entitlement with</label>
+        <select id="leaveTypeSharesWith" class="inp" onchange="onLeaveTypeSharesChange()">
+          <option value="">— No, tracks its own balance —</option>
+        </select>
+        <p class="text-xs text-slate-400 mt-1">If set, applications for this type draw from that type's balance instead of its own — its own entitlement below is ignored.</p>
+      </div>
+      <div id="leaveTypeEntitlementWrap"><label class="lbl">Annual Entitlement (days)</label><input id="leaveTypeEntitlement" type="number" step="0.5" min="0" class="inp" value="14"/></div>
       <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
         <input type="checkbox" id="leaveTypeRequiresApproval" class="w-4 h-4" checked/> Requires manager/HR approval
       </label>
