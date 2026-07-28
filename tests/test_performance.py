@@ -26,6 +26,26 @@ def _period(month=None):
     return start, end
 
 
+def _find_appraisal(appraisals, employee_id):
+    """Look up one employee's appraisal from a GET .../appraisals?cycle_id=
+    response. A plain `next(...)` here raises a bare StopIteration with no
+    context on failure — this file's employees are only reliably isolated
+    within a single sequential test run (see _deactivate_stray_active_employees
+    above); two full concurrent runs of this same file against the shared
+    institution CAN race an employee's Active status between its creation
+    and this cycle's activation snapshot. When that happens, fail loud with
+    what was actually returned instead of a mystery StopIteration."""
+    for a in appraisals:
+        if a["employee_id"] == employee_id:
+            return a
+    raise AssertionError(
+        f"No appraisal found for employee {employee_id!r} among {len(appraisals)} "
+        f"returned (employee_ids: {[a['employee_id'] for a in appraisals]}). "
+        "If this wasn't caused by a concurrent CI run against the shared test "
+        "institution, something is actually broken."
+    )
+
+
 @pytest.fixture(autouse=True)
 def _deactivate_stray_active_employees(superadmin_token, test_institution):
     """activate_performance_cycle snapshots EVERY Active employee in the
@@ -343,7 +363,7 @@ def test_self_review_success_moves_to_manager_review(client, hr_manager_auth, em
     emp, emp_headers = employee_with_user
     appraisals = client.get("/api/performance/appraisals", headers=hr_manager_auth,
                              params={"cycle_id": active_cycle["id"]}).json()
-    appraisal = next(a for a in appraisals if a["employee_id"] == emp["employee_id"])
+    appraisal = _find_appraisal(appraisals, emp["employee_id"])
 
     res = client.post(f"/api/performance/appraisals/{appraisal['id']}/self-review", headers=emp_headers,
                        json={"self_comments": "ZZ self comment"})
@@ -355,7 +375,7 @@ def test_self_review_denied_for_other_employee(client, employee_with_user, hr_ma
     cycle, other_emp = active_cycle_with_other_employee
     appraisals = client.get("/api/performance/appraisals", headers=hr_manager_auth,
                              params={"cycle_id": cycle["id"]}).json()
-    other_appraisal = next(a for a in appraisals if a["employee_id"] == other_emp["employee_id"])
+    other_appraisal = _find_appraisal(appraisals, other_emp["employee_id"])
 
     _, emp_headers = employee_with_user
     res = client.post(f"/api/performance/appraisals/{other_appraisal['id']}/self-review", headers=emp_headers,
@@ -386,7 +406,7 @@ def test_manager_review_denied_for_non_subordinate(client, hr_manager_auth, mana
     cycle, unrelated_emp = active_cycle_with_other_employee
     appraisals = client.get("/api/performance/appraisals", headers=hr_manager_auth,
                              params={"cycle_id": cycle["id"]}).json()
-    unrelated_appraisal = next(a for a in appraisals if a["employee_id"] == unrelated_emp["employee_id"])
+    unrelated_appraisal = _find_appraisal(appraisals, unrelated_emp["employee_id"])
 
     res = client.post(f"/api/performance/appraisals/{unrelated_appraisal['id']}/manager-review",
                        headers=manager_headers, json={})
@@ -397,7 +417,7 @@ def test_manager_review_wrong_status_returns_400(client, hr_manager_auth, manage
     _, manager_headers, sub_emp = manager_with_subordinate
     appraisals = client.get("/api/performance/appraisals", headers=hr_manager_auth,
                              params={"cycle_id": active_cycle["id"]}).json()
-    sub_appraisal = next(a for a in appraisals if a["employee_id"] == sub_emp["employee_id"])
+    sub_appraisal = _find_appraisal(appraisals, sub_emp["employee_id"])
     assert sub_appraisal["status"] == "SelfReview"
 
     res = client.post(f"/api/performance/appraisals/{sub_appraisal['id']}/manager-review", headers=manager_headers, json={})
@@ -408,7 +428,7 @@ def test_calibrate_requires_calibration_status(client, hr_manager_auth, employee
     emp, emp_headers = employee_with_user
     appraisals = client.get("/api/performance/appraisals", headers=hr_manager_auth,
                              params={"cycle_id": active_cycle["id"]}).json()
-    appraisal = next(a for a in appraisals if a["employee_id"] == emp["employee_id"])
+    appraisal = _find_appraisal(appraisals, emp["employee_id"])
     res = client.post(f"/api/performance/appraisals/{appraisal['id']}/calibrate", headers=hr_manager_auth,
                        json={"calibrated_rating": 4.5})
     assert res.status_code == 400
@@ -428,7 +448,7 @@ def test_end_to_end_self_manager_calibrate_close(client, hr_manager_auth, employ
     })
     appraisals = client.get("/api/performance/appraisals", headers=hr_manager_auth,
                              params={"cycle_id": active_cycle["id"]}).json()
-    appraisal = next(a for a in appraisals if a["employee_id"] == emp["employee_id"])
+    appraisal = _find_appraisal(appraisals, emp["employee_id"])
 
     self_review = client.post(f"/api/performance/appraisals/{appraisal['id']}/self-review",
                                headers=emp_headers, json={"self_comments": "ZZ self"})
@@ -465,7 +485,7 @@ def test_get_appraisal_denied_for_unrelated_employee(client, hr_manager_auth, em
     cycle, other_emp = active_cycle_with_other_employee
     appraisals = client.get("/api/performance/appraisals", headers=hr_manager_auth,
                              params={"cycle_id": cycle["id"]}).json()
-    other_appraisal = next(a for a in appraisals if a["employee_id"] == other_emp["employee_id"])
+    other_appraisal = _find_appraisal(appraisals, other_emp["employee_id"])
 
     _, emp_headers = employee_with_user
     res = client.get(f"/api/performance/appraisals/{other_appraisal['id']}", headers=emp_headers)
@@ -479,7 +499,7 @@ def test_merit_increment_requires_finalized_appraisal(client, hr_manager_auth, e
     emp, _ = employee_with_user
     appraisals = client.get("/api/performance/appraisals", headers=hr_manager_auth,
                              params={"cycle_id": active_cycle["id"]}).json()
-    appraisal = next(a for a in appraisals if a["employee_id"] == emp["employee_id"])
+    appraisal = _find_appraisal(appraisals, emp["employee_id"])
     res = client.post(f"/api/performance/appraisals/{appraisal['id']}/merit-increment",
                        headers=hr_manager_auth, json={"increment_pct": 5})
     assert res.status_code == 400
@@ -495,7 +515,7 @@ def test_bonus_payout_requires_finalized_appraisal(client, hr_manager_auth, empl
     emp, _ = employee_with_user
     appraisals = client.get("/api/performance/appraisals", headers=hr_manager_auth,
                              params={"cycle_id": active_cycle["id"]}).json()
-    appraisal = next(a for a in appraisals if a["employee_id"] == emp["employee_id"])
+    appraisal = _find_appraisal(appraisals, emp["employee_id"])
     res = client.post(f"/api/performance/appraisals/{appraisal['id']}/bonus",
                        headers=hr_manager_auth, json={"amount": 500})
     assert res.status_code == 400
@@ -515,7 +535,7 @@ def test_full_merit_and_bonus_flow(client, hr_manager_auth, employee_with_user, 
     })
     appraisals = client.get("/api/performance/appraisals", headers=hr_manager_auth,
                              params={"cycle_id": active_cycle["id"]}).json()
-    appraisal = next(a for a in appraisals if a["employee_id"] == emp["employee_id"])
+    appraisal = _find_appraisal(appraisals, emp["employee_id"])
 
     client.post(f"/api/performance/appraisals/{appraisal['id']}/self-review", headers=emp_headers, json={})
     client.post(f"/api/performance/appraisals/{appraisal['id']}/manager-review", headers=hr_manager_auth, json={})
