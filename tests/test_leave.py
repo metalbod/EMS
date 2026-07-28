@@ -160,6 +160,34 @@ def test_create_application_all_weekend_returns_400(client, employee_with_user, 
     assert "no working days" in res.json()["detail"]
 
 
+def test_calendar_day_leave_type_counts_weekends_and_holidays(client, hr_manager_auth, employee_with_user, make_test_leave_type):
+    """Maternity/Paternity-style leave types (count_calendar_days=True) count
+    every day in the range, unlike the working-days-only default."""
+    emp, headers = employee_with_user
+    lt = make_test_leave_type(requires_approval=False, annual_entitlement=60, count_calendar_days=True)
+    # 2027-03-06 is a Saturday, 2027-03-07 is a Sunday — a working-days type
+    # would reject this range entirely (see test_create_application_all_weekend_returns_400).
+    res = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": "2027-03-06", "end_date": "2027-03-07",
+    })
+    assert res.status_code == 201, res.text
+    assert res.json()["days_count"] == 2
+
+
+def test_working_day_leave_type_still_excludes_weekends_by_default(client, employee_with_user, make_test_leave_type):
+    """count_calendar_days defaults to False — existing leave types are unaffected."""
+    emp, headers = employee_with_user
+    lt = make_test_leave_type(requires_approval=False)
+    assert not lt["count_calendar_days"]
+    res = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": WORK_WEEK_START, "end_date": WORK_WEEK_END,
+    })
+    assert res.status_code == 201, res.text
+    assert res.json()["days_count"] == 5
+
+
 def test_create_application_exceeding_balance_returns_400(client, employee_with_user, make_test_leave_type):
     emp, headers = employee_with_user
     lt = make_test_leave_type(requires_approval=False, annual_entitlement=2)  # 5 working days requested > 2 entitled

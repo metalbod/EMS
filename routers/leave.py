@@ -46,6 +46,7 @@ class LeaveTypeIn(BaseModel):
     is_paid: bool = True
     is_active: bool = True
     shares_entitlement_with_id: Optional[int] = None
+    count_calendar_days: bool = False
 
 
 class LeaveBalanceAdjustIn(BaseModel):
@@ -82,12 +83,17 @@ def _log_leave(conn, inst_id: int, app_id: int, emp_id: str,
     )
 
 
-def _compute_leave_days(conn, inst_id: int, start_date: str, end_date: str) -> float:
-    """Counts weekdays (Mon-Fri) in the inclusive range, excluding institution public holidays."""
+def _compute_leave_days(conn, inst_id: int, start_date: str, end_date: str, count_calendar_days: bool = False) -> float:
+    """Counts days in the inclusive range. Most leave types count only
+    weekdays (Mon-Fri), excluding institution public holidays. Some types —
+    Malaysian law requires this for Maternity/Paternity — count every
+    calendar day instead, weekends and holidays included."""
     d0 = datetime.strptime(start_date, "%Y-%m-%d").date()
     d1 = datetime.strptime(end_date, "%Y-%m-%d").date()
     if d1 < d0:
         raise HTTPException(400, "End date must be on or after start date")
+    if count_calendar_days:
+        return float((d1 - d0).days + 1)
     holiday_rows = conn.execute(
         "SELECT date FROM holidays WHERE institution_id=? AND date BETWEEN ? AND ?",
         (inst_id, start_date, end_date)
@@ -174,10 +180,10 @@ def create_leave_type(conn, body: LeaveTypeIn, user: dict = Depends(require_role
     inst_id = need_inst(user)
     _validate_shares_entitlement(conn, inst_id, None, body.shares_entitlement_with_id, body.name)
     conn.execute(
-        "INSERT INTO leave_types (institution_id,name,annual_entitlement,requires_approval,requires_attachment,is_paid,is_active,shares_entitlement_with_id) VALUES (?,?,?,?,?,?,?,?)",
+        "INSERT INTO leave_types (institution_id,name,annual_entitlement,requires_approval,requires_attachment,is_paid,is_active,shares_entitlement_with_id,count_calendar_days) VALUES (?,?,?,?,?,?,?,?,?)",
         (inst_id, body.name, body.annual_entitlement, 1 if body.requires_approval else 0,
          1 if body.requires_attachment else 0, 1 if body.is_paid else 0, 1 if body.is_active else 0,
-         body.shares_entitlement_with_id)
+         body.shares_entitlement_with_id, 1 if body.count_calendar_days else 0)
     )
     conn.commit()
     row = conn.execute("SELECT * FROM leave_types WHERE id=last_insert_rowid()").fetchone()
@@ -192,10 +198,10 @@ def update_leave_type(conn, type_id: int, body: LeaveTypeIn, user: dict = Depend
         raise HTTPException(404, "Leave type not found")
     _validate_shares_entitlement(conn, inst_id, type_id, body.shares_entitlement_with_id, body.name)
     conn.execute(
-        "UPDATE leave_types SET name=?,annual_entitlement=?,requires_approval=?,requires_attachment=?,is_paid=?,is_active=?,shares_entitlement_with_id=? WHERE id=?",
+        "UPDATE leave_types SET name=?,annual_entitlement=?,requires_approval=?,requires_attachment=?,is_paid=?,is_active=?,shares_entitlement_with_id=?,count_calendar_days=? WHERE id=?",
         (body.name, body.annual_entitlement, 1 if body.requires_approval else 0,
          1 if body.requires_attachment else 0, 1 if body.is_paid else 0, 1 if body.is_active else 0,
-         body.shares_entitlement_with_id, type_id)
+         body.shares_entitlement_with_id, 1 if body.count_calendar_days else 0, type_id)
     )
     conn.commit()
     row = conn.execute("SELECT * FROM leave_types WHERE id=?", (type_id,)).fetchone()
@@ -314,7 +320,7 @@ def create_leave_application(conn, body: LeaveApplicationIn, user: dict = Depend
     if lt["requires_attachment"] and not body.attachment:
         raise HTTPException(400, f"'{lt['name']}' requires a supporting document to be attached")
 
-    days = _compute_leave_days(conn, inst_id, body.start_date, body.end_date)
+    days = _compute_leave_days(conn, inst_id, body.start_date, body.end_date, bool(lt["count_calendar_days"]))
     if days <= 0:
         raise HTTPException(400, "Selected date range has no working days to apply (all weekends/public holidays)")
 

@@ -2766,7 +2766,7 @@
         <select id="leaveApplyEmpId" class="inp" required></select>
       </div>
       <div><label class="lbl">Leave Type <span class="text-red-500">*</span></label>
-        <select id="leaveApplyTypeId" class="inp" required onchange="updateLeaveApplyBalanceNote()"></select>
+        <select id="leaveApplyTypeId" class="inp" required onchange="updateLeaveApplyBalanceNote();updateLeaveApplyDaysPreview()"></select>
         <p id="leaveApplyBalanceNote" class="text-xs text-slate-400 mt-1"></p>
       </div>
       <div class="grid grid-cols-2 gap-3">
@@ -2824,7 +2824,17 @@
         </select>
         <p class="text-xs text-slate-400 mt-1">If set, applications for this type draw from that type's balance instead of its own — its own entitlement below is ignored.</p>
       </div>
-      <div id="leaveTypeEntitlementWrap"><label class="lbl">Annual Entitlement (days)</label><input id="leaveTypeEntitlement" type="number" step="0.5" min="0" class="inp" value="14"/></div>
+      <div id="leaveTypeEntitlementWrap" class="grid grid-cols-2 gap-3">
+        <div><label class="lbl">Annual Entitlement (days)</label><input id="leaveTypeEntitlement" type="number" step="0.5" min="0" class="inp" value="14"/></div>
+        <div>
+          <label class="lbl">Count days as</label>
+          <select id="leaveTypeCountMode" class="inp">
+            <option value="working">Working days</option>
+            <option value="calendar">Calendar days</option>
+          </select>
+        </div>
+      </div>
+      <p class="text-xs text-slate-400 -mt-2">Working days exclude weekends and public holidays. Calendar days count every day in the range — required by Malaysian law for Maternity/Paternity leave.</p>
       <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
         <input type="checkbox" id="leaveTypeRequiresApproval" class="w-4 h-4" checked/> Requires manager/HR approval
       </label>

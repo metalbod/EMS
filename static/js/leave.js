@@ -167,13 +167,27 @@ function ldLeaveComputeWorkdays(startStr, endStr) {
   return count;
 }
 
+function ldLeaveComputeCalendarDays(startStr, endStr) {
+  if(!startStr||!endStr) return 0;
+  const start=new Date(startStr+'T00:00:00'), end=new Date(endStr+'T00:00:00');
+  if(end<start) return 0;
+  return Math.round((end-start)/86400000)+1;
+}
+
 function updateLeaveApplyDaysPreview() {
   const start=document.getElementById('leaveApplyStart').value;
   const end=document.getElementById('leaveApplyEnd').value;
   const preview=document.getElementById('leaveApplyDaysPreview');
   if(!start||!end){ preview.textContent=''; return; }
-  const days=ldLeaveComputeWorkdays(start,end);
-  preview.textContent=`≈ ${days} working day(s) will be deducted (weekends & public holidays excluded)`;
+  const typeId=parseInt(document.getElementById('leaveApplyTypeId').value);
+  const type=leaveTypesCache.find(t=>t.id===typeId);
+  if(type?.count_calendar_days){
+    const days=ldLeaveComputeCalendarDays(start,end);
+    preview.textContent=`≈ ${days} calendar day(s) will be deducted (weekends & public holidays included)`;
+  } else {
+    const days=ldLeaveComputeWorkdays(start,end);
+    preview.textContent=`≈ ${days} working day(s) will be deducted (weekends & public holidays excluded)`;
+  }
 }
 
 function handleLeaveAttachFile(e) {
@@ -345,6 +359,7 @@ async function loadLeaveTypesForManage() {
       ${sharedType
         ?`<span class="badge text-xs bg-amber-100 text-amber-700">Shares with ${esc(sharedType.name)}</span>`
         :`<span class="text-xs text-slate-400">${t.annual_entitlement} days/yr</span>`}
+      ${t.count_calendar_days?'<span class="badge text-xs bg-slate-100 text-slate-600">Calendar days</span>':''}
       ${t.requires_approval?'<span class="badge text-xs bg-blue-100 text-blue-700">Approval</span>':''}
       ${t.requires_attachment?'<span class="badge text-xs bg-purple-100 text-purple-700">Doc required</span>':''}
       <button onclick="openLeaveTypeModal(${t.id})" class="text-slate-300 hover:text-blue-500"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
@@ -369,6 +384,7 @@ function openLeaveTypeModal(typeId) {
     const t=leaveTypesCache.find(x=>x.id===typeId);
     document.getElementById('leaveTypeName').value=t?.name||'';
     document.getElementById('leaveTypeEntitlement').value=t?.annual_entitlement||14;
+    document.getElementById('leaveTypeCountMode').value=t?.count_calendar_days?'calendar':'working';
     document.getElementById('leaveTypeRequiresApproval').checked=!!t?.requires_approval;
     document.getElementById('leaveTypeRequiresAttachment').checked=!!t?.requires_attachment;
     document.getElementById('leaveTypeIsPaid').checked=t?.is_paid===undefined?true:!!t.is_paid;
@@ -376,6 +392,7 @@ function openLeaveTypeModal(typeId) {
   } else {
     document.getElementById('leaveTypeName').value='';
     document.getElementById('leaveTypeEntitlement').value=14;
+    document.getElementById('leaveTypeCountMode').value='working';
     document.getElementById('leaveTypeRequiresApproval').checked=true;
     document.getElementById('leaveTypeRequiresAttachment').checked=false;
     document.getElementById('leaveTypeIsPaid').checked=true;
@@ -402,6 +419,7 @@ async function submitLeaveType(e) {
     requires_attachment: document.getElementById('leaveTypeRequiresAttachment').checked,
     is_paid: document.getElementById('leaveTypeIsPaid').checked,
     shares_entitlement_with_id: sharesWith?parseInt(sharesWith):null,
+    count_calendar_days: document.getElementById('leaveTypeCountMode').value==='calendar',
   };
   const url=id?`/api/leave/types/${id}`:'/api/leave/types';
   const res=await api(url,{method:id?'PUT':'POST',body:JSON.stringify(body)});
