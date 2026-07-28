@@ -451,6 +451,17 @@ class TestPayEquity:
         assert "gender_gap" in body
         assert "department_gap" in body
         assert "flagged_items" in body
+        assert "excluded_no_compensation_count" in body
+        assert isinstance(body["excluded_no_compensation_count"], int)
+
+    def test_pay_equity_report_counts_employees_missing_compensation(self, client, hr_manager_auth, created_employee):
+        """An employee with no employee_compensation record should be counted
+        as excluded rather than silently dropped from the report."""
+        response = client.get("/api/compensation/pay-equity/report", headers=hr_manager_auth)
+        assert response.status_code == 200
+        # created_employee never gets a compensation record assigned in this
+        # test, so it must contribute at least 1 to the excluded count.
+        assert response.json()["excluded_no_compensation_count"] >= 1
 
 
 class TestAccessControl:

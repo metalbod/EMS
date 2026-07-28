@@ -2073,11 +2073,29 @@ async def get_pay_equity_report(
 
         flagged_count = sum(1 for item in gender_gap + department_gap if item.flagged)
 
+        # gender_gap/department_gap only cover employees with a current
+        # employee_compensation row (INNER JOIN — correct for the averages,
+        # since a NULL salary would just skew them). Anyone without one is
+        # invisible to those numbers, so surface how many are missing rather
+        # than let the report look complete when it isn't.
+        excluded_count = conn.execute(
+            """
+            SELECT COUNT(*) FROM employees e
+            WHERE e.institution_id = ?
+              AND NOT EXISTS (
+                  SELECT 1 FROM employee_compensation ec
+                  WHERE ec.employee_id = e.employee_id AND ec.institution_id = e.institution_id AND ec.is_current = 1
+              )
+            """,
+            (inst_id,),
+        ).fetchone()[0]
+
         return PayEquityReport(
             analysis_date=analysis_date,
             gender_gap=gender_gap,
             department_gap=department_gap,
             flagged_items=flagged_count,
+            excluded_no_compensation_count=excluded_count,
         )
 
     finally:

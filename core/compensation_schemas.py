@@ -643,6 +643,10 @@ class PayEquityReport(BaseModel):
     location_gap: Optional[List[PayEquityItem]] = []
     tenure_gap: Optional[List[PayEquityItem]] = []
     flagged_items: int
+    excluded_no_compensation_count: int = Field(
+        0, description="Employees with no current employee_compensation record — "
+                        "not represented in any of the averages above."
+    )
 
 
 # ============================================================================
