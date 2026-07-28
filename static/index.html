@@ -487,169 +487,180 @@
         </div>
         <!-- Institution dashboard -->
         <div id="instDash" class="hidden">
-          <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-            <div class="bg-white rounded-xl border border-slate-200 p-5"><p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Total</p><p id="statTotal" class="text-3xl font-bold text-blue-600">0</p></div>
-            <div class="bg-white rounded-xl border border-slate-200 p-5"><p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Active</p><p id="statActive" class="text-3xl font-bold text-emerald-600">0</p></div>
-            <div class="bg-white rounded-xl border border-slate-200 p-5"><p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Inactive</p><p id="statInactive" class="text-3xl font-bold text-slate-400">0</p></div>
-            <div class="bg-white rounded-xl border border-slate-200 p-5"><p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Depts</p><p id="statDepts" class="text-3xl font-bold text-violet-600">0</p></div>
-          </div>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <div class="bg-white rounded-xl border border-slate-200 p-5"><h3 class="font-semibold mb-3">By Department</h3><div id="deptBreakdown" class="space-y-2"></div></div>
-            <div class="bg-white rounded-xl border border-slate-200 p-5"><h3 class="font-semibold mb-3">By Employment Type</h3><div id="empTypeBreakdown" class="space-y-2"></div></div>
-          </div>
-          <!-- Recruitment Stats (HR roles only) -->
-          <div id="recruitDashSection" class="hidden">
-            <div class="flex items-center gap-2 mb-3">
-              <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-              <h3 class="font-semibold text-slate-700">Recruitment Overview</h3>
-            </div>
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
-              <div class="bg-white rounded-xl border border-slate-200 p-4 cursor-pointer hover:border-blue-300 transition" onclick="showPage('requisitions')">
-                <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Open Requisitions</p>
-                <p id="rStatOpenReq" class="text-2xl font-bold text-blue-600">0</p>
-                <p id="rStatPendingApproval" class="text-xs text-amber-600 mt-1"></p>
-              </div>
-              <div class="bg-white rounded-xl border border-slate-200 p-4 cursor-pointer hover:border-blue-300 transition" onclick="showPage('candidates')">
-                <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Total Candidates</p>
-                <p id="rStatCands" class="text-2xl font-bold text-slate-800">0</p>
-                <p id="rStatHiredMonth" class="text-xs text-emerald-600 mt-1"></p>
-              </div>
-              <div class="bg-white rounded-xl border border-slate-200 p-4 cursor-pointer hover:border-blue-300 transition" onclick="showPage('interviews')">
-                <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Upcoming Interviews</p>
-                <p id="rStatUpcoming" class="text-2xl font-bold text-violet-600">0</p>
-                <p id="rStatIntMonth" class="text-xs text-slate-400 mt-1"></p>
-              </div>
-              <div class="bg-white rounded-xl border border-slate-200 p-4 cursor-pointer hover:border-blue-300 transition" onclick="showPage('offers')">
-                <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Offers Pending</p>
-                <p id="rStatOffers" class="text-2xl font-bold text-amber-600">0</p>
-                <p class="text-xs text-slate-400 mt-1">awaiting response</p>
-              </div>
-            </div>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div class="bg-white rounded-xl border border-slate-200 p-5">
-                <h3 class="font-semibold mb-3 text-sm">Candidate Pipeline</h3>
-                <div id="rCandPipeline" class="space-y-2"></div>
-              </div>
-              <div class="bg-white rounded-xl border border-slate-200 p-5">
-                <h3 class="font-semibold mb-3 text-sm">Requisitions by Status</h3>
-                <div id="rReqStatus" class="space-y-2"></div>
-              </div>
-            </div>
-          </div>
-          <!-- Locations Overview (HR Manager / HR Admin only) -->
-          <div id="locDashSection" class="hidden mt-6">
-            <div class="flex items-center gap-2 mb-3">
-              <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-              <h3 class="font-semibold text-slate-700">Locations Overview</h3>
-            </div>
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
-              <div class="bg-white rounded-xl border border-slate-200 p-4 cursor-pointer hover:border-blue-300 transition" onclick="showPage('settings-locations')">
-                <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Total Locations</p>
-                <p id="locStatTotal" class="text-2xl font-bold text-blue-600">0</p>
-              </div>
-              <div class="bg-white rounded-xl border border-slate-200 p-4">
-                <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Avg Utilization</p>
-                <p id="locStatAvgUtil" class="text-2xl font-bold text-emerald-600">0%</p>
-              </div>
-              <div class="bg-white rounded-xl border border-slate-200 p-4">
-                <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Total Employees</p>
-                <p id="locStatEmpCount" class="text-2xl font-bold text-violet-600">0</p>
-              </div>
-              <div class="bg-white rounded-xl border border-slate-200 p-4">
-                <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">With Managers</p>
-                <p id="locStatManaged" class="text-2xl font-bold text-amber-600">0</p>
-              </div>
-            </div>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div class="bg-white rounded-xl border border-slate-200 p-5">
-                <h3 class="font-semibold mb-3 text-sm">Employee Distribution</h3>
-                <div id="locEmpDistribution" class="space-y-2"></div>
-              </div>
-              <div class="bg-white rounded-xl border border-slate-200 p-5">
-                <h3 class="font-semibold mb-3 text-sm">Capacity Utilization</h3>
-                <div id="locCapacityChart" class="space-y-2"></div>
-              </div>
-            </div>
-          </div>
-          <!-- Project Utilization (HR Manager / superadmin only) -->
-          <div id="utilDashSection" class="hidden mt-6">
-            <div class="flex items-center gap-2 mb-3">
-              <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5"/></svg>
-              <h3 class="font-semibold text-slate-700">Project Utilization</h3>
-            </div>
-            <div id="utilProjectList" class="space-y-4"></div>
-            <p id="utilEmpty" class="hidden text-slate-400 text-sm">No active projects yet.</p>
+          <div class="flex border-b border-slate-200 gap-1 mb-6">
+            <button class="view-tab-btn view-tab-active px-4 py-3 text-sm" data-dashtab="dash-general" onclick="switchDashTab('dash-general')">General</button>
+            <button id="dash-tab-recruitment-btn" class="view-tab-btn hidden px-4 py-3 text-sm text-slate-500" data-dashtab="dash-recruitment" onclick="switchDashTab('dash-recruitment')">Recruitment</button>
+            <button id="dash-tab-timesheet-btn" class="view-tab-btn hidden px-4 py-3 text-sm text-slate-500" data-dashtab="dash-timesheet" onclick="switchDashTab('dash-timesheet')">Timesheet</button>
+            <button id="dash-tab-compensation-btn" class="view-tab-btn hidden px-4 py-3 text-sm text-slate-500" data-dashtab="dash-compensation" onclick="switchDashTab('dash-compensation')">Compensation &amp; Benefits</button>
           </div>
 
-          <!-- Benefits Cost & Utilization (HR Manager / Compensation Manager / Manager) -->
-          <div id="benefitsDashSection" class="hidden mt-6">
-            <div class="flex items-center gap-2 mb-3">
-              <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
-              <h3 class="font-semibold text-slate-700">Benefits Cost &amp; Utilization</h3>
+          <!-- General tab: overview stats + locations (always visible, loads immediately) -->
+          <div id="dash-general" class="dash-tab-panel">
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+              <div class="bg-white rounded-xl border border-slate-200 p-5"><p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Total</p><p id="statTotal" class="text-3xl font-bold text-blue-600">0</p></div>
+              <div class="bg-white rounded-xl border border-slate-200 p-5"><p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Active</p><p id="statActive" class="text-3xl font-bold text-emerald-600">0</p></div>
+              <div class="bg-white rounded-xl border border-slate-200 p-5"><p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Inactive</p><p id="statInactive" class="text-3xl font-bold text-slate-400">0</p></div>
+              <div class="bg-white rounded-xl border border-slate-200 p-5"><p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Depts</p><p id="statDepts" class="text-3xl font-bold text-violet-600">0</p></div>
             </div>
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-              <div class="bg-white rounded-xl border border-slate-200 p-4">
-                <p class="text-xs text-slate-500 uppercase font-semibold">Active Plans</p>
-                <p id="bdActivePlans" class="text-lg font-bold mt-1">—</p>
-              </div>
-              <div class="bg-white rounded-xl border border-slate-200 p-4">
-                <p class="text-xs text-slate-500 uppercase font-semibold">Enrolled Employees</p>
-                <p id="bdEnrolledEmployees" class="text-lg font-bold mt-1">—</p>
-              </div>
-              <div class="bg-white rounded-xl border border-slate-200 p-4">
-                <p class="text-xs text-slate-500 uppercase font-semibold">Monthly Employer Cost</p>
-                <p id="bdEmployerCost" class="text-lg font-bold mt-1">—</p>
-              </div>
-              <div class="bg-white rounded-xl border border-slate-200 p-4">
-                <p class="text-xs text-slate-500 uppercase font-semibold">Claims Paid (YTD)</p>
-                <p id="bdClaimsPaid" class="text-lg font-bold mt-1">—</p>
-              </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <div class="bg-white rounded-xl border border-slate-200 p-5"><h3 class="font-semibold mb-3">By Department</h3><div id="deptBreakdown" class="space-y-2"></div></div>
+              <div class="bg-white rounded-xl border border-slate-200 p-5"><h3 class="font-semibold mb-3">By Employment Type</h3><div id="empTypeBreakdown" class="space-y-2"></div></div>
             </div>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div class="bg-white rounded-xl border border-slate-200 p-5">
-                <div class="flex items-center justify-between mb-3">
-                  <h4 class="font-medium text-sm text-slate-800">Employer Cost by Department</h4>
-                  <button onclick="exportBenefitsDeptCostCsv()" class="text-xs text-blue-600 hover:underline">Export CSV</button>
-                </div>
-                <div id="bdDeptCostList" class="space-y-2"></div>
-                <p id="bdDeptCostEmpty" class="hidden text-slate-400 text-sm">No department cost data yet.</p>
+            <!-- Locations Overview (HR Manager / HR Admin only) -->
+            <div id="locDashSection" class="hidden mt-6">
+              <div class="flex items-center gap-2 mb-3">
+                <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                <h3 class="font-semibold text-slate-700">Locations Overview</h3>
               </div>
-              <div class="bg-white rounded-xl border border-slate-200 p-5">
-                <div class="flex items-center justify-between mb-3">
-                  <h4 class="font-medium text-sm text-slate-800">Utilization by Plan</h4>
-                  <button onclick="exportBenefitsUtilizationCsv()" class="text-xs text-blue-600 hover:underline">Export CSV</button>
+              <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+                <div class="bg-white rounded-xl border border-slate-200 p-4 cursor-pointer hover:border-blue-300 transition" onclick="showPage('settings-locations')">
+                  <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Total Locations</p>
+                  <p id="locStatTotal" class="text-2xl font-bold text-blue-600">0</p>
                 </div>
-                <table class="w-full text-sm">
-                  <thead>
-                    <tr class="text-left text-xs text-slate-400 uppercase">
-                      <th class="font-semibold pb-2">Plan</th>
-                      <th class="font-semibold pb-2 text-right">Claimed</th>
-                      <th class="font-semibold pb-2 text-right">Paid</th>
-                    </tr>
-                  </thead>
-                  <tbody id="bdPlanUtilList"></tbody>
-                </table>
-                <p id="bdPlanUtilEmpty" class="hidden text-slate-400 text-sm">No active plans yet.</p>
+                <div class="bg-white rounded-xl border border-slate-200 p-4">
+                  <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Avg Utilization</p>
+                  <p id="locStatAvgUtil" class="text-2xl font-bold text-emerald-600">0%</p>
+                </div>
+                <div class="bg-white rounded-xl border border-slate-200 p-4">
+                  <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Total Employees</p>
+                  <p id="locStatEmpCount" class="text-2xl font-bold text-violet-600">0</p>
+                </div>
+                <div class="bg-white rounded-xl border border-slate-200 p-4">
+                  <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">With Managers</p>
+                  <p id="locStatManaged" class="text-2xl font-bold text-amber-600">0</p>
+                </div>
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-white rounded-xl border border-slate-200 p-5">
+                  <h3 class="font-semibold mb-3 text-sm">Employee Distribution</h3>
+                  <div id="locEmpDistribution" class="space-y-2"></div>
+                </div>
+                <div class="bg-white rounded-xl border border-slate-200 p-5">
+                  <h3 class="font-semibold mb-3 text-sm">Capacity Utilization</h3>
+                  <div id="locCapacityChart" class="space-y-2"></div>
+                </div>
               </div>
             </div>
           </div>
 
-          <!-- My Benefits (any employee) -->
-          <div id="myBenefitsDashSection" class="hidden mt-6">
-            <div class="flex items-center gap-2 mb-3">
-              <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
-              <h3 class="font-semibold text-slate-700">My Benefits</h3>
-            </div>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div class="bg-white rounded-xl border border-slate-200 p-5">
-                <h4 class="font-medium text-sm text-slate-800 mb-3">Recent Claims</h4>
-                <div id="mdClaimsList" class="space-y-2"></div>
-                <p id="mdClaimsEmpty" class="hidden text-slate-400 text-sm">No claims submitted yet.</p>
+          <!-- Recruitment tab (HR roles only — lazy-loaded on first click) -->
+          <div id="dash-recruitment" class="dash-tab-panel hidden">
+            <div id="recruitDashSection">
+              <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+                <div class="bg-white rounded-xl border border-slate-200 p-4 cursor-pointer hover:border-blue-300 transition" onclick="showPage('requisitions')">
+                  <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Open Requisitions</p>
+                  <p id="rStatOpenReq" class="text-2xl font-bold text-blue-600">0</p>
+                  <p id="rStatPendingApproval" class="text-xs text-amber-600 mt-1"></p>
+                </div>
+                <div class="bg-white rounded-xl border border-slate-200 p-4 cursor-pointer hover:border-blue-300 transition" onclick="showPage('candidates')">
+                  <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Total Candidates</p>
+                  <p id="rStatCands" class="text-2xl font-bold text-slate-800">0</p>
+                  <p id="rStatHiredMonth" class="text-xs text-emerald-600 mt-1"></p>
+                </div>
+                <div class="bg-white rounded-xl border border-slate-200 p-4 cursor-pointer hover:border-blue-300 transition" onclick="showPage('interviews')">
+                  <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Upcoming Interviews</p>
+                  <p id="rStatUpcoming" class="text-2xl font-bold text-violet-600">0</p>
+                  <p id="rStatIntMonth" class="text-xs text-slate-400 mt-1"></p>
+                </div>
+                <div class="bg-white rounded-xl border border-slate-200 p-4 cursor-pointer hover:border-blue-300 transition" onclick="showPage('offers')">
+                  <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Offers Pending</p>
+                  <p id="rStatOffers" class="text-2xl font-bold text-amber-600">0</p>
+                  <p class="text-xs text-slate-400 mt-1">awaiting response</p>
+                </div>
               </div>
-              <div class="bg-white rounded-xl border border-slate-200 p-5">
-                <h4 class="font-medium text-sm text-slate-800 mb-3">Unutilized Balances</h4>
-                <div id="mdBalancesList" class="space-y-3"></div>
-                <p id="mdBalancesEmpty" class="hidden text-slate-400 text-sm">No reimbursement-cap benefits enrolled.</p>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-white rounded-xl border border-slate-200 p-5">
+                  <h3 class="font-semibold mb-3 text-sm">Candidate Pipeline</h3>
+                  <div id="rCandPipeline" class="space-y-2"></div>
+                </div>
+                <div class="bg-white rounded-xl border border-slate-200 p-5">
+                  <h3 class="font-semibold mb-3 text-sm">Requisitions by Status</h3>
+                  <div id="rReqStatus" class="space-y-2"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Timesheet tab: Project Utilization (HR Manager / superadmin only — lazy-loaded) -->
+          <div id="dash-timesheet" class="dash-tab-panel hidden">
+            <div id="utilDashSection">
+              <div id="utilProjectList" class="space-y-4"></div>
+              <p id="utilEmpty" class="hidden text-slate-400 text-sm">No active projects yet.</p>
+            </div>
+          </div>
+
+          <!-- Compensation & Benefits tab (lazy-loaded) -->
+          <div id="dash-compensation" class="dash-tab-panel hidden">
+            <!-- Benefits Cost & Utilization (HR Manager / Compensation Manager / Manager) -->
+            <div id="benefitsDashSection" class="hidden">
+              <div class="flex items-center gap-2 mb-3">
+                <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+                <h3 class="font-semibold text-slate-700">Benefits Cost &amp; Utilization</h3>
+              </div>
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                <div class="bg-white rounded-xl border border-slate-200 p-4">
+                  <p class="text-xs text-slate-500 uppercase font-semibold">Active Plans</p>
+                  <p id="bdActivePlans" class="text-lg font-bold mt-1">—</p>
+                </div>
+                <div class="bg-white rounded-xl border border-slate-200 p-4">
+                  <p class="text-xs text-slate-500 uppercase font-semibold">Enrolled Employees</p>
+                  <p id="bdEnrolledEmployees" class="text-lg font-bold mt-1">—</p>
+                </div>
+                <div class="bg-white rounded-xl border border-slate-200 p-4">
+                  <p class="text-xs text-slate-500 uppercase font-semibold">Monthly Employer Cost</p>
+                  <p id="bdEmployerCost" class="text-lg font-bold mt-1">—</p>
+                </div>
+                <div class="bg-white rounded-xl border border-slate-200 p-4">
+                  <p class="text-xs text-slate-500 uppercase font-semibold">Claims Paid (YTD)</p>
+                  <p id="bdClaimsPaid" class="text-lg font-bold mt-1">—</p>
+                </div>
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-white rounded-xl border border-slate-200 p-5">
+                  <div class="flex items-center justify-between mb-3">
+                    <h4 class="font-medium text-sm text-slate-800">Employer Cost by Department</h4>
+                    <button onclick="exportBenefitsDeptCostCsv()" class="text-xs text-blue-600 hover:underline">Export CSV</button>
+                  </div>
+                  <div id="bdDeptCostList" class="space-y-2"></div>
+                  <p id="bdDeptCostEmpty" class="hidden text-slate-400 text-sm">No department cost data yet.</p>
+                </div>
+                <div class="bg-white rounded-xl border border-slate-200 p-5">
+                  <div class="flex items-center justify-between mb-3">
+                    <h4 class="font-medium text-sm text-slate-800">Utilization by Plan</h4>
+                    <button onclick="exportBenefitsUtilizationCsv()" class="text-xs text-blue-600 hover:underline">Export CSV</button>
+                  </div>
+                  <table class="w-full text-sm">
+                    <thead>
+                      <tr class="text-left text-xs text-slate-400 uppercase">
+                        <th class="font-semibold pb-2">Plan</th>
+                        <th class="font-semibold pb-2 text-right">Claimed</th>
+                        <th class="font-semibold pb-2 text-right">Paid</th>
+                      </tr>
+                    </thead>
+                    <tbody id="bdPlanUtilList"></tbody>
+                  </table>
+                  <p id="bdPlanUtilEmpty" class="hidden text-slate-400 text-sm">No active plans yet.</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- My Benefits (any employee) -->
+            <div id="myBenefitsDashSection" class="hidden mt-6">
+              <div class="flex items-center gap-2 mb-3">
+                <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+                <h3 class="font-semibold text-slate-700">My Benefits</h3>
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-white rounded-xl border border-slate-200 p-5">
+                  <h4 class="font-medium text-sm text-slate-800 mb-3">Recent Claims</h4>
+                  <div id="mdClaimsList" class="space-y-2"></div>
+                  <p id="mdClaimsEmpty" class="hidden text-slate-400 text-sm">No claims submitted yet.</p>
+                </div>
+                <div class="bg-white rounded-xl border border-slate-200 p-5">
+                  <h4 class="font-medium text-sm text-slate-800 mb-3">Unutilized Balances</h4>
+                  <div id="mdBalancesList" class="space-y-3"></div>
+                  <p id="mdBalancesEmpty" class="hidden text-slate-400 text-sm">No reimbursement-cap benefits enrolled.</p>
+                </div>
               </div>
             </div>
           </div>

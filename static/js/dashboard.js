@@ -1,5 +1,28 @@
 // Dashboard
 // ---------------------------------------------------------------------------
+// Tabs load lazily (dash-tabs.js loaded flag) — everything past the General
+// tab used to fire its own API call in parallel on every single dashboard
+// visit regardless of which section (if any) the user actually looked at.
+// For an HR manager that's 4+ concurrent DB round-trips just to land on the
+// page. Now only General's own section (which includes Locations Overview)
+// fetches up front; Recruitment/Timesheet/Compensation & Benefits fetch once,
+// on first click, and are cached for the rest of the session.
+const _dashTabLoaded = { recruitment: false, timesheet: false, compensation: false };
+let _lastBenefitsDashboard = null;
+window.getLastBenefitsDashboard = () => _lastBenefitsDashboard;
+
+function switchDashTab(tabId) {
+  document.querySelectorAll('.dash-tab-panel').forEach(el => el.classList.toggle('hidden', el.id !== tabId));
+  document.querySelectorAll('[data-dashtab]').forEach(btn => {
+    const active = btn.dataset.dashtab === tabId;
+    btn.classList.toggle('view-tab-active', active);
+    btn.classList.toggle('text-slate-500', !active);
+  });
+  if (tabId === 'dash-recruitment' && !_dashTabLoaded.recruitment) { _dashTabLoaded.recruitment = true; loadRecruitmentDash(); }
+  if (tabId === 'dash-timesheet' && !_dashTabLoaded.timesheet) { _dashTabLoaded.timesheet = true; loadTimesheetDash(); }
+  if (tabId === 'dash-compensation' && !_dashTabLoaded.compensation) { _dashTabLoaded.compensation = true; loadCompensationDash(); }
+}
+
 function renderDashboard() {
   checkDashboardSystemNotification();
   checkDashboardNotification();
@@ -55,169 +78,173 @@ function renderDashboard() {
         <div class="text-xs text-slate-500 w-5 text-right">${c}</div>
       </div>`).join('') || '<p class="text-slate-400 text-sm">No data.</p>';
 
-  // Recruitment stats — visible to HR roles only
-  const canRecruit = ['superadmin','hr_manager','hr_admin','manager'].includes(currentUser?.role);
-  const recruitSection = document.getElementById('recruitDashSection');
-  recruitSection.classList.toggle('hidden', !canRecruit);
-  if (canRecruit) {
-    api('/api/recruitment/dashboard-stats').then(async res => {
-      if (!res || !res.ok) return;
-      const s = await res.json();
-      document.getElementById('rStatOpenReq').textContent = (s.req_by_status['Approved'] || 0) + (s.req_by_status['Draft'] || 0);
-      document.getElementById('rStatPendingApproval').textContent = s.pending_approvals ? `${s.pending_approvals} pending approval` : '';
-      document.getElementById('rStatCands').textContent = s.total_candidates;
-      document.getElementById('rStatHiredMonth').textContent = s.hired_this_month ? `${s.hired_this_month} hired this month` : '';
-      document.getElementById('rStatUpcoming').textContent = s.upcoming_interviews;
-      document.getElementById('rStatIntMonth').textContent = `${s.interviews_this_month} this month`;
-      document.getElementById('rStatOffers').textContent = s.offers_pending;
+  // Locations overview (General tab, HR Manager / HR Admin only) — the one
+  // section besides base stats that still fetches immediately, since it was
+  // grouped into the always-visible General tab rather than a lazy tab.
+  const canViewLoc = ['hr_manager','hr_admin'].includes(currentUser?.role);
+  document.getElementById('locDashSection').classList.toggle('hidden', !canViewLoc);
+  if (canViewLoc) loadLocationsOverviewDash();
 
-      // Candidate pipeline bar chart
-      const PIPELINE_STAGES = ['New','Screening','Interview','Offer','Hired','Rejected','Withdrawn'];
-      const PIPELINE_COLORS = {New:'bg-slate-400',Screening:'bg-blue-400',Interview:'bg-purple-400',Offer:'bg-yellow-400',Hired:'bg-emerald-500',Rejected:'bg-red-400',Withdrawn:'bg-slate-300'};
-      const totalCands = s.total_candidates || 1;
-      document.getElementById('rCandPipeline').innerHTML = PIPELINE_STAGES.map(stage => {
-        const cnt = s.cand_by_stage[stage] || 0;
-        if (!cnt && !['New','Screening','Interview','Offer'].includes(stage)) return '';
-        return `<div class="flex items-center gap-2">
-          <div class="w-20 text-xs text-slate-600">${stage}</div>
+  // Reset per-tab load-once flags and gate tab button visibility for this
+  // user/institution context, then always land back on General.
+  _dashTabLoaded.recruitment = false;
+  _dashTabLoaded.timesheet = false;
+  _dashTabLoaded.compensation = false;
+  const canRecruit = ['superadmin','hr_manager','hr_admin','manager'].includes(currentUser?.role);
+  const canViewUtil = ['superadmin','hr_manager'].includes(currentUser?.role);
+  const canViewBenefitsDash = ['hr_manager','compensation_manager','manager'].includes(currentUser?.role);
+  const hasEmployeeRecord = !!currentUser?.employee_id;
+  document.getElementById('dash-tab-recruitment-btn').classList.toggle('hidden', !canRecruit);
+  document.getElementById('dash-tab-timesheet-btn').classList.toggle('hidden', !canViewUtil);
+  document.getElementById('dash-tab-compensation-btn').classList.toggle('hidden', !(canViewBenefitsDash || hasEmployeeRecord));
+  switchDashTab('dash-general');
+}
+
+function loadLocationsOverviewDash() {
+  api('/api/institutions/' + currentUser.institution_id + '/location-summary').then(async res => {
+    if (!res || !res.ok) return;
+    const s = await res.json();
+
+    document.getElementById('locStatTotal').textContent = s.total_locations || 0;
+
+    const avgUtil = s.locations && s.locations.length > 0
+      ? Math.round(s.locations.reduce((sum, loc) => sum + (loc.utilization_percent || 0), 0) / s.locations.length)
+      : 0;
+    document.getElementById('locStatAvgUtil').textContent = avgUtil + '%';
+
+    const totalEmpInLoc = s.locations ? s.locations.reduce((sum, loc) => sum + (loc.employee_count || 0), 0) : 0;
+    document.getElementById('locStatEmpCount').textContent = totalEmpInLoc;
+
+    const withManager = s.locations ? s.locations.filter(loc => loc.manager_user_id).length : 0;
+    document.getElementById('locStatManaged').textContent = withManager;
+
+    if (s.locations && s.locations.length > 0) {
+      const maxEmps = Math.max(...s.locations.map(l => l.employee_count || 0)) || 1;
+      document.getElementById('locEmpDistribution').innerHTML = s.locations
+        .sort((a, b) => (b.employee_count || 0) - (a.employee_count || 0))
+        .map(loc => `
+          <div class="flex items-center gap-2">
+            <div class="w-32 text-xs text-slate-600 truncate" title="${esc(loc.location_name)}">${esc(loc.location_name)}</div>
+            <div class="flex-1 bg-slate-100 rounded-full h-2">
+              <div class="bg-blue-500 h-2 rounded-full" style="width:${Math.round((loc.employee_count || 0)/maxEmps*100)}%"></div>
+            </div>
+            <div class="text-xs text-slate-500 w-6 text-right">${loc.employee_count || 0}</div>
+          </div>
+        `).join('');
+    } else {
+      document.getElementById('locEmpDistribution').innerHTML = '<p class="text-slate-400 text-sm">No locations yet.</p>';
+    }
+
+    if (s.locations && s.locations.length > 0) {
+      const locWithCap = s.locations.filter(l => l.capacity && l.capacity > 0);
+      if (locWithCap.length > 0) {
+        document.getElementById('locCapacityChart').innerHTML = locWithCap
+          .sort((a, b) => (b.utilization_percent || 0) - (a.utilization_percent || 0))
+          .map(loc => {
+            const util = loc.utilization_percent || 0;
+            const color = util > 90 ? 'bg-red-500' : util > 70 ? 'bg-amber-500' : 'bg-emerald-500';
+            return `
+              <div class="flex items-center gap-2">
+                <div class="w-32 text-xs text-slate-600 truncate" title="${esc(loc.location_name)}">${esc(loc.location_name)}</div>
+                <div class="flex-1 bg-slate-100 rounded-full h-2">
+                  <div class="${color} h-2 rounded-full" style="width:${util}%"></div>
+                </div>
+                <div class="text-xs text-slate-500 w-10 text-right">${util}%</div>
+              </div>
+            `;
+          }).join('');
+      } else {
+        document.getElementById('locCapacityChart').innerHTML = '<p class="text-slate-400 text-sm">No capacity data.</p>';
+      }
+    } else {
+      document.getElementById('locCapacityChart').innerHTML = '<p class="text-slate-400 text-sm">No locations yet.</p>';
+    }
+  });
+}
+
+function loadRecruitmentDash() {
+  api('/api/recruitment/dashboard-stats').then(async res => {
+    if (!res || !res.ok) return;
+    const s = await res.json();
+    document.getElementById('rStatOpenReq').textContent = (s.req_by_status['Approved'] || 0) + (s.req_by_status['Draft'] || 0);
+    document.getElementById('rStatPendingApproval').textContent = s.pending_approvals ? `${s.pending_approvals} pending approval` : '';
+    document.getElementById('rStatCands').textContent = s.total_candidates;
+    document.getElementById('rStatHiredMonth').textContent = s.hired_this_month ? `${s.hired_this_month} hired this month` : '';
+    document.getElementById('rStatUpcoming').textContent = s.upcoming_interviews;
+    document.getElementById('rStatIntMonth').textContent = `${s.interviews_this_month} this month`;
+    document.getElementById('rStatOffers').textContent = s.offers_pending;
+
+    // Candidate pipeline bar chart
+    const PIPELINE_STAGES = ['New','Screening','Interview','Offer','Hired','Rejected','Withdrawn'];
+    const PIPELINE_COLORS = {New:'bg-slate-400',Screening:'bg-blue-400',Interview:'bg-purple-400',Offer:'bg-yellow-400',Hired:'bg-emerald-500',Rejected:'bg-red-400',Withdrawn:'bg-slate-300'};
+    const totalCands = s.total_candidates || 1;
+    document.getElementById('rCandPipeline').innerHTML = PIPELINE_STAGES.map(stage => {
+      const cnt = s.cand_by_stage[stage] || 0;
+      if (!cnt && !['New','Screening','Interview','Offer'].includes(stage)) return '';
+      return `<div class="flex items-center gap-2">
+        <div class="w-20 text-xs text-slate-600">${stage}</div>
+        <div class="flex-1 bg-slate-100 rounded-full h-2">
+          <div class="${PIPELINE_COLORS[stage]||'bg-slate-400'} h-2 rounded-full" style="width:${Math.round(cnt/totalCands*100)}%"></div>
+        </div>
+        <div class="text-xs text-slate-500 w-5 text-right">${cnt}</div>
+      </div>`;
+    }).join('') || '<p class="text-slate-400 text-sm">No candidates yet.</p>';
+
+    // Requisitions by status
+    const REQ_COLORS = {Draft:'bg-slate-300','Pending Approval':'bg-amber-400',Approved:'bg-emerald-400',Rejected:'bg-red-400',Filled:'bg-blue-400',Closed:'bg-slate-200'};
+    const totalReqs = s.total_requisitions || 1;
+    document.getElementById('rReqStatus').innerHTML = Object.entries(s.req_by_status)
+      .sort((a,b)=>b[1]-a[1]).map(([status,cnt])=>`
+        <div class="flex items-center gap-2">
+          <div class="w-28 text-xs text-slate-600 truncate">${status}</div>
           <div class="flex-1 bg-slate-100 rounded-full h-2">
-            <div class="${PIPELINE_COLORS[stage]||'bg-slate-400'} h-2 rounded-full" style="width:${Math.round(cnt/totalCands*100)}%"></div>
+            <div class="${REQ_COLORS[status]||'bg-slate-400'} h-2 rounded-full" style="width:${Math.round(cnt/totalReqs*100)}%"></div>
           </div>
           <div class="text-xs text-slate-500 w-5 text-right">${cnt}</div>
-        </div>`;
-      }).join('') || '<p class="text-slate-400 text-sm">No candidates yet.</p>';
+        </div>`).join('') || '<p class="text-slate-400 text-sm">No requisitions yet.</p>';
+  });
+}
 
-      // Requisitions by status
-      const REQ_COLORS = {Draft:'bg-slate-300','Pending Approval':'bg-amber-400',Approved:'bg-emerald-400',Rejected:'bg-red-400',Filled:'bg-blue-400',Closed:'bg-slate-200'};
-      const totalReqs = s.total_requisitions || 1;
-      document.getElementById('rReqStatus').innerHTML = Object.entries(s.req_by_status)
-        .sort((a,b)=>b[1]-a[1]).map(([status,cnt])=>`
-          <div class="flex items-center gap-2">
-            <div class="w-28 text-xs text-slate-600 truncate">${status}</div>
-            <div class="flex-1 bg-slate-100 rounded-full h-2">
-              <div class="${REQ_COLORS[status]||'bg-slate-400'} h-2 rounded-full" style="width:${Math.round(cnt/totalReqs*100)}%"></div>
-            </div>
-            <div class="text-xs text-slate-500 w-5 text-right">${cnt}</div>
-          </div>`).join('') || '<p class="text-slate-400 text-sm">No requisitions yet.</p>';
-    });
-  }
-
-  // Locations overview — HR Manager / HR Admin only
-  const canViewLoc = ['hr_manager','hr_admin'].includes(currentUser?.role);
-  const locSection = document.getElementById('locDashSection');
-  locSection.classList.toggle('hidden', !canViewLoc);
-  if (canViewLoc) {
-    api('/api/institutions/' + currentUser.institution_id + '/location-summary').then(async res => {
-      if (!res || !res.ok) return;
-      const s = await res.json();
-
-      // Summary stats
-      document.getElementById('locStatTotal').textContent = s.total_locations || 0;
-
-      // Average utilization
-      const avgUtil = s.locations && s.locations.length > 0
-        ? Math.round(s.locations.reduce((sum, loc) => sum + (loc.utilization_percent || 0), 0) / s.locations.length)
-        : 0;
-      document.getElementById('locStatAvgUtil').textContent = avgUtil + '%';
-
-      // Total employees across locations
-      const totalEmpInLoc = s.locations ? s.locations.reduce((sum, loc) => sum + (loc.employee_count || 0), 0) : 0;
-      document.getElementById('locStatEmpCount').textContent = totalEmpInLoc;
-
-      // Locations with managers
-      const withManager = s.locations ? s.locations.filter(loc => loc.manager_user_id).length : 0;
-      document.getElementById('locStatManaged').textContent = withManager;
-
-      // Employee distribution by location
-      if (s.locations && s.locations.length > 0) {
-        const maxEmps = Math.max(...s.locations.map(l => l.employee_count || 0)) || 1;
-        document.getElementById('locEmpDistribution').innerHTML = s.locations
-          .sort((a, b) => (b.employee_count || 0) - (a.employee_count || 0))
-          .map(loc => `
-            <div class="flex items-center gap-2">
-              <div class="w-32 text-xs text-slate-600 truncate" title="${esc(loc.location_name)}">${esc(loc.location_name)}</div>
-              <div class="flex-1 bg-slate-100 rounded-full h-2">
-                <div class="bg-blue-500 h-2 rounded-full" style="width:${Math.round((loc.employee_count || 0)/maxEmps*100)}%"></div>
-              </div>
-              <div class="text-xs text-slate-500 w-6 text-right">${loc.employee_count || 0}</div>
-            </div>
-          `).join('');
-      } else {
-        document.getElementById('locEmpDistribution').innerHTML = '<p class="text-slate-400 text-sm">No locations yet.</p>';
-      }
-
-      // Capacity utilization
-      if (s.locations && s.locations.length > 0) {
-        const locWithCap = s.locations.filter(l => l.capacity && l.capacity > 0);
-        if (locWithCap.length > 0) {
-          document.getElementById('locCapacityChart').innerHTML = locWithCap
-            .sort((a, b) => (b.utilization_percent || 0) - (a.utilization_percent || 0))
-            .map(loc => {
-              const util = loc.utilization_percent || 0;
-              const color = util > 90 ? 'bg-red-500' : util > 70 ? 'bg-amber-500' : 'bg-emerald-500';
-              return `
-                <div class="flex items-center gap-2">
-                  <div class="w-32 text-xs text-slate-600 truncate" title="${esc(loc.location_name)}">${esc(loc.location_name)}</div>
-                  <div class="flex-1 bg-slate-100 rounded-full h-2">
-                    <div class="${color} h-2 rounded-full" style="width:${util}%"></div>
-                  </div>
-                  <div class="text-xs text-slate-500 w-10 text-right">${util}%</div>
-                </div>
-              `;
-            }).join('');
-        } else {
-          document.getElementById('locCapacityChart').innerHTML = '<p class="text-slate-400 text-sm">No capacity data.</p>';
-        }
-      } else {
-        document.getElementById('locCapacityChart').innerHTML = '<p class="text-slate-400 text-sm">No locations yet.</p>';
-      }
-    });
-  }
-
-  // Project utilization — HR Manager / superadmin only
-  const canViewUtil = ['superadmin','hr_manager'].includes(currentUser?.role);
-  const utilSection = document.getElementById('utilDashSection');
-  utilSection.classList.toggle('hidden', !canViewUtil);
-  if (canViewUtil) {
-    api('/api/projects/utilization').then(async res => {
-      if (!res || !res.ok) return;
-      const projects = await res.json();
-      const listEl = document.getElementById('utilProjectList');
-      const emptyEl = document.getElementById('utilEmpty');
-      if (!projects.length) { listEl.innerHTML=''; emptyEl.classList.remove('hidden'); return; }
-      emptyEl.classList.add('hidden');
-      listEl.innerHTML = projects.map(p => {
-        const taskRows = p.tasks.length ? p.tasks.map(t => {
-          const pct = t.estimated_hours ? Math.min(100, Math.round(t.logged_hours / t.estimated_hours * 100)) : null;
-          const over = t.estimated_hours && t.logged_hours > t.estimated_hours;
-          return `<div class="flex items-center gap-2">
-            <div class="w-40 text-xs text-slate-600 truncate" title="${esc(t.name)}">${esc(t.name)}</div>
-            <div class="flex-1 bg-slate-100 rounded-full h-2">
-              <div class="${over?'bg-red-500':'bg-blue-500'} h-2 rounded-full" style="width:${pct===null?(t.logged_hours>0?100:0):pct}%"></div>
-            </div>
-            <div class="text-xs ${over?'text-red-600 font-medium':'text-slate-500'} w-24 text-right">${t.logged_hours}${t.estimated_hours?` / ${t.estimated_hours}h`:'h'}</div>
-          </div>`;
-        }).join('') : '<p class="text-xs text-slate-400">No tasks defined yet.</p>';
-        return `<div class="bg-white rounded-xl border border-slate-200 p-5">
-          <div class="flex items-center justify-between mb-3">
-            <h4 class="font-medium text-sm text-slate-800">${esc(p.name)}</h4>
-            <span class="text-xs font-semibold text-slate-600">${p.total_hours}h total</span>
+function loadTimesheetDash() {
+  api('/api/projects/utilization').then(async res => {
+    if (!res || !res.ok) return;
+    const projects = await res.json();
+    const listEl = document.getElementById('utilProjectList');
+    const emptyEl = document.getElementById('utilEmpty');
+    if (!projects.length) { listEl.innerHTML=''; emptyEl.classList.remove('hidden'); return; }
+    emptyEl.classList.add('hidden');
+    listEl.innerHTML = projects.map(p => {
+      const taskRows = p.tasks.length ? p.tasks.map(t => {
+        const pct = t.estimated_hours ? Math.min(100, Math.round(t.logged_hours / t.estimated_hours * 100)) : null;
+        const over = t.estimated_hours && t.logged_hours > t.estimated_hours;
+        return `<div class="flex items-center gap-2">
+          <div class="w-40 text-xs text-slate-600 truncate" title="${esc(t.name)}">${esc(t.name)}</div>
+          <div class="flex-1 bg-slate-100 rounded-full h-2">
+            <div class="${over?'bg-red-500':'bg-blue-500'} h-2 rounded-full" style="width:${pct===null?(t.logged_hours>0?100:0):pct}%"></div>
           </div>
-          <div class="space-y-2">${taskRows}</div>
+          <div class="text-xs ${over?'text-red-600 font-medium':'text-slate-500'} w-24 text-right">${t.logged_hours}${t.estimated_hours?` / ${t.estimated_hours}h`:'h'}</div>
         </div>`;
-      }).join('');
-    });
-  }
+      }).join('') : '<p class="text-xs text-slate-400">No tasks defined yet.</p>';
+      return `<div class="bg-white rounded-xl border border-slate-200 p-5">
+        <div class="flex items-center justify-between mb-3">
+          <h4 class="font-medium text-sm text-slate-800">${esc(p.name)}</h4>
+          <span class="text-xs font-semibold text-slate-600">${p.total_hours}h total</span>
+        </div>
+        <div class="space-y-2">${taskRows}</div>
+      </div>`;
+    }).join('');
+  });
+}
 
+function loadCompensationDash() {
   // Benefits cost & utilization — HR Manager / Compensation Manager / Manager
-  let lastBenefitsDashboard = null;
   const canViewBenefitsDash = ['hr_manager','compensation_manager','manager'].includes(currentUser?.role);
   document.getElementById('benefitsDashSection')?.classList.toggle('hidden', !canViewBenefitsDash);
   if (canViewBenefitsDash) {
     api('/api/benefits/reports/dashboard').then(async res => {
       if (!res || !res.ok) return;
       const s = await res.json();
-      lastBenefitsDashboard = s;
+      _lastBenefitsDashboard = s;
       document.getElementById('bdActivePlans').textContent = s.total_active_plans;
       document.getElementById('bdEnrolledEmployees').textContent = s.total_enrolled_employees;
       document.getElementById('bdEmployerCost').textContent = fmtRM(s.total_monthly_employer_cost);
@@ -245,12 +272,10 @@ function renderDashboard() {
         </tr>`).join('');
     });
   }
-  window.getLastBenefitsDashboard = () => lastBenefitsDashboard;
 
   // My Benefits — anyone with a linked employee record
-  const myBenefitsSection = document.getElementById('myBenefitsDashSection');
   const hasEmployeeRecord = !!currentUser?.employee_id;
-  myBenefitsSection?.classList.toggle('hidden', !hasEmployeeRecord);
+  document.getElementById('myBenefitsDashSection')?.classList.toggle('hidden', !hasEmployeeRecord);
   if (hasEmployeeRecord) {
     api('/api/benefits/dashboard/mine').then(async res => {
       if (!res || !res.ok) return;
