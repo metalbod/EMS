@@ -175,7 +175,9 @@ def test_cannot_delete_own_account(client, make_test_user, test_institution):
     assert res.status_code == 400
 
 
-def test_new_user_login_does_not_require_password_change(client, hr_manager_auth, test_institution):
+def test_new_employee_login_requires_password_change(client, hr_manager_auth, test_institution):
+    """Every role except hr_manager/hr_admin is forced to rotate its password
+    on first login (see create_user's must_change_password logic)."""
     username = f"zztest_{os.urandom(4).hex()}"
     password = "ZzPytest@123"
     create = client.post("/api/users", headers=hr_manager_auth, json={
@@ -186,7 +188,7 @@ def test_new_user_login_does_not_require_password_change(client, hr_manager_auth
         "username": username, "password": password, "institution_code": test_institution["code"],
     })
     assert login.status_code == 200
-    assert login.json()["user"]["must_change_password"] is False
+    assert login.json()["user"]["must_change_password"] is True
     client.delete(f"/api/users/{user_id}", headers=hr_manager_auth)
 
 
@@ -225,3 +227,72 @@ def test_flagged_password_change_required_clears_on_real_password_change(client,
 
     client.delete(f"/api/users/{user_id}", headers=hr_manager_auth)
 
+
+
+def test_create_user_employee_role_forces_password_change(client, hr_manager_auth):
+    """New users get must_change_password=1 for every role except hr_manager/hr_admin."""
+    username = f"zztest_{os.urandom(4).hex()}"
+    create = client.post("/api/users", headers=hr_manager_auth, json={
+        "username": username, "full_name": "ZZ Forced Employee", "password": "ZzPytest@123", "role": "employee",
+    })
+    assert create.status_code == 201, create.text
+    user_id = create.json()["id"]
+
+    listing = client.get("/api/users", headers=hr_manager_auth)
+    row = next(u for u in listing.json() if u["id"] == user_id)
+    assert row["must_change_password"] is True
+
+    client.delete(f"/api/users/{user_id}", headers=hr_manager_auth)
+
+
+def test_create_user_hr_admin_role_not_forced_to_change_password(client, hr_manager_auth):
+    username = f"zztest_{os.urandom(4).hex()}"
+    create = client.post("/api/users", headers=hr_manager_auth, json={
+        "username": username, "full_name": "ZZ Unforced HR Admin", "password": "ZzPytest@123", "role": "hr_admin",
+    })
+    assert create.status_code == 201, create.text
+    user_id = create.json()["id"]
+
+    listing = client.get("/api/users", headers=hr_manager_auth)
+    row = next(u for u in listing.json() if u["id"] == user_id)
+    assert row["must_change_password"] is False
+
+    client.delete(f"/api/users/{user_id}", headers=hr_manager_auth)
+
+
+def test_change_password_wrong_current_returns_400(client, make_test_user):
+    token, _ = make_test_user(role="employee")
+    headers = {"Authorization": f"Bearer {token}"}
+    res = client.post("/api/auth/change-password", headers=headers,
+                       json={"current_password": "wrong-password", "new_password": "ZzNewPassword@456"})
+    assert res.status_code == 400
+
+
+def test_change_password_too_short_returns_400(client, make_test_user):
+    token, _ = make_test_user(role="employee")
+    headers = {"Authorization": f"Bearer {token}"}
+    res = client.post("/api/auth/change-password", headers=headers,
+                       json={"current_password": "ZzPytest@123", "new_password": "short"})
+    assert res.status_code == 400
+
+
+def test_change_password_success_clears_forced_flag_and_updates_login(client, make_test_user, test_institution):
+    token, user_id = make_test_user(role="employee")
+    headers = {"Authorization": f"Bearer {token}"}
+    res = client.post("/api/auth/change-password", headers=headers,
+                       json={"current_password": "ZzPytest@123", "new_password": "ZzNewPassword@456"})
+    assert res.status_code == 200, res.text
+
+    me = client.get("/api/auth/me", headers=headers).json()
+    username = me["username"]
+
+    old_login = client.post("/api/auth/login", json={
+        "username": username, "password": "ZzPytest@123", "institution_code": test_institution["code"],
+    })
+    assert old_login.status_code == 401
+
+    new_login = client.post("/api/auth/login", json={
+        "username": username, "password": "ZzNewPassword@456", "institution_code": test_institution["code"],
+    })
+    assert new_login.status_code == 200
+    assert new_login.json()["user"]["must_change_password"] is False

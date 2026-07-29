@@ -17,10 +17,10 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 try:
-    from core.deps import get_current_user, make_token, verify_password
+    from core.deps import get_current_user, hash_password, make_token, verify_password
     from core.schemas import TokenResponse
 except ImportError:
-    from ems.core.deps import get_current_user, make_token, verify_password
+    from ems.core.deps import get_current_user, hash_password, make_token, verify_password
     from ems.core.schemas import TokenResponse
 
 try:
@@ -45,6 +45,11 @@ class LoginIn(BaseModel):
 
 class SwitchRoleIn(BaseModel):
     role: str
+
+
+class ChangePasswordIn(BaseModel):
+    current_password: str
+    new_password: str
 
 
 LOGIN_MAX_ATTEMPTS = 5
@@ -166,3 +171,19 @@ def switch_role(conn, body: SwitchRoleIn, user: dict = Depends(get_current_user)
 @router.get("/api/auth/me")
 def me(user: dict = Depends(get_current_user)) -> dict:
     return user
+
+
+@router.post("/api/auth/change-password")
+@db_session
+def change_password(conn, body: ChangePasswordIn, user: dict = Depends(get_current_user)) -> dict:
+    row = conn.execute("SELECT password_hash FROM users WHERE id=?", (user["id"],)).fetchone()
+    if not row or not verify_password(body.current_password, row["password_hash"]):
+        raise HTTPException(400, "Current password is incorrect")
+    if len(body.new_password) < 8:
+        raise HTTPException(400, "New password must be at least 8 characters")
+    conn.execute(
+        "UPDATE users SET password_hash=?, must_change_password=0 WHERE id=?",
+        (hash_password(body.new_password), user["id"])
+    )
+    conn.commit()
+    return {"ok": True}

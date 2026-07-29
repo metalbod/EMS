@@ -127,6 +127,50 @@ async function bootApp() {
     await loadEmployees();
     showPage('dashboard');
   }
+  if (currentUser.must_change_password) openChangePasswordModal(true);
+}
+
+// ---------------------------------------------------------------------------
+// Change Password
+// ---------------------------------------------------------------------------
+function openChangePasswordModal(forced) {
+  document.getElementById('cpCurrent').value = '';
+  document.getElementById('cpNew').value = '';
+  document.getElementById('cpConfirm').value = '';
+  document.getElementById('changePasswordErr').classList.add('hidden');
+  document.getElementById('changePasswordForcedNote').classList.toggle('hidden', !forced);
+  document.getElementById('changePasswordCloseBtn').classList.toggle('hidden', !!forced);
+  document.getElementById('changePasswordCancelBtn').classList.toggle('hidden', !!forced);
+  document.getElementById('changePasswordModal').classList.remove('hidden');
+}
+function closeChangePasswordModal() {
+  if (currentUser?.must_change_password) return; // forced — cannot be dismissed
+  document.getElementById('changePasswordModal').classList.add('hidden');
+}
+async function submitChangePassword(e) {
+  e.preventDefault();
+  const err = document.getElementById('changePasswordErr');
+  err.classList.add('hidden');
+  const current = document.getElementById('cpCurrent').value;
+  const next = document.getElementById('cpNew').value;
+  const confirm = document.getElementById('cpConfirm').value;
+  if (next !== confirm) {
+    err.textContent = 'New password and confirmation do not match.';
+    err.classList.remove('hidden');
+    return;
+  }
+  const res = await api('/api/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify({current_password: current, new_password: next}),
+  });
+  if (!res || !res.ok) {
+    const d = await res?.json();
+    err.textContent = d?.detail || 'Failed to change password';
+    err.classList.remove('hidden');
+    return;
+  }
+  if (currentUser) currentUser.must_change_password = false;
+  document.getElementById('changePasswordModal').classList.add('hidden');
 }
 
 function updateBrandHeader() {

@@ -113,12 +113,16 @@ def create_user(conn, body: UserIn, user: dict = Depends(require_roles(*CAN_MANA
         inst_id = user["institution_id"]
 
     roles_str = ",".join(body.roles) if body.roles else body.role
+    # Force a password change on first login for every role except HR
+    # Manager/HR Admin — those two are trusted to pick their own password
+    # at creation time (e.g. the initial institution HR Manager account).
+    must_change_password = 0 if body.role in ("hr_manager", "hr_admin") else 1
     try:
         conn.execute("""
-            INSERT INTO users (institution_id, username, full_name, email, password_hash, role, roles, employee_id)
-            VALUES (?,?,?,?,?,?,?,?)
+            INSERT INTO users (institution_id, username, full_name, email, password_hash, role, roles, employee_id, must_change_password)
+            VALUES (?,?,?,?,?,?,?,?,?)
         """, (inst_id, body.username, body.full_name, body.email,
-              hash_password(body.password), body.role, roles_str, body.employee_id))
+              hash_password(body.password), body.role, roles_str, body.employee_id, must_change_password))
         conn.commit()
         row = conn.execute(
             "SELECT id,institution_id,username,full_name,email,role,roles,employee_id,is_active,created_at "
