@@ -423,13 +423,18 @@ function loadMyLeaveDash() {
     if (!balances.length) { listEl.innerHTML = ''; emptyEl.classList.remove('hidden'); return; }
     emptyEl.classList.add('hidden');
     listEl.innerHTML = balances.map(b => {
-      const entitled = b.entitled_days + b.carried_forward_days;
-      const remaining = entitled - b.used_days;
-      const pct = entitled ? Math.round(b.used_days / entitled * 100) : 0;
+      // accrued_days equals entitled_days for full_year types (no visual
+      // difference) and the pro-rated earn-as-you-work figure for monthly
+      // accrual types — Balance/Utilization are based on what's actually
+      // usable right now (accrued), not the full annual figure.
+      const usable = b.accrued_days + b.carried_forward_days;
+      const remaining = usable - b.used_days;
+      const pct = usable ? Math.round(b.used_days / usable * 100) : 0;
       return `
       <tr class="border-t border-slate-100">
         <td class="py-1.5 text-sm text-slate-700">${esc(b.leave_type_name)}</td>
-        <td class="py-1.5 text-sm text-right">${entitled}</td>
+        <td class="py-1.5 text-sm text-right">${b.entitled_days}</td>
+        <td class="py-1.5 text-sm text-right">${b.accrued_days}</td>
         <td class="py-1.5 text-sm text-right">${b.used_days}</td>
         <td class="py-1.5 text-sm text-right font-medium">${remaining}</td>
         <td class="py-1.5 text-sm text-right">${pct}%</td>

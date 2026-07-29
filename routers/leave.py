@@ -1,5 +1,6 @@
 """Leave module: Types, Balances, and Applications (institution-scoped)."""
-from datetime import datetime, timedelta
+import calendar
+from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -47,6 +48,16 @@ class LeaveTypeIn(BaseModel):
     is_active: bool = True
     shares_entitlement_with_id: Optional[int] = None
     count_calendar_days: bool = False
+    accrual_mode: str = "full_year"  # or "monthly" — see _accrued_days
+    max_days_per_application: float = 0  # 0 = unlimited
+    max_days_per_month: float = 0  # 0 = unlimited
+
+    @field_validator("accrual_mode")
+    @classmethod
+    def _validate_accrual_mode(cls, v):
+        if v not in ("full_year", "monthly"):
+            raise ValueError("accrual_mode must be 'full_year' or 'monthly'")
+        return v
 
 
 class LeaveBalanceAdjustIn(BaseModel):
@@ -107,6 +118,89 @@ def _compute_leave_days(conn, inst_id: int, start_date: str, end_date: str, coun
             count += 1
         d += timedelta(days=1)
     return float(count)
+
+
+def _accrued_days(annual_entitlement: float, join_date: Optional[str], as_of_date: str) -> float:
+    """Monthly accrual: earned at the start of each calendar month, 1/12th
+    of the annual entitlement per month, pro-rated in the join year from
+    the employee's actual join month (a July joiner has earned 0/12 in
+    January-June and starts earning from July). Evaluated as of the
+    leave's own start date, not today — so booking December leave in
+    January is judged against December's projected accrual. Rounded to
+    the nearest half-day, matching every other day-count in this module."""
+    as_of = datetime.strptime(as_of_date, "%Y-%m-%d").date()
+    join = datetime.strptime(join_date, "%Y-%m-%d").date() if join_date else date(as_of.year, 1, 1)
+    if as_of.year > join.year:
+        months_earned = as_of.month
+    elif as_of.year == join.year:
+        months_earned = max(0, as_of.month - join.month + 1)
+    else:
+        months_earned = 0  # as_of predates the employee's join entirely
+    raw = annual_entitlement * months_earned / 12
+    return round(raw * 2) / 2
+
+
+def _days_in_month_range(conn, inst_id: int, start_date: str, end_date: str, count_calendar_days: bool, year: int, month: int) -> float:
+    """How many of a [start_date, end_date] application's countable days
+    fall within one specific calendar month — clips the range to that
+    month's boundaries and reuses _compute_leave_days on the overlap."""
+    d0 = datetime.strptime(start_date, "%Y-%m-%d").date()
+    d1 = datetime.strptime(end_date, "%Y-%m-%d").date()
+    month_start = date(year, month, 1)
+    month_end = date(year, month, calendar.monthrange(year, month)[1])
+    clipped_start = max(d0, month_start)
+    clipped_end = min(d1, month_end)
+    if clipped_start > clipped_end:
+        return 0.0
+    return _compute_leave_days(conn, inst_id, clipped_start.isoformat(), clipped_end.isoformat(), count_calendar_days)
+
+
+def _month_buckets(conn, inst_id: int, start_date: str, end_date: str, count_calendar_days: bool) -> Dict[tuple, float]:
+    """Splits an application's countable days across every calendar month
+    it touches, e.g. 28 Jan - 3 Feb -> {(Y,1): 4, (Y,2): 3} — so a
+    max-days-per-month cap can't be dodged by straddling a month boundary."""
+    d0 = datetime.strptime(start_date, "%Y-%m-%d").date()
+    d1 = datetime.strptime(end_date, "%Y-%m-%d").date()
+    buckets: Dict[tuple, float] = {}
+    y, m = d0.year, d0.month
+    while (y, m) <= (d1.year, d1.month):
+        days = _days_in_month_range(conn, inst_id, start_date, end_date, count_calendar_days, y, m)
+        if days:
+            buckets[(y, m)] = days
+        m += 1
+        if m > 12:
+            m = 1
+            y += 1
+    return buckets
+
+
+def _check_monthly_cap(conn, inst_id: int, employee_id: str, leave_type_id: int, count_calendar_days: bool,
+                       start_date: str, end_date: str, max_days_per_month: float, exclude_app_id: Optional[int] = None):
+    """Enforces max_days_per_month per calendar month the new application
+    touches, counting Approved + Pending Approval applications of this same
+    leave type (deliberately including Pending — several under-cap
+    applications submitted at once shouldn't be able to collectively blow
+    past the limit while they all sit awaiting approval)."""
+    if not max_days_per_month:
+        return
+    new_buckets = _month_buckets(conn, inst_id, start_date, end_date, count_calendar_days)
+    if not new_buckets:
+        return
+    q = "SELECT id, start_date, end_date FROM leave_applications WHERE institution_id=? AND employee_id=? AND leave_type_id=? AND status IN ('Approved', 'Pending Approval')"
+    p = [inst_id, employee_id, leave_type_id]
+    if exclude_app_id is not None:
+        q += " AND id != ?"
+        p.append(exclude_app_id)
+    existing = conn.execute(q, p).fetchall()
+    for (y, m), new_days in new_buckets.items():
+        existing_days = sum(
+            _days_in_month_range(conn, inst_id, r["start_date"], r["end_date"], count_calendar_days, y, m)
+            for r in existing
+        )
+        total = existing_days + new_days
+        if total > max_days_per_month:
+            raise HTTPException(400, f"Exceeds the {max_days_per_month} day/month limit for {calendar.month_name[m]} {y} "
+                                      f"({existing_days} already applied + {new_days} requested = {total})")
 
 
 def _balance_leave_type_id(lt) -> int:
@@ -180,10 +274,11 @@ def create_leave_type(conn, body: LeaveTypeIn, user: dict = Depends(require_role
     inst_id = need_inst(user)
     _validate_shares_entitlement(conn, inst_id, None, body.shares_entitlement_with_id, body.name)
     conn.execute(
-        "INSERT INTO leave_types (institution_id,name,annual_entitlement,requires_approval,requires_attachment,is_paid,is_active,shares_entitlement_with_id,count_calendar_days) VALUES (?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO leave_types (institution_id,name,annual_entitlement,requires_approval,requires_attachment,is_paid,is_active,shares_entitlement_with_id,count_calendar_days,accrual_mode,max_days_per_application,max_days_per_month) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
         (inst_id, body.name, body.annual_entitlement, 1 if body.requires_approval else 0,
          1 if body.requires_attachment else 0, 1 if body.is_paid else 0, 1 if body.is_active else 0,
-         body.shares_entitlement_with_id, 1 if body.count_calendar_days else 0)
+         body.shares_entitlement_with_id, 1 if body.count_calendar_days else 0,
+         body.accrual_mode, body.max_days_per_application, body.max_days_per_month)
     )
     conn.commit()
     row = conn.execute("SELECT * FROM leave_types WHERE id=last_insert_rowid()").fetchone()
@@ -198,10 +293,11 @@ def update_leave_type(conn, type_id: int, body: LeaveTypeIn, user: dict = Depend
         raise HTTPException(404, "Leave type not found")
     _validate_shares_entitlement(conn, inst_id, type_id, body.shares_entitlement_with_id, body.name)
     conn.execute(
-        "UPDATE leave_types SET name=?,annual_entitlement=?,requires_approval=?,requires_attachment=?,is_paid=?,is_active=?,shares_entitlement_with_id=?,count_calendar_days=? WHERE id=?",
+        "UPDATE leave_types SET name=?,annual_entitlement=?,requires_approval=?,requires_attachment=?,is_paid=?,is_active=?,shares_entitlement_with_id=?,count_calendar_days=?,accrual_mode=?,max_days_per_application=?,max_days_per_month=? WHERE id=?",
         (body.name, body.annual_entitlement, 1 if body.requires_approval else 0,
          1 if body.requires_attachment else 0, 1 if body.is_paid else 0, 1 if body.is_active else 0,
-         body.shares_entitlement_with_id, 1 if body.count_calendar_days else 0, type_id)
+         body.shares_entitlement_with_id, 1 if body.count_calendar_days else 0,
+         body.accrual_mode, body.max_days_per_application, body.max_days_per_month, type_id)
     )
     conn.commit()
     row = conn.execute("SELECT * FROM leave_types WHERE id=?", (type_id,)).fetchone()
@@ -226,7 +322,8 @@ def list_leave_balances(conn, employee_id: Optional[str] = None, year: Optional[
     inst_id = need_inst(user)
     year = year or datetime.now().year
     q = """
-        SELECT b.*, lt.name AS leave_type_name, e.full_name AS employee_name, e.department
+        SELECT b.*, lt.name AS leave_type_name, lt.accrual_mode, e.full_name AS employee_name,
+               e.department, e.start_date AS employee_start_date
         FROM leave_balances b
         JOIN leave_types lt ON lt.id = b.leave_type_id
         JOIN employees e ON e.employee_id = b.employee_id AND e.institution_id = b.institution_id
@@ -259,7 +356,16 @@ def list_leave_balances(conn, employee_id: Optional[str] = None, year: Optional[
                 _get_or_create_leave_balance(conn, inst_id, user["employee_id"], tid, year)
             conn.commit()
             rows = conn.execute(q, p).fetchall()
-    return [dict(r) for r in rows]
+    today = datetime.now().strftime("%Y-%m-%d")
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["accrued_days"] = (
+            _accrued_days(d["entitled_days"], d["employee_start_date"], today)
+            if d["accrual_mode"] == "monthly" else d["entitled_days"]
+        )
+        out.append(d)
+    return out
 
 
 @router.patch("/api/leave/balances/{balance_id}")
@@ -324,9 +430,19 @@ def create_leave_application(conn, body: LeaveApplicationIn, user: dict = Depend
     if days <= 0:
         raise HTTPException(400, "Selected date range has no working days to apply (all weekends/public holidays)")
 
+    if lt["max_days_per_application"] and days > lt["max_days_per_application"]:
+        raise HTTPException(400, f"'{lt['name']}' allows at most {lt['max_days_per_application']} day(s) per application — requested {days}")
+
+    _check_monthly_cap(conn, inst_id, body.employee_id, body.leave_type_id, bool(lt["count_calendar_days"]),
+                       body.start_date, body.end_date, lt["max_days_per_month"])
+
     year = datetime.strptime(body.start_date, "%Y-%m-%d").year
     balance = _get_or_create_leave_balance(conn, inst_id, body.employee_id, _balance_leave_type_id(lt), year)
-    available = balance["entitled_days"] + balance["carried_forward_days"] - balance["used_days"]
+    if lt["accrual_mode"] == "monthly":
+        entitled_for_check = _accrued_days(balance["entitled_days"], emp["start_date"], body.start_date)
+    else:
+        entitled_for_check = balance["entitled_days"]
+    available = entitled_for_check + balance["carried_forward_days"] - balance["used_days"]
     if days > available:
         raise HTTPException(400, f"Insufficient balance: requesting {days} day(s), only {available} available")
 

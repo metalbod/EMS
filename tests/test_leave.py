@@ -613,3 +613,139 @@ def test_leave_utilization_dashboard_reflects_usage_and_breakdown(
         type_breakdown = next(b for b in match["breakdown"] if b["leave_type_name"] == lt["name"])
         assert type_breakdown["used_days"] == 5
         assert type_breakdown["entitled_days"] == 10
+
+
+# ---------------------------------------------------------------------------
+# Leave Types: monthly accrual + per-application/per-month caps
+# ---------------------------------------------------------------------------
+def test_leave_type_invalid_accrual_mode_returns_422(client, hr_manager_auth):
+    res = client.post("/api/leave/types", headers=hr_manager_auth, json={
+        "name": "ZZ Bad Accrual", "annual_entitlement": 12, "accrual_mode": "biweekly",
+    })
+    assert res.status_code == 422
+
+
+def test_monthly_accrual_rejects_beyond_earned_so_far(client, make_test_leave_type, employee_with_user):
+    """Employee joined 2027-01-01; as of the WORK_WEEK (March 2027), a
+    12-day annual entitlement has earned 12*3/12=3 days — the 5-day
+    application should be rejected as insufficient, even though the full
+    annual figure (12) would easily cover it."""
+    emp, headers = employee_with_user
+    # employee_with_user's underlying employee defaults start_date 2026-01-01
+    # (see _valid_employee_payload) — for a 2027 as-of date that's "joined
+    # before this year", giving months_earned = as_of.month regardless of
+    # day. Same math (3 months earned in March), so no override needed.
+    lt = make_test_leave_type(name="ZZ Monthly Accrual Small", annual_entitlement=12,
+                              accrual_mode="monthly", requires_approval=False)
+    res = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": WORK_WEEK_START, "end_date": WORK_WEEK_END,
+    })
+    assert res.status_code == 400
+    assert "Insufficient balance" in res.json()["detail"]
+
+
+def test_monthly_accrual_allows_within_earned_so_far(client, make_test_leave_type, employee_with_user):
+    emp, headers = employee_with_user
+    lt = make_test_leave_type(name="ZZ Monthly Accrual Large", annual_entitlement=24,
+                              accrual_mode="monthly", requires_approval=False)
+    res = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": WORK_WEEK_START, "end_date": WORK_WEEK_END,
+    })
+    assert res.status_code == 201, res.text
+    assert res.json()["days_count"] == 5
+
+
+def test_leave_balances_reports_accrued_days(client, make_test_leave_type, employee_with_user):
+    emp, headers = employee_with_user
+    lt = make_test_leave_type(name="ZZ Accrual Balance Check", annual_entitlement=24,
+                              accrual_mode="monthly", requires_approval=False)
+    balances = client.get("/api/leave/balances", headers=headers, params={"year": 2027}).json()
+    bal = next(b for b in balances if b["leave_type_id"] == lt["id"])
+    assert bal["entitled_days"] == 24
+    # accrued_days is evaluated as of today (real "now"), not the fixed 2027
+    # test dates, so just assert it's a fraction of the annual figure and
+    # never exceeds it — the exact value depends on the current real month.
+    assert 0 <= bal["accrued_days"] <= 24
+
+
+def test_max_days_per_application_rejects_over_limit(client, make_test_leave_type, employee_with_user):
+    emp, headers = employee_with_user
+    lt = make_test_leave_type(name="ZZ Max Per App", annual_entitlement=30,
+                              requires_approval=False, max_days_per_application=2)
+    res = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": WORK_WEEK_START, "end_date": WORK_WEEK_END,  # 5 working days
+    })
+    assert res.status_code == 400
+    assert "at most 2.0 day(s) per application" in res.json()["detail"]
+
+
+def test_max_days_per_application_allows_at_limit(client, make_test_leave_type, employee_with_user):
+    emp, headers = employee_with_user
+    lt = make_test_leave_type(name="ZZ Max Per App Exact", annual_entitlement=30,
+                              requires_approval=False, max_days_per_application=5)
+    res = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": WORK_WEEK_START, "end_date": WORK_WEEK_END,
+    })
+    assert res.status_code == 201, res.text
+
+
+def test_max_days_per_month_rejects_when_combined_exceeds(client, make_test_leave_type, employee_with_user):
+    emp, headers = employee_with_user
+    lt = make_test_leave_type(name="ZZ Max Per Month", annual_entitlement=30,
+                              requires_approval=False, max_days_per_month=4)
+    # First 3 working days of the fixed test week (Mon-Wed).
+    first = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": "2027-03-01", "end_date": "2027-03-03",
+    })
+    assert first.status_code == 201, first.text
+    # 2 more days (Thu-Fri) would bring March to 5, over the 4/month cap.
+    second = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": "2027-03-04", "end_date": "2027-03-05",
+    })
+    assert second.status_code == 400
+    assert "day/month limit" in second.json()["detail"]
+
+
+def test_max_days_per_month_allows_up_to_limit(client, make_test_leave_type, employee_with_user):
+    emp, headers = employee_with_user
+    lt = make_test_leave_type(name="ZZ Max Per Month Exact", annual_entitlement=30,
+                              requires_approval=False, max_days_per_month=5)
+    first = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": "2027-03-01", "end_date": "2027-03-03",
+    })
+    assert first.status_code == 201, first.text
+    second = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": "2027-03-04", "end_date": "2027-03-05",
+    })
+    assert second.status_code == 201, second.text  # totals exactly 5, at the limit
+
+
+def test_max_days_per_month_splits_across_month_boundary(client, make_test_leave_type, employee_with_user):
+    """A single application straddling two months is bucketed per-month —
+    can't dodge the cap by starting near month-end. Uses a calendar-day
+    type so exact day counts per month are trivial to hand-verify."""
+    emp, headers = employee_with_user
+    lt = make_test_leave_type(name="ZZ Max Per Month Boundary", annual_entitlement=30,
+                              requires_approval=False, max_days_per_month=2, count_calendar_days=True)
+    # 2027-01-30 to 2027-02-02: Jan gets 30,31 (2 days), Feb gets 1,2 (2 days) — each at the cap.
+    res = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": "2027-01-30", "end_date": "2027-02-02",
+    })
+    assert res.status_code == 201, res.text
+
+    # A further 1 day in January alone would push January to 3, over the cap.
+    res2 = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": "2027-01-15", "end_date": "2027-01-15",
+    })
+    assert res2.status_code == 400
+    assert "January 2027" in res2.json()["detail"]

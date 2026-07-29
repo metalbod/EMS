@@ -139,9 +139,14 @@ function updateLeaveApplyBalanceNote() {
   attachWrap.classList.toggle('hidden', !type?.requires_attachment);
   document.getElementById('leaveApplyAttachFile').required=!!type?.requires_attachment;
   const sharedSuffix=sharedType?` (shared with ${esc(sharedType.name)})`:'';
+  const isMonthly=(sharedType||type)?.accrual_mode==='monthly';
+  const period=isMonthly?'accrued so far':'this year';
   if(bal){
-    const available=bal.entitled_days+bal.carried_forward_days-bal.used_days;
-    note.textContent=`${available} day(s) available this year${sharedSuffix}`;
+    // accrued_days already resolves to the full annual figure for
+    // full_year types, and to the pro-rated earned-so-far figure for
+    // monthly ones — see _accrued_days in routers/leave.py.
+    const available=bal.accrued_days+bal.carried_forward_days-bal.used_days;
+    note.textContent=`${available} day(s) available ${period}${sharedSuffix}`;
   } else if(sharedType){
     note.textContent=`${sharedType.annual_entitlement} day(s) available this year (new balance)${sharedSuffix}`;
   } else if(type){
@@ -360,6 +365,9 @@ async function loadLeaveTypesForManage() {
         ?`<span class="badge text-xs bg-amber-100 text-amber-700">Shares with ${esc(sharedType.name)}</span>`
         :`<span class="text-xs text-slate-400">${t.annual_entitlement} days/yr</span>`}
       ${t.count_calendar_days?'<span class="badge text-xs bg-slate-100 text-slate-600">Calendar days</span>':''}
+      ${t.accrual_mode==='monthly'?'<span class="badge text-xs bg-teal-100 text-teal-700">Accrues monthly</span>':''}
+      ${t.max_days_per_application?`<span class="badge text-xs bg-slate-100 text-slate-600">Max ${t.max_days_per_application}/app</span>`:''}
+      ${t.max_days_per_month?`<span class="badge text-xs bg-slate-100 text-slate-600">Max ${t.max_days_per_month}/mo</span>`:''}
       ${t.requires_approval?'<span class="badge text-xs bg-blue-100 text-blue-700">Approval</span>':''}
       ${t.requires_attachment?'<span class="badge text-xs bg-purple-100 text-purple-700">Doc required</span>':''}
       <button onclick="openLeaveTypeModal(${t.id})" class="text-slate-300 hover:text-blue-500"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
@@ -385,6 +393,9 @@ function openLeaveTypeModal(typeId) {
     document.getElementById('leaveTypeName').value=t?.name||'';
     document.getElementById('leaveTypeEntitlement').value=t?.annual_entitlement||14;
     document.getElementById('leaveTypeCountMode').value=t?.count_calendar_days?'calendar':'working';
+    document.getElementById('leaveTypeAccrualMode').value=t?.accrual_mode||'full_year';
+    document.getElementById('leaveTypeMaxPerApp').value=t?.max_days_per_application||0;
+    document.getElementById('leaveTypeMaxPerMonth').value=t?.max_days_per_month||0;
     document.getElementById('leaveTypeRequiresApproval').checked=!!t?.requires_approval;
     document.getElementById('leaveTypeRequiresAttachment').checked=!!t?.requires_attachment;
     document.getElementById('leaveTypeIsPaid').checked=t?.is_paid===undefined?true:!!t.is_paid;
@@ -393,6 +404,9 @@ function openLeaveTypeModal(typeId) {
     document.getElementById('leaveTypeName').value='';
     document.getElementById('leaveTypeEntitlement').value=14;
     document.getElementById('leaveTypeCountMode').value='working';
+    document.getElementById('leaveTypeAccrualMode').value='full_year';
+    document.getElementById('leaveTypeMaxPerApp').value=0;
+    document.getElementById('leaveTypeMaxPerMonth').value=0;
     document.getElementById('leaveTypeRequiresApproval').checked=true;
     document.getElementById('leaveTypeRequiresAttachment').checked=false;
     document.getElementById('leaveTypeIsPaid').checked=true;
@@ -406,6 +420,7 @@ function closeLeaveTypeModal() { document.getElementById('leaveTypeModal').class
 function onLeaveTypeSharesChange() {
   const sharing=!!document.getElementById('leaveTypeSharesWith').value;
   document.getElementById('leaveTypeEntitlementWrap').classList.toggle('hidden', sharing);
+  document.getElementById('leaveTypeAccrualWrap').classList.toggle('hidden', sharing);
 }
 
 async function submitLeaveType(e) {
@@ -420,6 +435,9 @@ async function submitLeaveType(e) {
     is_paid: document.getElementById('leaveTypeIsPaid').checked,
     shares_entitlement_with_id: sharesWith?parseInt(sharesWith):null,
     count_calendar_days: document.getElementById('leaveTypeCountMode').value==='calendar',
+    accrual_mode: document.getElementById('leaveTypeAccrualMode').value,
+    max_days_per_application: parseFloat(document.getElementById('leaveTypeMaxPerApp').value)||0,
+    max_days_per_month: parseFloat(document.getElementById('leaveTypeMaxPerMonth').value)||0,
   };
   const url=id?`/api/leave/types/${id}`:'/api/leave/types';
   const res=await api(url,{method:id?'PUT':'POST',body:JSON.stringify(body)});
