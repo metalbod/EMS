@@ -7,6 +7,8 @@ let viewingCandData = null; // full candidate object currently open in detail mo
 let candExistingDocs = [];  // documents already saved for the candidate being edited
 let candPendingFiles = [];  // {file_name,mime_type,data_url} selected but not yet uploaded
 const CAND_FILE_MAX_BYTES = 6 * 1024 * 1024;
+let candSortBy = 'created_at', candSortDir = 'desc';
+const CAND_SORT_FIELDS = ['full_name','requisition_title','source','created_at','experience_years','last_interview_date','stage'];
 
 function stageBadgeClass(stage) {
   const m = {New:'bg-slate-100 text-slate-600',Screening:'bg-blue-100 text-blue-700',
@@ -176,13 +178,42 @@ async function closeReqAction() {
 // ---------------------------------------------------------------------------
 // Recruitment — Candidates
 // ---------------------------------------------------------------------------
+function toggleAllCandStages(checked) {
+  document.querySelectorAll('.cand-stage-cb').forEach(cb=>cb.checked=checked);
+  loadCandidates();
+}
+function onCandStageCbChange() {
+  const boxes=[...document.querySelectorAll('.cand-stage-cb')];
+  document.getElementById('candStageAll').checked = boxes.every(cb=>cb.checked);
+  loadCandidates();
+}
+function setCandSort(field) {
+  if (candSortBy === field) { candSortDir = candSortDir==='asc' ? 'desc' : 'asc'; }
+  else { candSortBy = field; candSortDir = 'asc'; }
+  loadCandidates();
+}
+function updateCandSortIcons() {
+  CAND_SORT_FIELDS.forEach(f=>{
+    const el=document.getElementById('sortIcon-'+f);
+    if(!el) return;
+    el.textContent = f===candSortBy ? (candSortDir==='asc'?'▲':'▼') : '';
+  });
+}
+function fmtDateOnly(s) { return s ? s.slice(0,10) : '—'; }
+
 async function loadCandidates() {
   await loadRecruitMeta();
   const q=document.getElementById('candSearch')?.value||'';
-  const stage=document.getElementById('candStageFilter')?.value||'';
+  const stages=[...document.querySelectorAll('.cand-stage-cb:checked')].map(cb=>cb.value);
+  const allStages=[...document.querySelectorAll('.cand-stage-cb')].map(cb=>cb.value);
   let url='/api/recruitment/candidates?x=1';
   if(q) url+=`&search=${encodeURIComponent(q)}`;
-  if(stage) url+=`&stage=${encodeURIComponent(stage)}`;
+  if(stages.length < allStages.length) {
+    if(!stages.length) url+=`&stage=__none__`; // empty selection: force zero results
+    else stages.forEach(s=>{ url+=`&stage=${encodeURIComponent(s)}`; });
+  }
+  url+=`&sort_by=${candSortBy}&sort_dir=${candSortDir}`;
+  updateCandSortIcons();
   const res=await api(url);
   if(!res||!res.ok) return;
   const rows=await res.json();
@@ -201,6 +232,9 @@ async function loadCandidates() {
       </td>
       <td class="px-4 py-3 text-slate-600 hidden md:table-cell">${esc(c.requisition_title||'—')}</td>
       <td class="px-4 py-3 hidden lg:table-cell text-slate-500 text-xs">${esc(c.source||'')}</td>
+      <td class="px-4 py-3 text-slate-500 text-xs">${fmtDateOnly(c.created_at)}</td>
+      <td class="px-4 py-3 text-center text-slate-700">${c.experience_years||0}</td>
+      <td class="px-4 py-3 text-slate-500 text-xs">${fmtDateOnly(c.last_interview_date)}</td>
       <td class="px-4 py-3"><span class="badge ${stageBadgeClass(c.stage)}">${esc(c.stage)}</span></td>
       <td class="px-4 py-3 text-right"><button class="btn-ghost text-xs" onclick="event.stopPropagation();openCandDetail(${c.id})">View</button></td>
     </tr>`).join('');

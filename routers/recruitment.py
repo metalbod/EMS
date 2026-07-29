@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
 
 try:
@@ -380,27 +380,48 @@ def close_requisition(conn, req_id: int, user: dict = Depends(require_roles(*REC
 # ---------------------------------------------------------------------------
 # Recruitment — Candidates / ATS
 # ---------------------------------------------------------------------------
+CANDIDATE_SORT_COLUMNS = {
+    "full_name": "c.full_name",
+    "requisition_title": "r.title",
+    "source": "c.source",
+    "created_at": "c.created_at",
+    "experience_years": "c.experience_years",
+    "last_interview_date": "last_interview_date",
+    "stage": "c.stage",
+}
+
+
 @router.get("/api/recruitment/candidates")
 @db_session
-def list_candidates(conn, 
+def list_candidates(conn,
     requisition_id: Optional[int] = None,
-    stage: Optional[str] = None,
+    stage: Optional[List[str]] = Query(None),
     search: Optional[str] = None,
+    sort_by: str = "created_at",
+    sort_dir: str = "desc",
     user: dict = Depends(get_current_user),
 ):
     inst_id = need_inst(user)
-    q = """SELECT c.*, r.title AS requisition_title
+    q = """SELECT c.*, r.title AS requisition_title,
+               (SELECT MAX(i.scheduled_date) FROM interviews i WHERE i.candidate_id=c.id) AS last_interview_date
            FROM candidates c
            LEFT JOIN job_requisitions r ON r.id = c.requisition_id
            WHERE c.institution_id=?"""
     p = [inst_id]
     if requisition_id: q += " AND c.requisition_id=?"; p.append(requisition_id)
-    if stage:          q += " AND c.stage=?";           p.append(stage)
+    if stage is not None:
+        if not stage:
+            q += " AND FALSE"
+        else:
+            q += f" AND c.stage IN ({','.join('?' for _ in stage)})"
+            p.extend(stage)
     if search:
         like = f"%{search}%"
         q += " AND (c.full_name LIKE ? OR c.email LIKE ? OR c.current_company LIKE ? OR c.skills LIKE ?)"
         p.extend([like,like,like,like])
-    q += " ORDER BY c.created_at DESC"
+    sort_col = CANDIDATE_SORT_COLUMNS.get(sort_by, "c.created_at")
+    direction = "ASC" if sort_dir == "asc" else "DESC"
+    q += f" ORDER BY {sort_col} {direction} NULLS LAST"
     rows = conn.execute(q, p).fetchall()
     return [dict(r) for r in rows]
 

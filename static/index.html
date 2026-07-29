@@ -916,18 +916,19 @@
 
       <!-- CANDIDATE BANK (ATS) -->
       <div id="page-candidates" class="hidden">
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-2 mb-3 text-sm bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
+          <span class="font-medium text-slate-600">Filter by Stage:</span>
+          <label class="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" id="candStageAll" checked onchange="toggleAllCandStages(this.checked)"/> All</label>
+          <label class="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" class="cand-stage-cb" value="New" checked onchange="onCandStageCbChange()"/> New</label>
+          <label class="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" class="cand-stage-cb" value="Screening" checked onchange="onCandStageCbChange()"/> Screening</label>
+          <label class="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" class="cand-stage-cb" value="Interview" checked onchange="onCandStageCbChange()"/> Interview</label>
+          <label class="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" class="cand-stage-cb" value="Offer" checked onchange="onCandStageCbChange()"/> Offer</label>
+          <label class="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" class="cand-stage-cb" value="Hired" checked onchange="onCandStageCbChange()"/> Hired</label>
+          <label class="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" class="cand-stage-cb" value="Rejected" checked onchange="onCandStageCbChange()"/> Rejected</label>
+          <label class="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" class="cand-stage-cb" value="Withdrawn" checked onchange="onCandStageCbChange()"/> Withdrawn</label>
+        </div>
         <div class="flex flex-col sm:flex-row gap-3 mb-5">
           <input id="candSearch" type="text" placeholder="Search name, email, company, skills…" class="inp flex-1" oninput="loadCandidates()"/>
-          <select id="candStageFilter" class="inp w-44" onchange="loadCandidates()">
-            <option value="">All Stages</option>
-            <option value="New">New</option>
-            <option value="Screening">Screening</option>
-            <option value="Interview">Interview</option>
-            <option value="Offer">Offer</option>
-            <option value="Hired">Hired</option>
-            <option value="Rejected">Rejected</option>
-            <option value="Withdrawn">Withdrawn</option>
-          </select>
           <button id="addCandBtn" onclick="openCandModal()" class="btn-primary hidden flex items-center gap-2">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
             Add Candidate
@@ -937,10 +938,13 @@
           <table class="w-full text-sm">
             <thead class="bg-slate-50 border-b border-slate-200">
               <tr>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Candidate</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase hidden md:table-cell">Position Applied</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase hidden lg:table-cell">Source</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Stage</th>
+                <th onclick="setCandSort('full_name')" class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none">Candidate <span id="sortIcon-full_name" class="text-blue-600"></span></th>
+                <th onclick="setCandSort('requisition_title')" class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase hidden md:table-cell cursor-pointer select-none">Position Applied <span id="sortIcon-requisition_title" class="text-blue-600"></span></th>
+                <th onclick="setCandSort('source')" class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase hidden lg:table-cell cursor-pointer select-none">Source <span id="sortIcon-source" class="text-blue-600"></span></th>
+                <th onclick="setCandSort('created_at')" class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none">Created <span id="sortIcon-created_at" class="text-blue-600"></span></th>
+                <th onclick="setCandSort('experience_years')" class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none">Experience <span id="sortIcon-experience_years" class="text-blue-600"></span></th>
+                <th onclick="setCandSort('last_interview_date')" class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none">Last Interview <span id="sortIcon-last_interview_date" class="text-blue-600"></span></th>
+                <th onclick="setCandSort('stage')" class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none">Stage <span id="sortIcon-stage" class="text-blue-600"></span></th>
                 <th class="px-4 py-3"></th>
               </tr>
             </thead>
