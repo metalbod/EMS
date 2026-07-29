@@ -666,23 +666,65 @@
             </div>
           </div>
 
-          <!-- Leave tab (HR Manager / HR Admin only — lazy-loaded) -->
+          <!-- Leave tab (lazy-loaded). Institution-wide utilization section is
+               HR Manager/HR Admin only; My Leave is anyone with an employee
+               record — both can be visible at once, same pattern as the
+               Compensation & Benefits tab's two sections. -->
           <div id="dash-leave" class="dash-tab-panel hidden">
-            <div class="bg-white rounded-xl border border-slate-200 p-5 mb-4">
-              <h3 class="font-semibold mb-3 text-sm">Utilization by Leave Type</h3>
-              <div id="leaveDashByType" class="space-y-2"></div>
-              <p id="leaveDashByTypeEmpty" class="hidden text-slate-400 text-sm">No leave balances recorded yet this year.</p>
+            <div id="leaveUtilDashSection" class="hidden mb-6">
+              <div class="bg-white rounded-xl border border-slate-200 p-5 mb-4">
+                <h3 class="font-semibold mb-3 text-sm">Utilization by Leave Type</h3>
+                <div id="leaveDashByType" class="space-y-2"></div>
+                <p id="leaveDashByTypeEmpty" class="hidden text-slate-400 text-sm">No leave balances recorded yet this year.</p>
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-white rounded-xl border border-slate-200 p-5">
+                  <h3 class="font-semibold mb-3 text-sm">Top 10 Highest Utilization</h3>
+                  <div id="leaveDashTopHighest" class="space-y-2"></div>
+                  <p id="leaveDashTopHighestEmpty" class="hidden text-slate-400 text-sm">No data yet.</p>
+                </div>
+                <div class="bg-white rounded-xl border border-slate-200 p-5">
+                  <h3 class="font-semibold mb-3 text-sm">Top 10 Lowest Utilization</h3>
+                  <div id="leaveDashTopLowest" class="space-y-2"></div>
+                  <p id="leaveDashTopLowestEmpty" class="hidden text-slate-400 text-sm">No data yet.</p>
+                </div>
+              </div>
             </div>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div class="bg-white rounded-xl border border-slate-200 p-5">
-                <h3 class="font-semibold mb-3 text-sm">Top 10 Highest Utilization</h3>
-                <div id="leaveDashTopHighest" class="space-y-2"></div>
-                <p id="leaveDashTopHighestEmpty" class="hidden text-slate-400 text-sm">No data yet.</p>
+
+            <!-- My Leave (anyone with a linked employee record) -->
+            <div id="myLeaveDashSection" class="hidden">
+              <div class="bg-white rounded-xl border border-slate-200 p-5 mb-4">
+                <h3 class="font-semibold mb-3 text-sm">My Leave Balances</h3>
+                <table class="w-full text-sm">
+                  <thead>
+                    <tr class="text-left text-xs text-slate-400 uppercase">
+                      <th class="font-semibold pb-2">Leave Type</th>
+                      <th class="font-semibold pb-2 text-right">Entitled</th>
+                      <th class="font-semibold pb-2 text-right">Used</th>
+                      <th class="font-semibold pb-2 text-right">Balance</th>
+                      <th class="font-semibold pb-2 text-right">Utilization</th>
+                    </tr>
+                  </thead>
+                  <tbody id="myLeaveBalancesList"></tbody>
+                </table>
+                <p id="myLeaveBalancesEmpty" class="hidden text-slate-400 text-sm">No leave balances recorded yet this year.</p>
               </div>
               <div class="bg-white rounded-xl border border-slate-200 p-5">
-                <h3 class="font-semibold mb-3 text-sm">Top 10 Lowest Utilization</h3>
-                <div id="leaveDashTopLowest" class="space-y-2"></div>
-                <p id="leaveDashTopLowestEmpty" class="hidden text-slate-400 text-sm">No data yet.</p>
+                <h3 class="font-semibold mb-3 text-sm">My Leave History</h3>
+                <table class="w-full text-sm">
+                  <thead>
+                    <tr class="text-left text-xs text-slate-400 uppercase">
+                      <th class="font-semibold pb-2">Leave Type</th>
+                      <th class="font-semibold pb-2">Period</th>
+                      <th class="font-semibold pb-2 text-right">Days</th>
+                      <th class="font-semibold pb-2">Applied</th>
+                      <th class="font-semibold pb-2">Approved</th>
+                      <th class="font-semibold pb-2">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="myLeaveHistoryList"></tbody>
+                </table>
+                <p id="myLeaveHistoryEmpty" class="hidden text-slate-400 text-sm">No leave applications yet.</p>
               </div>
             </div>
           </div>

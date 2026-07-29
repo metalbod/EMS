@@ -371,8 +371,9 @@ def update_leave_status(conn, app_id: int, body: LeaveStatusIn, user: dict = Dep
             lt = conn.execute("SELECT * FROM leave_types WHERE id=?", (application["leave_type_id"],)).fetchone()
             balance = _get_or_create_leave_balance(conn, inst_id, application["employee_id"], _balance_leave_type_id(lt), year)
             conn.execute("UPDATE leave_balances SET used_days=used_days+? WHERE id=?", (application["days_count"], balance["id"]))
-        conn.execute("UPDATE leave_applications SET status=?,approved_by=?,notes=? WHERE id=?",
-                     (body.status, user["username"], body.notes, app_id))
+        approved_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S") if body.status == "Approved" else None
+        conn.execute("UPDATE leave_applications SET status=?,approved_by=?,approved_at=?,notes=? WHERE id=?",
+                     (body.status, user["username"], approved_at, body.notes, app_id))
     elif body.status == "Cancelled":
         if user["role"] == "employee" and user.get("employee_id") != application["employee_id"]:
             raise HTTPException(403, "Access denied")

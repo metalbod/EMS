@@ -279,6 +279,32 @@ def test_full_apply_approve_cancel_balance_round_trip(
     assert bal_row["used_days"] == 0.0
 
 
+def test_approve_application_sets_approved_at(client, hr_manager_auth, employee_with_user, make_test_leave_type):
+    emp, headers = employee_with_user
+    lt = make_test_leave_type(requires_approval=True, annual_entitlement=14)
+    app_id = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": WORK_WEEK_START, "end_date": WORK_WEEK_END,
+    }).json()["id"]
+
+    res = client.patch(f"/api/leave/applications/{app_id}/status", headers=hr_manager_auth, json={"status": "Approved"})
+    assert res.status_code == 200, res.text
+    assert res.json()["approved_at"] is not None
+    assert res.json()["approved_by"] is not None
+
+
+def test_reject_application_leaves_approved_at_null(client, hr_manager_auth, employee_with_user, make_test_leave_type):
+    emp, headers = employee_with_user
+    lt = make_test_leave_type(requires_approval=True, annual_entitlement=14)
+    app_id = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": WORK_WEEK_START, "end_date": WORK_WEEK_END,
+    }).json()["id"]
+    res = client.patch(f"/api/leave/applications/{app_id}/status", headers=hr_manager_auth, json={"status": "Rejected"})
+    assert res.status_code == 200, res.text
+    assert res.json()["approved_at"] is None
+
+
 def test_reject_application(client, hr_manager_auth, employee_with_user, make_test_leave_type):
     emp, headers = employee_with_user
     lt = make_test_leave_type(requires_approval=True, annual_entitlement=14)

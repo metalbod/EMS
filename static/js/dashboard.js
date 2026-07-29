@@ -100,7 +100,7 @@ function renderDashboard() {
   document.getElementById('dash-tab-recruitment-btn').classList.toggle('hidden', !canRecruit);
   document.getElementById('dash-tab-timesheet-btn').classList.toggle('hidden', !canViewUtil);
   document.getElementById('dash-tab-compensation-btn').classList.toggle('hidden', !(canViewBenefitsDash || hasEmployeeRecord));
-  document.getElementById('dash-tab-leave-btn').classList.toggle('hidden', !canViewLeaveDash);
+  document.getElementById('dash-tab-leave-btn').classList.toggle('hidden', !(canViewLeaveDash || hasEmployeeRecord));
   switchDashTab('dash-general');
 }
 
@@ -379,23 +379,85 @@ async function loadDashboardTodos() {
 // ---------------------------------------------------------------------------
 
 function loadLeaveDash() {
-  api('/api/leave/dashboard/utilization').then(async res => {
-    if (!res || !res.ok) return;
-    const s = await res.json();
+  const canViewLeaveDash = ['hr_manager','hr_admin'].includes(currentUser?.role);
+  document.getElementById('leaveUtilDashSection').classList.toggle('hidden', !canViewLeaveDash);
+  if (canViewLeaveDash) {
+    api('/api/leave/dashboard/utilization').then(async res => {
+      if (!res || !res.ok) return;
+      const s = await res.json();
 
-    const byTypeEl = document.getElementById('leaveDashByType');
-    document.getElementById('leaveDashByTypeEmpty').classList.toggle('hidden', s.by_type.length > 0);
-    byTypeEl.innerHTML = s.by_type.map(t => `
-      <div class="flex items-center gap-2">
-        <div class="w-32 text-xs text-slate-600 truncate" title="${esc(t.leave_type_name)}">${esc(t.leave_type_name)}</div>
-        <div class="flex-1 bg-slate-100 rounded-full h-2">
-          <div class="bg-blue-500 h-2 rounded-full" style="width:${Math.min(100, t.utilization_percent)}%"></div>
-        </div>
-        <div class="text-xs text-slate-500 w-32 text-right">${t.total_used}/${t.total_entitled} days (${t.utilization_percent}%)</div>
-      </div>`).join('');
+      const byTypeEl = document.getElementById('leaveDashByType');
+      document.getElementById('leaveDashByTypeEmpty').classList.toggle('hidden', s.by_type.length > 0);
+      byTypeEl.innerHTML = s.by_type.map(t => `
+        <div class="flex items-center gap-2">
+          <div class="w-32 text-xs text-slate-600 truncate" title="${esc(t.leave_type_name)}">${esc(t.leave_type_name)}</div>
+          <div class="flex-1 bg-slate-100 rounded-full h-2">
+            <div class="bg-blue-500 h-2 rounded-full" style="width:${Math.min(100, t.utilization_percent)}%"></div>
+          </div>
+          <div class="text-xs text-slate-500 w-32 text-right">${t.total_used}/${t.total_entitled} days (${t.utilization_percent}%)</div>
+        </div>`).join('');
 
-    renderLeaveDashRanking('leaveDashTopHighest', s.top_highest, 'bg-red-500');
-    renderLeaveDashRanking('leaveDashTopLowest', s.top_lowest, 'bg-emerald-500');
+      renderLeaveDashRanking('leaveDashTopHighest', s.top_highest, 'bg-red-500');
+      renderLeaveDashRanking('leaveDashTopLowest', s.top_lowest, 'bg-emerald-500');
+    });
+  }
+
+  const hasEmployeeRecord = !!currentUser?.employee_id;
+  document.getElementById('myLeaveDashSection').classList.toggle('hidden', !hasEmployeeRecord);
+  if (hasEmployeeRecord) loadMyLeaveDash();
+}
+
+function loadMyLeaveDash() {
+  const year = new Date().getFullYear();
+  const empId = currentUser.employee_id;
+
+  // These endpoints scope by role (manager sees subordinates too, hr_manager/
+  // hr_admin see the whole institution) — filter down to this employee's own
+  // rows client-side rather than relying on server-side scoping meant for
+  // other screens.
+  api(`/api/leave/balances?year=${year}&employee_id=${empId}`).then(async res => {
+    const listEl = document.getElementById('myLeaveBalancesList');
+    const emptyEl = document.getElementById('myLeaveBalancesEmpty');
+    if (!res || !res.ok) { listEl.innerHTML = ''; emptyEl.classList.remove('hidden'); return; }
+    const balances = (await res.json()).filter(b => b.employee_id === empId);
+    if (!balances.length) { listEl.innerHTML = ''; emptyEl.classList.remove('hidden'); return; }
+    emptyEl.classList.add('hidden');
+    listEl.innerHTML = balances.map(b => {
+      const entitled = b.entitled_days + b.carried_forward_days;
+      const remaining = entitled - b.used_days;
+      const pct = entitled ? Math.round(b.used_days / entitled * 100) : 0;
+      return `
+      <tr class="border-t border-slate-100">
+        <td class="py-1.5 text-sm text-slate-700">${esc(b.leave_type_name)}</td>
+        <td class="py-1.5 text-sm text-right">${entitled}</td>
+        <td class="py-1.5 text-sm text-right">${b.used_days}</td>
+        <td class="py-1.5 text-sm text-right font-medium">${remaining}</td>
+        <td class="py-1.5 text-sm text-right">${pct}%</td>
+      </tr>`;
+    }).join('');
+  });
+
+  api('/api/leave/applications').then(async res => {
+    const listEl = document.getElementById('myLeaveHistoryList');
+    const emptyEl = document.getElementById('myLeaveHistoryEmpty');
+    if (!res || !res.ok) { listEl.innerHTML = ''; emptyEl.classList.remove('hidden'); return; }
+    const apps = (await res.json()).filter(a => a.employee_id === empId);
+    if (!apps.length) { listEl.innerHTML = ''; emptyEl.classList.remove('hidden'); return; }
+    emptyEl.classList.add('hidden');
+    const statusBadge = status => {
+      if (status === 'Approved') return 'bg-emerald-100 text-emerald-700';
+      if (status === 'Rejected' || status === 'Cancelled') return 'bg-red-100 text-red-700';
+      return 'bg-amber-100 text-amber-700';
+    };
+    listEl.innerHTML = apps.map(a => `
+      <tr class="border-t border-slate-100">
+        <td class="py-1.5 text-sm text-slate-700">${esc(a.leave_type_name)}</td>
+        <td class="py-1.5 text-sm text-slate-600">${esc(a.start_date)} – ${esc(a.end_date)}</td>
+        <td class="py-1.5 text-sm text-right">${a.days_count}</td>
+        <td class="py-1.5 text-xs text-slate-500">${esc((a.created_at || '').slice(0, 10))}</td>
+        <td class="py-1.5 text-xs text-slate-500">${esc(a.approved_at ? a.approved_at.slice(0, 10) : '—')}</td>
+        <td class="py-1.5"><span class="badge ${statusBadge(a.status)}">${esc(a.status)}</span></td>
+      </tr>`).join('');
   });
 }
 
