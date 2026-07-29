@@ -4,6 +4,9 @@ let recruitMeta = {};
 let recruitCandidates = []; // cached for selects
 let viewingReqId = null, viewingCandId = null, viewingIntId = null, viewingOfferId = null;
 let viewingCandData = null; // full candidate object currently open in detail modal
+let candExistingDocs = [];  // documents already saved for the candidate being edited
+let candPendingFiles = [];  // {file_name,mime_type,data_url} selected but not yet uploaded
+const CAND_FILE_MAX_BYTES = 6 * 1024 * 1024;
 
 function stageBadgeClass(stage) {
   const m = {New:'bg-slate-100 text-slate-600',Screening:'bg-blue-100 text-blue-700',
@@ -258,10 +261,60 @@ function openCandModal(candData=null, presetReqId=null) {
   document.getElementById('candReferral').value=c?.referral_by||'';
   document.getElementById('candNotes').value=c?.notes||'';
   document.getElementById('candFormErr').classList.add('hidden');
+  candExistingDocs=c?.documents||[];
+  candPendingFiles=[];
+  document.getElementById('candFilesInput').value='';
+  renderCandFileList();
   switchCandFormTab('cm-personal');
   document.getElementById('candModal').classList.remove('hidden');
 }
 function closeCandModal(){document.getElementById('candModal').classList.add('hidden');}
+
+function renderCandFileList() {
+  const el=document.getElementById('candFileList');
+  const existingHtml=candExistingDocs.map(d=>`
+    <div class="flex items-center justify-between text-sm bg-slate-50 rounded-lg px-3 py-1.5">
+      <a href="${d.data_url}" download="${esc(d.file_name)}" target="_blank" class="text-blue-600 hover:underline truncate flex-1">${esc(d.file_name)}</a>
+      <button type="button" onclick="removeCandExistingDoc(${d.id})" class="text-slate-400 hover:text-red-600 ml-2">✕</button>
+    </div>`).join('');
+  const pendingHtml=candPendingFiles.map((f,i)=>`
+    <div class="flex items-center justify-between text-sm bg-blue-50 rounded-lg px-3 py-1.5">
+      <span class="text-slate-700 truncate flex-1">${esc(f.file_name)} <span class="text-xs text-blue-500">(pending)</span></span>
+      <button type="button" onclick="removeCandPendingFile(${i})" class="text-slate-400 hover:text-red-600 ml-2">✕</button>
+    </div>`).join('');
+  el.innerHTML=existingHtml+pendingHtml;
+}
+
+function handleCandFilesSelected(e) {
+  const files=[...(e.target.files||[])];
+  e.target.value='';
+  for (const file of files) {
+    if (file.size > CAND_FILE_MAX_BYTES) {
+      alert(`"${file.name}" is too large. Please choose a file under ~6MB.`);
+      continue;
+    }
+    const reader=new FileReader();
+    reader.onload=() => {
+      candPendingFiles.push({file_name:file.name, mime_type:file.type||'application/octet-stream', data_url:reader.result});
+      renderCandFileList();
+    };
+    reader.readAsDataURL(file);
+  }
+}
+
+function removeCandPendingFile(idx) {
+  candPendingFiles.splice(idx,1);
+  renderCandFileList();
+}
+
+async function removeCandExistingDoc(docId) {
+  const id=document.getElementById('candId').value;
+  if(!id) return;
+  const res=await api(`/api/recruitment/candidates/${id}/documents/${docId}`, {method:'DELETE'});
+  if(!res||!res.ok) return;
+  candExistingDocs=candExistingDocs.filter(d=>d.id!==docId);
+  renderCandFileList();
+}
 
 async function submitCandForm(e) {
   e.preventDefault();
@@ -299,6 +352,13 @@ async function submitCandForm(e) {
   const res=await api(id?`/api/recruitment/candidates/${id}`:`/api/recruitment/candidates`,
     {method:id?'PUT':'POST',body:JSON.stringify(body)});
   if(!res||!res.ok){const d=await res?.json();err.textContent=d?.detail||'Failed';err.classList.remove('hidden');return;}
+  const saved=await res.json();
+  if(candPendingFiles.length){
+    const docRes=await api(`/api/recruitment/candidates/${saved.id}/documents`,
+      {method:'POST',body:JSON.stringify(candPendingFiles.map(({file_name,mime_type,data_url})=>({file_name,mime_type,data_url})))});
+    if(!docRes||!docRes.ok){const d=await docRes?.json();err.textContent=d?.detail||'Candidate saved, but file upload failed';err.classList.remove('hidden');return;}
+  }
+  candPendingFiles=[];
   closeCandModal(); loadCandidates();
 }
 
@@ -357,7 +417,14 @@ async function openCandDetail(candId) {
     </div>`).join('')||'<p class="text-slate-400 text-sm">No interviews scheduled yet.</p>';
   document.getElementById('cdt-interviews').innerHTML=intHtml;
   // Resume tab
-  document.getElementById('cdt-resume').innerHTML=c.resume_text?`<pre class="text-xs whitespace-pre-wrap text-slate-700">${esc(c.resume_text)}</pre>`:'<p class="text-slate-400 text-sm">No resume text uploaded.</p>';
+  const docsHtml=(c.documents||[]).map(d=>`
+    <div class="flex items-center justify-between border border-slate-200 rounded-lg px-3 py-2 mb-2">
+      <a href="${d.data_url}" download="${esc(d.file_name)}" target="_blank" class="text-sm text-blue-600 hover:underline truncate flex-1">${esc(d.file_name)}</a>
+      <span class="text-xs text-slate-400 ml-2">${d.created_at.slice(0,10)}</span>
+    </div>`).join('');
+  document.getElementById('cdt-resume').innerHTML=`
+    ${docsHtml||'<p class="text-slate-400 text-sm mb-3">No files uploaded.</p>'}
+    ${c.resume_text?`<pre class="text-xs whitespace-pre-wrap text-slate-700 mt-3">${esc(c.resume_text)}</pre>`:''}`;
   // Stage select
   const ss=document.getElementById('cdStageSelect');
   ss.innerHTML=(recruitMeta.stages||[]).map(s=>`<option${s===c.stage?' selected':''}>${esc(s)}</option>`).join('');

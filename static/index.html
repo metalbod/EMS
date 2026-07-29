@@ -3225,6 +3225,11 @@
         <div><label class="lbl">Graduation Year</label><input id="candGradYear" type="number" class="inp" placeholder="2020" min="1970" max="2030"/></div>
         <div class="col-span-2"><label class="lbl">Certifications / Professional Qualifications</label><textarea id="candCerts" class="inp" style="height:5rem;resize:none" placeholder="e.g. AWS Certified, CPA, PMP…"></textarea></div>
         <div class="col-span-2"><label class="lbl">Resume / CV <span class="text-xs text-slate-400">(paste text or summary)</span></label><textarea id="candResume" class="inp" style="height:6rem;resize:none"></textarea></div>
+        <div class="col-span-2">
+          <label class="lbl">Attachments <span class="text-xs text-slate-400">(resume, portfolio, certs — PDF/Word/image, max 6MB each, multiple allowed)</span></label>
+          <input id="candFilesInput" type="file" multiple accept=".pdf,.doc,.docx,.txt,image/*" onchange="handleCandFilesSelected(event)" class="block w-full text-sm text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
+          <div id="candFileList" class="mt-2 space-y-1"></div>
+        </div>
       </div>
 
       <!-- Tab: Others -->

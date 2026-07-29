@@ -3,12 +3,17 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 try:
     from core.deps import get_current_user, need_inst, require_roles
 except ImportError:
     from ems.core.deps import get_current_user, need_inst, require_roles
+
+try:
+    from core.validators import validate_document_data_url
+except ImportError:
+    from ems.core.validators import validate_document_data_url
 
 try:
     from db import get_db, IntegrityError
@@ -80,6 +85,20 @@ class CandidateIn(BaseModel):
     linkedin_url: Optional[str] = None
     referral_by: Optional[str] = None
     notes: Optional[str] = None
+
+
+class CandidateDocumentIn(BaseModel):
+    file_name: str
+    mime_type: str
+    data_url: str  # data:...;base64 URI, same pattern as institution logo / leave attachment
+
+    @field_validator("data_url")
+    @classmethod
+    def _validate_data_url(cls, v):
+        v = validate_document_data_url(v)
+        if not v:
+            raise ValueError("data_url is required")
+        return v
 
 
 class CandidateStageIn(BaseModel):
@@ -429,10 +448,67 @@ def get_candidate(conn, cand_id: int, user: dict = Depends(get_current_user)) ->
         "SELECT * FROM offers WHERE candidate_id=? AND institution_id=? ORDER BY created_at DESC",
         (cand_id, inst_id)
     ).fetchall()
+    docs = conn.execute(
+        "SELECT id,file_name,mime_type,data_url,uploaded_by,created_at FROM candidate_documents WHERE candidate_id=? AND institution_id=? ORDER BY created_at",
+        (cand_id, inst_id)
+    ).fetchall()
     c["requisition"] = req
     c["interviews"] = interview_list
     c["offers"] = [dict(o) for o in offers]
+    c["documents"] = [dict(d) for d in docs]
     return c
+
+
+@router.get("/api/recruitment/candidates/{cand_id}/documents")
+@db_session
+def list_candidate_documents(conn, cand_id: int, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
+    inst_id = need_inst(user)
+    _get_candidate(conn, inst_id, cand_id)
+    rows = conn.execute(
+        "SELECT id,file_name,mime_type,data_url,uploaded_by,created_at FROM candidate_documents WHERE candidate_id=? AND institution_id=? ORDER BY created_at",
+        (cand_id, inst_id)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@router.post("/api/recruitment/candidates/{cand_id}/documents", status_code=201)
+@db_session
+def add_candidate_documents(conn, cand_id: int, body: List[CandidateDocumentIn],
+                             user: dict = Depends(require_roles(*RECRUIT_WRITE))) -> List[Dict[str, Any]]:
+    inst_id = need_inst(user)
+    c = _get_candidate(conn, inst_id, cand_id)
+    if not body:
+        raise HTTPException(400, "No files provided")
+    for doc in body:
+        conn.execute(
+            "INSERT INTO candidate_documents (institution_id,candidate_id,file_name,mime_type,data_url,uploaded_by) VALUES (?,?,?,?,?,?)",
+            (inst_id, cand_id, doc.file_name, doc.mime_type, doc.data_url, user["username"])
+        )
+    _log_candidate(conn, inst_id, cand_id, "Updated",
+                    f"{len(body)} document(s) uploaded: {', '.join(d.file_name for d in body)}", user["username"])
+    conn.commit()
+    rows = conn.execute(
+        "SELECT id,file_name,mime_type,data_url,uploaded_by,created_at FROM candidate_documents WHERE candidate_id=? AND institution_id=? ORDER BY created_at",
+        (cand_id, inst_id)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@router.delete("/api/recruitment/candidates/{cand_id}/documents/{doc_id}", status_code=204)
+@db_session
+def delete_candidate_document(conn, cand_id: int, doc_id: int,
+                               user: dict = Depends(require_roles(*RECRUIT_WRITE))):
+    inst_id = need_inst(user)
+    _get_candidate(conn, inst_id, cand_id)
+    doc = conn.execute(
+        "SELECT file_name FROM candidate_documents WHERE id=? AND candidate_id=? AND institution_id=?",
+        (doc_id, cand_id, inst_id)
+    ).fetchone()
+    if not doc:
+        raise HTTPException(404, "Document not found")
+    conn.execute("DELETE FROM candidate_documents WHERE id=? AND institution_id=?", (doc_id, inst_id))
+    _log_candidate(conn, inst_id, cand_id, "Updated", f"Document removed: {doc['file_name']}", user["username"])
+    conn.commit()
 
 
 @router.put("/api/recruitment/candidates/{cand_id}")

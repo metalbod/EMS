@@ -217,6 +217,70 @@ def test_candidate_audit_log_requires_manage_role(client, hr_manager_auth, make_
 
 
 # ---------------------------------------------------------------------------
+# Candidate Documents
+# ---------------------------------------------------------------------------
+_TEST_PDF_DATA_URL = "data:application/pdf;base64,JVBERi0xLjQKJcOkw7zDtsO4Cg=="
+
+
+def test_add_candidate_documents_success(client, hr_manager_auth):
+    cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
+                        json={"full_name": "ZZ Docs Candidate"}).json()
+    res = client.post(f"/api/recruitment/candidates/{cand['id']}/documents", headers=hr_manager_auth,
+                       json=[
+                           {"file_name": "resume.pdf", "mime_type": "application/pdf", "data_url": _TEST_PDF_DATA_URL},
+                           {"file_name": "cover.pdf", "mime_type": "application/pdf", "data_url": _TEST_PDF_DATA_URL},
+                       ])
+    assert res.status_code == 201, res.text
+    docs = res.json()
+    assert {d["file_name"] for d in docs} == {"resume.pdf", "cover.pdf"}
+
+    listing = client.get(f"/api/recruitment/candidates/{cand['id']}/documents", headers=hr_manager_auth)
+    assert listing.status_code == 200
+    assert len(listing.json()) == 2
+
+    detail = client.get(f"/api/recruitment/candidates/{cand['id']}", headers=hr_manager_auth)
+    assert len(detail.json()["documents"]) == 2
+
+
+def test_add_candidate_documents_rejects_bad_mime_type(client, hr_manager_auth):
+    cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
+                        json={"full_name": "ZZ Docs Bad Mime"}).json()
+    res = client.post(f"/api/recruitment/candidates/{cand['id']}/documents", headers=hr_manager_auth,
+                       json=[{"file_name": "virus.exe", "mime_type": "application/x-msdownload",
+                              "data_url": "data:application/x-msdownload;base64,AAAA"}])
+    assert res.status_code == 422
+
+
+def test_add_candidate_documents_candidate_not_found_returns_404(client, hr_manager_auth):
+    res = client.post("/api/recruitment/candidates/999999999/documents", headers=hr_manager_auth,
+                       json=[{"file_name": "resume.pdf", "mime_type": "application/pdf", "data_url": _TEST_PDF_DATA_URL}])
+    assert res.status_code == 404
+
+
+def test_delete_candidate_document_success(client, hr_manager_auth):
+    cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
+                        json={"full_name": "ZZ Docs Delete Candidate"}).json()
+    doc = client.post(f"/api/recruitment/candidates/{cand['id']}/documents", headers=hr_manager_auth,
+                       json=[{"file_name": "resume.pdf", "mime_type": "application/pdf", "data_url": _TEST_PDF_DATA_URL}]
+                       ).json()[0]
+    res = client.delete(f"/api/recruitment/candidates/{cand['id']}/documents/{doc['id']}", headers=hr_manager_auth)
+    assert res.status_code == 204
+
+    listing = client.get(f"/api/recruitment/candidates/{cand['id']}/documents", headers=hr_manager_auth)
+    assert listing.json() == []
+
+
+def test_add_candidate_documents_requires_write_role(client, hr_manager_auth, make_test_user, test_institution):
+    cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
+                        json={"full_name": "ZZ Docs Restricted Candidate"}).json()
+    token, _ = make_test_user(role="employee")
+    headers = {"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}
+    res = client.post(f"/api/recruitment/candidates/{cand['id']}/documents", headers=headers,
+                       json=[{"file_name": "resume.pdf", "mime_type": "application/pdf", "data_url": _TEST_PDF_DATA_URL}])
+    assert res.status_code == 403
+
+
+# ---------------------------------------------------------------------------
 # Interviews
 # ---------------------------------------------------------------------------
 def test_schedule_interview_candidate_not_found_returns_404(client, hr_manager_auth):
