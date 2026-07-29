@@ -134,7 +134,14 @@ async function openReqDetail(reqId) {
 }
 function closeReqDetailModal(){document.getElementById('reqDetailModal').classList.add('hidden');viewingReqId=null;}
 function closeBothReq(){closeReqDetailModal();}
-function editReqFromDetail(){closeReqDetailModal();}
+async function editReqFromDetail(){
+  if(!viewingReqId) return;
+  const res=await api(`/api/recruitment/requisitions/${viewingReqId}`);
+  if(!res||!res.ok) return;
+  const r=await res.json();
+  closeReqDetailModal();
+  openReqModal(r);
+}
 
 async function submitReqForApproval() {
   if(!viewingReqId) return;
