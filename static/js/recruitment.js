@@ -60,6 +60,9 @@ async function loadRequisitions() {
       <td class="px-4 py-3 hidden lg:table-cell"><span class="badge ${priorityBadge(r.priority)}">${esc(r.priority)}</span></td>
       <td class="px-4 py-3 text-center text-slate-700 hidden sm:table-cell">${r.headcount}</td>
       <td class="px-4 py-3 text-center text-slate-700 hidden sm:table-cell">${r.candidate_count||0}</td>
+      <td class="px-4 py-3 text-center text-slate-700">${r.shortlisted_count||0}</td>
+      <td class="px-4 py-3 text-center text-slate-700">${r.interviewed_count||0}</td>
+      <td class="px-4 py-3 text-center text-slate-700">${r.offer_count||0}</td>
       <td class="px-4 py-3"><span class="badge ${reqStatusBadge(r.status)}">${esc(r.status)}</span></td>
       <td class="px-4 py-3 text-right whitespace-nowrap">
         ${r.status==='Approved'?`<button class="btn-ghost text-xs" onclick="event.stopPropagation();openCandModal(null,${r.id})">Add Candidate</button>`:''}
