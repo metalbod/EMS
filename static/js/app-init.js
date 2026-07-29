@@ -25,19 +25,24 @@ function collapseNavGroups() {
   activeNavGroup = null;
 }
 
+// Below the lg breakpoint the sidebar is an off-canvas drawer (slide in/out);
+// at lg and above it's a persistent column, so open/close are no-ops there —
+// closeBurgerMenu() is called after every nav click regardless of viewport,
+// and must not collapse the persistent desktop sidebar's expanded groups.
 function openBurgerMenu() {
-  document.getElementById('burgerDrawer').classList.remove('invisible', 'opacity-0', '-translate-y-2');
+  document.getElementById('burgerDrawer').classList.remove('-translate-x-full');
   document.getElementById('navOverlay').classList.remove('hidden');
 }
 
 function closeBurgerMenu() {
-  document.getElementById('burgerDrawer').classList.add('invisible', 'opacity-0', '-translate-y-2');
+  if (window.innerWidth >= 1024) return;
+  document.getElementById('burgerDrawer').classList.add('-translate-x-full');
   document.getElementById('navOverlay').classList.add('hidden');
   collapseNavGroups();
 }
 
 function toggleBurgerMenu() {
-  const isOpen = !document.getElementById('burgerDrawer').classList.contains('invisible');
+  const isOpen = !document.getElementById('burgerDrawer').classList.contains('-translate-x-full');
   if (isOpen) closeBurgerMenu(); else openBurgerMenu();
 }
 
@@ -57,12 +62,9 @@ function esc(s) {
 // Active nav link styling
 // ---------------------------------------------------------------------------
 document.querySelectorAll('[data-page]').forEach(el => {
-  const orig = el.className;
   el.addEventListener('click', () => {
-    document.querySelectorAll('[data-page]').forEach(e => {
-      e.style.background=''; e.style.color=''; e.style.fontWeight='';
-    });
-    el.style.background='#eff6ff'; el.style.color='#1d4ed8'; el.style.fontWeight='600';
+    document.querySelectorAll('[data-page]').forEach(e => e.classList.remove('active'));
+    el.classList.add('active');
   });
 });
 

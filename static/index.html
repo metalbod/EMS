@@ -11,7 +11,7 @@
 <link rel="stylesheet" href="/static/css/tailwind.css?v=48"/>
 <link rel="stylesheet" href="/static/css/styles.css?v=49"/>
 </head>
-<body class="bg-slate-50 text-slate-900 font-sans antialiased">
+<body class="font-sans antialiased">
 
 <!-- Global loading indicator: shown automatically for any in-flight api() call (see core.js) -->
 <div id="globalLoadingBar" class="hidden" role="status" aria-live="polite" aria-label="Loading">
@@ -51,12 +51,13 @@
 <!-- MAIN APP -->
 <div id="appShell" class="hidden h-screen flex flex-col overflow-hidden">
 
-  <!-- Nav overlay: click outside the drawer to close it -->
-  <div id="navOverlay" class="hidden fixed inset-0 bg-slate-900/30 z-30" onclick="closeBurgerMenu()"></div>
+  <!-- Nav overlay: click outside the drawer to close it (mobile only — desktop sidebar is persistent) -->
+  <div id="navOverlay" class="hidden fixed inset-0 bg-slate-900/30 z-30 lg:hidden" onclick="closeBurgerMenu()"></div>
 
-    <!-- Header (also hosts the burger drawer dropdown, anchored via position:relative) -->
-    <header class="relative flex-shrink-0 bg-white border-b border-slate-200 px-6 py-3 flex items-center gap-3 z-50">
-      <button onclick="toggleBurgerMenu()" class="text-slate-500 hover:text-slate-700 p-2 -ml-2 flex-shrink-0 rounded-lg hover:bg-slate-100 transition" title="Menu">
+
+  <!-- Header (topbar) — full width, above the sidebar -->
+  <header class="app-topbar flex-shrink-0 px-6 py-3 flex items-center gap-3 z-50">
+      <button onclick="toggleBurgerMenu()" class="lg:hidden text-slate-500 hover:text-slate-700 p-2 -ml-2 flex-shrink-0 rounded-lg hover:bg-slate-100 transition" title="Menu">
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
       </button>
       <div class="flex items-center gap-2 min-w-0 flex-shrink-0">
@@ -110,7 +111,10 @@
           </button>
         </div>
       </div>
-  <aside id="burgerDrawer" class="absolute top-full left-0 mt-1 w-72 max-w-[85vw] max-h-[calc(100vh-5rem)] bg-white border border-slate-200 rounded-xl shadow-xl flex flex-col py-3 px-3 gap-1 z-40 overflow-y-auto overflow-x-hidden invisible opacity-0 -translate-y-2 transition-all duration-200 ease-out">
+  </header>
+
+  <div class="relative flex flex-1 min-h-0 overflow-hidden">
+    <aside id="burgerDrawer" class="app-sidebar absolute inset-y-0 left-0 z-40 w-72 flex flex-col py-3 px-3 gap-1 overflow-y-auto overflow-x-hidden -translate-x-full transition-transform duration-200 ease-out shadow-xl lg:shadow-none lg:static lg:translate-x-0 lg:z-auto lg:w-64 lg:flex-shrink-0">
 
       <!-- Dashboard (direct nav) -->
       <div id="nav-dashboard-wrap">
@@ -438,7 +442,6 @@
 
       <div class="flex-1"></div>
   </aside>
-    </header>
 
     <main class="flex-1 min-h-0 overflow-y-auto p-6">
 
@@ -2048,6 +2051,7 @@
       </div>
 
     </main>
+  </div>
 </div>
 
 <!-- ===== MODALS ===== -->
