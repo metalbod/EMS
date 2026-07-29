@@ -58,7 +58,10 @@ async function loadRequisitions() {
       <td class="px-4 py-3 text-center text-slate-700 hidden sm:table-cell">${r.headcount}</td>
       <td class="px-4 py-3 text-center text-slate-700 hidden sm:table-cell">${r.candidate_count||0}</td>
       <td class="px-4 py-3"><span class="badge ${reqStatusBadge(r.status)}">${esc(r.status)}</span></td>
-      <td class="px-4 py-3 text-right"><button class="btn-ghost text-xs" onclick="event.stopPropagation();openReqDetail(${r.id})">View</button></td>
+      <td class="px-4 py-3 text-right whitespace-nowrap">
+        ${r.status==='Approved'?`<button class="btn-ghost text-xs" onclick="event.stopPropagation();openCandModal(null,${r.id})">Add Candidate</button>`:''}
+        <button class="btn-ghost text-xs" onclick="event.stopPropagation();openReqDetail(${r.id})">View</button>
+      </td>
     </tr>`).join('');
 }
 
@@ -211,9 +214,9 @@ function switchCandFormTab(tab) {
   });
 }
 
-function openCandModal(candData=null) {
+function openCandModal(candData=null, presetReqId=null) {
   const c=typeof candData==='string'?JSON.parse(candData):candData;
-  document.getElementById('candModalTitle').textContent=c?'Edit Candidate':'Add Candidate';
+  document.getElementById('candModalTitle').textContent=c?.id?'Edit Candidate':'Add Candidate';
   document.getElementById('candId').value=c?.id||'';
   // Personal Info
   document.getElementById('candFullName').value=c?.full_name||'';
@@ -237,7 +240,8 @@ function openCandModal(candData=null) {
   api('/api/recruitment/requisitions?status=Approved').then(async r=>{
     if(!r||!r.ok) return;
     const reqs=await r.json();
-    reqs.forEach(req=>{const o=document.createElement('option');o.value=req.id;o.textContent=`${esc(req.title)} (${esc(req.department)})`;if(c?.requisition_id===req.id)o.selected=true;rsel.appendChild(o);});
+    const selectedReqId=c?.requisition_id||presetReqId;
+    reqs.forEach(req=>{const o=document.createElement('option');o.value=req.id;o.textContent=`${esc(req.title)} (${esc(req.department)})`;if(selectedReqId===req.id)o.selected=true;rsel.appendChild(o);});
   });
   // Education
   const qs=document.getElementById('candQual');
