@@ -173,7 +173,8 @@ def switch_role(conn, body: SwitchRoleIn, user: dict = Depends(get_current_user)
 
 
 @router.get("/api/auth/me")
-def me(user: dict = Depends(get_current_user)) -> dict:
+@db_session
+def me(conn, user: dict = Depends(get_current_user)) -> dict:
     # get_current_user's roles field is the raw comma-separated DB column (kept
     # that way because get_current_user's own role-switch check splits it as a
     # string) — the frontend expects an array here, same shape /login already
@@ -183,6 +184,17 @@ def me(user: dict = Depends(get_current_user)) -> dict:
     # path (this endpoint) never did this conversion that login() does.
     result = dict(user)
     result["roles"] = [r.strip() for r in (user.get("roles") or user["role"]).split(",") if r.strip()]
+    # login()/switch_role() both include "institution" (name/logo/etc, for the
+    # header/branding) — me() omitted it entirely, so an institution user's logo
+    # and company name silently reverted to the generic default on every page
+    # refresh (this endpoint is what restores the session then).
+    inst = None
+    if result.get("institution_id"):
+        inst_row = conn.execute(
+            "SELECT id, name, code, status, logo_url FROM institutions WHERE id=?", (result["institution_id"],)
+        ).fetchone()
+        inst = dict(inst_row) if inst_row else None
+    result["institution"] = inst
     return result
 
 
