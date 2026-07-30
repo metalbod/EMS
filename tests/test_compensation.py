@@ -210,8 +210,14 @@ class TestJobRoles:
 @pytest.fixture
 def created_employee(make_test_employee):
     """A disposable employee for compensation tests that need one already
-    on file — thin wrapper around the shared make_test_employee factory."""
-    return make_test_employee()
+    on file — thin wrapper around the shared make_test_employee factory.
+
+    basic_salary is set explicitly: employee_compensation.base_salary is
+    server-derived from employees.basic_salary (not client-supplied — see
+    routers/compensation.py's set_employee_compensation), so tests that
+    assert on the returned base_salary need a real value here rather than
+    the create-employee default of 0."""
+    return make_test_employee(basic_salary=6000.00)
 
 
 class TestEmployeeCompensation:
@@ -234,12 +240,13 @@ class TestEmployeeCompensation:
         )
         grade_id = grade_res.json()["id"]
 
-        # Set employee compensation
+        # Set employee compensation — base_salary is not accepted from the
+        # client; it's mirrored server-side from the employee's own
+        # basic_salary (set to 6000.00 by the created_employee fixture).
         response = client.post(
             f"/api/compensation/employees/{created_employee['employee_id']}/compensation",
             json={
                 "pay_grade_id": grade_id,
-                "base_salary": 6000.00,
                 "effective_date": "2026-07-19",
             },
             headers=hr_manager_auth,
@@ -271,13 +278,14 @@ class TestEmployeeCompensation:
             f"/api/compensation/employees/{created_employee['employee_id']}/compensation",
             json={
                 "pay_grade_id": grade_id,
-                "base_salary": 8500.00,
                 "effective_date": "2026-07-19",
             },
             headers=hr_manager_auth,
         )
 
-        # Get compensation
+        # Get compensation — base_salary mirrors the employee's own
+        # basic_salary (6000.00, set by the created_employee fixture), not
+        # anything posted to this endpoint.
         response = client.get(
             f"/api/compensation/employees/{created_employee['employee_id']}/compensation",
             headers=hr_manager_auth,
@@ -285,7 +293,7 @@ class TestEmployeeCompensation:
         assert response.status_code == 200
         body = response.json()
         assert body["employee_id"] == created_employee["employee_id"]
-        assert body["base_salary"] == 8500.00
+        assert body["base_salary"] == 6000.00
 
 
 class TestSalaryChanges:

@@ -214,12 +214,18 @@ class EmployeeCompensationBase(BaseModel):
     job_level_id: Optional[int] = None
     pay_grade_id: Optional[int] = None
     salary_structure_id: Optional[int] = None
-    base_salary: float = Field(..., gt=0)
+    # Not client-supplied on create/update: the single source of truth for an
+    # employee's salary is employees.basic_salary (what payroll actually
+    # reads) — this is only ever set server-side, mirrored from that column,
+    # so the two numbers can't drift apart. Still present here because the
+    # response/history models return it.
+    base_salary: float = 0
     effective_date: str = Field(..., description="YYYY-MM-DD")
 
 
 class EmployeeCompensationCreate(EmployeeCompensationBase):
-    """Create/update employee compensation."""
+    """Create/update employee compensation (role/level/grade/effective date only —
+    base_salary is ignored if sent; see EmployeeCompensationBase)."""
     pass
 
 

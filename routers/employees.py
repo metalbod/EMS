@@ -1,6 +1,7 @@
 """Employee routes (institution-scoped), plus Bulk Employee Upload (HR Manager only)."""
 import csv
 import io
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -464,6 +465,33 @@ def update_employee(conn, employee_id: str, emp: EmployeeIn, request: Request,
     if not old_row:
         raise HTTPException(404, "Employee not found")
     old = dict(old_row)
+
+    # basic_salary is the one source of truth payroll actually reads (see
+    # routers/compensation.py) — if this employee has a current compensation
+    # record with a pay grade assigned, keep the two in sync by rejecting a
+    # save that would put basic_salary outside that grade's band, rather than
+    # silently letting them drift apart. Looked up by the *original*
+    # employee_id since employee_compensation isn't touched by the
+    # employee_id-rename block below.
+    if emp.salary_type == "Monthly":
+        current_comp = conn.execute(
+            "SELECT pay_grade_id FROM employee_compensation WHERE employee_id=? AND institution_id=? AND is_current=1",
+            (employee_id, inst_id)
+        ).fetchone()
+        if current_comp and current_comp["pay_grade_id"]:
+            grade = conn.execute(
+                "SELECT grade_name, grade_code, min_salary, max_salary FROM pay_grades WHERE id=?",
+                (current_comp["pay_grade_id"],)
+            ).fetchone()
+            if grade and not (float(grade["min_salary"]) <= emp.basic_salary <= float(grade["max_salary"])):
+                raise HTTPException(
+                    422,
+                    f"RM {emp.basic_salary:,.2f} is outside the '{grade['grade_name']} ({grade['grade_code']})' "
+                    f"pay grade range of RM {float(grade['min_salary']):,.2f} – RM {float(grade['max_salary']):,.2f} "
+                    f"assigned to this employee. Consider changing their job role, level, or pay grade in the "
+                    f"Compensation tab, or revise this Basic Salary to fall within the assigned grade."
+                )
+
     try:
         new_id = employee_id
         if emp.employee_id and emp.employee_id != employee_id:
@@ -514,6 +542,15 @@ def update_employee(conn, employee_id: str, emp: EmployeeIn, request: Request,
               emp.bank_name, emp.bank_account, emp.basic_salary, emp.num_children,
               emp.salary_type, emp.hourly_rate, reports_to, emp.default_location_id,
               inst_id, new_id))
+        # Keep the current compensation record's mirrored salary in sync too
+        # (see the pay-grade-range check above) — otherwise Merit Cycles/Pay
+        # Equity/Total Rewards, which read employee_compensation.base_salary,
+        # would keep showing the pre-edit figure until someone happens to
+        # re-save the Compensation tab.
+        conn.execute(
+            "UPDATE employee_compensation SET base_salary=?, updated_at=? WHERE employee_id=? AND institution_id=? AND is_current=1",
+            (emp.basic_salary, datetime.utcnow().isoformat(), new_id, inst_id)
+        )
         new_row = conn.execute(
             "SELECT * FROM employees WHERE institution_id=? AND employee_id=?", (inst_id, new_id)
         ).fetchone()

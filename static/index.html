@@ -3528,11 +3528,8 @@
         </div>
       </div>
       <p id="acGradeRange" class="text-xs text-slate-500"></p>
-      <div class="grid grid-cols-2 gap-4">
-        <div><label class="lbl">Base Salary (RM/month) <span class="text-red-500">*</span></label><input id="acBaseSalary" type="number" step="0.01" min="0.01" class="inp" required/></div>
-        <div><label class="lbl">Effective Date <span class="text-red-500">*</span></label><input id="acEffectiveDate" type="date" class="inp" required/></div>
-      </div>
-      <p class="text-xs text-slate-500">Saving supersedes this employee's current compensation record — the previous one is kept as history, not deleted.</p>
+      <div><label class="lbl">Effective Date <span class="text-red-500">*</span></label><input id="acEffectiveDate" type="date" class="inp" required/></div>
+      <p class="text-xs text-slate-500">Salary itself is set on the employee's own record (Edit Employee → Statutory tab → Basic Salary) — that's the figure payroll uses, so it isn't edited here. Saving this supersedes the employee's current compensation record; the previous one is kept as history, not deleted. If the employee's Basic Salary falls outside the selected pay grade's range, saving it there will be blocked until the role/level/grade or the salary is reconciled.</p>
       <p id="assignCompErr" class="hidden text-xs text-red-600"></p>
       <div class="flex gap-2">
         <button type="submit" class="btn-primary">Save Compensation</button>

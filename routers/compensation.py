@@ -504,6 +504,12 @@ async def set_employee_compensation(
         if not employee:
             raise HTTPException(404, detail="Employee not found")
 
+        # base_salary is never taken from the client — employees.basic_salary
+        # (what payroll actually reads) is the single source of truth, so the
+        # compensation record just mirrors it rather than storing a second,
+        # independently-editable number that could drift out of sync.
+        actual_base_salary = float(employee["basic_salary"] or 0)
+
         # Capture the outgoing salary (if any) before superseding it, so the
         # HR note below can record "from X to Y" rather than just the new
         # figure.
@@ -532,20 +538,20 @@ async def set_employee_compensation(
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
             """,
             (inst_id, employee_id, payload.job_role_id, payload.job_level_id,
-             payload.pay_grade_id, payload.salary_structure_id, payload.base_salary,
+             payload.pay_grade_id, payload.salary_structure_id, actual_base_salary,
              payload.effective_date, now, now),
         )
         # Capture this INSERT's id before the HR note INSERT overwrites
         # conn._last_id.
         comp_id = conn._last_id
 
-        if prev_comp and prev_comp["base_salary"] is not None:
+        if prev_comp and prev_comp["base_salary"] is not None and float(prev_comp["base_salary"]) != actual_base_salary:
             note_body = (
                 f"Salary adjusted from RM {float(prev_comp['base_salary']):,.2f} to "
-                f"RM {payload.base_salary:,.2f}, effective {payload.effective_date}."
+                f"RM {actual_base_salary:,.2f}, effective {payload.effective_date}."
             )
         else:
-            note_body = f"Salary set to RM {payload.base_salary:,.2f}, effective {payload.effective_date}."
+            note_body = f"Compensation record updated (role/level/grade), effective {payload.effective_date}."
         _add_hr_note(conn, inst_id, employee_id, note_body, current_user["username"])
 
         conn.commit()
@@ -912,6 +918,15 @@ async def approve_merit_recommendation(
                  prev_comp["pay_grade_id"] if prev_comp else None,
                  prev_comp["salary_structure_id"] if prev_comp else None,
                  rec["recommended_new_salary"], effective_date, now, now),
+            )
+            # employees.basic_salary is the one source of truth payroll reads
+            # (see routers/employees.py) — a merit approval that only wrote
+            # employee_compensation.base_salary would leave the two figures
+            # out of sync, same drift this whole base_salary/basic_salary
+            # split was meant to eliminate.
+            conn.execute(
+                "UPDATE employees SET basic_salary=?, updated_at=? WHERE employee_id=? AND institution_id=?",
+                (rec["recommended_new_salary"], now, rec["employee_id"], inst_id),
             )
 
             conn.execute(

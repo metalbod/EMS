@@ -1465,9 +1465,8 @@ async function loadEmployeeCompensationTab(employeeId) {
     ['Job Role', comp.job_role ? `${comp.job_role.role_name} (${comp.job_role.role_code})` : '—'],
     ['Job Level', comp.job_level ? `${comp.job_level.level_name} (${comp.job_level.level_code})` : '—'],
     ['Pay Grade', comp.pay_grade ? `${comp.pay_grade.grade_name} (${comp.pay_grade.grade_code})` : '—'],
-    ['Base Salary', `RM ${Number(comp.base_salary).toLocaleString('en-MY', {minimumFractionDigits: 2})}`],
     ['Effective Date', comp.effective_date],
-  ]) + actionBtn;
+  ]) + '<p class="text-xs text-slate-400 mt-3">Salary is set on the employee\'s own record (Edit Employee → Statutory tab → Basic Salary) — the figure payroll uses — not duplicated here.</p>' + actionBtn;
 }
 
 async function openAssignCompModal(employeeId) {
@@ -1488,7 +1487,6 @@ async function openAssignCompModal(employeeId) {
     const comp = await current.json();
     if (comp.job_role_id) roleSelect.value = comp.job_role_id;
     onAssignCompRoleChange(comp.pay_grade_id);
-    document.getElementById('acBaseSalary').value = comp.base_salary;
   } else {
     onAssignCompRoleChange();
   }
@@ -1525,9 +1523,6 @@ function onAssignCompGradeChange() {
   if (!grade) { rangeEl.textContent = ''; return; }
   const fmt = n => Number(n).toLocaleString('en-MY', {minimumFractionDigits: 2});
   rangeEl.textContent = `Range: RM ${fmt(grade.min_salary)} – RM ${fmt(grade.max_salary)} (midpoint RM ${fmt(grade.midpoint_salary)})`;
-  if (!document.getElementById('acBaseSalary').value) {
-    document.getElementById('acBaseSalary').value = grade.midpoint_salary;
-  }
 }
 
 async function submitAssignCompForm(e) {
@@ -1539,7 +1534,6 @@ async function submitAssignCompForm(e) {
     job_role_id: parseInt(document.getElementById('acJobRole').value) || null,
     job_level_id: null,
     pay_grade_id: parseInt(document.getElementById('acPayGrade').value) || null,
-    base_salary: parseFloat(document.getElementById('acBaseSalary').value),
     effective_date: document.getElementById('acEffectiveDate').value,
   };
   const role = jobRoles.find(r => r.id === body.job_role_id);
