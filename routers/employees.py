@@ -440,7 +440,16 @@ def create_employee(conn, emp: EmployeeIn, request: Request, user: dict = Depend
             conn.commit()
             row = conn.execute("SELECT * FROM employees WHERE institution_id=? AND employee_id=?",
                                (inst_id, emp_id)).fetchone()
-            return dict(row)
+            result = dict(row)
+            # default_location_id/location_name aren't columns on employees (see
+            # _resolve_primary_locations) — the frontend patches its cached employee
+            # object straight from this response (static/js/employees.js's
+            # submitEmpForm), so omitting these here made a location set on create
+            # silently vanish from the UI until the next full employee list reload.
+            loc = _resolve_primary_locations(conn, inst_id, [emp_id]).get(emp_id)
+            result["default_location_id"] = loc["location_id"] if loc else None
+            result["location_name"] = loc["location_name"] if loc else None
+            return result
         except IntegrityError as e:
             conn.rollback()
             if "employees_institution_id_employee_id_key" in str(e) and attempt < max_attempts - 1:
@@ -642,7 +651,15 @@ def update_employee(conn, employee_id: str, emp: EmployeeIn, request: Request,
                     request.client.host if request.client else None)
         write_employee_change_note(conn, inst_id, new_id, user, changes)
         conn.commit()
-        return dict(new_row)
+        result = dict(new_row)
+        # See create_employee's identical fix — this response is what
+        # submitEmpForm patches employees[idx] with, so a location saved here
+        # would otherwise vanish from the UI (reopening Edit would show "No
+        # Location") until the next full employee list reload.
+        loc = _resolve_primary_locations(conn, inst_id, [new_id]).get(new_id)
+        result["default_location_id"] = loc["location_id"] if loc else None
+        result["location_name"] = loc["location_name"] if loc else None
+        return result
     except IntegrityError as e:
         conn.rollback()
         raise HTTPException(400, str(e))

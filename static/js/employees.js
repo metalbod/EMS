@@ -566,7 +566,7 @@ async function submitEmpForm(e) {
   const saved=await res.json();
   if(currentEmpId){const idx=employees.findIndex(em=>em.employee_id===currentEmpId);if(idx>=0)employees[idx]=saved;}
   else employees.unshift(saved);
-  closeEmpModal(); renderEmpTable(employees); renderDashboard();
+  closeEmpModal(); filterEmployees(); renderDashboard();
 }
 
 // ---------------------------------------------------------------------------
