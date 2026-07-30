@@ -1,11 +1,77 @@
 """Async task definitions and Celery configuration."""
 import os
+import re
 import logging
 import json
+from datetime import date
 from celery import Celery
 from celery.result import AsyncResult
 
 logger = logging.getLogger("ems")
+
+BULK_UPLOAD_DATE_COLUMNS = ("date_of_birth", "start_date", "probation_end_date", "contract_end_date")
+
+
+def _detect_bulk_upload_date_format(samples):
+    """Infer whether ambiguous numeric dates in a bulk-upload CSV are D/M/Y, M/D/Y, or Y/M/D.
+
+    Looks at every date value in the file together, not row by row, since a single
+    upload is assumed to come from one export with one consistent format throughout.
+    A value with a 4-digit or >31 first part is treated as Y/M/D; otherwise, the
+    first ambiguous value where one of the first two parts is >12 (and so can only
+    be the day) pins down D/M/Y vs M/D/Y. Defaults to D/M/Y if every value is fully
+    ambiguous (day and month both <=12), matching this system's local convention.
+    """
+    day_position = None
+    for s in samples:
+        if not s:
+            continue
+        parts = re.split(r"[/\-]", s.strip())
+        if len(parts) != 3:
+            continue
+        try:
+            nums = [int(p) for p in parts]
+        except ValueError:
+            continue
+        if len(parts[0]) == 4 or nums[0] > 31:
+            return "YMD"
+        if nums[0] > 12:
+            day_position = 0
+            break
+        if nums[1] > 12:
+            day_position = 1
+            break
+    return "MDY" if day_position == 1 else "DMY"
+
+
+def _normalize_bulk_upload_date(value, fmt):
+    """Convert a raw CSV date string to the ISO YYYY-MM-DD format the rest of the
+    app stores dates in, using the file-wide format detected by
+    _detect_bulk_upload_date_format."""
+    if not value:
+        return value
+    value = value.strip()
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", value):
+        return value  # already ISO
+    parts = re.split(r"[/\-]", value)
+    if len(parts) != 3:
+        raise ValueError(f"Unrecognized date '{value}' (expected D/M/Y, M/D/Y, or Y/M/D)")
+    try:
+        nums = [int(p) for p in parts]
+    except ValueError:
+        raise ValueError(f"Unrecognized date '{value}' (expected D/M/Y, M/D/Y, or Y/M/D)")
+    if fmt == "YMD":
+        y, m, d = nums
+    elif fmt == "MDY":
+        m, d, y = nums
+    else:
+        d, m, y = nums
+    if y < 100:
+        y += 2000 if y < 70 else 1900
+    try:
+        return date(y, m, d).isoformat()
+    except ValueError:
+        raise ValueError(f"Invalid date '{value}' (detected file format: {fmt})")
 
 # Redis connection string: redis://[:password]@host:port/db
 # Default for local dev: redis://localhost:6379/0
@@ -126,14 +192,23 @@ def bulk_upload_employees_task(self, inst_id: int, csv_content: str, user_id: in
             if missing_cols:
                 return {"created": [], "errors": [{"row": 0, "reason": f"CSV is missing required column(s): {', '.join(missing_cols)}"}]}
 
+            all_rows = list(reader)
+            date_samples = [
+                row.get(col) for row in all_rows for col in BULK_UPLOAD_DATE_COLUMNS if row.get(col)
+            ]
+            date_format = _detect_bulk_upload_date_format(date_samples)
+
             created, updated, errors = [], [], []
             actor = {"id": user_id, "username": username, "role": role}
-            for i, raw_row in enumerate(reader, start=2):  # row 1 is the header
+            for i, raw_row in enumerate(all_rows, start=2):  # row 1 is the header
                 row = {k: (v.strip() if isinstance(v, str) else v) for k, v in raw_row.items()}
                 if not any(row.values()):
                     continue  # skip fully blank rows
                 try:
                     payload = {c: (row.get(c) or None) for c in BULK_UPLOAD_COLUMNS}
+                    for col in BULK_UPLOAD_DATE_COLUMNS:
+                        if payload.get(col):
+                            payload[col] = _normalize_bulk_upload_date(payload[col], date_format)
                     if payload.get("basic_salary") in (None, ""): payload["basic_salary"] = 0
                     if payload.get("num_children") in (None, ""): payload["num_children"] = 0
                     if payload.get("hourly_rate") in (None, ""): payload["hourly_rate"] = 0
