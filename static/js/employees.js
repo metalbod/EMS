@@ -6,23 +6,109 @@ async function loadEmployees() {
   employees = await res.json();
 }
 
+// Years lapsed since start_date, as a float (for sorting) — e.g. 3.33 for 3y4m.
+function yearsOfServiceValue(e) {
+  if (!e.start_date) return -1;
+  const start = new Date(e.start_date);
+  if (isNaN(start)) return -1;
+  return (Date.now() - start.getTime()) / (1000*60*60*24*365.25);
+}
+
+function yearsOfServiceLabel(e) {
+  const v = yearsOfServiceValue(e);
+  if (v < 0) return '—';
+  const years = Math.floor(v);
+  const months = Math.round((v - years) * 12);
+  if (years === 0) return `${months} mo${months===1?'':'s'}`;
+  return months ? `${years}y ${months}m` : `${years}y`;
+}
+
+let empSortKey = 'full_name';
+let empSortDir = 'asc';
+let empPageSize = 10;
+let empPage = 1;
+let empFilteredData = [];
+
+function setEmpSort(key) {
+  if (empSortKey === key) {
+    empSortDir = empSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    empSortKey = key;
+    empSortDir = 'asc';
+  }
+  empPage = 1;
+  renderEmpTable();
+}
+
+function setEmpPageSize(size) {
+  empPageSize = parseInt(size) || 10;
+  empPage = 1;
+  renderEmpTable();
+}
+
+function empPagePrev() {
+  if (empPage > 1) { empPage--; renderEmpTable(); }
+}
+
+function empPageNext() {
+  const totalPages = Math.max(1, Math.ceil(empFilteredData.length / empPageSize));
+  if (empPage < totalPages) { empPage++; renderEmpTable(); }
+}
+
+function sortedEmployees() {
+  const dir = empSortDir === 'asc' ? 1 : -1;
+  return [...empFilteredData].sort((a, b) => {
+    let av, bv;
+    if (empSortKey === 'years_of_service') { av = yearsOfServiceValue(a); bv = yearsOfServiceValue(b); }
+    else { av = a[empSortKey]; bv = b[empSortKey]; }
+    if (typeof av === 'string') av = av.toLowerCase();
+    if (typeof bv === 'string') bv = bv.toLowerCase();
+    if (av == null) av = '';
+    if (bv == null) bv = '';
+    if (av < bv) return -1 * dir;
+    if (av > bv) return 1 * dir;
+    return 0;
+  });
+}
+
+function updateEmpSortArrows() {
+  document.querySelectorAll('.emp-sort-arrow').forEach(el => {
+    const key = el.dataset.sortKey;
+    el.textContent = key === empSortKey ? (empSortDir === 'asc' ? ' ▲' : ' ▼') : '';
+  });
+}
+
 function filterEmployees() {
   const q = document.getElementById('empSearch').value.toLowerCase();
   const s = document.getElementById('empStatusFilter').value;
-  const filtered = employees.filter(e => {
+  empFilteredData = employees.filter(e => {
     const mQ = !q || [e.full_name,e.employee_id,e.ic_number,e.designation,e.department].some(v=>v?.toLowerCase().includes(q));
     const mS = !s || e.status === s;
     return mQ && mS;
   });
-  renderEmpTable(filtered);
+  empPage = 1;
+  renderEmpTable();
 }
 
-function renderEmpTable(data) {
+function renderEmpTable() {
   const tbody = document.getElementById('empTableBody');
   const empty = document.getElementById('empEmpty');
-  if (!data.length) { tbody.innerHTML=''; empty.classList.remove('hidden'); return; }
+  const pagination = document.getElementById('empPagination');
+  updateEmpSortArrows();
+  if (!empFilteredData.length) { tbody.innerHTML=''; empty.classList.remove('hidden'); pagination.classList.add('hidden'); return; }
   empty.classList.add('hidden');
-  tbody.innerHTML = data.map(e=>`
+  pagination.classList.remove('hidden');
+  document.getElementById('empPageSize').value = String(empPageSize);
+
+  const sorted = sortedEmployees();
+  const totalPages = Math.max(1, Math.ceil(sorted.length / empPageSize));
+  if (empPage > totalPages) empPage = totalPages;
+  const start = (empPage - 1) * empPageSize;
+  const pageItems = sorted.slice(start, start + empPageSize);
+  document.getElementById('empPageInfo').textContent =
+    `${start + 1}-${Math.min(start + empPageSize, sorted.length)} of ${sorted.length}`;
+
+  tbody.innerHTML = pageItems.map(e=>`
     <tr class="hover:bg-slate-50 transition cursor-pointer" onclick="viewEmployee('${esc(e.employee_id)}')">
       <td class="px-4 py-3">
         <div class="flex items-center gap-3">
@@ -35,6 +121,9 @@ function renderEmpTable(data) {
       </td>
       <td class="px-4 py-3 hidden md:table-cell text-sm text-slate-600">${esc(e.department)}</td>
       <td class="px-4 py-3 hidden lg:table-cell text-sm text-slate-600">${esc(e.employment_type)}</td>
+      <td class="px-4 py-3 hidden lg:table-cell text-sm text-slate-600">${esc(e.location_name||'—')}</td>
+      <td class="px-4 py-3 hidden lg:table-cell text-sm text-slate-600">${esc(e.manager_name||'—')}</td>
+      <td class="px-4 py-3 hidden md:table-cell text-sm text-slate-600">${yearsOfServiceLabel(e)}</td>
       <td class="px-4 py-3"><span class="badge ${e.status==='Active'?'bg-emerald-100 text-emerald-700':'bg-slate-100 text-slate-500'}">${e.status}</span></td>
       <td class="px-4 py-3 text-right">
         <svg class="w-4 h-4 text-slate-300 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>

@@ -253,7 +253,35 @@ def list_employees(
         p.extend([like,like,like,like,like])
     q += " ORDER BY created_at DESC"
     rows = conn.execute(q, p).fetchall()
-    return [dict(r) for r in rows]
+    result = [dict(r) for r in rows]
+
+    # location_name/manager_name aren't columns on employees itself (default_location_id
+    # is an FK, reports_to is another employee's employee_id) — resolve both in two
+    # bulk lookups rather than joining into every branch of the query above, since the
+    # base query differs for managers (recursive CTE) vs other roles.
+    location_ids = {r["default_location_id"] for r in result if r.get("default_location_id")}
+    if location_ids:
+        loc_rows = conn.execute(
+            f"SELECT id, name FROM locations WHERE institution_id=? AND id IN ({','.join('?' * len(location_ids))})",
+            [inst_id, *location_ids]
+        ).fetchall()
+        loc_map = {l["id"]: l["name"] for l in loc_rows}
+        for r in result: r["location_name"] = loc_map.get(r.get("default_location_id"))
+    else:
+        for r in result: r["location_name"] = None
+
+    manager_ids = {r["reports_to"] for r in result if r.get("reports_to")}
+    if manager_ids:
+        mgr_rows = conn.execute(
+            f"SELECT employee_id, full_name FROM employees WHERE institution_id=? AND employee_id IN ({','.join('?' * len(manager_ids))})",
+            [inst_id, *manager_ids]
+        ).fetchall()
+        mgr_map = {m["employee_id"]: m["full_name"] for m in mgr_rows}
+        for r in result: r["manager_name"] = mgr_map.get(r.get("reports_to"))
+    else:
+        for r in result: r["manager_name"] = None
+
+    return result
 
 
 def _insert_new_employee(conn, inst_id, emp: EmployeeIn, user: dict, ip: Optional[str]):

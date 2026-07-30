@@ -366,7 +366,7 @@ function showPage(page) {
   };
   document.getElementById('pageTitle').textContent = titles[page] || page;
   if (page === 'dashboard')    renderDashboard();
-  if (page === 'employees')    renderEmpTable(employees);
+  if (page === 'employees')    filterEmployees();
   if (page === 'orgchart')     loadOrgChart();
   if (page === 'audit')        loadAuditLog();
   if (page === 'users')        loadUsers();
