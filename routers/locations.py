@@ -336,7 +336,7 @@ async def get_institution_location_summary(
             raise HTTPException(403, detail="Access denied")
 
         locations = conn.execute(
-            "SELECT id, name, code FROM locations WHERE institution_id = ? AND is_active = 1 ORDER BY name",
+            "SELECT id, name, code, manager_user_id, capacity FROM locations WHERE institution_id = ? AND is_active = 1 ORDER BY name",
             (inst_id,),
         ).fetchall()
 
@@ -349,10 +349,19 @@ async def get_institution_location_summary(
                 (loc["id"],),
             ).fetchone()[0]
             total_employees += emp_count
+            # location_name (not "name") and utilization_percent/manager_user_id/capacity
+            # are what the Dashboard's Locations Overview widget (static/js/dashboard.js's
+            # loadLocationsOverviewDash) actually reads — this previously only returned
+            # name/code/employee_count, so location labels rendered blank and Avg
+            # Utilization/With Managers/Capacity Utilization were always 0.
             locations_data.append({
                 "name": loc["name"],
+                "location_name": loc["name"],
                 "code": loc["code"],
                 "employee_count": emp_count,
+                "manager_user_id": loc["manager_user_id"],
+                "capacity": loc["capacity"],
+                "utilization_percent": round(emp_count / loc["capacity"] * 100, 1) if loc["capacity"] else None,
             })
 
         return LocationSummaryResponse(
