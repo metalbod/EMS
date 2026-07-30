@@ -193,12 +193,22 @@ def payroll_manager_auth(make_test_user, test_institution):
     }
 
 
-# Salted with high-resolution time (nanoseconds) per process plus a per-process counter,
+# Salted with PID + high-resolution time per process plus a per-process counter,
 # so IC numbers are unique both within a run and across separate pytest invocations —
 # a prior run's leftover test employees (e.g. from an interrupted run) must never
-# collide with a fresh run's. Nanosecond-precision salt ensures near-zero collision risk.
+# collide with a fresh run's. This mirrors _code_run_salt below, which needed the
+# identical fix after a 4-digit-only salt collided across rapid re-runs (1/10000
+# odds per pair of runs isn't negligible against a shared DB that never gets
+# cleaned up) — that fix was never carried over to this IC salt, and it hit the
+# exact same collision: test_related_contracts_empty_for_unique_ic failed because
+# a fresh employee's IC matched a different run's leftover "ZZ Test Employee".
+# IC numbers must be exactly 12 digits (see validate_ic in routers/employees.py),
+# so unlike _code_run_salt this can't just add more digits freely — instead it
+# splits the same available digits between PID and time salts (1000 combos each,
+# 1,000,000 total vs the old 10,000) while keeping the same 4-digit counter range.
 _ic_counter = itertools.count(1)
-_ic_run_salt = int(time.time_ns()) % 10000
+_ic_pid_salt = os.getpid() % 1000
+_ic_time_salt = time.time_ns() % 1000
 
 
 def _unique_ic():
@@ -207,7 +217,7 @@ def _unique_ic():
     collide with other employees created by other tests or other runs in the
     same shared institution."""
     n = next(_ic_counter)
-    return f"9001{_ic_run_salt:04d}{n:04d}"
+    return f"90{_ic_pid_salt:03d}{_ic_time_salt:03d}{n:04d}"
 
 
 def _valid_employee_payload(**overrides):
