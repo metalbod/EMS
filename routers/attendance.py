@@ -451,11 +451,14 @@ def _resolve_shift(conn, inst_id: int, employee_id: str, department: Optional[st
 
 
 def _employee_location(conn, inst_id: int, employee_id: str):
+    # employee_location_assignments (assignment_type='primary', is_active=1) is the
+    # single source of truth for an employee's location — see _resolve_primary_locations
+    # in routers/employees.py.
     return conn.execute(
         """
-        SELECT l.* FROM employees e
-        JOIN locations l ON e.default_location_id = l.id
-        WHERE e.employee_id = ? AND e.institution_id = ?
+        SELECT l.* FROM employee_location_assignments ela
+        JOIN locations l ON ela.location_id = l.id
+        WHERE ela.employee_id = ? AND ela.institution_id = ? AND ela.assignment_type = 'primary' AND ela.is_active = 1
         """,
         (employee_id, inst_id),
     ).fetchone()
