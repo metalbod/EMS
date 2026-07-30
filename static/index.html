@@ -744,6 +744,29 @@
 
       <!-- INSTITUTIONS -->
       <div id="page-institutions" class="hidden">
+        <div class="bg-white rounded-xl border border-slate-200 p-4 mb-5">
+          <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+            <div>
+              <p class="text-sm font-semibold text-slate-700">Active Users <span class="text-slate-400 font-normal">— check before server maintenance</span></p>
+              <p class="text-xs text-slate-400">Users with activity in the selected window. JWT sessions are stateless, so this approximates "logged in" from recent activity, not a live socket count.</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <select id="activeUsersWindow" onchange="loadActiveUsers()" class="border border-slate-200 rounded-lg text-sm px-2 py-1">
+                <option value="5">Last 5 min</option>
+                <option value="15">Last 15 min</option>
+                <option value="60">Last 1 hour</option>
+                <option value="480">Last 8 hours</option>
+              </select>
+              <button onclick="loadActiveUsers()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .75rem">Refresh</button>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 mb-3">
+            <span id="activeUsersCount" class="badge bg-emerald-100 text-emerald-700 text-sm">—</span>
+            <span class="text-xs text-slate-400">of <span id="activeUsersTotal">—</span> total users</span>
+          </div>
+          <div id="activeUsersList" class="space-y-1 max-h-64 overflow-y-auto"></div>
+          <p id="activeUsersEmpty" class="hidden text-sm text-slate-400">No users active in this window.</p>
+        </div>
         <div class="flex justify-end mb-5">
           <button onclick="openInstModal()" class="btn-primary flex items-center gap-2">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>

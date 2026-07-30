@@ -48,6 +48,33 @@ async function loadInstitutions() {
   if (!res || !res.ok) return;
   institutions = await res.json();
   instPage = 1;
+  loadActiveUsers();
+}
+
+async function loadActiveUsers() {
+  const minutes = document.getElementById('activeUsersWindow')?.value || 5;
+  const res = await api(`/api/admin/active-users?minutes=${minutes}`);
+  if (!res || !res.ok) return;
+  const data = await res.json();
+  document.getElementById('activeUsersCount').textContent = `${data.active_count} active`;
+  document.getElementById('activeUsersTotal').textContent = data.total_users;
+  const list = document.getElementById('activeUsersList');
+  const empty = document.getElementById('activeUsersEmpty');
+  if (!data.active_users.length) {
+    list.innerHTML = '';
+    empty.classList.remove('hidden');
+    return;
+  }
+  empty.classList.add('hidden');
+  list.innerHTML = data.active_users.map(u => `
+    <div class="flex items-center justify-between text-sm px-3 py-2 rounded-lg bg-slate-50">
+      <div>
+        <span class="font-medium">${esc(u.full_name)}</span>
+        <span class="text-slate-400"> · ${esc(u.username)} · ${esc(u.role)}</span>
+        ${u.institution_name ? `<span class="text-slate-400"> · ${esc(u.institution_name)}</span>` : ''}
+      </div>
+      <span class="text-xs text-slate-400">${esc(u.last_active)}</span>
+    </div>`).join('');
 }
 
 function setInstSort(key) {

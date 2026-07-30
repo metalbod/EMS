@@ -72,11 +72,26 @@ def _load_current_user_row(user_id) -> dict | None:
     try:
         user = conn.execute(
             "SELECT id, username, full_name, role, roles, department, employee_id, is_active, institution_id, "
-            "must_change_password FROM users WHERE id = ?", (user_id,)
+            "must_change_password, last_active FROM users WHERE id = ?", (user_id,)
         ).fetchone()
         if not user or not user["is_active"]:
             return None
         u = dict(user)
+        # Refresh last_active so superadmin can see who's currently using the
+        # system (see routers/admin.py's active-users endpoint) — throttled to
+        # roughly once a minute per user rather than on every single request,
+        # since this runs on every authenticated call.
+        stale = True
+        if u.get("last_active"):
+            try:
+                stale = (datetime.now(timezone.utc) - datetime.strptime(u["last_active"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)).total_seconds() > 60
+            except ValueError:
+                stale = True
+        if stale:
+            now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            conn.execute("UPDATE users SET last_active=? WHERE id=?", (now_str, user_id))
+            conn.commit()
+            u["last_active"] = now_str
         # users.department is a denormalized copy that can drift out of sync
         # with (or never be set from) the linked employee record.
         # Manager-scoped queries throughout the app rely on this field, so

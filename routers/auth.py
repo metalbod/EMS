@@ -11,6 +11,7 @@ per-instance.
 import logging
 import time
 from collections import defaultdict, deque
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -117,6 +118,9 @@ def login(conn, body: LoginIn, request: Request) -> dict:
     if inst and inst["status"] != "Active":
         raise HTTPException(403, "Your company account has been suspended. Please contact platform support.")
     _clear_login_failures(rate_key)
+    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    conn.execute("UPDATE users SET last_login=?, last_active=? WHERE id=?", (now, now, user["id"]))
+    conn.commit()
     token = make_token(dict(user))
     return {
         "access_token": token,

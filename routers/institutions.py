@@ -86,6 +86,33 @@ def list_institutions(conn, user: dict = Depends(require_roles("superadmin"))) -
     return [dict(r) for r in rows]
 
 
+@router.get("/api/admin/active-users")
+@db_session
+def get_active_users(conn, minutes: int = 5, user: dict = Depends(require_roles("superadmin"))) -> Dict[str, Any]:
+    """Who currently holds a live session, approximated from last_active (refreshed
+    on every authenticated request in core/deps.py, throttled to ~once/minute per
+    user) since JWT auth is stateless and issued tokens aren't tracked anywhere —
+    there's no way to enumerate "logged in" directly, only "active recently."
+    Meant for superadmin to check before server maintenance/shutdown."""
+    minutes = max(1, min(minutes, 1440))
+    rows = conn.execute("""
+        SELECT u.username, u.full_name, u.role, u.last_login, u.last_active,
+               i.name AS institution_name, i.code AS institution_code
+        FROM users u
+        LEFT JOIN institutions i ON i.id = u.institution_id
+        WHERE u.is_active = 1 AND u.last_active IS NOT NULL
+          AND u.last_active >= to_char((NOW() AT TIME ZONE 'UTC') - make_interval(mins => ?), 'YYYY-MM-DD HH24:MI:SS')
+        ORDER BY u.last_active DESC
+    """, (minutes,)).fetchall()
+    total_users = conn.execute("SELECT COUNT(*) FROM users WHERE is_active=1").fetchone()[0]
+    return {
+        "window_minutes": minutes,
+        "active_count": len(rows),
+        "total_users": total_users,
+        "active_users": [dict(r) for r in rows],
+    }
+
+
 @router.post("/api/institutions", status_code=201)
 @db_session
 def create_institution(conn, body: InstitutionIn, user: dict = Depends(require_roles("superadmin"))) -> Dict[str, Any]:
