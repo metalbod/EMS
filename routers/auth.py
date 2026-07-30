@@ -174,7 +174,16 @@ def switch_role(conn, body: SwitchRoleIn, user: dict = Depends(get_current_user)
 
 @router.get("/api/auth/me")
 def me(user: dict = Depends(get_current_user)) -> dict:
-    return user
+    # get_current_user's roles field is the raw comma-separated DB column (kept
+    # that way because get_current_user's own role-switch check splits it as a
+    # string) — the frontend expects an array here, same shape /login already
+    # returns, or applyRoleUI's role-switcher (userRoles.map) throws and aborts
+    # bootApp() before it loads employees/dashboard data. This is what caused
+    # "Employee List shows No employees found after F5": the session-restore
+    # path (this endpoint) never did this conversion that login() does.
+    result = dict(user)
+    result["roles"] = [r.strip() for r in (user.get("roles") or user["role"]).split(",") if r.strip()]
+    return result
 
 
 @router.post("/api/auth/change-password")

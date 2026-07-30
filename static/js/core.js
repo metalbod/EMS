@@ -267,7 +267,7 @@ function applyRoleUI() {
   // LD buttons
   document.getElementById('ldAddCourseBtn')?.classList.toggle('hidden',!canManageOb);
   // Role switcher — show if user has more than one assigned role
-  const userRoles = currentUser?.roles || [];
+  const userRoles = Array.isArray(currentUser?.roles) ? currentUser.roles : [];
   const switcher = document.getElementById('roleSwitcherWrap');
   if(userRoles.length > 1) {
     switcher.classList.remove('hidden');
