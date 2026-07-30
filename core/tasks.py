@@ -18,9 +18,12 @@ def _detect_bulk_upload_date_format(samples):
     Looks at every date value in the file together, not row by row, since a single
     upload is assumed to come from one export with one consistent format throughout.
     A value with a 4-digit or >31 first part is treated as Y/M/D; otherwise, the
-    first ambiguous value where one of the first two parts is >12 (and so can only
-    be the day) pins down D/M/Y vs M/D/Y. Defaults to D/M/Y if every value is fully
-    ambiguous (day and month both <=12), matching this system's local convention.
+    first ambiguous value where one of the first two parts is a plausible day
+    (13-31) pins down D/M/Y vs M/D/Y. A value that doesn't fit any real date
+    (e.g. "45/13/1983") is skipped rather than treated as a signal, so one bad
+    row in an otherwise-consistent file can't corrupt detection for every other
+    row. Defaults to D/M/Y if every value is fully ambiguous (day and month
+    both <=12), matching this system's local convention.
     """
     day_position = None
     for s in samples:
@@ -33,12 +36,15 @@ def _detect_bulk_upload_date_format(samples):
             nums = [int(p) for p in parts]
         except ValueError:
             continue
-        if len(parts[0]) == 4 or nums[0] > 31:
+        if len(parts[0]) == 4:
             return "YMD"
-        if nums[0] > 12:
+        # Only a signal if exactly one of the two positions can be a day
+        # (13-31) while the other still fits as a month (1-12) — e.g. "45/13"
+        # fits neither reading and must be skipped rather than misread.
+        if 13 <= nums[0] <= 31 and 1 <= nums[1] <= 12:
             day_position = 0
             break
-        if nums[1] > 12:
+        if 13 <= nums[1] <= 31 and 1 <= nums[0] <= 12:
             day_position = 1
             break
     return "MDY" if day_position == 1 else "DMY"
@@ -204,6 +210,9 @@ def bulk_upload_employees_task(self, inst_id: int, csv_content: str, user_id: in
                 row = {k: (v.strip() if isinstance(v, str) else v) for k, v in raw_row.items()}
                 if not any(row.values()):
                     continue  # skip fully blank rows
+                # Captured before validation so a failed row is still identifiable
+                # in the error list even if EmployeeIn itself rejects the row.
+                row_identity = {"employee_id": row.get("employee_id") or None, "full_name": row.get("full_name") or None}
                 try:
                     payload = {c: (row.get(c) or None) for c in BULK_UPLOAD_COLUMNS}
                     for col in BULK_UPLOAD_DATE_COLUMNS:
@@ -233,7 +242,7 @@ def bulk_upload_employees_task(self, inst_id: int, csv_content: str, user_id: in
                         continue
 
                     if existing_count >= (inst["max_employees"] if inst else 10**9):
-                        errors.append({"row": i, "reason": f"Employee limit ({inst['max_employees']}) reached for this institution"})
+                        errors.append({**row_identity, "row": i, "reason": f"Employee limit ({inst['max_employees']}) reached for this institution"})
                         continue
                     max_attempts = 5 if not emp.employee_id else 1
                     for attempt in range(max_attempts):
@@ -251,16 +260,16 @@ def bulk_upload_employees_task(self, inst_id: int, csv_content: str, user_id: in
                 except ValidationError as e:
                     conn.rollback()
                     reasons = "; ".join(f"{err['loc'][0]}: {err['msg']}" for err in e.errors())
-                    errors.append({"row": i, "reason": reasons})
+                    errors.append({**row_identity, "row": i, "reason": reasons})
                 except HTTPException as e:
                     conn.rollback()
-                    errors.append({"row": i, "reason": e.detail})
+                    errors.append({**row_identity, "row": i, "reason": e.detail})
                 except (ValueError, TypeError) as e:
                     conn.rollback()
-                    errors.append({"row": i, "reason": str(e)})
+                    errors.append({**row_identity, "row": i, "reason": str(e)})
                 except IntegrityError as e:
                     conn.rollback()
-                    errors.append({"row": i, "reason": str(e)})
+                    errors.append({**row_identity, "row": i, "reason": str(e)})
 
             result = {
                 "created": created, "updated": updated, "errors": errors,
