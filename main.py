@@ -18,7 +18,7 @@ except ImportError:
 
 try:
     from core.deps import hash_password, verify_password
-    from core.onboarding_seed import seed_ob_templates
+    from core.onboarding_seed import seed_ob_templates_bulk
     from core.schemas import HealthResponse
     from core.tasks import app as celery_app
     from routers.audit import router as audit_router
@@ -50,7 +50,7 @@ try:
     from routers.frontend import router as frontend_router, STATIC_DIR
 except ImportError:
     from ems.core.deps import hash_password, verify_password
-    from ems.core.onboarding_seed import seed_ob_templates
+    from ems.core.onboarding_seed import seed_ob_templates_bulk
     from ems.core.schemas import HealthResponse
     from ems.core.tasks import app as celery_app
     from ems.routers.audit import router as audit_router
@@ -279,16 +279,15 @@ def _init_db_seed():
                 conn.execute("UPDATE users SET must_change_password=1 WHERE id=?", (row["id"],))
         conn.commit()
 
-        # Seed OB templates for existing institutions that don't have them
-        inst_ids = [r[0] for r in conn.execute("SELECT id FROM institutions").fetchall()]
-        for iid in inst_ids:
-            seed_ob_templates(conn, iid)
-        if inst_ids:
-            conn.commit()
+        # Seed OB templates for existing institutions that don't have them —
+        # seed_ob_templates_bulk avoids the per-institution round-trips the old
+        # loop-over-every-institution-every-boot approach had (see its docstring;
+        # with 1000+ institutions accumulated in this shared DB, that alone added
+        # minutes to every startup).
+        seed_ob_templates_bulk(conn)
+        conn.commit()
     finally:
         conn.close()
-
-_init_db_seed()
 
 # make_token, decode_token, get_current_user, require_roles, need_inst
 # imported from core.deps above.

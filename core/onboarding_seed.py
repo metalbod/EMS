@@ -38,12 +38,49 @@ DEFAULT_OB_TEMPLATES = {
 
 
 def seed_ob_templates(conn, inst_id: int):
-    """Seed default onboarding/offboarding templates for a new institution."""
+    """Seed default onboarding/offboarding templates for a single new institution
+    (called right after creating it — see routers/institutions.py). Cheap at that
+    scale; for seeding many/all institutions at once (app startup), use
+    seed_ob_templates_bulk instead, which avoids this function's per-institution
+    round-trips."""
     for ob_type, items in DEFAULT_OB_TEMPLATES.items():
         existing = conn.execute(
             "SELECT COUNT(*) FROM ob_templates WHERE institution_id=? AND type=?", (inst_id, ob_type)
         ).fetchone()[0]
         if existing == 0:
+            for title, desc, role, idx in items:
+                conn.execute(
+                    "INSERT INTO ob_templates (institution_id,type,title,description,assigned_role,order_index) VALUES (?,?,?,?,?,?)",
+                    (inst_id, ob_type, title, desc, role, idx)
+                )
+
+
+def seed_ob_templates_bulk(conn):
+    """Seed default onboarding/offboarding templates for every institution that's
+    missing them, in O(ob_types) queries instead of O(institutions * ob_types).
+
+    Used at app startup (see main.py's _init_db_seed), where looping per-institution
+    (the original approach, same logic as seed_ob_templates above) meant 2 round-trips
+    per institution on every single boot — harmless at a handful of institutions, but
+    with 1000+ accumulated over time (mostly leftover test institutions — see
+    tests/conftest.py's header note on the shared DB having no cleanup), that added
+    minutes to every deploy and local restart. Each ob_type's institutions-missing-it
+    are found with a single anti-join, then all their template rows are inserted in
+    one executemany-style loop scoped to just those institutions — still one INSERT
+    per row (db.py's Conn wrapper has no bulk-insert helper), but zero SELECTs
+    wasted on institutions that already have templates.
+    """
+    for ob_type, items in DEFAULT_OB_TEMPLATES.items():
+        missing_inst_ids = [r[0] for r in conn.execute(
+            """
+            SELECT i.id FROM institutions i
+            WHERE NOT EXISTS (
+                SELECT 1 FROM ob_templates t WHERE t.institution_id=i.id AND t.type=?
+            )
+            """,
+            (ob_type,)
+        ).fetchall()]
+        for inst_id in missing_inst_ids:
             for title, desc, role, idx in items:
                 conn.execute(
                     "INSERT INTO ob_templates (institution_id,type,title,description,assigned_role,order_index) VALUES (?,?,?,?,?,?)",
