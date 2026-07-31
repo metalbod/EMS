@@ -4,6 +4,39 @@ from pydantic import BaseModel, Field, ConfigDict
 
 
 # Auth schemas
+class InstitutionBrief(BaseModel):
+    """The subset of an institution's columns needed for the logged-in-user
+    header/branding — not the full InstitutionResponse (institution CRUD
+    returns more than a session needs)."""
+    id: int
+    name: str
+    code: str
+    status: str
+    logo_url: Optional[str] = None
+
+
+class CurrentUserOut(BaseModel):
+    """The one shape of "who's logged in" — returned by /login, /switch-role,
+    and /me. Previously each of those three endpoints hand-assembled its own
+    dict and drifted apart (roles as a string vs array, institution present
+    vs missing, must_change_password present vs missing) — each drift was a
+    real bug: crashed the frontend's role switcher, reverted institution
+    branding on refresh, and left "No employees found" after a refresh. One
+    model + one builder (core/deps.py's build_current_user_out) means a
+    missing/wrong field fails at the response boundary, not in the browser.
+    """
+    id: int
+    username: str
+    full_name: str
+    role: str
+    roles: List[str]
+    institution_id: Optional[int] = None
+    department: Optional[str] = None
+    employee_id: Optional[str] = None
+    institution: Optional[InstitutionBrief] = None
+    must_change_password: bool = False
+
+
 class TokenResponse(BaseModel):
     model_config = ConfigDict(json_schema_extra = {
         "example": {
@@ -15,7 +48,7 @@ class TokenResponse(BaseModel):
 
     access_token: str
     token_type: str = "bearer"
-    user: Optional[dict] = None
+    user: Optional[CurrentUserOut] = None
 
 
 # User schemas

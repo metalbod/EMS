@@ -109,6 +109,46 @@ def _load_current_user_row(user_id) -> dict | None:
         conn.close()
 
 
+def build_current_user_out(conn, user: dict, role_override: str = None):
+    """Build the one CurrentUserOut shape shared by /login, /switch-role, and
+    /me (core/schemas.py's CurrentUserOut) — the single place that converts a
+    raw `users` row into what a caller sees, so the three endpoints can't
+    drift into three different shapes again (see CurrentUserOut's docstring
+    for the bugs that caused).
+
+    `user` needs at least: id, username, full_name, role, roles,
+    institution_id, department, employee_id, must_change_password (missing
+    keys default sensibly — e.g. a dict without must_change_password reads as
+    False, matching how a freshly-switched role has nothing new to rotate).
+    `role_override` is used by /switch-role, where the active role for this
+    response is the newly-switched-to one, not user["role"].
+    """
+    try:
+        from core.schemas import CurrentUserOut
+    except ImportError:
+        from ems.core.schemas import CurrentUserOut
+
+    roles = [r.strip() for r in (user.get("roles") or user["role"]).split(",") if r.strip()]
+    inst = None
+    if user.get("institution_id"):
+        inst_row = conn.execute(
+            "SELECT id, name, code, status, logo_url FROM institutions WHERE id=?", (user["institution_id"],)
+        ).fetchone()
+        inst = dict(inst_row) if inst_row else None
+    return CurrentUserOut(
+        id=user["id"],
+        username=user["username"],
+        full_name=user["full_name"],
+        role=role_override or user["role"],
+        roles=roles,
+        institution_id=user.get("institution_id"),
+        department=user.get("department"),
+        employee_id=user.get("employee_id"),
+        institution=inst,
+        must_change_password=bool(user.get("must_change_password", False)),
+    )
+
+
 async def get_current_user(
     request: Request,
     creds: HTTPAuthorizationCredentials = Depends(bearer),

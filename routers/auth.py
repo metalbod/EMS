@@ -18,11 +18,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 try:
-    from core.deps import get_current_user, hash_password, make_token, verify_password
-    from core.schemas import TokenResponse
+    from core.deps import build_current_user_out, get_current_user, hash_password, make_token, verify_password
+    from core.schemas import CurrentUserOut, TokenResponse
 except ImportError:
-    from ems.core.deps import get_current_user, hash_password, make_token, verify_password
-    from ems.core.schemas import TokenResponse
+    from ems.core.deps import build_current_user_out, get_current_user, hash_password, make_token, verify_password
+    from ems.core.schemas import CurrentUserOut, TokenResponse
 
 try:
     from db import get_db
@@ -125,18 +125,7 @@ def login(conn, body: LoginIn, request: Request) -> dict:
     return {
         "access_token": token,
         "token_type": "bearer",
-        "user": {
-            "id": user["id"],
-            "username": user["username"],
-            "full_name": user["full_name"],
-            "role": user["role"],
-            "roles": [r.strip() for r in (user["roles"] or user["role"]).split(",") if r.strip()],
-            "institution_id": user["institution_id"],
-            "department": user["department"],
-            "employee_id": user["employee_id"],
-            "institution": dict(inst) if inst else None,
-            "must_change_password": bool(user["must_change_password"]),
-        }
+        "user": build_current_user_out(conn, dict(user)),
     }
 
 
@@ -149,53 +138,25 @@ def switch_role(conn, body: SwitchRoleIn, user: dict = Depends(get_current_user)
     allowed = [r.strip() for r in (row["roles"] or row["role"]).split(",") if r.strip()]
     if body.role not in allowed:
         raise HTTPException(403, f"Role '{body.role}' is not assigned to this user")
-    inst_row = conn.execute(
-        "SELECT id, name, code, status, logo_url FROM institutions WHERE id=?", (row["institution_id"],)
-    ).fetchone() if row["institution_id"] else None
     user_dict = dict(row)
     user_dict["role"] = body.role
     token = make_token(user_dict)
     return {
         "access_token": token,
         "token_type": "bearer",
-        "user": {
-            "id": row["id"],
-            "username": row["username"],
-            "full_name": row["full_name"],
-            "role": body.role,
-            "roles": allowed,
-            "institution_id": row["institution_id"],
-            "department": row["department"],
-            "employee_id": row["employee_id"],
-            "institution": dict(inst_row) if inst_row else None,
-        }
+        "user": build_current_user_out(conn, dict(row), role_override=body.role),
     }
 
 
-@router.get("/api/auth/me")
+@router.get("/api/auth/me", response_model=CurrentUserOut)
 @db_session
-def me(conn, user: dict = Depends(get_current_user)) -> dict:
-    # get_current_user's roles field is the raw comma-separated DB column (kept
-    # that way because get_current_user's own role-switch check splits it as a
-    # string) — the frontend expects an array here, same shape /login already
-    # returns, or applyRoleUI's role-switcher (userRoles.map) throws and aborts
-    # bootApp() before it loads employees/dashboard data. This is what caused
-    # "Employee List shows No employees found after F5": the session-restore
-    # path (this endpoint) never did this conversion that login() does.
-    result = dict(user)
-    result["roles"] = [r.strip() for r in (user.get("roles") or user["role"]).split(",") if r.strip()]
-    # login()/switch_role() both include "institution" (name/logo/etc, for the
-    # header/branding) — me() omitted it entirely, so an institution user's logo
-    # and company name silently reverted to the generic default on every page
-    # refresh (this endpoint is what restores the session then).
-    inst = None
-    if result.get("institution_id"):
-        inst_row = conn.execute(
-            "SELECT id, name, code, status, logo_url FROM institutions WHERE id=?", (result["institution_id"],)
-        ).fetchone()
-        inst = dict(inst_row) if inst_row else None
-    result["institution"] = inst
-    return result
+def me(conn, user: dict = Depends(get_current_user)) -> CurrentUserOut:
+    # Session-restore path (called on every page refresh) — build_current_user_out
+    # is the same builder /login and /switch-role use, so this can't drift into
+    # its own shape again (see CurrentUserOut's docstring for the two real bugs
+    # that drift caused: a crash on every F5, and institution branding silently
+    # reverting to the default on refresh).
+    return build_current_user_out(conn, user)
 
 
 @router.post("/api/auth/change-password")
