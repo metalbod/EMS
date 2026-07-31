@@ -1,6 +1,6 @@
 """Pydantic schemas for Compensation Framework."""
 from typing import Optional, List, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from datetime import date
 
 
@@ -326,8 +326,28 @@ class MeritRecommendationBase(BaseModel):
 
 
 class MeritRecommendationCreate(MeritRecommendationBase):
-    """Create merit recommendation."""
-    pass
+    """Create merit recommendation.
+
+    current_salary/recommended_increase_percent/recommended_new_salary were
+    stored and trusted as independent fields even though they're
+    mathematically related — nothing stopped them disagreeing (e.g. a typo
+    in one field with no cross-check against the other). Enforced only here,
+    not on MeritRecommendationBase/Response: a handful of existing rows in
+    this shared DB (see tests/conftest.py's header note — no separate test
+    DB) predate this check and would fail it, so reading them back must stay
+    permissive; only new submissions are held to the invariant.
+    """
+    @model_validator(mode="after")
+    def check_new_salary_matches_percent(self):
+        expected = self.current_salary * (1 + self.recommended_increase_percent / 100)
+        tolerance = max(5.0, abs(self.current_salary) * 0.005)  # RM5 or 0.5%, whichever is larger — allows reasonable manual rounding
+        if abs(expected - self.recommended_new_salary) > tolerance:
+            raise ValueError(
+                f"recommended_new_salary ({self.recommended_new_salary:,.2f}) doesn't match "
+                f"current_salary * (1 + recommended_increase_percent/100) = {expected:,.2f} "
+                f"(within RM{tolerance:,.2f} tolerance)"
+            )
+        return self
 
 
 class MeritRecommendationApprove(BaseModel):

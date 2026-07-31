@@ -34,7 +34,12 @@ try:
     from routers.locations import router as locations_router
     from routers.location_features import router as location_features_router
     from routers.location_phase2 import router as location_phase2_router
-    from routers.compensation import router as compensation_router
+    from routers.compensation_pay_structure import router as compensation_pay_structure_router
+    from routers.compensation_merit import router as compensation_merit_router
+    from routers.compensation_bonus import router as compensation_bonus_router
+    from routers.compensation_commission import router as compensation_commission_router
+    from routers.compensation_equity import router as compensation_equity_router
+    from routers.compensation_rewards import router as compensation_rewards_router
     from routers.benefits import router as benefits_router
     from routers.attendance import router as attendance_router
     from routers.auth import router as auth_router
@@ -66,7 +71,12 @@ except ImportError:
     from ems.routers.locations import router as locations_router
     from ems.routers.location_features import router as location_features_router
     from ems.routers.location_phase2 import router as location_phase2_router
-    from ems.routers.compensation import router as compensation_router
+    from ems.routers.compensation_pay_structure import router as compensation_pay_structure_router
+    from ems.routers.compensation_merit import router as compensation_merit_router
+    from ems.routers.compensation_bonus import router as compensation_bonus_router
+    from ems.routers.compensation_commission import router as compensation_commission_router
+    from ems.routers.compensation_equity import router as compensation_equity_router
+    from ems.routers.compensation_rewards import router as compensation_rewards_router
     from ems.routers.benefits import router as benefits_router
     from ems.routers.attendance import router as attendance_router
     from ems.routers.auth import router as auth_router
@@ -180,7 +190,12 @@ app.include_router(employees_router)
 app.include_router(locations_router)
 app.include_router(location_features_router)
 app.include_router(location_phase2_router)
-app.include_router(compensation_router)
+app.include_router(compensation_pay_structure_router)
+app.include_router(compensation_merit_router)
+app.include_router(compensation_bonus_router)
+app.include_router(compensation_commission_router)
+app.include_router(compensation_equity_router)
+app.include_router(compensation_rewards_router)
 app.include_router(benefits_router)
 app.include_router(attendance_router)
 app.include_router(auth_router)
