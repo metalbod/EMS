@@ -1,25 +1,17 @@
 import os
 import logging
-import time
 
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import Response
-
-try:
-    from db import get_db, get_admin_db
-except ImportError:
-    from ems.db import get_db, get_admin_db
 
 # payroll_calc import moved to routers/payroll.py (only used there now).
 
 try:
-    from core.deps import hash_password, verify_password
-    from core.onboarding_seed import seed_ob_templates_bulk
-    from core.schemas import HealthResponse
+    from core.seed import init_db_seed
+    from core.middleware import cors_middleware, request_logging_middleware
     from core.tasks import app as celery_app
     from routers.audit import router as audit_router
     from routers.tasks import router as tasks_router
@@ -47,11 +39,11 @@ try:
     from routers.attendance import router as attendance_router
     from routers.auth import router as auth_router
     from routers.meta import router as meta_router
+    from routers.health import router as health_router
     from routers.frontend import router as frontend_router, STATIC_DIR
 except ImportError:
-    from ems.core.deps import hash_password, verify_password
-    from ems.core.onboarding_seed import seed_ob_templates_bulk
-    from ems.core.schemas import HealthResponse
+    from ems.core.seed import init_db_seed
+    from ems.core.middleware import cors_middleware, request_logging_middleware
     from ems.core.tasks import app as celery_app
     from ems.routers.audit import router as audit_router
     from ems.routers.tasks import router as tasks_router
@@ -71,6 +63,7 @@ except ImportError:
     from ems.routers.payroll import router as payroll_router
     from ems.routers.performance import router as performance_router
     from ems.routers.employees import router as employees_router
+    from ems.routers.locations import router as locations_router
     from ems.routers.location_features import router as location_features_router
     from ems.routers.location_phase2 import router as location_phase2_router
     from ems.routers.compensation import router as compensation_router
@@ -78,6 +71,7 @@ except ImportError:
     from ems.routers.attendance import router as attendance_router
     from ems.routers.auth import router as auth_router
     from ems.routers.meta import router as meta_router
+    from ems.routers.health import router as health_router
     from ems.routers.frontend import router as frontend_router, STATIC_DIR
 
 # ---------------------------------------------------------------------------
@@ -123,11 +117,10 @@ if sentry_dsn:
 
 # OB_ROLES moved to routers/onboarding.py (only used there now).
 
-# DEFAULT_OB_TEMPLATES / seed_ob_templates moved to core/onboarding_seed.py
-# (imported near the top of this file) so routers/institutions.py can use it
-# without importing from main.py and creating a circular import.
-
-# hash_password, verify_password imported from core.deps above.
+# DEFAULT_OB_TEMPLATES / seed_ob_templates moved to core/onboarding_seed.py,
+# used by routers/institutions.py directly (not through main.py, avoiding a
+# circular import) and by core/seed.py's init_db_seed (imported near the top
+# of this file) for app-startup seeding.
 
 # Login rate limiting moved to routers/auth.py.
 
@@ -157,9 +150,15 @@ def run_seed():
     reintroduce it here.
     """
     try:
-        _init_db_seed()
+        init_db_seed()
     except Exception as e:
         logger.error(f"Error seeding database: {e}")
+
+# Registration order matters: matches the original @app.middleware decorator
+# order this was extracted from (core/middleware.py) — cors_middleware first,
+# request_logging_middleware second.
+app.middleware("http")(cors_middleware)
+app.middleware("http")(request_logging_middleware)
 
 app.include_router(audit_router)
 app.include_router(notifications_router)
@@ -187,107 +186,16 @@ app.include_router(attendance_router)
 app.include_router(auth_router)
 app.include_router(meta_router)
 app.include_router(tasks_router)
-
-@app.api_route("/health", methods=["GET", "HEAD"], response_model=HealthResponse, tags=["health"])
-def health():
-    """Liveness/readiness probe for Fly.io — confirms the process is up and the DB pool can serve a connection.
-
-    Supports both GET (returns JSON) and HEAD (returns status code only) for monitoring services.
-    HEAD requests are used by UptimeRobot free plan and other lightweight health checks.
-    """
-    try:
-        conn = get_db()
-        conn.execute("SELECT 1")
-        conn.close()
-        return {"status": "ok"}
-    except Exception as e:
-        raise HTTPException(503, f"unhealthy: {e}")
-
-CORS_HEADERS = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "*",
-    "Access-Control-Max-Age": "86400",
-}
-
-@app.middleware("http")
-async def cors_middleware(request: Request, call_next):
-    if request.method == "OPTIONS":
-        return Response(status_code=200, headers=CORS_HEADERS)
-    response = await call_next(request)
-    for k, v in CORS_HEADERS.items():
-        response.headers[k] = v
-    return response
-
-@app.middleware("http")
-async def request_logging_middleware(request: Request, call_next):
-    """Logs every request (method, path, status, duration) and guarantees
-    unhandled exceptions are logged with a stack trace before propagating —
-    previously an unhandled error anywhere in an endpoint had no log trail
-    at all beyond uvicorn's bare access line."""
-    start = time.monotonic()
-    try:
-        response = await call_next(request)
-    except Exception:
-        duration_ms = round((time.monotonic() - start) * 1000, 1)
-        logger.exception("Unhandled error on %s %s (%sms)", request.method, request.url.path, duration_ms)
-        raise
-    duration_ms = round((time.monotonic() - start) * 1000, 1)
-    level = logging.WARNING if response.status_code >= 500 else logging.INFO
-    logger.log(level, "%s %s -> %s (%sms)", request.method, request.url.path, response.status_code, duration_ms)
-    return response
+app.include_router(health_router)
 
 # ---------------------------------------------------------------------------
 # Database (Postgres/Supabase — see db.py)
 # ---------------------------------------------------------------------------
-# Schema is now managed by Alembic migrations (migrations/versions/).
-# Database initialization happens via `alembic upgrade head` at app boot or
-# deployment time. Seeding (superadmin user, OB templates) still happens
-# here to decouple seed data from DDL migrations.
+# Schema is managed by Alembic migrations (migrations/versions/), applied
+# separately (run manually / in CI before deploy). Seed data (superadmin
+# user, OB templates) is decoupled from DDL migrations — see core/seed.py's
+# init_db_seed, called from the startup event handler above.
 # ---------------------------------------------------------------------------
-
-def _init_db_seed():
-    """Initialize seed data: superadmin user and OB templates.
-
-    This is called after the schema is created (either via Alembic or on
-    fresh app boot when no schema yet exists). Does not run any DDL — only
-    INSERT and UPDATE statements for seed data.
-    """
-    conn = get_admin_db()
-    try:
-        # Seed platform superadmin. must_change_password=1 forces a password
-        # rotation before anything else meaningful can happen with this
-        # well-known default credential — see routers/auth.py's login response
-        # and routers/users.py's update_user, which clears the flag once a real
-        # password is set.
-        if not conn.execute("SELECT id FROM users WHERE role='superadmin' LIMIT 1").fetchone():
-            conn.execute("""
-                INSERT INTO users (institution_id, username, full_name, email, password_hash, role, must_change_password)
-                VALUES (NULL, ?, ?, ?, ?, 'superadmin', 1)
-            """, ("superadmin", "Platform Administrator", "admin@platform.com", hash_password("Admin@123")))
-            conn.commit()
-
-        # One-time backfill for superadmin accounts seeded before
-        # must_change_password existed: if the password still matches the known
-        # default, flag it for rotation now instead of leaving it silently
-        # unrotated forever. Skips accounts that already changed their password
-        # (verify_password against the old default correctly fails for those).
-        for row in conn.execute(
-            "SELECT id, password_hash FROM users WHERE role='superadmin' AND must_change_password=0"
-        ).fetchall():
-            if verify_password("Admin@123", row["password_hash"]):
-                conn.execute("UPDATE users SET must_change_password=1 WHERE id=?", (row["id"],))
-        conn.commit()
-
-        # Seed OB templates for existing institutions that don't have them —
-        # seed_ob_templates_bulk avoids the per-institution round-trips the old
-        # loop-over-every-institution-every-boot approach had (see its docstring;
-        # with 1000+ institutions accumulated in this shared DB, that alone added
-        # minutes to every startup).
-        seed_ob_templates_bulk(conn)
-        conn.commit()
-    finally:
-        conn.close()
 
 # make_token, decode_token, get_current_user, require_roles, need_inst
 # imported from core.deps above.
