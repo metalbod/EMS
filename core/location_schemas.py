@@ -107,6 +107,23 @@ class LocationStatsResponse(BaseModel):
     employees_by_status: Dict[str, int] = Field(default_factory=dict)
 
 
+class LocationSummaryItem(BaseModel):
+    """One location's row within LocationSummaryResponse — was a bare dict
+    (List[Dict[str, Any]]) with keys the router happened to include that
+    static/js/dashboard.js's loadLocationsOverviewDash read under different
+    names (location_name vs name) or didn't get at all (manager_user_id,
+    capacity, utilization_percent) — the Locations Overview dashboard's
+    labels rendered blank and its stats were always 0 as a result. This
+    model is the contract both sides now share."""
+    name: str
+    location_name: str
+    code: str
+    employee_count: int
+    manager_user_id: Optional[int] = None
+    capacity: Optional[int] = None
+    utilization_percent: Optional[float] = None
+
+
 class LocationSummaryResponse(BaseModel):
     """Summary of all locations for an institution."""
     model_config = ConfigDict(json_schema_extra={
@@ -115,8 +132,8 @@ class LocationSummaryResponse(BaseModel):
             "active_locations": 5,
             "total_employees": 200,
             "locations": [
-                {"name": "KL HQ", "code": "KL_HQ", "employee_count": 45},
-                {"name": "PJ Branch", "code": "PJ_BR", "employee_count": 38}
+                {"name": "KL HQ", "location_name": "KL HQ", "code": "KL_HQ", "employee_count": 45},
+                {"name": "PJ Branch", "location_name": "PJ Branch", "code": "PJ_BR", "employee_count": 38}
             ]
         }
     })
@@ -124,7 +141,7 @@ class LocationSummaryResponse(BaseModel):
     total_locations: int
     active_locations: int
     total_employees: int
-    locations: List[Dict[str, Any]]
+    locations: List[LocationSummaryItem]
 
 
 # Employee location assignment schemas

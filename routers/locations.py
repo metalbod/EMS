@@ -5,6 +5,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from db import get_db, IntegrityError
 from core.deps import get_current_user
+from core.location_assignments import has_primary_location
 from core.location_schemas import (
     LocationCreate,
     LocationUpdate,
@@ -324,7 +325,7 @@ async def get_location_stats(
         conn.close()
 
 
-@router.get("/institutions/{inst_id}/location-summary")
+@router.get("/institutions/{inst_id}/location-summary", response_model=LocationSummaryResponse)
 async def get_institution_location_summary(
     inst_id: int,
     current_user: dict = Depends(get_current_user),
@@ -406,16 +407,8 @@ async def assign_employee_to_location(
             raise HTTPException(404, detail="Location not found")
 
         # Check for duplicate primary assignment
-        if assignment.assignment_type == "primary":
-            existing = conn.execute(
-                """
-                SELECT id FROM employee_location_assignments
-                WHERE employee_id = ? AND assignment_type = 'primary' AND is_active = 1
-                """,
-                (employee_id,),
-            ).fetchone()
-            if existing:
-                raise HTTPException(400, detail="Employee already has a primary location assignment")
+        if assignment.assignment_type == "primary" and has_primary_location(conn, inst_id, employee_id):
+            raise HTTPException(400, detail="Employee already has a primary location assignment")
 
         # Insert assignment
         conn.execute(

@@ -48,6 +48,11 @@ try:
 except ImportError:
     from ems.core.db_session import db_session
 
+try:
+    from core.location_assignments import get_primary_location, get_primary_locations, set_primary_location
+except ImportError:
+    from ems.core.location_assignments import get_primary_location, get_primary_locations, set_primary_location
+
 router = APIRouter()
 
 CAN_WRITE  = ("superadmin", "hr_manager", "hr_admin")
@@ -190,6 +195,58 @@ class EmployeeIn(BaseModel):
         return v
 
 
+class EmployeeOut(BaseModel):
+    """The one shape "an employee record" takes in every response —
+    list_employees, get_employee, create_employee, and update_employee all
+    return this, instead of each hand-patching its own dict(row) with
+    whichever computed fields it remembered to add. default_location_id/
+    location_name/manager_name aren't employees columns (see
+    get_primary_locations) — they're resolved and attached the same way
+    in every endpoint, so a caller can rely on them always being present
+    (None when there's no location/manager) rather than sometimes missing,
+    which is what caused "location reverts to No Location after save"."""
+    id: int
+    institution_id: int
+    employee_id: str
+    full_name: str
+    preferred_name: Optional[str] = None
+    ic_number: str
+    passport_number: Optional[str] = None
+    nationality: str
+    race: str
+    religion: str
+    gender: str
+    date_of_birth: str
+    marital_status: str
+    personal_email: Optional[str] = None
+    phone: str
+    address: Optional[str] = None
+    department: str
+    designation: str
+    employment_type: str
+    start_date: str
+    probation_end_date: Optional[str] = None
+    contract_end_date: Optional[str] = None
+    work_email: Optional[str] = None
+    epf_number: Optional[str] = None
+    socso_number: Optional[str] = None
+    income_tax_number: Optional[str] = None
+    bank_name: Optional[str] = None
+    bank_account: Optional[str] = None
+    basic_salary: float
+    reports_to: Optional[str] = None
+    status: str
+    created_at: str
+    updated_at: str
+    tax_category: str
+    num_children: int
+    salary_type: str
+    hourly_rate: float
+    default_location_id: Optional[int] = None
+    location_name: Optional[str] = None
+    manager_name: Optional[str] = None
+
+
 class BulkUploadIn(BaseModel):
     csv_content: str
 
@@ -218,7 +275,7 @@ def gen_employee_id(conn, inst_id: int) -> str:
         n += 1
 
 
-@router.get("/api/employees")
+@router.get("/api/employees", response_model=List[EmployeeOut])
 @db_session
 def list_employees(
     conn,
@@ -257,11 +314,11 @@ def list_employees(
 
     # location_name/default_location_id and manager_name aren't columns on employees
     # itself — employee_location_assignments (assignment_type='primary', is_active=1)
-    # is the single source of truth for "current location" (see _resolve_primary_locations),
+    # is the single source of truth for "current location" (see get_primary_locations),
     # reports_to is another employee's employee_id — resolve both in bulk lookups
     # rather than joining into every branch of the query above, since the base query
     # differs for managers (recursive CTE) vs other roles.
-    loc_map = _resolve_primary_locations(conn, inst_id, [r["employee_id"] for r in result])
+    loc_map = get_primary_locations(conn, inst_id, [r["employee_id"] for r in result])
     for r in result:
         loc = loc_map.get(r["employee_id"])
         r["default_location_id"] = loc["location_id"] if loc else None
@@ -279,54 +336,6 @@ def list_employees(
         for r in result: r["manager_name"] = None
 
     return result
-
-
-def _resolve_primary_locations(conn, inst_id, employee_ids):
-    """Bulk-resolve each employee's current location from their active 'primary'
-    employee_location_assignments row — the single place "an employee's location"
-    lives (there is no default_location_id column on employees; every writer,
-    including Add/Edit Employee via _set_primary_location below, goes through this
-    table). Returns {employee_id: {"location_id":.., "location_name":..}}."""
-    ids = [e for e in employee_ids if e]
-    if not ids:
-        return {}
-    rows = conn.execute(
-        f"""SELECT ela.employee_id, ela.location_id, l.name AS location_name
-            FROM employee_location_assignments ela
-            JOIN locations l ON l.id = ela.location_id
-            WHERE ela.institution_id=? AND ela.assignment_type='primary' AND ela.is_active=1
-              AND ela.employee_id IN ({','.join('?' * len(ids))})""",
-        [inst_id, *ids]
-    ).fetchall()
-    return {r["employee_id"]: {"location_id": r["location_id"], "location_name": r["location_name"]} for r in rows}
-
-
-def _set_primary_location(conn, inst_id, employee_id, location_id):
-    """Set/clear an employee's active 'primary' employee_location_assignments row —
-    the one place "an employee's current location" is stored (see
-    _resolve_primary_locations). Called by Add/Edit Employee (this file) and by the
-    dedicated location-assignment endpoints (routers/locations.py,
-    location_phase2.py transfers) so there is exactly one write path per change,
-    not two fields that can drift apart."""
-    existing = conn.execute(
-        "SELECT id, location_id FROM employee_location_assignments WHERE employee_id=? AND institution_id=? AND assignment_type='primary' AND is_active=1",
-        (employee_id, inst_id),
-    ).fetchone()
-    if location_id is None:
-        if existing:
-            conn.execute(
-                "UPDATE employee_location_assignments SET is_active=0, end_date=to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD') WHERE id=?",
-                (existing["id"],),
-            )
-        return
-    if existing:
-        if existing["location_id"] != location_id:
-            conn.execute("UPDATE employee_location_assignments SET location_id=? WHERE id=?", (location_id, existing["id"]))
-    else:
-        conn.execute(
-            "INSERT INTO employee_location_assignments (institution_id, employee_id, location_id, assignment_type, start_date) VALUES (?,?,?,'primary',to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD'))",
-            (inst_id, employee_id, location_id),
-        )
 
 
 def _insert_new_employee(conn, inst_id, emp: EmployeeIn, user: dict, ip: Optional[str]):
@@ -367,7 +376,7 @@ def _insert_new_employee(conn, inst_id, emp: EmployeeIn, user: dict, ip: Optiona
           emp.bank_name, emp.bank_account, emp.basic_salary, emp.num_children,
           emp.salary_type, emp.hourly_rate, reports_to))
     if emp.default_location_id is not None:
-        _set_primary_location(conn, inst_id, emp_id, emp.default_location_id)
+        set_primary_location(conn, inst_id, emp_id, emp.default_location_id)
     write_audit(conn, user, inst_id, emp_id, emp.full_name, "CREATE", None, ip)
     conn.execute(
         "INSERT INTO hr_notes (institution_id, employee_id, note_type, body, created_by) VALUES (?,?,?,?,?)",
@@ -417,7 +426,7 @@ def _update_bulk_employee(conn, inst_id, employee_id: str, emp: EmployeeIn, user
     return employee_id
 
 
-@router.post("/api/employees", status_code=201)
+@router.post("/api/employees", status_code=201, response_model=EmployeeOut)
 @db_session
 def create_employee(conn, emp: EmployeeIn, request: Request, user: dict = Depends(require_roles(*CAN_WRITE))) -> Dict[str, Any]:
     inst_id = need_inst(user)
@@ -442,11 +451,11 @@ def create_employee(conn, emp: EmployeeIn, request: Request, user: dict = Depend
                                (inst_id, emp_id)).fetchone()
             result = dict(row)
             # default_location_id/location_name aren't columns on employees (see
-            # _resolve_primary_locations) — the frontend patches its cached employee
+            # get_primary_locations) — the frontend patches its cached employee
             # object straight from this response (static/js/employees.js's
             # submitEmpForm), so omitting these here made a location set on create
             # silently vanish from the UI until the next full employee list reload.
-            loc = _resolve_primary_locations(conn, inst_id, [emp_id]).get(emp_id)
+            loc = get_primary_locations(conn, inst_id, [emp_id]).get(emp_id)
             result["default_location_id"] = loc["location_id"] if loc else None
             result["location_name"] = loc["location_name"] if loc else None
             return result
@@ -526,7 +535,7 @@ def bulk_upload_employees(conn, body: BulkUploadIn, request: Request, user: dict
     }
 
 
-@router.get("/api/employees/{employee_id}")
+@router.get("/api/employees/{employee_id}", response_model=EmployeeOut)
 @db_session
 def get_employee(conn, employee_id: str, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     inst_id = need_inst(user)
@@ -540,13 +549,13 @@ def get_employee(conn, employee_id: str, user: dict = Depends(get_current_user))
     if not row:
         raise HTTPException(404, "Employee not found")
     result = dict(row)
-    loc = _resolve_primary_locations(conn, inst_id, [employee_id]).get(employee_id)
+    loc = get_primary_locations(conn, inst_id, [employee_id]).get(employee_id)
     result["default_location_id"] = loc["location_id"] if loc else None
     result["location_name"] = loc["location_name"] if loc else None
     return result
 
 
-@router.put("/api/employees/{employee_id}")
+@router.put("/api/employees/{employee_id}", response_model=EmployeeOut)
 @db_session
 def update_employee(conn, employee_id: str, emp: EmployeeIn, request: Request,
                     user: dict = Depends(require_roles(*CAN_WRITE))) -> Dict[str, Any]:
@@ -642,7 +651,7 @@ def update_employee(conn, employee_id: str, emp: EmployeeIn, request: Request,
             "UPDATE employee_compensation SET base_salary=?, updated_at=? WHERE employee_id=? AND institution_id=? AND is_current=1",
             (emp.basic_salary, datetime.utcnow().isoformat(), new_id, inst_id)
         )
-        _set_primary_location(conn, inst_id, new_id, emp.default_location_id)
+        set_primary_location(conn, inst_id, new_id, emp.default_location_id)
         new_row = conn.execute(
             "SELECT * FROM employees WHERE institution_id=? AND employee_id=?", (inst_id, new_id)
         ).fetchone()
@@ -656,7 +665,7 @@ def update_employee(conn, employee_id: str, emp: EmployeeIn, request: Request,
         # submitEmpForm patches employees[idx] with, so a location saved here
         # would otherwise vanish from the UI (reopening Edit would show "No
         # Location") until the next full employee list reload.
-        loc = _resolve_primary_locations(conn, inst_id, [new_id]).get(new_id)
+        loc = get_primary_locations(conn, inst_id, [new_id]).get(new_id)
         result["default_location_id"] = loc["location_id"] if loc else None
         result["location_name"] = loc["location_name"] if loc else None
         return result
