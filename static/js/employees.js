@@ -23,60 +23,16 @@ function yearsOfServiceLabel(e) {
   return months ? `${years}y ${months}m` : `${years}y`;
 }
 
-let empSortKey = 'full_name';
-let empSortDir = 'asc';
-let empPageSize = 10;
-let empPage = 1;
+const empList = createListState({
+  sortKey: 'full_name',
+  sortValue: (e, key) => key === 'years_of_service' ? yearsOfServiceValue(e) : e[key],
+});
 let empFilteredData = [];
 
-function setEmpSort(key) {
-  if (empSortKey === key) {
-    empSortDir = empSortDir === 'asc' ? 'desc' : 'asc';
-  } else {
-    empSortKey = key;
-    empSortDir = 'asc';
-  }
-  empPage = 1;
-  renderEmpTable();
-}
-
-function setEmpPageSize(size) {
-  empPageSize = parseInt(size) || 10;
-  empPage = 1;
-  renderEmpTable();
-}
-
-function empPagePrev() {
-  if (empPage > 1) { empPage--; renderEmpTable(); }
-}
-
-function empPageNext() {
-  const totalPages = Math.max(1, Math.ceil(empFilteredData.length / empPageSize));
-  if (empPage < totalPages) { empPage++; renderEmpTable(); }
-}
-
-function sortedEmployees() {
-  const dir = empSortDir === 'asc' ? 1 : -1;
-  return [...empFilteredData].sort((a, b) => {
-    let av, bv;
-    if (empSortKey === 'years_of_service') { av = yearsOfServiceValue(a); bv = yearsOfServiceValue(b); }
-    else { av = a[empSortKey]; bv = b[empSortKey]; }
-    if (typeof av === 'string') av = av.toLowerCase();
-    if (typeof bv === 'string') bv = bv.toLowerCase();
-    if (av == null) av = '';
-    if (bv == null) bv = '';
-    if (av < bv) return -1 * dir;
-    if (av > bv) return 1 * dir;
-    return 0;
-  });
-}
-
-function updateEmpSortArrows() {
-  document.querySelectorAll('.emp-sort-arrow').forEach(el => {
-    const key = el.dataset.sortKey;
-    el.textContent = key === empSortKey ? (empSortDir === 'asc' ? ' ▲' : ' ▼') : '';
-  });
-}
+function setEmpSort(key) { empList.setSort(key); renderEmpTable(); }
+function setEmpPageSize(size) { empList.setPageSize(size); renderEmpTable(); }
+function empPagePrev() { empList.prevPage(); renderEmpTable(); }
+function empPageNext() { empList.nextPage(empFilteredData.length); renderEmpTable(); }
 
 function filterEmployees() {
   const q = document.getElementById('empSearch').value.toLowerCase();
@@ -86,7 +42,7 @@ function filterEmployees() {
     const mS = !s || e.status === s;
     return mQ && mS;
   });
-  empPage = 1;
+  empList.resetPage();
   renderEmpTable();
 }
 
@@ -94,19 +50,15 @@ function renderEmpTable() {
   const tbody = document.getElementById('empTableBody');
   const empty = document.getElementById('empEmpty');
   const pagination = document.getElementById('empPagination');
-  updateEmpSortArrows();
+  empList.updateSortArrows('.emp-sort-arrow');
   if (!empFilteredData.length) { tbody.innerHTML=''; empty.classList.remove('hidden'); pagination.classList.add('hidden'); return; }
   empty.classList.add('hidden');
   pagination.classList.remove('hidden');
-  document.getElementById('empPageSize').value = String(empPageSize);
+  document.getElementById('empPageSize').value = String(empList.pageSize);
 
-  const sorted = sortedEmployees();
-  const totalPages = Math.max(1, Math.ceil(sorted.length / empPageSize));
-  if (empPage > totalPages) empPage = totalPages;
-  const start = (empPage - 1) * empPageSize;
-  const pageItems = sorted.slice(start, start + empPageSize);
+  const { pageItems, start, total } = empList.view(empFilteredData);
   document.getElementById('empPageInfo').textContent =
-    `${start + 1}-${Math.min(start + empPageSize, sorted.length)} of ${sorted.length}`;
+    `${start + 1}-${Math.min(start + empList.pageSize, total)} of ${total}`;
 
   tbody.innerHTML = pageItems.map(e=>`
     <tr class="hover:bg-slate-50 transition cursor-pointer" onclick="viewEmployee('${esc(e.employee_id)}')">
@@ -336,7 +288,7 @@ async function toggleStatusFromView() {
     const updated=await res.json();
     const idx=employees.findIndex(em=>em.employee_id===viewingId);
     if(idx>=0) employees[idx]=updated;
-    closeViewModal(); renderEmpTable(employees); renderDashboard();
+    closeViewModal(); filterEmployees(); renderDashboard();
   }
 }
 
