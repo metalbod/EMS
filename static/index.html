@@ -14,7 +14,7 @@
      and with the reverse order that beat w-40's width:10rem on every element
      using both, since same-specificity rules resolve by source order. -->
 <link rel="stylesheet" href="/static/css/styles.css?v=49"/>
-<link rel="stylesheet" href="/static/css/tailwind.css?v=48"/>
+<link rel="stylesheet" href="/static/css/tailwind.css?v=49"/>
 </head>
 <body class="font-sans antialiased">
 
@@ -683,6 +683,22 @@
                record — both can be visible at once, same pattern as the
                Compensation & Benefits tab's two sections. -->
           <div id="dash-leave" class="dash-tab-panel hidden">
+            <!-- Leave Calendar (anyone with Leave-tab access — see canViewLeaveDash/
+                 hasEmployeeRecord in dashboard.js). HR Manager/HR Admin see each
+                 chip labeled with the leave type; everyone else just sees who's out. -->
+            <div class="bg-white rounded-xl border border-slate-200 p-5 mb-6">
+              <div class="flex items-center justify-between mb-4">
+                <button onclick="leaveCalPrevMonth()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">&larr; Prev</button>
+                <h3 id="leaveCalMonthLabel" class="font-semibold text-sm"></h3>
+                <button onclick="leaveCalNextMonth()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Next &rarr;</button>
+              </div>
+              <div class="grid grid-cols-7 gap-1 text-center text-xs font-semibold text-slate-400 uppercase mb-1">
+                <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
+              </div>
+              <div id="leaveCalGrid" class="grid grid-cols-7 gap-1"></div>
+              <p class="text-xs text-slate-400 mt-3">Shows approved leave only.</p>
+            </div>
+
             <div id="leaveUtilDashSection" class="hidden mb-6">
               <div class="bg-white rounded-xl border border-slate-200 p-5 mb-4">
                 <h3 class="font-semibold mb-3 text-sm">Utilization by Leave Type</h3>

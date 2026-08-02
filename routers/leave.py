@@ -38,6 +38,26 @@ except ImportError:
 
 router = APIRouter()
 
+# Roles that see WHAT KIND of leave someone is on in the Dashboard leave
+# calendar (see get_leave_calendar below) — narrower than LEAVE_MANAGE_ROLES
+# (which also includes superadmin, a platform-level role with no reason to
+# see institution leave-type detail here) and specific to this one view, not
+# a general "manages leave" permission.
+LEAVE_CALENDAR_TYPE_VISIBLE_ROLES = ("hr_manager", "hr_admin")
+
+
+class LeaveCalendarEntry(BaseModel):
+    """One employee's leave span shown on the Dashboard leave calendar.
+    leave_type_name is None for anyone outside LEAVE_CALENDAR_TYPE_VISIBLE_ROLES
+    — set (or not) server-side in get_leave_calendar, not filtered client-side,
+    so the type never reaches a non-HR browser's network response at all."""
+    employee_id: str
+    full_name: str
+    start_date: str
+    end_date: str
+    days_count: float
+    leave_type_name: Optional[str] = None
+
 
 class LeaveTypeIn(BaseModel):
     name: str
@@ -407,6 +427,52 @@ def list_leave_applications(conn, status: Optional[str] = None, user: dict = Dep
     q += " ORDER BY a.created_at DESC"
     rows = conn.execute(q, p).fetchall()
     return [dict(r) for r in rows]
+
+
+@router.get("/api/leave/calendar", response_model=List[LeaveCalendarEntry])
+@db_session
+def get_leave_calendar(conn, year: int, month: int, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
+    """Institution-wide Approved leave for a given month, for the Dashboard's
+    leave calendar. Unlike list_leave_applications above (scoped to a
+    manager's own reporting chain, or an employee's own applications), this
+    is deliberately institution-wide for every caller — HR Manager/HR Admin
+    and everyone else with Leave-tab access alike see who's out; only
+    LEAVE_CALENDAR_TYPE_VISIBLE_ROLES also see what kind of leave (see
+    LeaveCalendarEntry's docstring).
+
+    Access mirrors the Dashboard Leave tab's own visibility rule (see
+    static/js/dashboard.js's canViewLeaveDash/hasEmployeeRecord toggle):
+    anyone with a linked employee record, plus HR Manager/HR Admin even
+    without one.
+    """
+    inst_id = need_inst(user)
+    if not (user.get("employee_id") or user["role"] in LEAVE_CALENDAR_TYPE_VISIBLE_ROLES):
+        raise HTTPException(403, "Access denied")
+    if not (1 <= month <= 12):
+        raise HTTPException(400, "month must be between 1 and 12")
+
+    _, last_day = calendar.monthrange(year, month)
+    month_start = date(year, month, 1).isoformat()
+    month_end = date(year, month, last_day).isoformat()
+
+    rows = conn.execute("""
+        SELECT a.employee_id, e.full_name, a.start_date, a.end_date, a.days_count, lt.name AS leave_type_name
+        FROM leave_applications a
+        JOIN employees e ON e.employee_id = a.employee_id AND e.institution_id = a.institution_id
+        JOIN leave_types lt ON lt.id = a.leave_type_id
+        WHERE a.institution_id=? AND a.status='Approved'
+          AND a.start_date <= ? AND a.end_date >= ?
+        ORDER BY a.start_date
+    """, (inst_id, month_end, month_start)).fetchall()
+
+    can_see_type = user["role"] in LEAVE_CALENDAR_TYPE_VISIBLE_ROLES
+    result = []
+    for r in rows:
+        entry = dict(r)
+        if not can_see_type:
+            entry["leave_type_name"] = None
+        result.append(entry)
+    return result
 
 
 @router.post("/api/leave/applications", status_code=201)

@@ -378,7 +378,81 @@ async function loadDashboardTodos() {
 
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Leave Calendar — visible to anyone with Leave-tab access (see
+// loadLeaveDash's canViewLeaveDash/hasEmployeeRecord gate below, which
+// already controls whether dash-leave itself is reachable). The endpoint
+// itself (not this code) decides whether each entry's leave type is
+// visible — see routers/leave.py's get_leave_calendar.
+// ---------------------------------------------------------------------------
+let leaveCalYear = new Date().getFullYear();
+let leaveCalMonth = new Date().getMonth() + 1; // 1-12
+
+function leaveCalPrevMonth() {
+  leaveCalMonth--;
+  if (leaveCalMonth < 1) { leaveCalMonth = 12; leaveCalYear--; }
+  loadLeaveCalendar();
+}
+
+function leaveCalNextMonth() {
+  leaveCalMonth++;
+  if (leaveCalMonth > 12) { leaveCalMonth = 1; leaveCalYear++; }
+  loadLeaveCalendar();
+}
+
+const LEAVE_CAL_MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+function loadLeaveCalendar() {
+  document.getElementById('leaveCalMonthLabel').textContent = `${LEAVE_CAL_MONTH_NAMES[leaveCalMonth-1]} ${leaveCalYear}`;
+  api(`/api/leave/calendar?year=${leaveCalYear}&month=${leaveCalMonth}`).then(async res => {
+    if (!res || !res.ok) return;
+    const entries = await res.json();
+    renderLeaveCalendarGrid(entries);
+  });
+}
+
+function renderLeaveCalendarGrid(entries) {
+  const grid = document.getElementById('leaveCalGrid');
+  const firstDay = new Date(leaveCalYear, leaveCalMonth - 1, 1);
+  const daysInMonth = new Date(leaveCalYear, leaveCalMonth, 0).getDate();
+  const startOffset = firstDay.getDay(); // 0=Sun
+
+  // Bucket each entry's days into the calendar cells they span.
+  const byDay = {};
+  for (const e of entries) {
+    const start = new Date(e.start_date + 'T00:00:00');
+    const end = new Date(e.end_date + 'T00:00:00');
+    for (let d = new Date(Math.max(start, firstDay)); d <= end && d.getMonth() === leaveCalMonth - 1; d.setDate(d.getDate() + 1)) {
+      const day = d.getDate();
+      (byDay[day] = byDay[day] || []).push(e);
+    }
+  }
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  let cells = '';
+  for (let i = 0; i < startOffset; i++) cells += `<div></div>`;
+  for (let day = 1; day <= daysInMonth; day++) {
+    const dateStr = `${leaveCalYear}-${String(leaveCalMonth).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    const isToday = dateStr === todayStr;
+    const dayEntries = byDay[day] || [];
+    const shown = dayEntries.slice(0, 3);
+    const extra = dayEntries.length - shown.length;
+    const chips = shown.map(e => `
+      <div class="text-xs bg-amber-50 text-amber-700 rounded px-1 py-0.5 truncate" title="${esc(e.full_name)}${e.leave_type_name ? ' — ' + esc(e.leave_type_name) : ''}">
+        ${esc(e.full_name)}${e.leave_type_name ? ` (${esc(e.leave_type_name)})` : ''}
+      </div>`).join('');
+    const extraLabel = extra > 0 ? `<div class="text-xs text-slate-400">+${extra} more</div>` : '';
+    cells += `
+      <div class="min-h-[70px] border border-slate-100 rounded-lg p-1 ${isToday ? 'ring-1 ring-blue-400' : ''}">
+        <div class="text-xs ${isToday ? 'font-bold text-blue-600' : 'text-slate-400'} mb-0.5">${day}</div>
+        <div class="space-y-0.5">${chips}${extraLabel}</div>
+      </div>`;
+  }
+  grid.innerHTML = cells;
+}
+
 function loadLeaveDash() {
+  loadLeaveCalendar();
   const canViewLeaveDash = ['hr_manager','hr_admin'].includes(currentUser?.role);
   document.getElementById('leaveUtilDashSection').classList.toggle('hidden', !canViewLeaveDash);
   if (canViewLeaveDash) {
