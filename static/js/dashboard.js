@@ -436,12 +436,18 @@ function renderLeaveCalendarGrid(entries) {
     const isToday = dateStr === todayStr;
     const dayEntries = byDay[day] || [];
     const shown = dayEntries.slice(0, 3);
-    const extra = dayEntries.length - shown.length;
+    const rest = dayEntries.slice(3);
     const chips = shown.map(e => `
       <div class="text-xs bg-amber-50 text-amber-700 rounded px-1 py-0.5 truncate" title="${esc(e.full_name)}${e.leave_type_name ? ' — ' + esc(e.leave_type_name) : ''}">
         ${esc(e.full_name)}${e.leave_type_name ? ` (${esc(e.leave_type_name)})` : ''}
       </div>`).join('');
-    const extraLabel = extra > 0 ? `<div class="text-xs text-slate-400">+${extra} more</div>` : '';
+    const extraLabel = rest.length > 0 ? `
+      <div class="relative group">
+        <div class="text-xs text-slate-400 cursor-default">+${rest.length} more</div>
+        <div class="hidden group-hover:block absolute z-10 left-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg p-2 min-w-[160px] max-w-[240px] space-y-0.5">
+          ${rest.map(e => `<div class="text-xs text-slate-700 truncate">${esc(e.full_name)}${e.leave_type_name ? ` (${esc(e.leave_type_name)})` : ''}</div>`).join('')}
+        </div>
+      </div>` : '';
     cells += `
       <div class="min-h-[70px] border border-slate-100 rounded-lg p-1 ${isToday ? 'ring-1 ring-blue-400' : ''}">
         <div class="text-xs ${isToday ? 'font-bold text-blue-600' : 'text-slate-400'} mb-0.5">${day}</div>
