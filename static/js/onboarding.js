@@ -220,173 +220,175 @@ async function deleteObChecklist(clId,type) {
   loadObChecklists(type);
 }
 
-let obTmplCoursesCache=[];
-let obTmplSetsCache=[];
-let obTmplItemsCache=[];
-let obCurrentSetId=null;
+// ---------------------------------------------------------------------------
+// Manage Templates — now an in-page tab (per type) instead of a modal. Each
+// element id is suffixed with the type (`_onboarding`/`_offboarding`) since
+// both pages can hold independent state; `oid()` builds those ids so the
+// functions below stay type-agnostic.
+// ---------------------------------------------------------------------------
+const OB_ROLES_ORDER=['employee','manager','hr_admin','hr_manager'];
+let obTmplCoursesCache={onboarding:[],offboarding:[]};
+let obTmplSetsCache={onboarding:[],offboarding:[]};
+let obTmplItemsCache={onboarding:[],offboarding:[]};
+let obCurrentSetId={onboarding:null,offboarding:null};
+let obTemplatesLoaded={onboarding:false,offboarding:false};
+let obActiveTmplType='onboarding';
 
-async function showObTemplates(type) {
-  document.getElementById('obTmplType').value=type;
-  document.getElementById('obTemplatesTitle').textContent=`${type==='onboarding'?'Onboarding':'Offboarding'} Templates`;
-  document.getElementById('obTmplTitle').value='';
-  document.getElementById('obTmplDesc').value='';
-  document.getElementById('obTmplLdCourse').value='';
-  hideObSetForm();
-  const coursesRes=await api('/api/ld/courses');
-  obTmplCoursesCache=coursesRes?.ok?await coursesRes.json():[];
-  const courseOptions='<option value="">No linked course — manual completion</option>'+
-    obTmplCoursesCache.map(c=>`<option value="${c.id}">${esc(c.title)}</option>`).join('');
-  document.getElementById('obTmplLdCourse').innerHTML=courseOptions;
-  document.getElementById('obTmplItemCourse').innerHTML=courseOptions;
-  await loadObTemplateSets(type);
-  document.getElementById('obTemplatesModal').classList.remove('hidden');
+function oid(type,base){return `${base}_${type}`;}
+function oel(type,base){return document.getElementById(oid(type,base));}
+
+function switchObSubTab(type,tab) {
+  document.getElementById(`obSubTab_${type}_checklists`)?.classList.remove('view-tab-active');
+  document.getElementById(`obSubTab_${type}_templates`)?.classList.remove('view-tab-active');
+  document.getElementById(`obSubTab_${type}_${tab}`)?.classList.add('view-tab-active');
+  document.getElementById(`obSubPanel_${type}_checklists`).classList.toggle('hidden', tab!=='checklists');
+  document.getElementById(`obSubPanel_${type}_templates`).classList.toggle('hidden', tab!=='templates');
+  if(tab==='templates' && !obTemplatesLoaded[type]) {
+    obTemplatesLoaded[type]=true;
+    loadObTemplatesTab(type);
+  }
 }
-function closeObTemplates(){document.getElementById('obTemplatesModal').classList.add('hidden');}
+
+async function loadObTemplatesTab(type) {
+  hideObSetForm(type);
+  const coursesRes=await api('/api/ld/courses');
+  obTmplCoursesCache[type]=coursesRes?.ok?await coursesRes.json():[];
+  const courseOptions='<option value="">No linked course — manual completion</option>'+
+    obTmplCoursesCache[type].map(c=>`<option value="${c.id}">${esc(c.title)}</option>`).join('');
+  oel(type,'obTmplLdCourse').innerHTML=courseOptions;
+  await loadObTemplateSets(type);
+}
 
 async function loadObTemplateSets(type, selectId) {
   const res=await api(`/api/ob/template-sets?type=${type}`);
-  obTmplSetsCache=res?.ok?await res.json():[];
-  const sel=document.getElementById('obTmplSetSelect');
-  if(!obTmplSetsCache.length){
+  obTmplSetsCache[type]=res?.ok?await res.json():[];
+  const sel=oel(type,'obTmplSetSelect');
+  if(!obTmplSetsCache[type].length){
     sel.innerHTML='<option value="">No templates yet</option>';
-    obCurrentSetId=null;
-    document.getElementById('obTemplatesList').innerHTML='';
-    document.getElementById('obTemplatesEmpty').classList.remove('hidden');
+    obCurrentSetId[type]=null;
+    oel(type,'obTemplatesEmpty').classList.remove('hidden');
+    renderObSwimlane(type);
     return;
   }
-  document.getElementById('obTemplatesEmpty').classList.add('hidden');
-  sel.innerHTML=obTmplSetsCache.map(s=>`<option value="${s.id}">${esc(s.name)}${s.is_default?' (Default)':''} — ${s.item_count} item${s.item_count===1?'':'s'}</option>`).join('');
-  obCurrentSetId=selectId&&obTmplSetsCache.some(s=>s.id===selectId)?selectId:obTmplSetsCache[0].id;
-  sel.value=String(obCurrentSetId);
-  await refreshObTemplatesList();
+  oel(type,'obTemplatesEmpty').classList.add('hidden');
+  sel.innerHTML=obTmplSetsCache[type].map(s=>`<option value="${s.id}">${esc(s.name)}${s.is_default?' (Default)':''} — ${s.item_count} item${s.item_count===1?'':'s'}</option>`).join('');
+  obCurrentSetId[type]=selectId&&obTmplSetsCache[type].some(s=>s.id===selectId)?selectId:obTmplSetsCache[type][0].id;
+  sel.value=String(obCurrentSetId[type]);
+  await refreshObTemplatesList(type);
 }
 
-function switchObTemplateSet() {
-  obCurrentSetId=parseInt(document.getElementById('obTmplSetSelect').value);
-  refreshObTemplatesList();
+function switchObTemplateSet(type) {
+  obCurrentSetId[type]=parseInt(oel(type,'obTmplSetSelect').value);
+  refreshObTemplatesList(type);
 }
 
-function showObSetForm(){
-  document.getElementById('obSetName').value='';
-  document.getElementById('obSetIsDefault').checked=false;
-  document.getElementById('obSetForm').classList.remove('hidden');
+function showObSetForm(type){
+  oel(type,'obSetName').value='';
+  oel(type,'obSetIsDefault').checked=false;
+  oel(type,'obSetForm').classList.remove('hidden');
 }
-function hideObSetForm(){document.getElementById('obSetForm').classList.add('hidden');}
+function hideObSetForm(type){oel(type,'obSetForm')?.classList.add('hidden');}
 
-async function saveObTemplateSet() {
-  const type=document.getElementById('obTmplType').value;
-  const name=document.getElementById('obSetName').value.trim();
+async function saveObTemplateSet(type) {
+  const name=oel(type,'obSetName').value.trim();
   if(!name){alert('Template name is required');return;}
   const res=await api('/api/ob/template-sets',{method:'POST',body:JSON.stringify({type,name})});
   if(!res||!res.ok) return;
   const created=await res.json();
-  if(document.getElementById('obSetIsDefault').checked){
+  if(oel(type,'obSetIsDefault').checked){
     await api(`/api/ob/template-sets/${created.id}`,{method:'PUT',body:JSON.stringify({name,is_default:true})});
   }
-  hideObSetForm();
+  hideObSetForm(type);
   await loadObTemplateSets(type, created.id);
 }
 
-async function renameObTemplateSet() {
-  if(!obCurrentSetId) return;
-  const current=obTmplSetsCache.find(s=>s.id===obCurrentSetId);
+async function renameObTemplateSet(type) {
+  const setId=obCurrentSetId[type];
+  if(!setId) return;
+  const current=obTmplSetsCache[type].find(s=>s.id===setId);
   const name=prompt('Template name:', current?.name||'');
   if(!name||!name.trim()) return;
-  const res=await api(`/api/ob/template-sets/${obCurrentSetId}`,{method:'PUT',body:JSON.stringify({name:name.trim(),is_default:!!current?.is_default})});
+  const res=await api(`/api/ob/template-sets/${setId}`,{method:'PUT',body:JSON.stringify({name:name.trim(),is_default:!!current?.is_default})});
   if(!res||!res.ok) return;
-  const type=document.getElementById('obTmplType').value;
-  await loadObTemplateSets(type, obCurrentSetId);
+  await loadObTemplateSets(type, setId);
 }
 
-async function setObTemplateSetDefault() {
-  if(!obCurrentSetId) return;
-  const current=obTmplSetsCache.find(s=>s.id===obCurrentSetId);
-  await api(`/api/ob/template-sets/${obCurrentSetId}`,{method:'PUT',body:JSON.stringify({name:current?.name||'', is_default:true})});
-  const type=document.getElementById('obTmplType').value;
-  await loadObTemplateSets(type, obCurrentSetId);
+async function setObTemplateSetDefault(type) {
+  const setId=obCurrentSetId[type];
+  if(!setId) return;
+  const current=obTmplSetsCache[type].find(s=>s.id===setId);
+  await api(`/api/ob/template-sets/${setId}`,{method:'PUT',body:JSON.stringify({name:current?.name||'', is_default:true})});
+  await loadObTemplateSets(type, setId);
 }
 
-async function deleteObTemplateSet() {
-  if(!obCurrentSetId) return;
+async function deleteObTemplateSet(type) {
+  const setId=obCurrentSetId[type];
+  if(!setId) return;
   if(!confirm('Delete this template? All its checklist items must be removed first.')) return;
-  const res=await api(`/api/ob/template-sets/${obCurrentSetId}`,{method:'DELETE'});
+  const res=await api(`/api/ob/template-sets/${setId}`,{method:'DELETE'});
   if(!res||!res.ok){const d=await res?.json();alert(d?.detail||'Failed to delete');return;}
-  const type=document.getElementById('obTmplType').value;
   await loadObTemplateSets(type);
 }
 
-async function refreshObTemplatesList() {
-  if(!obCurrentSetId){document.getElementById('obTemplatesList').innerHTML='';return;}
-  const res=await api(`/api/ob/templates?template_set_id=${obCurrentSetId}`);
+async function refreshObTemplatesList(type) {
+  const setId=obCurrentSetId[type];
+  if(!setId){obTmplItemsCache[type]=[];renderObSwimlane(type);return;}
+  const res=await api(`/api/ob/templates?template_set_id=${setId}`);
   if(!res||!res.ok) return;
-  obTmplItemsCache=await res.json();
-  const canManage=['superadmin','hr_manager','hr_admin'].includes(currentUser?.role);
-  document.getElementById('obTemplatesList').innerHTML=obTmplItemsCache.length?obTmplItemsCache.map((t,idx)=>{
-    const linkedCourse=obTmplCoursesCache.find(c=>c.id===t.linked_ld_course_id);
-    return `<div class="flex items-center gap-2 py-2 border-b border-slate-100">
-      <div class="flex flex-col flex-shrink-0">
-        <button onclick="moveObTemplate(${t.id},'up')" ${idx===0?'disabled':''} class="text-slate-300 hover:text-blue-500 disabled:opacity-30 disabled:hover:text-slate-300" title="Move up"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg></button>
-        <button onclick="moveObTemplate(${t.id},'down')" ${idx===obTmplItemsCache.length-1?'disabled':''} class="text-slate-300 hover:text-blue-500 disabled:opacity-30 disabled:hover:text-slate-300" title="Move down"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg></button>
-      </div>
-      <div class="flex-1 min-w-0 cursor-pointer" onclick="openObTmplItemModal(${t.id})">
-        <div class="flex items-center gap-2 flex-wrap">
-          <span class="badge ${OB_ROLE_COLORS[t.assigned_role]||'bg-slate-100'} text-xs flex-shrink-0">${OB_ROLE_LABELS[t.assigned_role]||t.assigned_role}</span>
-          <span class="text-sm text-slate-700">${esc(t.title)}</span>
-          ${linkedCourse?`<span class="badge text-xs bg-green-100 text-green-700 flex-shrink-0" title="Auto-completes via this course">🎓 ${esc(linkedCourse.title)}</span>`:''}
-        </div>
-        ${t.description?`<p class="text-xs text-slate-400 mt-0.5">${esc(t.description)}</p>`:''}
-      </div>
-      ${canManage?`<button onclick="deleteObTemplate(${t.id})" class="text-slate-300 hover:text-red-500 flex-shrink-0" title="Remove"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>`:''}
-    </div>`;
-  }).join(''):'<p class="text-slate-400 text-sm py-4 text-center">No template items yet.</p>';
+  obTmplItemsCache[type]=await res.json();
+  renderObSwimlane(type);
 }
 
-async function moveObTemplate(id,direction) {
+async function moveObTemplate(type,id,direction) {
   await api(`/api/ob/templates/${id}/move`,{method:'POST',body:JSON.stringify({direction})});
-  refreshObTemplatesList();
+  refreshObTemplatesList(type);
 }
 
-async function addObTemplate() {
-  const type=document.getElementById('obTmplType').value;
-  const title=document.getElementById('obTmplTitle').value.trim();
+async function addObTemplate(type) {
+  const title=oel(type,'obTmplTitle').value.trim();
   if(!title) return;
-  if(!obCurrentSetId){alert('Create a template first');return;}
-  const courseVal=document.getElementById('obTmplLdCourse').value;
+  const setId=obCurrentSetId[type];
+  if(!setId){alert('Create a template first');return;}
+  const courseVal=oel(type,'obTmplLdCourse').value;
   const body={
-    type,template_set_id:obCurrentSetId,title,description:document.getElementById('obTmplDesc').value.trim()||null,
-    assigned_role:document.getElementById('obTmplRole').value,
+    type,template_set_id:setId,title,description:oel(type,'obTmplDesc').value.trim()||null,
+    assigned_role:oel(type,'obTmplRole').value,
     linked_ld_course_id:courseVal?parseInt(courseVal):null
   };
   const res=await api('/api/ob/templates',{method:'POST',body:JSON.stringify(body)});
   if(!res||!res.ok) return;
-  document.getElementById('obTmplTitle').value='';
-  document.getElementById('obTmplDesc').value='';
-  document.getElementById('obTmplLdCourse').value='';
-  await loadObTemplateSets(type, obCurrentSetId);
+  oel(type,'obTmplTitle').value='';
+  oel(type,'obTmplDesc').value='';
+  oel(type,'obTmplLdCourse').value='';
+  await loadObTemplateSets(type, setId);
 }
 
-async function deleteObTemplate(id) {
+async function deleteObTemplate(type,id) {
   await api(`/api/ob/templates/${id}`,{method:'DELETE'});
-  await loadObTemplateSets(document.getElementById('obTmplType').value, obCurrentSetId);
+  await loadObTemplateSets(type, obCurrentSetId[type]);
 }
 
-function openObTmplItemModal(id) {
-  const item=obTmplItemsCache.find(t=>t.id===id);
+function openObTmplItemModal(type,id) {
+  const item=obTmplItemsCache[type].find(t=>t.id===id);
   if(!item) return;
+  obActiveTmplType=type;
   document.getElementById('obTmplItemId').value=item.id;
   document.getElementById('obTmplItemTitle').value=item.title;
   document.getElementById('obTmplItemDesc').value=item.description||'';
   document.getElementById('obTmplItemRole').value=item.assigned_role;
-  document.getElementById('obTmplItemCourse').value=item.linked_ld_course_id||'';
+  const courseSel=document.getElementById('obTmplItemCourse');
+  courseSel.innerHTML='<option value="">No linked course — manual completion</option>'+
+    obTmplCoursesCache[type].map(c=>`<option value="${c.id}">${esc(c.title)}</option>`).join('');
+  courseSel.value=item.linked_ld_course_id||'';
   document.getElementById('obTmplItemModal').classList.remove('hidden');
 }
 function closeObTmplItemModal(){document.getElementById('obTmplItemModal').classList.add('hidden');}
 
 async function saveObTmplItemDetail() {
+  const type=obActiveTmplType;
   const id=document.getElementById('obTmplItemId').value;
   const title=document.getElementById('obTmplItemTitle').value.trim();
   if(!title){alert('Title is required');return;}
-  const type=document.getElementById('obTmplType').value;
   const courseVal=document.getElementById('obTmplItemCourse').value;
   const body={
     type,title,description:document.getElementById('obTmplItemDesc').value.trim()||null,
@@ -396,5 +398,97 @@ async function saveObTmplItemDetail() {
   const res=await api(`/api/ob/templates/${id}`,{method:'PUT',body:JSON.stringify(body)});
   if(!res||!res.ok) return;
   closeObTmplItemModal();
-  await refreshObTemplatesList();
+  await refreshObTemplatesList(type);
+}
+
+// ---------------------------------------------------------------------------
+// Swimlane visualization — 4 role rows, steps placed left-to-right in
+// checklist order (order_index), with elbow-connector arrows tracing the
+// full sequence across lanes so a role handoff is visible at a glance
+// (see the reference HR-workflow diagram this was modeled after).
+// ---------------------------------------------------------------------------
+function renderObSwimlane(type) {
+  const items=obTmplItemsCache[type]||[];
+  const wrap=oel(type,'obSwimlaneWrap');
+  const grid=oel(type,'obSwimlaneGrid');
+  const svg=oel(type,'obSwimlaneSvg');
+  const emptyEl=oel(type,'obSwimlaneEmpty');
+  if(!items.length){
+    wrap.classList.add('hidden');
+    emptyEl.classList.remove('hidden');
+    grid.innerHTML='';
+    svg.innerHTML='';
+    return;
+  }
+  wrap.classList.remove('hidden');
+  emptyEl.classList.add('hidden');
+
+  const colWidth=190, labelWidth=120, gap=12;
+  grid.style.display='grid';
+  grid.style.gridTemplateColumns=`${labelWidth}px repeat(${items.length}, ${colWidth}px)`;
+  grid.style.gridTemplateRows=`repeat(${OB_ROLES_ORDER.length}, minmax(80px,auto))`;
+  grid.style.gap=`${gap}px`;
+
+  const canManage=['superadmin','hr_manager','hr_admin'].includes(currentUser?.role);
+  let html='';
+  OB_ROLES_ORDER.forEach((role,rIdx)=>{
+    html+=`<div style="grid-column:1;grid-row:${rIdx+1}" class="flex items-center">
+      <span class="badge ${OB_ROLE_COLORS[role]} text-xs whitespace-nowrap">${OB_ROLE_LABELS[role]}</span>
+    </div>`;
+  });
+  items.forEach((item,cIdx)=>{
+    const rIdx=OB_ROLES_ORDER.indexOf(item.assigned_role);
+    const linkedCourse=obTmplCoursesCache[type].find(c=>c.id===item.linked_ld_course_id);
+    html+=`<div style="grid-column:${cIdx+2};grid-row:${rIdx+1}">
+      <div id="${oid(type,'obSwimStep')}_${item.id}" class="${OB_ROLE_COLORS[item.assigned_role]} rounded-lg p-2 h-full flex flex-col shadow-sm border border-black/5">
+        <div class="flex items-center justify-between gap-1 mb-1">
+          <button onclick="moveObTemplate('${type}',${item.id},'up')" ${cIdx===0?'disabled':''} class="opacity-60 hover:opacity-100 disabled:opacity-20" title="Move earlier"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/></svg></button>
+          <span class="text-[10px] font-semibold opacity-60">${cIdx+1}</span>
+          <button onclick="moveObTemplate('${type}',${item.id},'down')" ${cIdx===items.length-1?'disabled':''} class="opacity-60 hover:opacity-100 disabled:opacity-20" title="Move later"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg></button>
+        </div>
+        <div class="flex-1 cursor-pointer" onclick="openObTmplItemModal('${type}',${item.id})">
+          <p class="text-xs font-semibold leading-tight">${esc(item.title)}</p>
+          ${linkedCourse?`<p class="text-[10px] mt-1 opacity-80 truncate" title="${esc(linkedCourse.title)}">🎓 ${esc(linkedCourse.title)}</p>`:''}
+        </div>
+        ${canManage?`<div class="flex justify-end mt-1">
+          <button onclick="deleteObTemplate('${type}',${item.id})" class="opacity-50 hover:opacity-100 hover:text-red-600" title="Remove"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg></button>
+        </div>`:''}
+      </div>
+    </div>`;
+  });
+  grid.innerHTML=html;
+
+  requestAnimationFrame(()=>drawObSwimlaneArrows(type,items));
+}
+
+function drawObSwimlaneArrows(type,items) {
+  const svg=oel(type,'obSwimlaneSvg');
+  const grid=oel(type,'obSwimlaneGrid');
+  if(!svg||!grid||items.length<2) { if(svg) svg.innerHTML=''; return; }
+  const gridRect=grid.getBoundingClientRect();
+  const originRect=svg.getBoundingClientRect();
+  svg.style.width=gridRect.width+'px';
+  svg.style.height=gridRect.height+'px';
+  svg.setAttribute('viewBox',`0 0 ${gridRect.width} ${gridRect.height}`);
+
+  const markerId=`obArrowHead_${type}`;
+  let defs=`<defs><marker id="${markerId}" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#334155"/></marker></defs>`;
+  let paths='';
+  for(let i=0;i<items.length-1;i++){
+    const a=document.getElementById(`${oid(type,'obSwimStep')}_${items[i].id}`);
+    const b=document.getElementById(`${oid(type,'obSwimStep')}_${items[i+1].id}`);
+    if(!a||!b) continue;
+    const ra=a.getBoundingClientRect(), rb=b.getBoundingClientRect();
+    const x1=ra.right-originRect.left, y1=ra.top+ra.height/2-originRect.top;
+    const x2=rb.left-originRect.left, y2=rb.top+rb.height/2-originRect.top;
+    let d;
+    if(Math.abs(y1-y2)<2){
+      d=`M${x1},${y1} L${x2-4},${y2}`;
+    } else {
+      const midX=x1+(x2-x1)/2;
+      d=`M${x1},${y1} H${midX} V${y2} H${x2-4}`;
+    }
+    paths+=`<path d="${d}" stroke="#334155" stroke-width="1.5" fill="none" marker-end="url(#${markerId})"/>`;
+  }
+  svg.innerHTML=defs+paths;
 }

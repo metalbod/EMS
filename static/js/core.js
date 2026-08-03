@@ -262,8 +262,8 @@ function applyRoleUI() {
   const canManageOb=['superadmin','hr_manager','hr_admin'].includes(role);
   document.getElementById('startOnboardingBtn')?.classList.toggle('hidden',!canManageOb);
   document.getElementById('startOffboardingBtn')?.classList.toggle('hidden',!canManageOb);
-  document.getElementById('obTemplatesBtnOn')?.classList.toggle('hidden',!canManageOb);
-  document.getElementById('obTemplatesBtnOff')?.classList.toggle('hidden',!canManageOb);
+  document.getElementById('obSubTab_onboarding_templates')?.classList.toggle('hidden',!canManageOb);
+  document.getElementById('obSubTab_offboarding_templates')?.classList.toggle('hidden',!canManageOb);
   // LD buttons
   document.getElementById('ldAddCourseBtn')?.classList.toggle('hidden',!canManageOb);
   // Role switcher — show if user has more than one assigned role

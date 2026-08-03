@@ -14,7 +14,7 @@
      and with the reverse order that beat w-40's width:10rem on every element
      using both, since same-specificity rules resolve by source order. -->
 <link rel="stylesheet" href="/static/css/styles.css?v=49"/>
-<link rel="stylesheet" href="/static/css/tailwind.css?v=51"/>
+<link rel="stylesheet" href="/static/css/tailwind.css?v=52"/>
 </head>
 <body class="font-sans antialiased">
 
@@ -1088,42 +1088,130 @@
 
       <!-- ONBOARDING -->
       <div id="page-onboarding" class="hidden">
-        <div class="flex items-center justify-between mb-5">
-          <div class="flex gap-2">
-            <button id="obFilterAll" onclick="setObFilter('onboarding','all')" class="btn-ghost text-xs ob-filter-btn ob-filter-active">All</button>
-            <button onclick="setObFilter('onboarding','In Progress')" class="btn-ghost text-xs ob-filter-btn">In Progress</button>
-            <button onclick="setObFilter('onboarding','Completed')" class="btn-ghost text-xs ob-filter-btn">Completed</button>
-          </div>
-          <div class="flex gap-2">
-            <button id="obTemplatesBtnOn" onclick="showObTemplates('onboarding')" class="btn-ghost hidden text-xs">Manage Templates</button>
+        <div class="flex items-center gap-1 mb-5 border-b border-slate-200">
+          <button id="obSubTab_onboarding_checklists" class="view-tab-btn view-tab-active px-4 py-3 text-sm" onclick="switchObSubTab('onboarding','checklists')">Checklists</button>
+          <button id="obSubTab_onboarding_templates" class="view-tab-btn hidden px-4 py-3 text-sm" onclick="switchObSubTab('onboarding','templates')">Manage Templates</button>
+        </div>
+
+        <div id="obSubPanel_onboarding_checklists">
+          <div class="flex items-center justify-between mb-5">
+            <div class="flex gap-2">
+              <button id="obFilterAll" onclick="setObFilter('onboarding','all')" class="btn-ghost text-xs ob-filter-btn ob-filter-active">All</button>
+              <button onclick="setObFilter('onboarding','In Progress')" class="btn-ghost text-xs ob-filter-btn">In Progress</button>
+              <button onclick="setObFilter('onboarding','Completed')" class="btn-ghost text-xs ob-filter-btn">Completed</button>
+            </div>
             <button id="startOnboardingBtn" onclick="openStartObModal('onboarding')" class="btn-primary hidden text-sm flex items-center gap-2">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
               Start Onboarding
             </button>
           </div>
+          <div id="onboardingList" class="space-y-3"></div>
+          <p id="onboardingEmpty" class="hidden text-center text-slate-400 text-sm py-12">No onboarding checklists yet.</p>
         </div>
-        <div id="onboardingList" class="space-y-3"></div>
-        <p id="onboardingEmpty" class="hidden text-center text-slate-400 text-sm py-12">No onboarding checklists yet.</p>
+
+        <div id="obSubPanel_onboarding_templates" class="hidden">
+          <div class="flex items-center gap-2 mb-4 flex-wrap">
+            <select id="obTmplSetSelect_onboarding" onchange="switchObTemplateSet('onboarding')" class="inp flex-1 min-w-[220px] max-w-xs"></select>
+            <button onclick="showObSetForm('onboarding')" class="btn-ghost text-xs px-2 whitespace-nowrap">+ New Template</button>
+            <button onclick="setObTemplateSetDefault('onboarding')" class="btn-ghost text-xs px-2 whitespace-nowrap" title="Make this the default template used when starting a checklist">Set Default</button>
+            <button onclick="renameObTemplateSet('onboarding')" class="text-slate-400 hover:text-blue-500" title="Rename"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
+            <button onclick="deleteObTemplateSet('onboarding')" class="text-slate-400 hover:text-red-500" title="Delete template"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>
+          </div>
+          <div id="obSetForm_onboarding" class="hidden flex items-center gap-2 mb-4 bg-slate-50 border border-slate-200 rounded-lg p-3">
+            <input id="obSetName_onboarding" class="inp flex-1" placeholder="Template name…"/>
+            <label class="flex items-center gap-1 text-xs text-slate-500 whitespace-nowrap"><input type="checkbox" id="obSetIsDefault_onboarding"/> Default</label>
+            <button onclick="saveObTemplateSet('onboarding')" class="btn-primary text-xs px-3 py-1.5">Save</button>
+            <button onclick="hideObSetForm('onboarding')" class="text-xs text-slate-500 hover:text-slate-700 px-2">Cancel</button>
+          </div>
+          <p id="obTemplatesEmpty_onboarding" class="hidden text-slate-400 text-sm text-center py-8">No templates yet — create one above.</p>
+          <p id="obSwimlaneEmpty_onboarding" class="hidden text-slate-400 text-sm text-center py-8 border border-dashed border-slate-200 rounded-xl mb-6">No checklist items yet — add one below.</p>
+          <div id="obSwimlaneWrap_onboarding" class="relative overflow-x-auto border border-slate-200 rounded-xl bg-white p-4 mb-6">
+            <svg id="obSwimlaneSvg_onboarding" class="absolute inset-0" style="width:100%;height:100%;pointer-events:none"></svg>
+            <div id="obSwimlaneGrid_onboarding" class="relative" style="min-width:max-content"></div>
+          </div>
+          <div class="border-t border-slate-200 pt-4">
+            <p class="text-sm font-medium text-slate-700 mb-2">Add Item</p>
+            <div class="grid grid-cols-2 gap-2">
+              <input id="obTmplTitle_onboarding" class="inp col-span-2" placeholder="Item title *"/>
+              <input id="obTmplDesc_onboarding" class="inp col-span-2" placeholder="Description (optional)"/>
+              <select id="obTmplRole_onboarding" class="inp">
+                <option value="employee">Employee</option>
+                <option value="manager">Manager</option>
+                <option value="hr_admin" selected>HR Admin</option>
+                <option value="hr_manager">HR Manager</option>
+              </select>
+              <select id="obTmplLdCourse_onboarding" class="inp col-span-2">
+                <option value="">No linked course — manual completion</option>
+              </select>
+              <p class="text-xs text-slate-400 col-span-2 -mt-1">If linked, this item auto-completes when the employee finishes the course (passes its quiz, or is marked complete if it has no quiz).</p>
+              <button onclick="addObTemplate('onboarding')" class="btn-primary text-sm col-span-2">Add Item</button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- OFFBOARDING -->
       <div id="page-offboarding" class="hidden">
-        <div class="flex items-center justify-between mb-5">
-          <div class="flex gap-2">
-            <button onclick="setObFilter('offboarding','all')" class="btn-ghost text-xs ob-filter-btn ob-filter-active">All</button>
-            <button onclick="setObFilter('offboarding','In Progress')" class="btn-ghost text-xs ob-filter-btn">In Progress</button>
-            <button onclick="setObFilter('offboarding','Completed')" class="btn-ghost text-xs ob-filter-btn">Completed</button>
-          </div>
-          <div class="flex gap-2">
-            <button id="obTemplatesBtnOff" onclick="showObTemplates('offboarding')" class="btn-ghost hidden text-xs">Manage Templates</button>
+        <div class="flex items-center gap-1 mb-5 border-b border-slate-200">
+          <button id="obSubTab_offboarding_checklists" class="view-tab-btn view-tab-active px-4 py-3 text-sm" onclick="switchObSubTab('offboarding','checklists')">Checklists</button>
+          <button id="obSubTab_offboarding_templates" class="view-tab-btn hidden px-4 py-3 text-sm" onclick="switchObSubTab('offboarding','templates')">Manage Templates</button>
+        </div>
+
+        <div id="obSubPanel_offboarding_checklists">
+          <div class="flex items-center justify-between mb-5">
+            <div class="flex gap-2">
+              <button onclick="setObFilter('offboarding','all')" class="btn-ghost text-xs ob-filter-btn ob-filter-active">All</button>
+              <button onclick="setObFilter('offboarding','In Progress')" class="btn-ghost text-xs ob-filter-btn">In Progress</button>
+              <button onclick="setObFilter('offboarding','Completed')" class="btn-ghost text-xs ob-filter-btn">Completed</button>
+            </div>
             <button id="startOffboardingBtn" onclick="openStartObModal('offboarding')" class="btn-primary hidden text-sm flex items-center gap-2">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
               Start Offboarding
             </button>
           </div>
+          <div id="offboardingList" class="space-y-3"></div>
+          <p id="offboardingEmpty" class="hidden text-center text-slate-400 text-sm py-12">No offboarding checklists yet.</p>
         </div>
-        <div id="offboardingList" class="space-y-3"></div>
-        <p id="offboardingEmpty" class="hidden text-center text-slate-400 text-sm py-12">No offboarding checklists yet.</p>
+
+        <div id="obSubPanel_offboarding_templates" class="hidden">
+          <div class="flex items-center gap-2 mb-4 flex-wrap">
+            <select id="obTmplSetSelect_offboarding" onchange="switchObTemplateSet('offboarding')" class="inp flex-1 min-w-[220px] max-w-xs"></select>
+            <button onclick="showObSetForm('offboarding')" class="btn-ghost text-xs px-2 whitespace-nowrap">+ New Template</button>
+            <button onclick="setObTemplateSetDefault('offboarding')" class="btn-ghost text-xs px-2 whitespace-nowrap" title="Make this the default template used when starting a checklist">Set Default</button>
+            <button onclick="renameObTemplateSet('offboarding')" class="text-slate-400 hover:text-blue-500" title="Rename"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
+            <button onclick="deleteObTemplateSet('offboarding')" class="text-slate-400 hover:text-red-500" title="Delete template"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>
+          </div>
+          <div id="obSetForm_offboarding" class="hidden flex items-center gap-2 mb-4 bg-slate-50 border border-slate-200 rounded-lg p-3">
+            <input id="obSetName_offboarding" class="inp flex-1" placeholder="Template name…"/>
+            <label class="flex items-center gap-1 text-xs text-slate-500 whitespace-nowrap"><input type="checkbox" id="obSetIsDefault_offboarding"/> Default</label>
+            <button onclick="saveObTemplateSet('offboarding')" class="btn-primary text-xs px-3 py-1.5">Save</button>
+            <button onclick="hideObSetForm('offboarding')" class="text-xs text-slate-500 hover:text-slate-700 px-2">Cancel</button>
+          </div>
+          <p id="obTemplatesEmpty_offboarding" class="hidden text-slate-400 text-sm text-center py-8">No templates yet — create one above.</p>
+          <p id="obSwimlaneEmpty_offboarding" class="hidden text-slate-400 text-sm text-center py-8 border border-dashed border-slate-200 rounded-xl mb-6">No checklist items yet — add one below.</p>
+          <div id="obSwimlaneWrap_offboarding" class="relative overflow-x-auto border border-slate-200 rounded-xl bg-white p-4 mb-6">
+            <svg id="obSwimlaneSvg_offboarding" class="absolute inset-0" style="width:100%;height:100%;pointer-events:none"></svg>
+            <div id="obSwimlaneGrid_offboarding" class="relative" style="min-width:max-content"></div>
+          </div>
+          <div class="border-t border-slate-200 pt-4">
+            <p class="text-sm font-medium text-slate-700 mb-2">Add Item</p>
+            <div class="grid grid-cols-2 gap-2">
+              <input id="obTmplTitle_offboarding" class="inp col-span-2" placeholder="Item title *"/>
+              <input id="obTmplDesc_offboarding" class="inp col-span-2" placeholder="Description (optional)"/>
+              <select id="obTmplRole_offboarding" class="inp">
+                <option value="employee">Employee</option>
+                <option value="manager">Manager</option>
+                <option value="hr_admin" selected>HR Admin</option>
+                <option value="hr_manager">HR Manager</option>
+              </select>
+              <select id="obTmplLdCourse_offboarding" class="inp col-span-2">
+                <option value="">No linked course — manual completion</option>
+              </select>
+              <p class="text-xs text-slate-400 col-span-2 -mt-1">If linked, this item auto-completes when the employee finishes the course (passes its quiz, or is marked complete if it has no quiz).</p>
+              <button onclick="addObTemplate('offboarding')" class="btn-primary text-sm col-span-2">Add Item</button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- LD COURSE CATALOG -->
@@ -2738,52 +2826,6 @@
       </div>
     </div>
     <div id="obItemsContainer" class="p-6 space-y-2 max-h-[60vh] overflow-y-auto"></div>
-  </div>
-</div>
-
-<!-- OB Templates Modal -->
-<div id="obTemplatesModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-      <h2 id="obTemplatesTitle" class="text-base font-semibold">Manage Templates</h2>
-      <button onclick="closeObTemplates()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
-    </div>
-    <div class="p-6">
-      <input type="hidden" id="obTmplType"/>
-      <div class="flex items-center gap-2 mb-4">
-        <select id="obTmplSetSelect" onchange="switchObTemplateSet()" class="inp flex-1"></select>
-        <button onclick="showObSetForm()" class="btn-ghost text-xs px-2 whitespace-nowrap">+ New Template</button>
-        <button onclick="setObTemplateSetDefault()" class="btn-ghost text-xs px-2 whitespace-nowrap" title="Make this the default template used when starting a checklist">Set Default</button>
-        <button onclick="renameObTemplateSet()" class="text-slate-400 hover:text-blue-500" title="Rename"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
-        <button onclick="deleteObTemplateSet()" class="text-slate-400 hover:text-red-500" title="Delete template"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>
-      </div>
-      <div id="obSetForm" class="hidden flex items-center gap-2 mb-4 bg-slate-50 border border-slate-200 rounded-lg p-3">
-        <input id="obSetName" class="inp flex-1" placeholder="Template name…"/>
-        <label class="flex items-center gap-1 text-xs text-slate-500 whitespace-nowrap"><input type="checkbox" id="obSetIsDefault"/> Default</label>
-        <button onclick="saveObTemplateSet()" class="btn-primary text-xs px-3 py-1.5">Save</button>
-        <button onclick="hideObSetForm()" class="text-xs text-slate-500 hover:text-slate-700 px-2">Cancel</button>
-      </div>
-      <p id="obTemplatesEmpty" class="hidden text-slate-400 text-sm text-center py-8">No templates yet — create one above.</p>
-      <div id="obTemplatesList" class="space-y-1 mb-4 max-h-80 overflow-y-auto"></div>
-      <div class="border-t border-slate-200 pt-4">
-        <p class="text-sm font-medium text-slate-700 mb-2">Add Item</p>
-        <div class="grid grid-cols-2 gap-2">
-          <input id="obTmplTitle" class="inp col-span-2" placeholder="Item title *"/>
-          <input id="obTmplDesc" class="inp col-span-2" placeholder="Description (optional)"/>
-          <select id="obTmplRole" class="inp">
-            <option value="employee">Employee</option>
-            <option value="manager">Manager</option>
-            <option value="hr_admin" selected>HR Admin</option>
-            <option value="hr_manager">HR Manager</option>
-          </select>
-          <select id="obTmplLdCourse" class="inp col-span-2">
-            <option value="">No linked course — manual completion</option>
-          </select>
-          <p class="text-xs text-slate-400 col-span-2 -mt-1">If linked, this item auto-completes when the employee finishes the course (passes its quiz, or is marked complete if it has no quiz).</p>
-          <button onclick="addObTemplate()" class="btn-primary text-sm col-span-2">Add Item</button>
-        </div>
-      </div>
-    </div>
   </div>
 </div>
 
