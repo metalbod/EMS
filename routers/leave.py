@@ -27,6 +27,17 @@ except ImportError:
     from ems.core.validators import validate_logo_url
 
 try:
+    from core.leave_balance_ops import (
+        _get_or_create_leave_balance, _consume_balance, _release_balance,
+        _sweep_expired_carry_forward,
+    )
+except ImportError:
+    from ems.core.leave_balance_ops import (
+        _get_or_create_leave_balance, _consume_balance, _release_balance,
+        _sweep_expired_carry_forward,
+    )
+
+try:
     from db import get_db
 except ImportError:
     from ems.db import get_db
@@ -71,12 +82,30 @@ class LeaveTypeIn(BaseModel):
     accrual_mode: str = "full_year"  # or "monthly" — see _accrued_days
     max_days_per_application: float = 0  # 0 = unlimited
     max_days_per_month: float = 0  # 0 = unlimited
+    carry_forward_enabled: bool = False
+    carry_forward_max_days: float = 0  # 0 = uncapped
+    carry_forward_max_percent: float = 0  # 0 = uncapped, else 0-100
+    carry_forward_expiry_days: int = 0  # 0 = never expires
 
     @field_validator("accrual_mode")
     @classmethod
     def _validate_accrual_mode(cls, v):
         if v not in ("full_year", "monthly"):
             raise ValueError("accrual_mode must be 'full_year' or 'monthly'")
+        return v
+
+    @field_validator("carry_forward_max_percent")
+    @classmethod
+    def _validate_carry_forward_max_percent(cls, v):
+        if not (0 <= v <= 100):
+            raise ValueError("carry_forward_max_percent must be between 0 and 100")
+        return v
+
+    @field_validator("carry_forward_expiry_days")
+    @classmethod
+    def _validate_carry_forward_expiry_days(cls, v):
+        if v < 0:
+            raise ValueError("carry_forward_expiry_days cannot be negative")
         return v
 
 
@@ -256,23 +285,6 @@ def _validate_shares_entitlement(conn, inst_id: int, type_id: Optional[int], sha
             raise HTTPException(400, f"'{name}' already has other leave types sharing its entitlement — can't also share with another type")
 
 
-def _get_or_create_leave_balance(conn, inst_id: int, employee_id: str, leave_type_id: int, year: int):
-    row = conn.execute(
-        "SELECT * FROM leave_balances WHERE employee_id=? AND leave_type_id=? AND year=?",
-        (employee_id, leave_type_id, year)
-    ).fetchone()
-    if row:
-        return row
-    lt = conn.execute("SELECT * FROM leave_types WHERE id=? AND institution_id=?", (leave_type_id, inst_id)).fetchone()
-    entitled = lt["annual_entitlement"] if lt else 0
-    conn.execute(
-        "INSERT INTO leave_balances (institution_id,employee_id,leave_type_id,year,entitled_days,carried_forward_days,used_days) VALUES (?,?,?,?,?,0,0)",
-        (inst_id, employee_id, leave_type_id, year, entitled)
-    )
-    return conn.execute(
-        "SELECT * FROM leave_balances WHERE employee_id=? AND leave_type_id=? AND year=?",
-        (employee_id, leave_type_id, year)
-    ).fetchone()
 
 
 # ---------------------------------------------------------------------------
@@ -294,11 +306,13 @@ def create_leave_type(conn, body: LeaveTypeIn, user: dict = Depends(require_role
     inst_id = need_inst(user)
     _validate_shares_entitlement(conn, inst_id, None, body.shares_entitlement_with_id, body.name)
     conn.execute(
-        "INSERT INTO leave_types (institution_id,name,annual_entitlement,requires_approval,requires_attachment,is_paid,is_active,shares_entitlement_with_id,count_calendar_days,accrual_mode,max_days_per_application,max_days_per_month) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO leave_types (institution_id,name,annual_entitlement,requires_approval,requires_attachment,is_paid,is_active,shares_entitlement_with_id,count_calendar_days,accrual_mode,max_days_per_application,max_days_per_month,carry_forward_enabled,carry_forward_max_days,carry_forward_max_percent,carry_forward_expiry_days) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (inst_id, body.name, body.annual_entitlement, 1 if body.requires_approval else 0,
          1 if body.requires_attachment else 0, 1 if body.is_paid else 0, 1 if body.is_active else 0,
          body.shares_entitlement_with_id, 1 if body.count_calendar_days else 0,
-         body.accrual_mode, body.max_days_per_application, body.max_days_per_month)
+         body.accrual_mode, body.max_days_per_application, body.max_days_per_month,
+         1 if body.carry_forward_enabled else 0, body.carry_forward_max_days,
+         body.carry_forward_max_percent, body.carry_forward_expiry_days)
     )
     conn.commit()
     row = conn.execute("SELECT * FROM leave_types WHERE id=last_insert_rowid()").fetchone()
@@ -313,11 +327,13 @@ def update_leave_type(conn, type_id: int, body: LeaveTypeIn, user: dict = Depend
         raise HTTPException(404, "Leave type not found")
     _validate_shares_entitlement(conn, inst_id, type_id, body.shares_entitlement_with_id, body.name)
     conn.execute(
-        "UPDATE leave_types SET name=?,annual_entitlement=?,requires_approval=?,requires_attachment=?,is_paid=?,is_active=?,shares_entitlement_with_id=?,count_calendar_days=?,accrual_mode=?,max_days_per_application=?,max_days_per_month=? WHERE id=?",
+        "UPDATE leave_types SET name=?,annual_entitlement=?,requires_approval=?,requires_attachment=?,is_paid=?,is_active=?,shares_entitlement_with_id=?,count_calendar_days=?,accrual_mode=?,max_days_per_application=?,max_days_per_month=?,carry_forward_enabled=?,carry_forward_max_days=?,carry_forward_max_percent=?,carry_forward_expiry_days=? WHERE id=?",
         (body.name, body.annual_entitlement, 1 if body.requires_approval else 0,
          1 if body.requires_attachment else 0, 1 if body.is_paid else 0, 1 if body.is_active else 0,
          body.shares_entitlement_with_id, 1 if body.count_calendar_days else 0,
-         body.accrual_mode, body.max_days_per_application, body.max_days_per_month, type_id)
+         body.accrual_mode, body.max_days_per_application, body.max_days_per_month,
+         1 if body.carry_forward_enabled else 0, body.carry_forward_max_days,
+         body.carry_forward_max_percent, body.carry_forward_expiry_days, type_id)
     )
     conn.commit()
     row = conn.execute("SELECT * FROM leave_types WHERE id=?", (type_id,)).fetchone()
@@ -380,6 +396,19 @@ def list_leave_balances(conn, employee_id: Optional[str] = None, year: Optional[
     out = []
     for r in rows:
         d = dict(r)
+        # Forfeit any carry-forward that's past its expiry before reporting
+        # the balance — otherwise this list could show a carried-forward
+        # amount that's already lapsed until something else (an application)
+        # happens to touch that row and trigger the sweep. Updated in-memory
+        # directly (rather than using _sweep_expired_carry_forward's own
+        # re-fetched row) since that row is leave_balances columns only and
+        # would drop this query's joined employee_name/leave_type_name.
+        expires_on = d["carried_forward_expires_on"]
+        remaining = d["carried_forward_days"] - d["carried_forward_used_days"]
+        if expires_on and expires_on <= today and remaining > 0:
+            _sweep_expired_carry_forward(conn, r)
+            d["carried_forward_forfeited_days"] += remaining
+            d["carried_forward_days"] = d["carried_forward_used_days"]
         d["accrued_days"] = (
             _accrued_days(d["entitled_days"], d["employee_start_date"], today)
             if d["accrual_mode"] == "monthly" else d["entitled_days"]
@@ -397,7 +426,15 @@ def adjust_leave_balance(conn, balance_id: int, body: LeaveBalanceAdjustIn, user
         raise HTTPException(404, "Balance not found")
     entitled = body.entitled_days if body.entitled_days is not None else bal["entitled_days"]
     carried = body.carried_forward_days if body.carried_forward_days is not None else bal["carried_forward_days"]
-    conn.execute("UPDATE leave_balances SET entitled_days=?,carried_forward_days=? WHERE id=?", (entitled, carried, balance_id))
+    # A manual reduction of carried_forward_days below what's already been
+    # consumed from it would otherwise leave carried_forward_used_days >
+    # carried_forward_days — clamp the used-tracker down to match so
+    # "remaining carry-forward" can never go negative.
+    carried_used = min(bal["carried_forward_used_days"], carried)
+    conn.execute(
+        "UPDATE leave_balances SET entitled_days=?,carried_forward_days=?,carried_forward_used_days=? WHERE id=?",
+        (entitled, carried, carried_used, balance_id)
+    )
     conn.commit()
     row = conn.execute("SELECT * FROM leave_balances WHERE id=?", (balance_id,)).fetchone()
     return dict(row)
@@ -522,7 +559,7 @@ def create_leave_application(conn, body: LeaveApplicationIn, user: dict = Depend
     app_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
     if status == "Approved":
-        conn.execute("UPDATE leave_balances SET used_days=used_days+? WHERE id=?", (days, balance["id"]))
+        _consume_balance(conn, balance, days)
 
     _log_leave(conn, inst_id, app_id, body.employee_id, "Applied",
                f"Applied for {lt['name']}: {body.start_date} to {body.end_date} ({days} working day(s)) — status: {status}", user)
@@ -552,7 +589,7 @@ def update_leave_status(conn, app_id: int, body: LeaveStatusIn, user: dict = Dep
             year = datetime.strptime(application["start_date"], "%Y-%m-%d").year
             lt = conn.execute("SELECT * FROM leave_types WHERE id=?", (application["leave_type_id"],)).fetchone()
             balance = _get_or_create_leave_balance(conn, inst_id, application["employee_id"], _balance_leave_type_id(lt), year)
-            conn.execute("UPDATE leave_balances SET used_days=used_days+? WHERE id=?", (application["days_count"], balance["id"]))
+            _consume_balance(conn, balance, application["days_count"])
         approved_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S") if body.status == "Approved" else None
         conn.execute("UPDATE leave_applications SET status=?,approved_by=?,approved_at=?,notes=? WHERE id=?",
                      (body.status, user["username"], approved_at, body.notes, app_id))
@@ -565,7 +602,7 @@ def update_leave_status(conn, app_id: int, body: LeaveStatusIn, user: dict = Dep
             year = datetime.strptime(application["start_date"], "%Y-%m-%d").year
             lt = conn.execute("SELECT * FROM leave_types WHERE id=?", (application["leave_type_id"],)).fetchone()
             balance = _get_or_create_leave_balance(conn, inst_id, application["employee_id"], _balance_leave_type_id(lt), year)
-            conn.execute("UPDATE leave_balances SET used_days=used_days-? WHERE id=?", (application["days_count"], balance["id"]))
+            _release_balance(conn, balance, application["days_count"])
         conn.execute("UPDATE leave_applications SET status='Cancelled',notes=? WHERE id=?", (body.notes, app_id))
 
     _log_leave(conn, inst_id, app_id, application["employee_id"], f"Status changed to {body.status}",

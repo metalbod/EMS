@@ -384,6 +384,7 @@ async function loadLeaveTypesForManage() {
       ${t.max_days_per_month?`<span class="badge text-xs bg-slate-100 text-slate-600">Max ${t.max_days_per_month}/mo</span>`:''}
       ${t.requires_approval?'<span class="badge text-xs bg-blue-100 text-blue-700">Approval</span>':''}
       ${t.requires_attachment?'<span class="badge text-xs bg-purple-100 text-purple-700">Doc required</span>':''}
+      ${t.carry_forward_enabled?`<span class="badge text-xs bg-amber-100 text-amber-700" title="${t.carry_forward_max_days?`Max ${t.carry_forward_max_days} days`:''}${t.carry_forward_max_days&&t.carry_forward_max_percent?' or ':''}${t.carry_forward_max_percent?`Max ${t.carry_forward_max_percent}% of balance`:''}${t.carry_forward_expiry_days?`, expires ${t.carry_forward_expiry_days}d into new year`:''}">Carries forward</span>`:''}
       <button onclick="openLeaveTypeModal(${t.id})" class="text-slate-300 hover:text-blue-500"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
       <button onclick="deleteLeaveType(${t.id})" class="text-slate-300 hover:text-red-500"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>`;
@@ -414,6 +415,10 @@ function openLeaveTypeModal(typeId) {
     document.getElementById('leaveTypeRequiresAttachment').checked=!!t?.requires_attachment;
     document.getElementById('leaveTypeIsPaid').checked=t?.is_paid===undefined?true:!!t.is_paid;
     sharesSel.value=t?.shares_entitlement_with_id||'';
+    document.getElementById('leaveTypeCarryForwardEnabled').checked=!!t?.carry_forward_enabled;
+    document.getElementById('leaveTypeCarryMaxDays').value=t?.carry_forward_max_days||0;
+    document.getElementById('leaveTypeCarryMaxPercent').value=t?.carry_forward_max_percent||0;
+    document.getElementById('leaveTypeCarryExpiryDays').value=t?.carry_forward_expiry_days||0;
   } else {
     document.getElementById('leaveTypeName').value='';
     document.getElementById('leaveTypeEntitlement').value=14;
@@ -425,8 +430,13 @@ function openLeaveTypeModal(typeId) {
     document.getElementById('leaveTypeRequiresAttachment').checked=false;
     document.getElementById('leaveTypeIsPaid').checked=true;
     sharesSel.value='';
+    document.getElementById('leaveTypeCarryForwardEnabled').checked=false;
+    document.getElementById('leaveTypeCarryMaxDays').value=0;
+    document.getElementById('leaveTypeCarryMaxPercent').value=0;
+    document.getElementById('leaveTypeCarryExpiryDays').value=0;
   }
   onLeaveTypeSharesChange();
+  onLeaveTypeCarryForwardChange();
   document.getElementById('leaveTypeModal').classList.remove('hidden');
 }
 function closeLeaveTypeModal() { document.getElementById('leaveTypeModal').classList.add('hidden'); }
@@ -435,6 +445,11 @@ function onLeaveTypeSharesChange() {
   const sharing=!!document.getElementById('leaveTypeSharesWith').value;
   document.getElementById('leaveTypeEntitlementWrap').classList.toggle('hidden', sharing);
   document.getElementById('leaveTypeAccrualWrap').classList.toggle('hidden', sharing);
+}
+
+function onLeaveTypeCarryForwardChange() {
+  const enabled=document.getElementById('leaveTypeCarryForwardEnabled').checked;
+  document.getElementById('leaveTypeCarryForwardWrap').classList.toggle('hidden', !enabled);
 }
 
 async function submitLeaveType(e) {
@@ -452,6 +467,10 @@ async function submitLeaveType(e) {
     accrual_mode: document.getElementById('leaveTypeAccrualMode').value,
     max_days_per_application: parseFloat(document.getElementById('leaveTypeMaxPerApp').value)||0,
     max_days_per_month: parseFloat(document.getElementById('leaveTypeMaxPerMonth').value)||0,
+    carry_forward_enabled: document.getElementById('leaveTypeCarryForwardEnabled').checked,
+    carry_forward_max_days: parseFloat(document.getElementById('leaveTypeCarryMaxDays').value)||0,
+    carry_forward_max_percent: parseFloat(document.getElementById('leaveTypeCarryMaxPercent').value)||0,
+    carry_forward_expiry_days: parseInt(document.getElementById('leaveTypeCarryExpiryDays').value)||0,
   };
   const url=id?`/api/leave/types/${id}`:'/api/leave/types';
   const res=await api(url,{method:id?'PUT':'POST',body:JSON.stringify(body)});

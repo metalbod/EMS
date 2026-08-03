@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from db import get_db, set_rls_context
 from core.deps import get_current_user, hash_password, verify_password
+from core.leave_balance_ops import _consume_balance
 from core.attendance_schemas import (
     ShiftCreate, ShiftUpdate, ShiftResponse,
     ShiftAssignmentCreate, ShiftAssignmentResponse,
@@ -778,7 +779,7 @@ async def resolve_attendance_record(
                 (rec["employee_id"], payload.leave_type_id, year),
             ).fetchone()
             if balance:
-                conn.execute("UPDATE leave_balances SET used_days = used_days + ? WHERE id = ?", (days, balance["id"]))
+                _consume_balance(conn, balance, days)
 
             new_status = "Reclassified as Leave"
         else:

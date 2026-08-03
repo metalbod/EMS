@@ -379,6 +379,109 @@ enrollment's cost-snapshot cap before allowing an approval through.
   the event through the same shift-resolution/geofence logic as self-service
   clock-in.
 
+## Leave module
+
+`routers/leave.py` / `core/leave_balance_ops.py` / `static/js/leave.js`.
+
+A `leave_balances` row is one employee+leave_type+year, holding
+`entitled_days`, `carried_forward_days`, and `used_days` (all `REAL`).
+Available balance is always `entitled_days + carried_forward_days -
+used_days` — carry-forward is additive to the pool, not a separate
+allowance you have to apply for.
+
+Rows are created lazily, not by a batch job: `_get_or_create_leave_balance`
+(`core/leave_balance_ops.py`) is called from every code path that needs a
+balance (applying, approving, cancelling, the balances list, and
+`routers/attendance.py`'s "reclassify as leave" action), and inserts the row
+the first time any of them touches that employee+type+year combination.
+There is no scheduled job anywhere in this stack (see the Attendance
+module's absence detection above for the same pattern) — carry-forward and
+expiry are both computed lazily, at read/use time, not on a year-boundary
+cron.
+
+### Carry-forward mechanism
+
+Two `leave_types` fields gate it per type — `carry_forward_enabled` (off by
+default; most types like Medical or Maternity shouldn't carry forward at
+all), plus `carry_forward_max_days` and `carry_forward_max_percent` (both
+`0` = uncapped, matching how `max_days_per_application`/`max_days_per_month`
+already treat `0` as "unconfigured" on this table). A fourth field,
+`carry_forward_expiry_days`, controls how long the carried amount stays
+spendable into the new year (`0` = never expires).
+
+**Computing how much carries forward** (`_compute_carry_forward`, called
+only when a new year's balance row is being created): the prior year's
+unused balance is `entitled_days + carried_forward_days - used_days` from
+*its* row (already net of anything that expired out of it during that
+year — see below), and the amount actually carried is
+
+```
+min(unused, max_days if set, unused * max_percent / 100 if set)
+```
+
+— i.e. whichever cap bites hardest, rounded to the nearest half-day. Leaving
+both caps at `0` carries the full unused balance forward uncapped. This is a
+one-year grace period, not compounding: a carried-forward amount that goes
+unused doesn't roll into a third year, because carry-forward is only ever
+computed from the immediately preceding year's row when *that* year's row
+is first created — a two-year-old unused amount has either already been
+spent, or already expired and been forfeited.
+
+**Expiry date**: computed once, at the new row's creation, as `Jan 1 of
+that year + carry_forward_expiry_days`, stored on the row itself
+(`carried_forward_expires_on`) rather than recomputed on the fly — so
+changing a leave type's policy later doesn't retroactively change the
+deadline on balances that already rolled over under the old policy.
+
+### Deduction order: carry-forward is drawn down first
+
+`carried_forward_used_days` is a second counter alongside `used_days`,
+tracking just the carry-forward portion of what's been used.
+`_consume_balance`/`_release_balance` (`core/leave_balance_ops.py`) are the
+only places `used_days` changes, and both keep the two counters in step:
+
+- **Consuming** `days` (an application gets approved) takes
+  `min(days, carried_forward_days - carried_forward_used_days)` from the
+  carry-forward bucket first, incrementing `carried_forward_used_days` by
+  that amount; `used_days` always increases by the full `days` regardless
+  of which bucket it logically came from — the combined total is what every
+  other part of the system (balance display, utilization dashboard) already
+  reads.
+- **Releasing** `days` (cancellation, or an approval reversed) gives back
+  to the carry-forward bucket first — `min(days,
+  carried_forward_used_days)` — the same-direction mirror of consumption.
+  This is bucket-level bookkeeping, not a per-application ledger: it keeps
+  `carried_forward_used_days` always between `0` and `carried_forward_days`,
+  but doesn't guarantee restoring the *exact* split a specific application
+  originally consumed if several applications interleaved.
+
+This ordering exists entirely to make the expiry sweep below correct — the
+top-level available-balance number is the same simple sum either way; only
+"how much carry-forward is left to expire" depends on drawing it down
+first.
+
+### Expiry sweep (forfeiture)
+
+There's no cron job to sweep expired carry-forward on the new year — instead
+`_sweep_expired_carry_forward` runs lazily, called every time a balance row
+is read or used (`_get_or_create_leave_balance`'s existing-row path, and the
+`GET /api/leave/balances` listing). If `carried_forward_expires_on` has
+passed and there's still unused carry-forward
+(`carried_forward_days - carried_forward_used_days > 0`), that remainder is
+moved into `carried_forward_forfeited_days` (an audit trail — "why did this
+employee's balance drop with no application against it") and
+`carried_forward_days` is capped down to `carried_forward_used_days`, so it
+stops counting toward the available-balance total. Because this only runs
+on access, `_get_or_create_leave_balance` explicitly sweeps the *prior*
+year's row before computing what rolls into a new one — otherwise an
+already-lapsed carry-forward that nothing happened to read all year could
+incorrectly roll forward again.
+
+A manual balance adjustment (`PATCH /api/leave/balances/{id}`, HR-only)
+that lowers `carried_forward_days` below the row's own
+`carried_forward_used_days` clamps the used-counter down to match, so
+"remaining carry-forward" can never go negative from an admin edit.
+
 ## Deployment (Fly.io)
 
 The app is deployed to Fly.io with a rolling-update strategy. Key deployment
