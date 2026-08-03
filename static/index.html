@@ -1284,27 +1284,34 @@
 
       <!-- HOLIDAY MANAGER -->
       <div id="page-leave-holidays" class="hidden">
-        <div class="flex items-center justify-between mb-5">
-          <div class="flex items-center gap-2">
-            <label class="text-sm text-slate-600">Year</label>
-            <select id="holidayYearSelect" onchange="loadHolidays()" class="inp" style="width:100px"></select>
-          </div>
-          <button onclick="openHolidayModal()" class="btn-primary text-sm flex items-center gap-2">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-            Add Holiday
-          </button>
+        <div class="flex items-center gap-1 mb-5 border-b border-slate-200">
+          <button id="hmSubTab_holidays" class="view-tab-btn view-tab-active px-4 py-3 text-sm" onclick="switchHolidayManagerTab('holidays')">Holidays</button>
+          <button id="hmSubTab_leavetypes" class="view-tab-btn px-4 py-3 text-sm" onclick="switchHolidayManagerTab('leavetypes')">Leave Types</button>
         </div>
-        <div class="bg-white border border-slate-200 rounded-xl overflow-hidden">
-          <table class="w-full text-sm">
-            <thead class="bg-slate-50 text-slate-500 text-xs uppercase">
-              <tr><th class="px-4 py-2 text-left">Date</th><th class="px-4 py-2 text-left">Day</th><th class="px-4 py-2 text-left">Holiday</th><th class="px-4 py-2"></th></tr>
-            </thead>
-            <tbody id="holidayTableBody"></tbody>
-          </table>
-        </div>
-        <p id="holidayEmpty" class="hidden text-center text-slate-400 text-sm py-12">No public holidays defined for this year yet.</p>
 
-        <div class="mt-8 border-t border-slate-200 pt-6">
+        <div id="hmSubPanel_holidays">
+          <div class="flex items-center justify-between mb-5">
+            <div class="flex items-center gap-2">
+              <label class="text-sm text-slate-600">Year</label>
+              <select id="holidayYearSelect" onchange="loadHolidays()" class="inp" style="width:100px"></select>
+            </div>
+            <button onclick="openHolidayModal()" class="btn-primary text-sm flex items-center gap-2">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+              Add Holiday
+            </button>
+          </div>
+          <div class="bg-white border border-slate-200 rounded-xl overflow-hidden">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50 text-slate-500 text-xs uppercase">
+                <tr><th class="px-4 py-2 text-left">Date</th><th class="px-4 py-2 text-left">Day</th><th class="px-4 py-2 text-left">Holiday</th><th class="px-4 py-2"></th></tr>
+              </thead>
+              <tbody id="holidayTableBody"></tbody>
+            </table>
+          </div>
+          <p id="holidayEmpty" class="hidden text-center text-slate-400 text-sm py-12">No public holidays defined for this year yet.</p>
+        </div>
+
+        <div id="hmSubPanel_leavetypes" class="hidden">
           <div class="flex items-center justify-between mb-4">
             <h3 class="text-sm font-semibold text-slate-700">Leave Types</h3>
             <button onclick="openLeaveTypeModal()" class="btn-primary text-xs">+ Add Leave Type</button>

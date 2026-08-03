@@ -289,6 +289,8 @@ async function loadHolidaysCacheForYear(year) {
   leaveHolidaysCache=res?.ok?await res.json():[];
 }
 
+let hmLeaveTypesLoaded=false;
+
 async function loadLeaveHolidaysPage() {
   const yearSel=document.getElementById('holidayYearSelect');
   const curYear=new Date().getFullYear();
@@ -296,8 +298,20 @@ async function loadLeaveHolidaysPage() {
     yearSel.innerHTML=[curYear-1,curYear,curYear+1,curYear+2].map(y=>`<option value="${y}">${y}</option>`).join('');
     yearSel.value=curYear;
   }
-  await loadHolidays();
-  await loadLeaveTypesForManage();
+  hmLeaveTypesLoaded=false;
+  switchHolidayManagerTab('holidays');
+}
+
+function switchHolidayManagerTab(tab) {
+  document.getElementById('hmSubTab_holidays').classList.toggle('view-tab-active', tab==='holidays');
+  document.getElementById('hmSubTab_leavetypes').classList.toggle('view-tab-active', tab==='leavetypes');
+  document.getElementById('hmSubPanel_holidays').classList.toggle('hidden', tab!=='holidays');
+  document.getElementById('hmSubPanel_leavetypes').classList.toggle('hidden', tab!=='leavetypes');
+  if(tab==='holidays') loadHolidays();
+  else if(tab==='leavetypes' && !hmLeaveTypesLoaded){
+    hmLeaveTypesLoaded=true;
+    loadLeaveTypesForManage();
+  }
 }
 
 async function loadHolidays() {
