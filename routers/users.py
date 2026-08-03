@@ -126,7 +126,7 @@ def create_user(conn, body: UserIn, user: dict = Depends(require_roles(*CAN_MANA
         conn.commit()
         row = conn.execute(
             "SELECT id,institution_id,username,full_name,email,role,roles,employee_id,is_active,created_at "
-            "FROM users WHERE username=?", (body.username,)
+            "FROM users WHERE id=last_insert_rowid()"
         ).fetchone()
         return dict(row)
     except IntegrityError:

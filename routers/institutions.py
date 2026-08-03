@@ -120,8 +120,9 @@ def create_institution(conn, body: InstitutionIn, user: dict = Depends(require_r
         code = body.code.upper()
         if conn.execute("SELECT id FROM institutions WHERE code=?", (code,)).fetchone():
             raise HTTPException(400, "Institution code already exists")
-        if conn.execute("SELECT id FROM users WHERE username=?", (body.admin_username,)).fetchone():
-            raise HTTPException(400, "Admin username already taken")
+        # No admin_username pre-check here: usernames are only unique within
+        # an institution (see 20260803_0001), and inst_id below is always a
+        # brand-new institution, so a collision is structurally impossible.
         conn.execute("""
             INSERT INTO institutions (name, code, contact_name, contact_email, phone, address, plan, max_employees, logo_url)
             VALUES (?,?,?,?,?,?,?,?,?)

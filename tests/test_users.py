@@ -48,6 +48,30 @@ def test_create_user_duplicate_username_returns_400(client, hr_manager_auth):
     client.delete(f"/api/users/{res1.json()['id']}", headers=hr_manager_auth)
 
 
+def test_create_user_same_username_allowed_in_different_institution(client, hr_manager_auth, superadmin_headers):
+    # Usernames are unique per institution, not system-wide (see migration
+    # 20260803_0001) — login already resolves the institution via company
+    # code before looking up the user, so this is safe to allow.
+    username = f"zztest_{os.urandom(4).hex()}"
+    payload = {"username": username, "full_name": "ZZ Dup Cross Inst", "password": "ZzPytest@123", "role": "employee"}
+    res1 = client.post("/api/users", headers=hr_manager_auth, json=payload)
+    assert res1.status_code == 201, res1.text
+
+    other_inst = client.post("/api/institutions", headers=superadmin_headers, json={
+        "name": "ZZ Other Institution", "code": f"ZZOTHER{os.urandom(4).hex()}".upper(),
+        "contact_email": "zzother@example.com",
+        "admin_username": f"zzother_admin_{os.urandom(4).hex()}",
+        "admin_full_name": "ZZ Other Admin", "admin_password": "ZzPytest@123",
+    })
+    assert other_inst.status_code == 201, other_inst.text
+    other_headers = {**superadmin_headers, "X-Institution-Id": str(other_inst.json()["id"])}
+    res2 = client.post("/api/users", headers=other_headers, json=payload)
+    assert res2.status_code == 201, res2.text
+    assert res2.json()["institution_id"] != res1.json()["institution_id"]
+
+    client.delete(f"/api/users/{res1.json()['id']}", headers=hr_manager_auth)
+
+
 def test_create_user_success_and_appears_in_list(client, hr_manager_auth, test_institution):
     username = f"zztest_{os.urandom(4).hex()}"
     res = client.post("/api/users", headers=hr_manager_auth, json={

@@ -64,13 +64,17 @@ def test_create_institution_duplicate_code_returns_400(client, superadmin_header
     assert res2.status_code == 400
 
 
-def test_create_institution_duplicate_admin_username_returns_400(client, superadmin_headers):
+def test_create_institution_reuses_admin_username_across_institutions(client, superadmin_headers):
+    # Usernames are only unique within an institution (see 20260803_0001) —
+    # login already resolves the institution via company code first, so two
+    # unrelated institutions can each have their own "amanda".
     payload = _valid_institution_payload()
     res1 = client.post("/api/institutions", headers=superadmin_headers, json=payload)
     assert res1.status_code == 201, res1.text
     dup = _valid_institution_payload(admin_username=payload["admin_username"])
     res2 = client.post("/api/institutions", headers=superadmin_headers, json=dup)
-    assert res2.status_code == 400
+    assert res2.status_code == 201, res2.text
+    assert res1.json()["id"] != res2.json()["id"]
 
 
 def test_get_institution_success(client, superadmin_headers):
