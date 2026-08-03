@@ -36,8 +36,19 @@ OB_ROLES = ["employee", "manager", "hr_admin", "hr_manager"]
 OB_MANAGE_ROLES = ("superadmin", "hr_manager", "hr_admin")
 
 
+class OBTemplateSetIn(BaseModel):
+    type: str = "onboarding"
+    name: str
+
+
+class OBTemplateSetUpdateIn(BaseModel):
+    name: str
+    is_default: bool = False
+
+
 class OBTemplateIn(BaseModel):
     type: str = "onboarding"
+    template_set_id: Optional[int] = None
     title: str
     description: Optional[str] = None
     assigned_role: str = "hr_admin"
@@ -45,9 +56,14 @@ class OBTemplateIn(BaseModel):
     linked_ld_course_id: Optional[int] = None
 
 
+class OBTemplateMoveIn(BaseModel):
+    direction: str  # up | down
+
+
 class OBChecklistStartIn(BaseModel):
     employee_id: str
     type: str = "onboarding"
+    template_set_id: Optional[int] = None
     notes: Optional[str] = None
 
 
@@ -70,19 +86,140 @@ class OBItemAddIn(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Onboarding / Offboarding — Templates
+# Onboarding / Offboarding — Template Sets
+# ---------------------------------------------------------------------------
+@router.get("/api/ob/template-sets")
+@db_session
+def list_ob_template_sets(conn, type: Optional[str] = None, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
+    inst_id = need_inst(user)
+    q = """
+        SELECT s.*, COUNT(t.id) AS item_count
+        FROM ob_template_sets s
+        LEFT JOIN ob_templates t ON t.template_set_id=s.id AND t.is_active=1
+        WHERE s.institution_id=? AND s.is_active=1
+    """
+    p: list = [inst_id]
+    if type:
+        q += " AND s.type=?"; p.append(type)
+    q += " GROUP BY s.id ORDER BY s.type, s.is_default DESC, s.name"
+    rows = conn.execute(q, p).fetchall()
+    return [dict(r) for r in rows]
+
+
+@router.post("/api/ob/template-sets", status_code=201)
+@db_session
+def create_ob_template_set(conn, body: OBTemplateSetIn, user: dict = Depends(require_roles(*OB_MANAGE_ROLES))) -> Dict[str, Any]:
+    inst_id = need_inst(user)
+    if body.type not in ("onboarding", "offboarding"):
+        raise HTTPException(400, "type must be onboarding or offboarding")
+    if not body.name.strip():
+        raise HTTPException(400, "name is required")
+    existing_default = conn.execute(
+        "SELECT id FROM ob_template_sets WHERE institution_id=? AND type=? AND is_active=1",
+        (inst_id, body.type)
+    ).fetchone()
+    conn.execute(
+        "INSERT INTO ob_template_sets (institution_id,type,name,is_default) VALUES (?,?,?,?)",
+        (inst_id, body.type, body.name.strip(), 0 if existing_default else 1)
+    )
+    conn.commit()
+    row = conn.execute("SELECT * FROM ob_template_sets WHERE id=last_insert_rowid()").fetchone()
+    return dict(row)
+
+
+@router.put("/api/ob/template-sets/{set_id}")
+@db_session
+def update_ob_template_set(conn, set_id: int, body: OBTemplateSetUpdateIn, user: dict = Depends(require_roles(*OB_MANAGE_ROLES))) -> Dict[str, Any]:
+    inst_id = need_inst(user)
+    tset = conn.execute("SELECT * FROM ob_template_sets WHERE id=? AND institution_id=?", (set_id, inst_id)).fetchone()
+    if not tset:
+        raise HTTPException(404, "Template set not found")
+    if not body.name.strip():
+        raise HTTPException(400, "name is required")
+    if body.is_default:
+        conn.execute(
+            "UPDATE ob_template_sets SET is_default=0 WHERE institution_id=? AND type=? AND id<>?",
+            (inst_id, tset["type"], set_id)
+        )
+    conn.execute(
+        "UPDATE ob_template_sets SET name=?,is_default=? WHERE id=?",
+        (body.name.strip(), 1 if body.is_default else 0, set_id)
+    )
+    conn.commit()
+    row = conn.execute("SELECT * FROM ob_template_sets WHERE id=?", (set_id,)).fetchone()
+    return dict(row)
+
+
+@router.delete("/api/ob/template-sets/{set_id}", status_code=204)
+@db_session
+def delete_ob_template_set(conn, set_id: int, user: dict = Depends(require_roles(*OB_MANAGE_ROLES))) -> None:
+    inst_id = need_inst(user)
+    tset = conn.execute("SELECT * FROM ob_template_sets WHERE id=? AND institution_id=?", (set_id, inst_id)).fetchone()
+    if not tset:
+        raise HTTPException(404, "Template set not found")
+    item_count = conn.execute(
+        "SELECT COUNT(*) FROM ob_templates WHERE template_set_id=? AND is_active=1", (set_id,)
+    ).fetchone()[0]
+    if item_count > 0:
+        raise HTTPException(400, "Remove all checklist items from this template before deleting it")
+    conn.execute("UPDATE ob_template_sets SET is_active=0 WHERE id=?", (set_id,))
+    if tset["is_default"]:
+        other = conn.execute(
+            "SELECT id FROM ob_template_sets WHERE institution_id=? AND type=? AND is_active=1 AND id<>? ORDER BY id LIMIT 1",
+            (inst_id, tset["type"], set_id)
+        ).fetchone()
+        if other:
+            conn.execute("UPDATE ob_template_sets SET is_default=1 WHERE id=?", (other["id"],))
+    conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# Onboarding / Offboarding — Templates (checklist items within a template set)
 # ---------------------------------------------------------------------------
 @router.get("/api/ob/templates")
 @db_session
-def list_ob_templates(conn, type: Optional[str] = None, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
+def list_ob_templates(conn, type: Optional[str] = None, template_set_id: Optional[int] = None,
+                      user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
     q = "SELECT * FROM ob_templates WHERE institution_id=? AND is_active=1"
     p = [inst_id]
     if type:
         q += " AND type=?"; p.append(type)
+    if template_set_id:
+        q += " AND template_set_id=?"; p.append(template_set_id)
     q += " ORDER BY type, order_index"
     rows = conn.execute(q, p).fetchall()
     return [dict(r) for r in rows]
+
+
+def _get_owning_template_set(conn, inst_id: int, template_set_id: int, expected_type: str):
+    tset = conn.execute(
+        "SELECT * FROM ob_template_sets WHERE id=? AND institution_id=? AND is_active=1",
+        (template_set_id, inst_id)
+    ).fetchone()
+    if not tset:
+        raise HTTPException(404, "Template set not found")
+    if tset["type"] != expected_type:
+        raise HTTPException(400, f"Template set is for {tset['type']}, not {expected_type}")
+    return tset
+
+
+def _resolve_or_create_default_set(conn, inst_id: int, ob_type: str) -> int:
+    """Find this institution's default template set for `ob_type`, or create
+    a "Default" one if none exists yet — callers (e.g. adding a template item
+    without picking a set) shouldn't be forced through set-management UI
+    just to keep working the way the single-template-list version did."""
+    row = conn.execute(
+        "SELECT id FROM ob_template_sets WHERE institution_id=? AND type=? AND is_active=1 ORDER BY is_default DESC, id LIMIT 1",
+        (inst_id, ob_type)
+    ).fetchone()
+    if row:
+        return row["id"]
+    conn.execute(
+        "INSERT INTO ob_template_sets (institution_id,type,name,is_default) VALUES (?,?,?,1)",
+        (inst_id, ob_type, "Default")
+    )
+    return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
 
 @router.post("/api/ob/templates", status_code=201)
@@ -93,9 +230,17 @@ def create_ob_template(conn, body: OBTemplateIn, user: dict = Depends(require_ro
         raise HTTPException(400, "type must be onboarding or offboarding")
     if body.assigned_role not in OB_ROLES:
         raise HTTPException(400, f"assigned_role must be one of: {', '.join(OB_ROLES)}")
+    if body.template_set_id:
+        _get_owning_template_set(conn, inst_id, body.template_set_id, body.type)
+    else:
+        body.template_set_id = _resolve_or_create_default_set(conn, inst_id, body.type)
+    max_order = conn.execute(
+        "SELECT MAX(order_index) FROM ob_templates WHERE template_set_id=? AND is_active=1", (body.template_set_id,)
+    ).fetchone()[0]
+    order_index = (max_order + 1) if max_order is not None else 0
     conn.execute(
-        "INSERT INTO ob_templates (institution_id,type,title,description,assigned_role,order_index,linked_ld_course_id) VALUES (?,?,?,?,?,?,?)",
-        (inst_id, body.type, body.title, body.description, body.assigned_role, body.order_index, body.linked_ld_course_id)
+        "INSERT INTO ob_templates (institution_id,type,template_set_id,title,description,assigned_role,order_index,linked_ld_course_id) VALUES (?,?,?,?,?,?,?,?)",
+        (inst_id, body.type, body.template_set_id, body.title, body.description, body.assigned_role, order_index, body.linked_ld_course_id)
     )
     conn.commit()
     row = conn.execute("SELECT * FROM ob_templates WHERE id=last_insert_rowid()").fetchone()
@@ -106,11 +251,14 @@ def create_ob_template(conn, body: OBTemplateIn, user: dict = Depends(require_ro
 @db_session
 def update_ob_template(conn, tmpl_id: int, body: OBTemplateIn, user: dict = Depends(require_roles(*OB_MANAGE_ROLES))) -> Dict[str, Any]:
     inst_id = need_inst(user)
-    if not conn.execute("SELECT id FROM ob_templates WHERE id=? AND institution_id=?", (tmpl_id, inst_id)).fetchone():
+    if body.assigned_role not in OB_ROLES:
+        raise HTTPException(400, f"assigned_role must be one of: {', '.join(OB_ROLES)}")
+    tmpl = conn.execute("SELECT id FROM ob_templates WHERE id=? AND institution_id=?", (tmpl_id, inst_id)).fetchone()
+    if not tmpl:
         raise HTTPException(404, "Template not found")
     conn.execute(
-        "UPDATE ob_templates SET title=?,description=?,assigned_role=?,order_index=?,linked_ld_course_id=? WHERE id=?",
-        (body.title, body.description, body.assigned_role, body.order_index, body.linked_ld_course_id, tmpl_id)
+        "UPDATE ob_templates SET title=?,description=?,assigned_role=?,linked_ld_course_id=? WHERE id=?",
+        (body.title, body.description, body.assigned_role, body.linked_ld_course_id, tmpl_id)
     )
     conn.commit()
     row = conn.execute("SELECT * FROM ob_templates WHERE id=?", (tmpl_id,)).fetchone()
@@ -123,6 +271,32 @@ def delete_ob_template(conn, tmpl_id: int, user: dict = Depends(require_roles(*O
     inst_id = need_inst(user)
     conn.execute("UPDATE ob_templates SET is_active=0 WHERE id=? AND institution_id=?", (tmpl_id, inst_id))
     conn.commit()
+
+
+@router.post("/api/ob/templates/{tmpl_id}/move")
+@db_session
+def move_ob_template(conn, tmpl_id: int, body: OBTemplateMoveIn, user: dict = Depends(require_roles(*OB_MANAGE_ROLES))) -> Dict[str, Any]:
+    inst_id = need_inst(user)
+    if body.direction not in ("up", "down"):
+        raise HTTPException(400, "direction must be up or down")
+    tmpl = conn.execute("SELECT * FROM ob_templates WHERE id=? AND institution_id=? AND is_active=1", (tmpl_id, inst_id)).fetchone()
+    if not tmpl:
+        raise HTTPException(404, "Template not found")
+    siblings = conn.execute(
+        "SELECT * FROM ob_templates WHERE template_set_id=? AND is_active=1 ORDER BY order_index",
+        (tmpl["template_set_id"],)
+    ).fetchall()
+    idx = next((i for i, s in enumerate(siblings) if s["id"] == tmpl_id), None)
+    if idx is None:
+        raise HTTPException(404, "Template not found")
+    swap_idx = idx - 1 if body.direction == "up" else idx + 1
+    if swap_idx < 0 or swap_idx >= len(siblings):
+        return {"ok": True}  # already at the boundary, nothing to do
+    a, b = siblings[idx], siblings[swap_idx]
+    conn.execute("UPDATE ob_templates SET order_index=? WHERE id=?", (b["order_index"], a["id"]))
+    conn.execute("UPDATE ob_templates SET order_index=? WHERE id=?", (a["order_index"], b["id"]))
+    conn.commit()
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------
@@ -174,15 +348,24 @@ def start_ob_checklist(conn, body: OBChecklistStartIn, user: dict = Depends(requ
     ).fetchone()
     if existing:
         raise HTTPException(400, f"An active {body.type} checklist already exists for this employee")
+    template_set_id = body.template_set_id
+    if template_set_id:
+        _get_owning_template_set(conn, inst_id, template_set_id, body.type)
+    else:
+        default_set = conn.execute(
+            "SELECT id FROM ob_template_sets WHERE institution_id=? AND type=? AND is_default=1 AND is_active=1",
+            (inst_id, body.type)
+        ).fetchone()
+        template_set_id = default_set["id"] if default_set else None
     conn.execute(
         "INSERT INTO ob_checklists (institution_id,employee_id,type,triggered_by,notes) VALUES (?,?,?,?,?)",
         (inst_id, body.employee_id, body.type, user["username"], body.notes)
     )
     cl_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-    # Snapshot active templates as items
+    # Snapshot active templates from the chosen (or default) template set as items
     templates = conn.execute(
-        "SELECT * FROM ob_templates WHERE institution_id=? AND type=? AND is_active=1 ORDER BY order_index",
-        (inst_id, body.type)
+        "SELECT * FROM ob_templates WHERE institution_id=? AND type=? AND template_set_id=? AND is_active=1 ORDER BY order_index",
+        (inst_id, body.type, template_set_id)
     ).fetchall()
     for t in templates:
         enrollment_id = None

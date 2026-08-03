@@ -14,7 +14,7 @@
      and with the reverse order that beat w-40's width:10rem on every element
      using both, since same-specificity rules resolve by source order. -->
 <link rel="stylesheet" href="/static/css/styles.css?v=49"/>
-<link rel="stylesheet" href="/static/css/tailwind.css?v=50"/>
+<link rel="stylesheet" href="/static/css/tailwind.css?v=51"/>
 </head>
 <body class="font-sans antialiased">
 
@@ -2712,6 +2712,7 @@
     <form onsubmit="submitStartOb(event)" class="p-6 space-y-4">
       <input type="hidden" id="startObType"/>
       <div><label class="lbl">Employee <span class="text-red-500">*</span></label><select id="startObEmpId" class="inp" required></select></div>
+      <div><label class="lbl">Template</label><select id="startObTemplateSet" class="inp"></select></div>
       <div><label class="lbl">Notes</label><textarea id="startObNotes" class="inp" rows="2" placeholder="Optional notes…"></textarea></div>
       <p id="startObErr" class="hidden text-sm text-red-600"></p>
       <div class="flex justify-end gap-2"><button type="button" onclick="closeStartObModal()" class="btn-ghost">Cancel</button><button type="submit" class="btn-primary" id="startObSubmitBtn">Start</button></div>
@@ -2748,11 +2749,25 @@
       <button onclick="closeObTemplates()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
     <div class="p-6">
-      <div id="obTemplatesList" class="space-y-2 mb-4 max-h-80 overflow-y-auto"></div>
+      <input type="hidden" id="obTmplType"/>
+      <div class="flex items-center gap-2 mb-4">
+        <select id="obTmplSetSelect" onchange="switchObTemplateSet()" class="inp flex-1"></select>
+        <button onclick="showObSetForm()" class="btn-ghost text-xs px-2 whitespace-nowrap">+ New Template</button>
+        <button onclick="setObTemplateSetDefault()" class="btn-ghost text-xs px-2 whitespace-nowrap" title="Make this the default template used when starting a checklist">Set Default</button>
+        <button onclick="renameObTemplateSet()" class="text-slate-400 hover:text-blue-500" title="Rename"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
+        <button onclick="deleteObTemplateSet()" class="text-slate-400 hover:text-red-500" title="Delete template"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>
+      </div>
+      <div id="obSetForm" class="hidden flex items-center gap-2 mb-4 bg-slate-50 border border-slate-200 rounded-lg p-3">
+        <input id="obSetName" class="inp flex-1" placeholder="Template name…"/>
+        <label class="flex items-center gap-1 text-xs text-slate-500 whitespace-nowrap"><input type="checkbox" id="obSetIsDefault"/> Default</label>
+        <button onclick="saveObTemplateSet()" class="btn-primary text-xs px-3 py-1.5">Save</button>
+        <button onclick="hideObSetForm()" class="text-xs text-slate-500 hover:text-slate-700 px-2">Cancel</button>
+      </div>
+      <p id="obTemplatesEmpty" class="hidden text-slate-400 text-sm text-center py-8">No templates yet — create one above.</p>
+      <div id="obTemplatesList" class="space-y-1 mb-4 max-h-80 overflow-y-auto"></div>
       <div class="border-t border-slate-200 pt-4">
         <p class="text-sm font-medium text-slate-700 mb-2">Add Item</p>
         <div class="grid grid-cols-2 gap-2">
-          <input type="hidden" id="obTmplType"/>
           <input id="obTmplTitle" class="inp col-span-2" placeholder="Item title *"/>
           <input id="obTmplDesc" class="inp col-span-2" placeholder="Description (optional)"/>
           <select id="obTmplRole" class="inp">
@@ -2767,6 +2782,39 @@
           <p class="text-xs text-slate-400 col-span-2 -mt-1">If linked, this item auto-completes when the employee finishes the course (passes its quiz, or is marked complete if it has no quiz).</p>
           <button onclick="addObTemplate()" class="btn-primary text-sm col-span-2">Add Item</button>
         </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- OB Template Item Detail Modal (view/edit role, description, linked course) -->
+<div id="obTmplItemModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-[60] flex items-center justify-center px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-md">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 class="text-base font-semibold">Checklist Item</h2>
+      <button onclick="closeObTmplItemModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <div class="p-6 space-y-4">
+      <input type="hidden" id="obTmplItemId"/>
+      <div><label class="lbl">Title <span class="text-red-500">*</span></label><input id="obTmplItemTitle" class="inp"/></div>
+      <div><label class="lbl">Description</label><textarea id="obTmplItemDesc" class="inp" rows="2" placeholder="Optional description…"></textarea></div>
+      <div><label class="lbl">Role in Charge</label>
+        <select id="obTmplItemRole" class="inp">
+          <option value="employee">Employee</option>
+          <option value="manager">Manager</option>
+          <option value="hr_admin">HR Admin</option>
+          <option value="hr_manager">HR Manager</option>
+        </select>
+      </div>
+      <div><label class="lbl">Linked L&amp;D Course</label>
+        <select id="obTmplItemCourse" class="inp">
+          <option value="">No linked course — manual completion</option>
+        </select>
+        <p class="text-xs text-slate-400 mt-1">If linked, this item auto-completes when the employee finishes the course. Select "No linked course" to delink.</p>
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="closeObTmplItemModal()" class="btn-ghost">Cancel</button>
+        <button onclick="saveObTmplItemDetail()" class="btn-primary">Save</button>
       </div>
     </div>
   </div>

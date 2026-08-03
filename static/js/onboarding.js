@@ -140,7 +140,7 @@ async function toggleObItem(clId,itemId,done) {
 function closeObDetail(){document.getElementById('obDetailModal').classList.add('hidden');viewingObId=null;}
 
 
-function openStartObModal(type) {
+async function openStartObModal(type) {
   document.getElementById('startObType').value=type;
   document.getElementById('startObTitle').textContent=type==='onboarding'?'Start Onboarding':'Start Offboarding';
   document.getElementById('startObSubmitBtn').textContent=type==='onboarding'?'Start Onboarding':'Start Offboarding';
@@ -149,6 +149,11 @@ function openStartObModal(type) {
   const sel=document.getElementById('startObEmpId');
   sel.innerHTML='<option value="">Select employee…</option>';
   employees.filter(e=>e.status==='Active').forEach(e=>{const o=document.createElement('option');o.value=e.employee_id;o.textContent=`${e.employee_id} — ${esc(e.full_name)}`;sel.appendChild(o);});
+  const setSel=document.getElementById('startObTemplateSet');
+  setSel.innerHTML='<option value="">Loading…</option>';
+  const res=await api(`/api/ob/template-sets?type=${type}`);
+  const sets=res?.ok?await res.json():[];
+  setSel.innerHTML=sets.length?sets.map(s=>`<option value="${s.id}" ${s.is_default?'selected':''}>${esc(s.name)}${s.is_default?' (Default)':''} — ${s.item_count} item${s.item_count===1?'':'s'}</option>`).join(''):'<option value="">No templates configured</option>';
   document.getElementById('startObModal').classList.remove('hidden');
 }
 function closeStartObModal(){document.getElementById('startObModal').classList.add('hidden');}
@@ -158,7 +163,8 @@ async function submitStartOb(e) {
   const err=document.getElementById('startObErr');
   err.classList.add('hidden');
   const type=document.getElementById('startObType').value;
-  const body={employee_id:document.getElementById('startObEmpId').value,type,notes:document.getElementById('startObNotes').value||null};
+  const setId=document.getElementById('startObTemplateSet').value;
+  const body={employee_id:document.getElementById('startObEmpId').value,type,template_set_id:setId?parseInt(setId):null,notes:document.getElementById('startObNotes').value||null};
   const res=await api('/api/ob/checklists',{method:'POST',body:JSON.stringify(body)});
   if(!res||!res.ok){const d=await res?.json();err.textContent=d?.detail||'Failed';err.classList.remove('hidden');return;}
   closeStartObModal();
@@ -215,6 +221,9 @@ async function deleteObChecklist(clId,type) {
 }
 
 let obTmplCoursesCache=[];
+let obTmplSetsCache=[];
+let obTmplItemsCache=[];
+let obCurrentSetId=null;
 
 async function showObTemplates(type) {
   document.getElementById('obTmplType').value=type;
@@ -222,39 +231,130 @@ async function showObTemplates(type) {
   document.getElementById('obTmplTitle').value='';
   document.getElementById('obTmplDesc').value='';
   document.getElementById('obTmplLdCourse').value='';
+  hideObSetForm();
   const coursesRes=await api('/api/ld/courses');
   obTmplCoursesCache=coursesRes?.ok?await coursesRes.json():[];
-  document.getElementById('obTmplLdCourse').innerHTML='<option value="">No linked course — manual completion</option>'+
+  const courseOptions='<option value="">No linked course — manual completion</option>'+
     obTmplCoursesCache.map(c=>`<option value="${c.id}">${esc(c.title)}</option>`).join('');
-  await refreshObTemplatesList(type);
+  document.getElementById('obTmplLdCourse').innerHTML=courseOptions;
+  document.getElementById('obTmplItemCourse').innerHTML=courseOptions;
+  await loadObTemplateSets(type);
   document.getElementById('obTemplatesModal').classList.remove('hidden');
 }
 function closeObTemplates(){document.getElementById('obTemplatesModal').classList.add('hidden');}
 
-async function refreshObTemplatesList(type) {
-  const res=await api(`/api/ob/templates?type=${type}`);
+async function loadObTemplateSets(type, selectId) {
+  const res=await api(`/api/ob/template-sets?type=${type}`);
+  obTmplSetsCache=res?.ok?await res.json():[];
+  const sel=document.getElementById('obTmplSetSelect');
+  if(!obTmplSetsCache.length){
+    sel.innerHTML='<option value="">No templates yet</option>';
+    obCurrentSetId=null;
+    document.getElementById('obTemplatesList').innerHTML='';
+    document.getElementById('obTemplatesEmpty').classList.remove('hidden');
+    return;
+  }
+  document.getElementById('obTemplatesEmpty').classList.add('hidden');
+  sel.innerHTML=obTmplSetsCache.map(s=>`<option value="${s.id}">${esc(s.name)}${s.is_default?' (Default)':''} — ${s.item_count} item${s.item_count===1?'':'s'}</option>`).join('');
+  obCurrentSetId=selectId&&obTmplSetsCache.some(s=>s.id===selectId)?selectId:obTmplSetsCache[0].id;
+  sel.value=String(obCurrentSetId);
+  await refreshObTemplatesList();
+}
+
+function switchObTemplateSet() {
+  obCurrentSetId=parseInt(document.getElementById('obTmplSetSelect').value);
+  refreshObTemplatesList();
+}
+
+function showObSetForm(){
+  document.getElementById('obSetName').value='';
+  document.getElementById('obSetIsDefault').checked=false;
+  document.getElementById('obSetForm').classList.remove('hidden');
+}
+function hideObSetForm(){document.getElementById('obSetForm').classList.add('hidden');}
+
+async function saveObTemplateSet() {
+  const type=document.getElementById('obTmplType').value;
+  const name=document.getElementById('obSetName').value.trim();
+  if(!name){alert('Template name is required');return;}
+  const res=await api('/api/ob/template-sets',{method:'POST',body:JSON.stringify({type,name})});
   if(!res||!res.ok) return;
-  const items=await res.json();
+  const created=await res.json();
+  if(document.getElementById('obSetIsDefault').checked){
+    await api(`/api/ob/template-sets/${created.id}`,{method:'PUT',body:JSON.stringify({name,is_default:true})});
+  }
+  hideObSetForm();
+  await loadObTemplateSets(type, created.id);
+}
+
+async function renameObTemplateSet() {
+  if(!obCurrentSetId) return;
+  const current=obTmplSetsCache.find(s=>s.id===obCurrentSetId);
+  const name=prompt('Template name:', current?.name||'');
+  if(!name||!name.trim()) return;
+  const res=await api(`/api/ob/template-sets/${obCurrentSetId}`,{method:'PUT',body:JSON.stringify({name:name.trim(),is_default:!!current?.is_default})});
+  if(!res||!res.ok) return;
+  const type=document.getElementById('obTmplType').value;
+  await loadObTemplateSets(type, obCurrentSetId);
+}
+
+async function setObTemplateSetDefault() {
+  if(!obCurrentSetId) return;
+  const current=obTmplSetsCache.find(s=>s.id===obCurrentSetId);
+  await api(`/api/ob/template-sets/${obCurrentSetId}`,{method:'PUT',body:JSON.stringify({name:current?.name||'', is_default:true})});
+  const type=document.getElementById('obTmplType').value;
+  await loadObTemplateSets(type, obCurrentSetId);
+}
+
+async function deleteObTemplateSet() {
+  if(!obCurrentSetId) return;
+  if(!confirm('Delete this template? All its checklist items must be removed first.')) return;
+  const res=await api(`/api/ob/template-sets/${obCurrentSetId}`,{method:'DELETE'});
+  if(!res||!res.ok){const d=await res?.json();alert(d?.detail||'Failed to delete');return;}
+  const type=document.getElementById('obTmplType').value;
+  await loadObTemplateSets(type);
+}
+
+async function refreshObTemplatesList() {
+  if(!obCurrentSetId){document.getElementById('obTemplatesList').innerHTML='';return;}
+  const res=await api(`/api/ob/templates?template_set_id=${obCurrentSetId}`);
+  if(!res||!res.ok) return;
+  obTmplItemsCache=await res.json();
   const canManage=['superadmin','hr_manager','hr_admin'].includes(currentUser?.role);
-  document.getElementById('obTemplatesList').innerHTML=items.length?items.map(t=>{
+  document.getElementById('obTemplatesList').innerHTML=obTmplItemsCache.length?obTmplItemsCache.map((t,idx)=>{
     const linkedCourse=obTmplCoursesCache.find(c=>c.id===t.linked_ld_course_id);
     return `<div class="flex items-center gap-2 py-2 border-b border-slate-100">
-      <span class="badge ${OB_ROLE_COLORS[t.assigned_role]||'bg-slate-100'} text-xs flex-shrink-0">${OB_ROLE_LABELS[t.assigned_role]||t.assigned_role}</span>
-      <span class="flex-1 text-sm text-slate-700">${esc(t.title)}</span>
-      ${linkedCourse?`<span class="badge text-xs bg-green-100 text-green-700 flex-shrink-0" title="Auto-completes via this course">🎓 ${esc(linkedCourse.title)}</span>`:''}
-      ${canManage?`<button onclick="deleteObTemplate(${t.id},'${type}')" class="text-slate-300 hover:text-red-500 flex-shrink-0"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>`:''}
+      <div class="flex flex-col flex-shrink-0">
+        <button onclick="moveObTemplate(${t.id},'up')" ${idx===0?'disabled':''} class="text-slate-300 hover:text-blue-500 disabled:opacity-30 disabled:hover:text-slate-300" title="Move up"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg></button>
+        <button onclick="moveObTemplate(${t.id},'down')" ${idx===obTmplItemsCache.length-1?'disabled':''} class="text-slate-300 hover:text-blue-500 disabled:opacity-30 disabled:hover:text-slate-300" title="Move down"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg></button>
+      </div>
+      <div class="flex-1 min-w-0 cursor-pointer" onclick="openObTmplItemModal(${t.id})">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="badge ${OB_ROLE_COLORS[t.assigned_role]||'bg-slate-100'} text-xs flex-shrink-0">${OB_ROLE_LABELS[t.assigned_role]||t.assigned_role}</span>
+          <span class="text-sm text-slate-700">${esc(t.title)}</span>
+          ${linkedCourse?`<span class="badge text-xs bg-green-100 text-green-700 flex-shrink-0" title="Auto-completes via this course">🎓 ${esc(linkedCourse.title)}</span>`:''}
+        </div>
+        ${t.description?`<p class="text-xs text-slate-400 mt-0.5">${esc(t.description)}</p>`:''}
+      </div>
+      ${canManage?`<button onclick="deleteObTemplate(${t.id})" class="text-slate-300 hover:text-red-500 flex-shrink-0" title="Remove"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>`:''}
     </div>`;
   }).join(''):'<p class="text-slate-400 text-sm py-4 text-center">No template items yet.</p>';
+}
+
+async function moveObTemplate(id,direction) {
+  await api(`/api/ob/templates/${id}/move`,{method:'POST',body:JSON.stringify({direction})});
+  refreshObTemplatesList();
 }
 
 async function addObTemplate() {
   const type=document.getElementById('obTmplType').value;
   const title=document.getElementById('obTmplTitle').value.trim();
   if(!title) return;
+  if(!obCurrentSetId){alert('Create a template first');return;}
   const courseVal=document.getElementById('obTmplLdCourse').value;
   const body={
-    type,title,description:document.getElementById('obTmplDesc').value.trim()||null,
-    assigned_role:document.getElementById('obTmplRole').value,order_index:99,
+    type,template_set_id:obCurrentSetId,title,description:document.getElementById('obTmplDesc').value.trim()||null,
+    assigned_role:document.getElementById('obTmplRole').value,
     linked_ld_course_id:courseVal?parseInt(courseVal):null
   };
   const res=await api('/api/ob/templates',{method:'POST',body:JSON.stringify(body)});
@@ -262,10 +362,39 @@ async function addObTemplate() {
   document.getElementById('obTmplTitle').value='';
   document.getElementById('obTmplDesc').value='';
   document.getElementById('obTmplLdCourse').value='';
-  refreshObTemplatesList(type);
+  await loadObTemplateSets(type, obCurrentSetId);
 }
 
-async function deleteObTemplate(id,type) {
+async function deleteObTemplate(id) {
   await api(`/api/ob/templates/${id}`,{method:'DELETE'});
-  refreshObTemplatesList(type);
+  await loadObTemplateSets(document.getElementById('obTmplType').value, obCurrentSetId);
+}
+
+function openObTmplItemModal(id) {
+  const item=obTmplItemsCache.find(t=>t.id===id);
+  if(!item) return;
+  document.getElementById('obTmplItemId').value=item.id;
+  document.getElementById('obTmplItemTitle').value=item.title;
+  document.getElementById('obTmplItemDesc').value=item.description||'';
+  document.getElementById('obTmplItemRole').value=item.assigned_role;
+  document.getElementById('obTmplItemCourse').value=item.linked_ld_course_id||'';
+  document.getElementById('obTmplItemModal').classList.remove('hidden');
+}
+function closeObTmplItemModal(){document.getElementById('obTmplItemModal').classList.add('hidden');}
+
+async function saveObTmplItemDetail() {
+  const id=document.getElementById('obTmplItemId').value;
+  const title=document.getElementById('obTmplItemTitle').value.trim();
+  if(!title){alert('Title is required');return;}
+  const type=document.getElementById('obTmplType').value;
+  const courseVal=document.getElementById('obTmplItemCourse').value;
+  const body={
+    type,title,description:document.getElementById('obTmplItemDesc').value.trim()||null,
+    assigned_role:document.getElementById('obTmplItemRole').value,
+    linked_ld_course_id:courseVal?parseInt(courseVal):null
+  };
+  const res=await api(`/api/ob/templates/${id}`,{method:'PUT',body:JSON.stringify(body)});
+  if(!res||!res.ok) return;
+  closeObTmplItemModal();
+  await refreshObTemplatesList();
 }
