@@ -38,6 +38,11 @@ except ImportError:
     )
 
 try:
+    from core.approval_workflow import start_workflow, advance_or_finalize
+except ImportError:
+    from ems.core.approval_workflow import start_workflow, advance_or_finalize
+
+try:
     from db import get_db
 except ImportError:
     from ems.db import get_db
@@ -550,11 +555,16 @@ def create_leave_application(conn, body: LeaveApplicationIn, user: dict = Depend
         raise HTTPException(400, f"Insufficient balance: requesting {days} day(s), only {available} available")
 
     status = "Pending Approval" if lt["requires_approval"] else "Approved"
+    workflow_id, step_order = None, None
+    if status == "Pending Approval":
+        workflow_id, step_order, auto_approved = start_workflow(conn, inst_id, "leave", body.employee_id)
+        if auto_approved:
+            status = "Approved"
     conn.execute(
-        "INSERT INTO leave_applications (institution_id,employee_id,leave_type_id,start_date,end_date,days_count,status,reason,attachment,requested_by) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO leave_applications (institution_id,employee_id,leave_type_id,start_date,end_date,days_count,status,reason,attachment,requested_by,approval_workflow_id,approval_step) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
         (inst_id, body.employee_id, body.leave_type_id, body.start_date, body.end_date, days, status,
-         body.reason, body.attachment, user["username"])
+         body.reason, body.attachment, user["username"], workflow_id, step_order)
     )
     app_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
@@ -580,19 +590,42 @@ def update_leave_status(conn, app_id: int, body: LeaveStatusIn, user: dict = Dep
         raise HTTPException(404, "Application not found")
 
     if body.status in ("Approved", "Rejected"):
-        can_approve = user["role"] in ("superadmin", "hr_manager", "hr_admin", "manager")
-        if not can_approve:
-            raise HTTPException(403, "Only a manager or HR can approve/reject leave")
         if application["status"] != "Pending Approval":
             raise HTTPException(400, f"Application is already {application['status']}")
-        if body.status == "Approved":
+        action = "reject" if body.status == "Rejected" else "approve"
+        if application["approval_workflow_id"] and application["approval_step"] is not None:
+            try:
+                outcome, next_step = advance_or_finalize(
+                    conn, inst_id, "leave", application["employee_id"],
+                    application["approval_workflow_id"], application["approval_step"], action, user
+                )
+            except PermissionError as e:
+                raise HTTPException(403, str(e))
+        else:
+            # Legacy row with no workflow assigned (predates this engine) —
+            # fall back to the old blanket role check rather than getting stuck.
+            if user["role"] not in ("superadmin", "hr_manager", "hr_admin", "manager"):
+                raise HTTPException(403, "Only a manager or HR can approve/reject leave")
+            outcome = "rejected" if action == "reject" else "approved"
+            next_step = None
+
+        if outcome == "advanced":
+            conn.execute("UPDATE leave_applications SET approval_step=?,notes=? WHERE id=?",
+                         (next_step, body.notes, app_id))
+            _log_leave(conn, inst_id, app_id, application["employee_id"], "Approval Advanced",
+                       f"Step {application['approval_step']} cleared by {user['username']} — now awaiting step {next_step}", user)
+            conn.commit()
+            return dict(conn.execute("SELECT * FROM leave_applications WHERE id=?", (app_id,)).fetchone())
+
+        final_status = "Approved" if outcome == "approved" else "Rejected"
+        if final_status == "Approved":
             year = datetime.strptime(application["start_date"], "%Y-%m-%d").year
             lt = conn.execute("SELECT * FROM leave_types WHERE id=?", (application["leave_type_id"],)).fetchone()
             balance = _get_or_create_leave_balance(conn, inst_id, application["employee_id"], _balance_leave_type_id(lt), year)
             _consume_balance(conn, balance, application["days_count"])
-        approved_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S") if body.status == "Approved" else None
-        conn.execute("UPDATE leave_applications SET status=?,approved_by=?,approved_at=?,notes=? WHERE id=?",
-                     (body.status, user["username"], approved_at, body.notes, app_id))
+        approved_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S") if final_status == "Approved" else None
+        conn.execute("UPDATE leave_applications SET status=?,approved_by=?,approved_at=?,notes=?,approval_step=NULL WHERE id=?",
+                     (final_status, user["username"], approved_at, body.notes, app_id))
     elif body.status == "Cancelled":
         if user["role"] == "employee" and user.get("employee_id") != application["employee_id"]:
             raise HTTPException(403, "Access denied")

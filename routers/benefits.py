@@ -5,6 +5,7 @@ from datetime import datetime, date, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from db import get_db
 from core.deps import get_current_user
+from core.approval_workflow import start_workflow, advance_or_finalize
 from core.benefits_schemas import (
     BenefitPlanCreate, BenefitPlanUpdate, BenefitPlanResponse,
     EligibilityRuleCreate, EligibilityRuleResponse, EligiblePlanResponse,
@@ -1093,15 +1094,21 @@ def _submit_claim(conn, inst_id: int, employee_id: str, payload: ClaimCreate) ->
         raise HTTPException(404, detail="Benefit plan not found")
 
     now = datetime.utcnow().isoformat()
+    workflow_id, step_order, auto_approved = start_workflow(conn, inst_id, "claims", employee_id)
+    # A fully-unresolvable chain (no manager, no HR user at all) auto-approves
+    # rather than getting stuck — skips the reimbursement-cap check decide_claim
+    # normally runs, which is an acceptable trade-off for this edge case only.
+    status = "Approved" if auto_approved else "Submitted"
+    amount_approved = float(payload.amount_claimed) if auto_approved else None
     conn.execute(
         """
         INSERT INTO benefit_claims
         (institution_id, employee_id, benefit_plan_id, claim_date, amount_claimed,
-         description, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, 'Submitted', ?, ?)
+         description, status, amount_approved, created_at, updated_at, approval_workflow_id, approval_step)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (inst_id, employee_id, payload.benefit_plan_id, payload.claim_date,
-         payload.amount_claimed, payload.description, now, now),
+         payload.amount_claimed, payload.description, status, amount_approved, now, now, workflow_id, step_order),
     )
     claim_id = conn._last_id
 
@@ -1213,7 +1220,6 @@ async def decide_claim(
     current_user: dict = Depends(get_current_user),
 ) -> ClaimResponse:
     """Approve (optionally partial) or reject a claim."""
-    require_benefits_role(current_user)
     conn = get_db()
     try:
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
@@ -1227,6 +1233,28 @@ async def decide_claim(
             raise HTTPException(404, detail="Claim not found")
         if claim["status"] not in ("Submitted", "Under Review"):
             raise HTTPException(400, detail="Only a Submitted or Under Review claim can be decided")
+
+        action = "reject" if payload.status == "Rejected" else "approve"
+        if claim["approval_workflow_id"] and claim["approval_step"] is not None:
+            try:
+                outcome, next_step = advance_or_finalize(
+                    conn, inst_id, "claims", claim["employee_id"],
+                    claim["approval_workflow_id"], claim["approval_step"], action, current_user
+                )
+            except PermissionError as e:
+                raise HTTPException(403, detail=str(e))
+        else:
+            require_benefits_role(current_user)
+            outcome, next_step = ("rejected" if action == "reject" else "approved"), None
+
+        if outcome == "advanced":
+            conn.execute(
+                "UPDATE benefit_claims SET status='Under Review', approval_step=?, updated_at=? WHERE id=?",
+                (next_step, datetime.utcnow().isoformat(), claim_id)
+            )
+            conn.commit()
+            row = conn.execute("SELECT * FROM benefit_claims WHERE id = ?", (claim_id,)).fetchone()
+            return ClaimResponse(**dict(row))
 
         amount_approved = payload.amount_approved if payload.status == "Approved" else None
         if payload.status == "Approved" and amount_approved is None:
@@ -1274,7 +1302,7 @@ async def decide_claim(
         conn.execute(
             """
             UPDATE benefit_claims
-            SET status = ?, amount_approved = ?, reviewed_by_user_id = ?, review_date = ?, updated_at = ?
+            SET status = ?, amount_approved = ?, reviewed_by_user_id = ?, review_date = ?, updated_at = ?, approval_step = NULL
             WHERE id = ?
             """,
             (payload.status, amount_approved, user_id, now, now, claim_id),

@@ -1,6 +1,10 @@
 """
-Dashboard To-Do List — personal items only (about the logged-in user's own
-data), not approval/task queues that belong to other people's requests.
+Dashboard To-Do List — personal items (about the logged-in user's own
+data), plus items pending this user's own decision as an approval-workflow
+approver (see core/approval_workflow.py) — the latter already had one
+precedent before this module existed (the ManagerReview appraisal item
+below), so this isn't a new exception to the "personal only" rule so much
+as generalizing the one that was already there.
 Computed on every request from live state (not stored), so items disappear
 automatically once actioned. Excluded for superadmin (no personal employee record).
 """
@@ -18,6 +22,11 @@ try:
     from core.org_queries import subordinates_in_clause
 except ImportError:
     from ems.core.org_queries import subordinates_in_clause
+
+try:
+    from core.approval_workflow import count_pending_for_approver
+except ImportError:
+    from ems.core.approval_workflow import count_pending_for_approver
 
 try:
     from db import get_db
@@ -68,5 +77,24 @@ def get_todos(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, An
             """, (inst_id, emp_id, *fp)).fetchone()[0]
             if cnt:
                 todos.append({"key": "perf-team", "label": f"{cnt} appraisal{'s' if cnt != 1 else ''} awaiting your manager review", "page": "perf-team", "count": cnt})
+
+    # Items pending this user's own decision as an approval-workflow
+    # approver — direct/skip-level manager steps naturally resolve to 0 for
+    # users with no linked employee_id, so this is safe to run regardless.
+    approval_targets = (
+        ("leave", "leave-approvals", "leave application"),
+        ("claims", "ben-claims", "benefit claim"),
+        ("requisition", "requisitions", "job requisition"),
+        ("timesheet", "timesheet-approvals", "timesheet"),
+        ("ld_enrollment", "ld-trainings", "training enrollment"),
+    )
+    for module, page, noun in approval_targets:
+        cnt = count_pending_for_approver(conn, inst_id, user, module)
+        if cnt:
+            todos.append({
+                "key": f"{module}-approvals",
+                "label": f"{cnt} {noun}{'s' if cnt != 1 else ''} awaiting your approval",
+                "page": page, "count": cnt,
+            })
 
     return todos

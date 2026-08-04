@@ -15,6 +15,11 @@ except ImportError:
     from ems.core.org_queries import subordinates_in_clause
 
 try:
+    from core.approval_workflow import start_workflow, advance_or_finalize
+except ImportError:
+    from ems.core.approval_workflow import start_workflow, advance_or_finalize
+
+try:
     from db import get_db
 except ImportError:
     from ems.db import get_db
@@ -197,18 +202,40 @@ def update_timesheet_status(conn, ts_id: int, body: TimesheetStatusIn, user: dic
         entry_count = conn.execute("SELECT COUNT(*) FROM timesheet_entries WHERE timesheet_id=?", (ts_id,)).fetchone()[0]
         if entry_count == 0:
             raise HTTPException(400, "Cannot submit an empty timesheet")
+        workflow_id, step_order, auto_approved = start_workflow(conn, inst_id, "timesheet", ts["employee_id"])
+        new_status = "Approved" if auto_approved else "Submitted"
         conn.execute(
-            "UPDATE timesheets SET status='Submitted',submitted_at=to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS') WHERE id=?",
-            (ts_id,)
+            "UPDATE timesheets SET status=?,submitted_at=to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'),"
+            "approval_workflow_id=?,approval_step=? WHERE id=?",
+            (new_status, workflow_id, step_order, ts_id)
         )
     else:  # Approved | Rejected
-        can_approve = user["role"] in ("superadmin", "hr_manager", "hr_admin", "manager")
-        if not can_approve:
-            raise HTTPException(403, "Only a manager or HR can approve/reject timesheets")
         if ts["status"] != "Submitted":
             raise HTTPException(400, f"Only a Submitted timesheet can be reviewed (current status: {ts['status']})")
-        conn.execute("UPDATE timesheets SET status=?,approved_by=?,notes=? WHERE id=?",
-                     (body.status, user["username"], body.notes, ts_id))
+        action = "reject" if body.status == "Rejected" else "approve"
+        if ts["approval_workflow_id"] and ts["approval_step"] is not None:
+            try:
+                outcome, next_step = advance_or_finalize(
+                    conn, inst_id, "timesheet", ts["employee_id"],
+                    ts["approval_workflow_id"], ts["approval_step"], action, user
+                )
+            except PermissionError as e:
+                raise HTTPException(403, str(e))
+        else:
+            if user["role"] not in ("superadmin", "hr_manager", "hr_admin", "manager"):
+                raise HTTPException(403, "Only a manager or HR can approve/reject timesheets")
+            outcome, next_step = ("rejected" if action == "reject" else "approved"), None
+
+        if outcome == "advanced":
+            conn.execute("UPDATE timesheets SET approval_step=?,notes=? WHERE id=?", (next_step, body.notes, ts_id))
+            _log_timesheet(conn, inst_id, ts_id, ts["employee_id"], "Approval Advanced",
+                           f"Step {ts['approval_step']} cleared by {user['username']} — now awaiting step {next_step}", user)
+            conn.commit()
+            return dict(conn.execute("SELECT * FROM timesheets WHERE id=?", (ts_id,)).fetchone())
+
+        final_status = "Approved" if outcome == "approved" else "Rejected"
+        conn.execute("UPDATE timesheets SET status=?,approved_by=?,notes=?,approval_step=NULL WHERE id=?",
+                     (final_status, user["username"], body.notes, ts_id))
 
     _log_timesheet(conn, inst_id, ts_id, ts["employee_id"], f"Status changed to {body.status}", body.notes or "", user)
     conn.commit()

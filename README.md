@@ -482,6 +482,66 @@ that lowers `carried_forward_days` below the row's own
 `carried_forward_used_days` clamps the used-counter down to match, so
 "remaining carry-forward" can never go negative from an admin edit.
 
+## Approval workflow module
+
+`core/approval_workflow.py` / `routers/approval_workflow_settings.py` /
+`static/js/approval-workflow.js`.
+
+Five modules — Leave, Benefits Claims, Job Requisition, Timesheet, and
+L&D Enrollment — used to each hardcode their own single-step role check
+(e.g. `role in (manager, hr_manager, hr_admin)`), with no verification
+that an approving "manager" was the requester's *actual* manager. This
+replaces all five with one shared, per-institution-configurable engine:
+an ordered chain of 1-4 steps, each step being `direct_manager`,
+`skip_level_manager`, `hr_manager` (a fixed, module-specific role set —
+see `MODULE_HR_ROLES`, since these weren't identical before: Claims never
+included `hr_admin`, Requisition approval was `hr_manager`-only), or
+`specific_employee` (a named override, e.g. routing one leave type
+straight to a named compliance officer regardless of org chart).
+
+**Data model**: `approval_workflows` (one named, orderable chain per
+institution+module) and `approval_workflow_steps`. Each of the 5 request
+tables gets `approval_workflow_id` (snapshotted at submission — editing
+the workflow later doesn't reshuffle in-flight requests) and
+`approval_step` (which step is currently pending; `NULL` once the request
+leaves its pending state).
+
+**Defaults**: lazily created per institution+module on first use (2
+steps: Direct Manager, then that module's HR roles), the same
+resolve-or-create-default pattern as `ob_template_sets`
+(routers/onboarding.py) and leave's own carry-forward default — not
+seeded up front for every institution.
+
+**Resolution and auto-skip**: `start_workflow` (submission time) and
+`advance_or_finalize` (each approve/reject) both walk the step list via
+`_first_resolvable_step`, which skips any step whose pool is empty for
+that specific request — no manager on file skips `direct_manager`, no
+manager's-manager skips `skip_level_manager`, a deactivated named
+approver skips `specific_employee`. If the *entire* chain is
+unresolvable (e.g. a solo employee with no manager and no HR steps
+configured), the request auto-approves rather than getting permanently
+stuck. `job_requisitions` has no requester-employee column of its own
+(it's always created by an HR/recruiter user, not a line manager) — its
+Direct/Skip-Level Manager steps resolve via whichever employee record is
+linked to the *creating user's own account* (`_requisition_requester_employee_id`).
+
+**Approve/reject flow**: each endpoint now checks `is_eligible_approver`
+for the request's current step instead of a blanket role check. Approving
+a non-final step returns `"advanced"` (status stays e.g. `Pending
+Approval`, `approval_step` moves to the next resolvable step); approving
+the final step finalizes as before (balance deduction, reimbursement-cap
+check, etc. — the existing side effects are unchanged, just gated
+differently). Rejecting is terminal from any step. A legacy row with no
+`approval_workflow_id` (predates this engine) falls back to each module's
+original blanket role check rather than getting stuck.
+
+**Dashboard integration**: `count_pending_for_approver`
+(`core/approval_workflow.py`) powers new items in the Dashboard To-Do
+list (`routers/dashboard.py`) — "N leave applications awaiting your
+approval" etc. — generalizing the one precedent that already existed
+there (the ManagerReview appraisal item) rather than introducing a new
+exception to that endpoint's "personal items only" design.
+
 ## Deployment (Fly.io)
 
 The app is deployed to Fly.io with a rolling-update strategy. Key deployment

@@ -22,6 +22,11 @@ except ImportError:
     from ems.core.ob_ld_shared import log_ld, complete_linked_ob_items
 
 try:
+    from core.approval_workflow import start_workflow, advance_or_finalize
+except ImportError:
+    from ems.core.approval_workflow import start_workflow, advance_or_finalize
+
+try:
     from db import get_db, IntegrityError
 except ImportError:
     from ems.db import get_db, IntegrityError
@@ -198,9 +203,14 @@ def create_ld_enrollment(conn, body: LDEnrollIn, user: dict = Depends(get_curren
     if existing:
         raise HTTPException(400, "Employee already has an active enrollment for this course")
     status = "Pending Approval" if course["cost"] and course["cost"] > 0 else "In Progress"
+    workflow_id, step_order = None, None
+    if status == "Pending Approval":
+        workflow_id, step_order, auto_approved = start_workflow(conn, inst_id, "ld_enrollment", body.employee_id)
+        if auto_approved:
+            status = "In Progress"
     conn.execute(
-        "INSERT INTO ld_enrollments (institution_id,course_id,employee_id,status,requested_by,notes) VALUES (?,?,?,?,?,?)",
-        (inst_id, body.course_id, body.employee_id, status, user["username"], body.notes)
+        "INSERT INTO ld_enrollments (institution_id,course_id,employee_id,status,requested_by,notes,approval_workflow_id,approval_step) VALUES (?,?,?,?,?,?,?,?)",
+        (inst_id, body.course_id, body.employee_id, status, user["username"], body.notes, workflow_id, step_order)
     )
     enr_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     log_ld(conn, inst_id, enr_id, body.employee_id, "Enrolled",
@@ -222,12 +232,30 @@ def update_ld_enrollment_status(conn, enr_id: int, body: LDEnrollStatusIn, user:
         raise HTTPException(404, "Enrollment not found")
 
     if body.status in ("Approved", "Rejected"):
-        can_approve = user["role"] in ("superadmin", "hr_manager", "hr_admin", "manager")
-        if not can_approve:
-            raise HTTPException(403, "Only a manager or HR can approve/reject enrollments")
-        next_status = "In Progress" if body.status == "Approved" else "Rejected"
+        action = "reject" if body.status == "Rejected" else "approve"
+        if enr["approval_workflow_id"] and enr["approval_step"] is not None:
+            try:
+                outcome, next_step = advance_or_finalize(
+                    conn, inst_id, "ld_enrollment", enr["employee_id"],
+                    enr["approval_workflow_id"], enr["approval_step"], action, user
+                )
+            except PermissionError as e:
+                raise HTTPException(403, str(e))
+        else:
+            if user["role"] not in ("superadmin", "hr_manager", "hr_admin", "manager"):
+                raise HTTPException(403, "Only a manager or HR can approve/reject enrollments")
+            outcome, next_step = ("rejected" if action == "reject" else "approved"), None
+
+        if outcome == "advanced":
+            conn.execute("UPDATE ld_enrollments SET approval_step=?,notes=? WHERE id=?", (next_step, body.notes, enr_id))
+            log_ld(conn, inst_id, enr_id, enr["employee_id"], "Approval Advanced",
+                   f"Step {enr['approval_step']} cleared by {user['username']} — now awaiting step {next_step}", user)
+            conn.commit()
+            return dict(conn.execute("SELECT * FROM ld_enrollments WHERE id=?", (enr_id,)).fetchone())
+
+        next_status = "In Progress" if outcome == "approved" else "Rejected"
         conn.execute(
-            "UPDATE ld_enrollments SET status=?,approved_by=?,notes=? WHERE id=?",
+            "UPDATE ld_enrollments SET status=?,approved_by=?,notes=?,approval_step=NULL WHERE id=?",
             (next_status, user["username"], body.notes, enr_id)
         )
         log_ld(conn, inst_id, enr_id, enr["employee_id"], f"Enrollment {body.status}",

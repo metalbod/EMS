@@ -16,6 +16,11 @@ except ImportError:
     from ems.core.validators import validate_document_data_url
 
 try:
+    from core.approval_workflow import start_workflow, advance_or_finalize
+except ImportError:
+    from ems.core.approval_workflow import start_workflow, advance_or_finalize
+
+try:
     from db import get_db, IntegrityError
 except ImportError:
     from ems.db import get_db, IntegrityError
@@ -168,6 +173,18 @@ def _get_req(conn, inst_id, req_id):
     ).fetchone()
     if not row: raise HTTPException(404, "Requisition not found")
     return dict(row)
+
+
+def _requisition_requester_employee_id(conn, inst_id, req):
+    """Job requisitions have no requester employee column of their own
+    (they're always created by an HR/recruiter user, not a line manager) —
+    the approval workflow's Direct/Skip-Level Manager steps resolve from
+    whichever employee record is linked to the creating user's account."""
+    u = conn.execute(
+        "SELECT employee_id FROM users WHERE username=? AND institution_id=?",
+        (req["created_by"], inst_id)
+    ).fetchone()
+    return u["employee_id"] if u else None
 
 
 def _gen_offer_letter(cand, req, offer):
@@ -338,7 +355,17 @@ def submit_requisition(conn, req_id: int, user: dict = Depends(require_roles(*RE
     r = _get_req(conn, inst_id, req_id)
     if r["status"] != "Draft":
         raise HTTPException(400, "Only Draft requisitions can be submitted")
-    conn.execute("UPDATE job_requisitions SET status='Pending Approval' WHERE id=?", (req_id,))
+    # requester_employee_id may be None (the creating user has no linked
+    # employee record — common for HR/recruiter accounts) — start_workflow
+    # handles that fine on its own: direct_manager/skip_level_manager steps
+    # simply resolve to nobody and get auto-skipped, while hr_manager steps
+    # don't need an employee at all, so this must NOT be treated as "no
+    # resolvable step anywhere" up front.
+    requester_employee_id = _requisition_requester_employee_id(conn, inst_id, r)
+    workflow_id, step_order, auto_approved = start_workflow(conn, inst_id, "requisition", requester_employee_id)
+    new_status = "Approved" if auto_approved else "Pending Approval"
+    conn.execute("UPDATE job_requisitions SET status=?,approval_workflow_id=?,approval_step=? WHERE id=?",
+                 (new_status, workflow_id, step_order, req_id))
     conn.commit()
     row = conn.execute("SELECT * FROM job_requisitions WHERE id=?", (req_id,)).fetchone()
     return dict(row)
@@ -347,16 +374,37 @@ def submit_requisition(conn, req_id: int, user: dict = Depends(require_roles(*RE
 @router.patch("/api/recruitment/requisitions/{req_id}/approve")
 @db_session
 def approve_requisition(conn, req_id: int, body: RequisitionApprovalIn,
-                         user: dict = Depends(require_roles("superadmin","hr_manager"))) -> Dict[str, Any]:
+                         user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     inst_id = need_inst(user)
     r = _get_req(conn, inst_id, req_id)
     if r["status"] != "Pending Approval":
         raise HTTPException(400, "Requisition is not pending approval")
     if body.action not in ("approve","reject"):
         raise HTTPException(400, "Action must be approve or reject")
-    new_status = "Approved" if body.action == "approve" else "Rejected"
+    action = "reject" if body.action == "reject" else "approve"
+    requester_employee_id = _requisition_requester_employee_id(conn, inst_id, r)
+    if r["approval_workflow_id"] and r["approval_step"] is not None:
+        try:
+            outcome, next_step = advance_or_finalize(
+                conn, inst_id, "requisition", requester_employee_id,
+                r["approval_workflow_id"], r["approval_step"], action, user
+            )
+        except PermissionError as e:
+            raise HTTPException(403, str(e))
+    else:
+        if user["role"] not in ("superadmin", "hr_manager"):
+            raise HTTPException(403, "Only HR Manager can approve/reject requisitions")
+        outcome, next_step = ("rejected" if action == "reject" else "approved"), None
+
+    if outcome == "advanced":
+        conn.execute("UPDATE job_requisitions SET approval_step=?,approval_comments=? WHERE id=?",
+                     (next_step, body.comments, req_id))
+        conn.commit()
+        return dict(conn.execute("SELECT * FROM job_requisitions WHERE id=?", (req_id,)).fetchone())
+
+    new_status = "Approved" if outcome == "approved" else "Rejected"
     conn.execute("""
-        UPDATE job_requisitions SET status=?, approved_by=?, approval_comments=?
+        UPDATE job_requisitions SET status=?, approved_by=?, approval_comments=?, approval_step=NULL
         WHERE id=?
     """, (new_status, user["username"], body.comments, req_id))
     conn.commit()
