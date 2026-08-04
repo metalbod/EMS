@@ -62,12 +62,23 @@ class WorkflowUpdateIn(BaseModel):
 class StepIn(BaseModel):
     approver_type: str
     specific_employee_id: Optional[str] = None
+    # Alternative ("OR") approver for this step — the step is satisfied by
+    # whichever of the two acts first. None means no alternative configured.
+    alt_approver_type: Optional[str] = None
+    alt_specific_employee_id: Optional[str] = None
 
     @field_validator("approver_type")
     @classmethod
     def _validate_approver_type(cls, v):
         if v not in APPROVER_TYPES:
             raise ValueError(f"approver_type must be one of: {', '.join(APPROVER_TYPES)}")
+        return v
+
+    @field_validator("alt_approver_type")
+    @classmethod
+    def _validate_alt_approver_type(cls, v):
+        if v is not None and v not in APPROVER_TYPES:
+            raise ValueError(f"alt_approver_type must be one of: {', '.join(APPROVER_TYPES)}")
         return v
 
 
@@ -79,6 +90,25 @@ def _with_steps(conn, workflow_row) -> Dict[str, Any]:
     d = dict(workflow_row)
     d["steps"] = get_steps(conn, d["id"])
     return d
+
+
+def _validate_step_body(conn, inst_id: int, body: "StepIn") -> None:
+    if body.alt_approver_type and body.alt_approver_type == body.approver_type:
+        raise HTTPException(400, "alt_approver_type must differ from approver_type")
+    for approver_type, specific_employee_id, field_name in (
+        (body.approver_type, body.specific_employee_id, "specific_employee_id"),
+        (body.alt_approver_type, body.alt_specific_employee_id, "alt_specific_employee_id"),
+    ):
+        if approver_type != "specific_employee":
+            continue
+        if not specific_employee_id:
+            raise HTTPException(400, f"{field_name} is required when approver_type is specific_employee")
+        emp = conn.execute(
+            "SELECT employee_id FROM employees WHERE employee_id=? AND institution_id=?",
+            (specific_employee_id, inst_id)
+        ).fetchone()
+        if not emp:
+            raise HTTPException(404, "Employee not found")
 
 
 @router.get("/api/approval-workflows")
@@ -165,22 +195,17 @@ def delete_workflow(conn, workflow_id: int, user: dict = Depends(require_roles(*
 def add_step(conn, workflow_id: int, body: StepIn, user: dict = Depends(require_roles(*WORKFLOW_MANAGE_ROLES))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     _get_owned_workflow(conn, inst_id, workflow_id)
-    if body.approver_type == "specific_employee":
-        if not body.specific_employee_id:
-            raise HTTPException(400, "specific_employee_id is required when approver_type is specific_employee")
-        emp = conn.execute(
-            "SELECT employee_id FROM employees WHERE employee_id=? AND institution_id=?",
-            (body.specific_employee_id, inst_id)
-        ).fetchone()
-        if not emp:
-            raise HTTPException(404, "Employee not found")
+    _validate_step_body(conn, inst_id, body)
     existing = get_steps(conn, workflow_id)
     if len(existing) >= MAX_STEPS:
         raise HTTPException(400, f"A workflow can have at most {MAX_STEPS} steps")
     next_order = (max((s["step_order"] for s in existing), default=0)) + 1
     conn.execute(
-        "INSERT INTO approval_workflow_steps (workflow_id,step_order,approver_type,specific_employee_id) VALUES (?,?,?,?)",
-        (workflow_id, next_order, body.approver_type, body.specific_employee_id)
+        "INSERT INTO approval_workflow_steps "
+        "(workflow_id,step_order,approver_type,specific_employee_id,alt_approver_type,alt_specific_employee_id) "
+        "VALUES (?,?,?,?,?,?)",
+        (workflow_id, next_order, body.approver_type, body.specific_employee_id,
+         body.alt_approver_type, body.alt_specific_employee_id if body.alt_approver_type == "specific_employee" else None)
     )
     conn.commit()
     return _with_steps(conn, conn.execute("SELECT * FROM approval_workflows WHERE id=?", (workflow_id,)).fetchone())
@@ -201,18 +226,12 @@ def _get_owned_step(conn, inst_id: int, workflow_id: int, step_id: int):
 def update_step(conn, workflow_id: int, step_id: int, body: StepIn, user: dict = Depends(require_roles(*WORKFLOW_MANAGE_ROLES))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     _get_owned_step(conn, inst_id, workflow_id, step_id)
-    if body.approver_type == "specific_employee":
-        if not body.specific_employee_id:
-            raise HTTPException(400, "specific_employee_id is required when approver_type is specific_employee")
-        emp = conn.execute(
-            "SELECT employee_id FROM employees WHERE employee_id=? AND institution_id=?",
-            (body.specific_employee_id, inst_id)
-        ).fetchone()
-        if not emp:
-            raise HTTPException(404, "Employee not found")
+    _validate_step_body(conn, inst_id, body)
     conn.execute(
-        "UPDATE approval_workflow_steps SET approver_type=?,specific_employee_id=? WHERE id=?",
-        (body.approver_type, body.specific_employee_id if body.approver_type == "specific_employee" else None, step_id)
+        "UPDATE approval_workflow_steps SET approver_type=?,specific_employee_id=?,alt_approver_type=?,alt_specific_employee_id=? WHERE id=?",
+        (body.approver_type, body.specific_employee_id if body.approver_type == "specific_employee" else None,
+         body.alt_approver_type, body.alt_specific_employee_id if body.alt_approver_type == "specific_employee" else None,
+         step_id)
     )
     conn.commit()
     return _with_steps(conn, conn.execute("SELECT * FROM approval_workflows WHERE id=?", (workflow_id,)).fetchone())

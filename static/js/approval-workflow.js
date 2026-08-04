@@ -110,30 +110,55 @@ function renderAwSteps() {
   addForm.classList.remove('hidden');
   if (!steps.length) { wrap.innerHTML=''; emptyEl.classList.remove('hidden'); return; }
   emptyEl.classList.add('hidden');
+  const empName = id => { const e=(employees||[]).find(e=>e.employee_id===id); return e ? esc(e.full_name) : esc(id); };
   wrap.innerHTML = steps.map((s, idx) => {
-    const emp = s.specific_employee_id ? (employees||[]).find(e=>e.employee_id===s.specific_employee_id) : null;
-    const detail = s.approver_type==='specific_employee' ? (emp ? esc(emp.full_name) : esc(s.specific_employee_id)) : '';
-    return `<div class="flex items-center gap-3 py-2.5 px-3 border border-slate-100 rounded-lg">
+    const detail = s.approver_type==='specific_employee' ? empName(s.specific_employee_id) : '';
+    const altDetail = s.alt_approver_type ?
+      `<span class="text-xs text-slate-400 flex-shrink-0">OR</span>
+       <span class="badge bg-purple-100 text-purple-700 text-xs flex-shrink-0">${AW_STEP_LABELS[s.alt_approver_type]||s.alt_approver_type}</span>
+       ${s.alt_approver_type==='specific_employee' ? `<span class="text-sm text-slate-600 flex-shrink-0">${empName(s.alt_specific_employee_id)}</span>` : ''}` : '';
+    return `<div class="flex items-center gap-3 py-2.5 px-3 border border-slate-100 rounded-lg flex-wrap">
       <span class="text-xs font-semibold text-slate-400 w-14 flex-shrink-0">Step ${idx+1}</span>
       <div class="flex flex-col flex-shrink-0">
         <button onclick="moveAwStep(${s.id},'up')" ${idx===0?'disabled':''} class="text-slate-300 hover:text-blue-500 disabled:opacity-30" title="Move up"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg></button>
         <button onclick="moveAwStep(${s.id},'down')" ${idx===steps.length-1?'disabled':''} class="text-slate-300 hover:text-blue-500 disabled:opacity-30" title="Move down"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg></button>
       </div>
       <span class="badge bg-indigo-100 text-indigo-700 text-xs flex-shrink-0">${AW_STEP_LABELS[s.approver_type]||s.approver_type}</span>
-      ${detail ? `<span class="text-sm text-slate-600 flex-1 min-w-0 truncate">${detail}</span>` : '<span class="flex-1"></span>'}
+      ${detail ? `<span class="text-sm text-slate-600 flex-shrink-0">${detail}</span>` : ''}
+      ${altDetail}
+      <span class="flex-1"></span>
       <button onclick="deleteAwStep(${s.id})" class="text-slate-300 hover:text-red-500 flex-shrink-0" title="Remove"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>
     </div>`;
   }).join('');
+}
+
+function _awPopulateEmployeeSelect(sel) {
+  if (!sel.options.length) {
+    sel.innerHTML = (employees||[]).filter(e=>e.status==='Active')
+      .map(e=>`<option value="${e.employee_id}">${esc(e.full_name)} (${esc(e.employee_id)})</option>`).join('');
+  }
 }
 
 function onAwNewStepTypeChange() {
   const isSpecific = document.getElementById('awNewStepType').value === 'specific_employee';
   const empSel = document.getElementById('awNewStepEmployee');
   empSel.classList.toggle('hidden', !isSpecific);
-  if (isSpecific && !empSel.options.length) {
-    empSel.innerHTML = (employees||[]).filter(e=>e.status==='Active')
-      .map(e=>`<option value="${e.employee_id}">${esc(e.full_name)} (${esc(e.employee_id)})</option>`).join('');
-  }
+  if (isSpecific) _awPopulateEmployeeSelect(empSel);
+}
+
+function onAwNewStepAltToggle() {
+  const hasAlt = document.getElementById('awNewStepHasAlt').checked;
+  document.getElementById('awNewStepAltType').classList.toggle('hidden', !hasAlt);
+  document.getElementById('awNewStepAltEmployee').classList.toggle('hidden', !hasAlt || document.getElementById('awNewStepAltType').value !== 'specific_employee');
+  if (hasAlt) onAwNewStepAltTypeChange();
+}
+
+function onAwNewStepAltTypeChange() {
+  const hasAlt = document.getElementById('awNewStepHasAlt').checked;
+  const isSpecific = document.getElementById('awNewStepAltType').value === 'specific_employee';
+  const empSel = document.getElementById('awNewStepAltEmployee');
+  empSel.classList.toggle('hidden', !hasAlt || !isSpecific);
+  if (isSpecific) _awPopulateEmployeeSelect(empSel);
 }
 
 async function addAwStep() {
@@ -141,8 +166,19 @@ async function addAwStep() {
   const approver_type = document.getElementById('awNewStepType').value;
   const specific_employee_id = approver_type === 'specific_employee' ? document.getElementById('awNewStepEmployee').value : null;
   if (approver_type === 'specific_employee' && !specific_employee_id) { alert('Choose an employee'); return; }
-  const res = await api(`/api/approval-workflows/${awCurrentWorkflowId}/steps`, {method:'POST', body: JSON.stringify({approver_type, specific_employee_id})});
+
+  const hasAlt = document.getElementById('awNewStepHasAlt').checked;
+  const alt_approver_type = hasAlt ? document.getElementById('awNewStepAltType').value : null;
+  const alt_specific_employee_id = hasAlt && alt_approver_type === 'specific_employee' ? document.getElementById('awNewStepAltEmployee').value : null;
+  if (hasAlt) {
+    if (alt_approver_type === approver_type) { alert('The OR approver must be a different type than the primary approver'); return; }
+    if (alt_approver_type === 'specific_employee' && !alt_specific_employee_id) { alert('Choose an alternative employee'); return; }
+  }
+
+  const res = await api(`/api/approval-workflows/${awCurrentWorkflowId}/steps`, {method:'POST', body: JSON.stringify({approver_type, specific_employee_id, alt_approver_type, alt_specific_employee_id})});
   if (!res?.ok) { const d = await res?.json().catch(()=>({})); alert(d?.detail || 'Failed to add step'); return; }
+  document.getElementById('awNewStepHasAlt').checked = false;
+  onAwNewStepAltToggle();
   await loadAwWorkflows(awCurrentWorkflowId);
 }
 

@@ -54,6 +54,7 @@ function openBenefitPlanForm(planId) {
   document.getElementById('benPlanId').value = '';
   document.getElementById('benPlanStatusRow').classList.add('hidden');
   document.getElementById('benPlanEligibilitySection').classList.add('hidden');
+  document.getElementById('benPlanAutoEnrollSection').classList.add('hidden');
   currentBenefitPlanId = null;
 
   const plan = planId ? benefitPlans.find(p => p.id === planId) : null;
@@ -84,6 +85,9 @@ function openBenefitPlanForm(planId) {
     currentBenefitPlanId = plan.id;
     document.getElementById('benPlanEligibilitySection').classList.remove('hidden');
     initEligibilityEditor(plan.id);
+    // Auto-enroll only makes sense once the plan is actually Active — a
+    // Draft/Closed plan has no eligible enrollment to bulk-create against.
+    document.getElementById('benPlanAutoEnrollSection').classList.toggle('hidden', plan.status !== 'Active');
   } else {
     document.getElementById('benefitPlanModalTitle').textContent = 'New Benefit Plan';
     document.getElementById('benPlanCategory').disabled = false;
@@ -91,6 +95,15 @@ function openBenefitPlanForm(planId) {
   }
 
   document.getElementById('benefitPlanModal').classList.remove('hidden');
+}
+
+async function autoEnrollAllActiveEmployees() {
+  if (!currentBenefitPlanId) return;
+  if (!confirm('Enroll every active employee into this plan now? Employees already enrolled will be left as-is.')) return;
+  const res = await api(`/api/benefits/plans/${currentBenefitPlanId}/auto-enroll-all`, { method: 'POST' });
+  if (!res || !res.ok) { alert('Error: ' + (await res.json().catch(()=>({}))).detail || 'Failed to auto-enroll'); return; }
+  const data = await res.json();
+  alert(`Enrolled ${data.enrolled_count} active employee(s).`);
 }
 
 async function initEligibilityEditor(planId) {

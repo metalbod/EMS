@@ -667,6 +667,40 @@ def _elect_enrollment(conn, inst_id: int, employee_id: str, plan_id: int, status
     return dict(row)
 
 
+@router.post("/plans/{plan_id}/auto-enroll-all")
+async def auto_enroll_all_active_employees(
+    plan_id: int,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """HR-triggered bulk action (button on the plan screen, not an implicit
+    side effect of activating a plan) — enrolls every currently Active
+    employee into this plan with status 'Enrolled', reusing the same
+    _elect_enrollment upsert self-service elections go through, so an
+    employee already enrolled just has their row refreshed rather than
+    duplicated."""
+    require_benefits_role(current_user)
+    conn = get_db()
+    try:
+        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+        plan = conn.execute(
+            "SELECT * FROM benefit_plans WHERE id = ? AND institution_id = ? AND status = 'Active'",
+            (plan_id, inst_id),
+        ).fetchone()
+        if not plan:
+            raise HTTPException(404, detail="Benefit plan not found or not Active")
+
+        employees = conn.execute(
+            "SELECT employee_id FROM employees WHERE institution_id = ? AND status = 'Active'",
+            (inst_id,),
+        ).fetchall()
+        for emp in employees:
+            _elect_enrollment(conn, inst_id, emp["employee_id"], plan_id, "Enrolled", None, None)
+
+        return {"enrolled_count": len(employees)}
+    finally:
+        conn.close()
+
+
 @router.post("/enrollments/mine", status_code=201)
 async def elect_my_enrollment(
     payload: EnrollmentElect,

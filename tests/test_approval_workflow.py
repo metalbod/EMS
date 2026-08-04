@@ -185,6 +185,59 @@ def test_add_step_success_and_move_and_delete(client, hr_manager_auth):
     client.delete(f"/api/approval-workflows/{wf['id']}", headers=hr_manager_auth)
 
 
+def test_add_step_alt_approver_validation(client, hr_manager_auth):
+    wf = client.post("/api/approval-workflows", headers=hr_manager_auth,
+                      json={"module": "claims", "name": _unique_name()}).json()
+
+    same_type = client.post(f"/api/approval-workflows/{wf['id']}/steps", headers=hr_manager_auth,
+                             json={"approver_type": "direct_manager", "alt_approver_type": "direct_manager"})
+    assert same_type.status_code == 400
+
+    bad_alt_employee = client.post(f"/api/approval-workflows/{wf['id']}/steps", headers=hr_manager_auth,
+                                    json={"approver_type": "direct_manager", "alt_approver_type": "specific_employee",
+                                          "alt_specific_employee_id": "NOPE_NOT_REAL"})
+    assert bad_alt_employee.status_code == 404
+
+    ok = client.post(f"/api/approval-workflows/{wf['id']}/steps", headers=hr_manager_auth,
+                      json={"approver_type": "direct_manager", "alt_approver_type": "hr_manager"})
+    assert ok.status_code == 201, ok.text
+    step = ok.json()["steps"][0]
+    assert step["approver_type"] == "direct_manager" and step["alt_approver_type"] == "hr_manager"
+
+    client.delete(f"/api/approval-workflows/{wf['id']}", headers=hr_manager_auth)
+
+
+def test_step_alt_approver_or_logic(client, hr_manager_auth, manager_with_report, make_test_leave_type):
+    """A step configured as direct_manager OR hr_manager should be approvable
+    by either — HR shouldn't need to wait for the actual manager when an
+    alternative approver type is configured for that step."""
+    report_emp, mgr_headers = manager_with_report
+    lt = make_test_leave_type(requires_approval=True)
+
+    wf = client.post("/api/approval-workflows", headers=hr_manager_auth,
+                      json={"module": "leave", "name": _unique_name()}).json()
+    client.post(f"/api/approval-workflows/{wf['id']}/steps", headers=hr_manager_auth,
+                json={"approver_type": "direct_manager", "alt_approver_type": "hr_manager"})
+    client.put(f"/api/approval-workflows/{wf['id']}", headers=hr_manager_auth,
+               json={"name": wf["name"], "is_default": True})
+
+    start = "2027-05-03"
+    app = client.post("/api/leave/applications", headers=hr_manager_auth, json={
+        "employee_id": report_emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": start, "end_date": start,
+    }).json()
+    assert app["status"] == "Pending Approval"
+
+    # HR approves directly, bypassing the actual direct manager, via the
+    # alt (OR) approver type configured on the single step.
+    res = client.patch(f"/api/leave/applications/{app['id']}/status", headers=hr_manager_auth,
+                        json={"status": "Approved"})
+    assert res.status_code == 200, res.text
+    assert res.json()["status"] == "Approved"
+
+    client.delete(f"/api/approval-workflows/{wf['id']}", headers=hr_manager_auth)
+
+
 def test_workflow_step_cap_at_four(client, hr_manager_auth):
     wf = client.post("/api/approval-workflows", headers=hr_manager_auth,
                       json={"module": "ld_enrollment", "name": _unique_name()}).json()

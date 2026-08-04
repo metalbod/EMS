@@ -115,41 +115,61 @@ def _skip_level_manager_id(conn, inst_id: int, employee_id: str) -> Optional[str
     return _direct_manager_id(conn, inst_id, mgr) if mgr else None
 
 
-def _step_pool_nonempty(conn, inst_id: int, employee_id: str, step) -> bool:
-    """Whether a step has anyone who could possibly approve it, for this
-    specific request — a step with an empty pool (no manager exists, no
-    skip-level exists, or the designated specific employee is inactive)
-    is auto-skipped rather than leaving the request stuck forever."""
-    t = step["approver_type"]
-    if t == "direct_manager":
+def _type_pool_nonempty(conn, inst_id: int, employee_id: str, approver_type: Optional[str],
+                        specific_employee_id: Optional[str]) -> bool:
+    if approver_type == "direct_manager":
         return bool(_direct_manager_id(conn, inst_id, employee_id))
-    if t == "skip_level_manager":
+    if approver_type == "skip_level_manager":
         return bool(_skip_level_manager_id(conn, inst_id, employee_id))
-    if t == "hr_manager":
+    if approver_type == "hr_manager":
         return True  # role-based; assume every institution has at least one HR user
-    if t == "specific_employee":
-        if not step["specific_employee_id"]:
+    if approver_type == "specific_employee":
+        if not specific_employee_id:
             return False
         row = conn.execute(
             "SELECT status FROM employees WHERE employee_id=? AND institution_id=?",
-            (step["specific_employee_id"], inst_id)
+            (specific_employee_id, inst_id)
         ).fetchone()
         return bool(row and row["status"] == "Active")
     return False
 
 
+def _step_pool_nonempty(conn, inst_id: int, employee_id: str, step) -> bool:
+    """Whether a step has anyone who could possibly approve it, for this
+    specific request — a step with an empty pool (no manager exists, no
+    skip-level exists, or the designated specific employee is inactive)
+    is auto-skipped rather than leaving the request stuck forever. A step
+    with an alternative ("OR") approver type configured is nonempty if
+    either the primary or the alternative pool is nonempty."""
+    if _type_pool_nonempty(conn, inst_id, employee_id, step["approver_type"], step["specific_employee_id"]):
+        return True
+    if step.get("alt_approver_type"):
+        return _type_pool_nonempty(conn, inst_id, employee_id, step["alt_approver_type"], step.get("alt_specific_employee_id"))
+    return False
+
+
+def _type_is_eligible(conn, inst_id: int, module: str, employee_id: str, approver_type: Optional[str],
+                      specific_employee_id: Optional[str], acting_user: dict) -> bool:
+    if approver_type == "direct_manager":
+        return bool(acting_user.get("employee_id")) and acting_user["employee_id"] == _direct_manager_id(conn, inst_id, employee_id)
+    if approver_type == "skip_level_manager":
+        return bool(acting_user.get("employee_id")) and acting_user["employee_id"] == _skip_level_manager_id(conn, inst_id, employee_id)
+    if approver_type == "hr_manager":
+        return acting_user["role"] in MODULE_HR_ROLES[module]
+    if approver_type == "specific_employee":
+        return bool(acting_user.get("employee_id")) and acting_user["employee_id"] == specific_employee_id
+    return False
+
+
 def is_eligible_approver(conn, inst_id: int, module: str, employee_id: str, step, acting_user: dict) -> bool:
+    """A step with an alternative ("OR") approver type is satisfied by
+    either the primary or the alternative approver."""
     if acting_user["role"] == "superadmin":
         return True
-    t = step["approver_type"]
-    if t == "direct_manager":
-        return acting_user.get("employee_id") and acting_user["employee_id"] == _direct_manager_id(conn, inst_id, employee_id)
-    if t == "skip_level_manager":
-        return acting_user.get("employee_id") and acting_user["employee_id"] == _skip_level_manager_id(conn, inst_id, employee_id)
-    if t == "hr_manager":
-        return acting_user["role"] in MODULE_HR_ROLES[module]
-    if t == "specific_employee":
-        return acting_user.get("employee_id") and acting_user["employee_id"] == step["specific_employee_id"]
+    if _type_is_eligible(conn, inst_id, module, employee_id, step["approver_type"], step["specific_employee_id"], acting_user):
+        return True
+    if step.get("alt_approver_type"):
+        return _type_is_eligible(conn, inst_id, module, employee_id, step["alt_approver_type"], step.get("alt_specific_employee_id"), acting_user)
     return False
 
 

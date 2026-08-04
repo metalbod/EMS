@@ -1693,6 +1693,14 @@
               <option value="specific_employee">Specific Employee</option>
             </select>
             <select id="awNewStepEmployee" class="hidden inp" style="width:240px"></select>
+            <label class="flex items-center gap-1 text-xs text-slate-500 whitespace-nowrap self-center"><input type="checkbox" id="awNewStepHasAlt" onchange="onAwNewStepAltToggle()"/> OR</label>
+            <select id="awNewStepAltType" onchange="onAwNewStepAltTypeChange()" class="hidden inp" style="width:200px">
+              <option value="direct_manager">Direct Manager</option>
+              <option value="skip_level_manager">Skip-Level Manager</option>
+              <option value="hr_manager">HR Manager</option>
+              <option value="specific_employee">Specific Employee</option>
+            </select>
+            <select id="awNewStepAltEmployee" class="hidden inp" style="width:240px"></select>
             <button onclick="addAwStep()" class="btn-primary text-sm px-3">Add Step</button>
           </div>
         </div>
@@ -4238,6 +4246,11 @@
         </div>
         <button type="button" onclick="addEligibilityRule()" class="btn-primary text-sm">Add Rule</button>
       </div>
+    </div>
+    <div id="benPlanAutoEnrollSection" class="hidden border-t border-slate-200 p-6 space-y-2">
+      <h3 class="text-sm font-semibold text-slate-700">Auto-Enroll</h3>
+      <p class="text-xs text-slate-500">Enrolls every currently active employee into this plan right now (status: Enrolled). Employees already enrolled are left as-is.</p>
+      <button type="button" onclick="autoEnrollAllActiveEmployees()" class="btn-ghost text-sm">Auto-Enroll All Active Employees</button>
     </div>
   </div>
 </div>

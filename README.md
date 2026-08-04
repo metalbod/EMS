@@ -499,6 +499,16 @@ included `hr_admin`, Requisition approval was `hr_manager`-only), or
 `specific_employee` (a named override, e.g. routing one leave type
 straight to a named compliance officer regardless of org chart).
 
+Each step may also configure an *alternative* ("OR") approver type —
+`alt_approver_type` (plus `alt_specific_employee_id` when that's
+`specific_employee`) — so the step is satisfied by whichever of the two
+acts first, e.g. `direct_manager` OR `hr_manager` lets HR approve
+directly without waiting on the line manager. `alt_approver_type` must
+differ from the step's primary `approver_type`; both `is_eligible_approver`
+and `_step_pool_nonempty` in `core/approval_workflow.py` check the
+primary type first and fall back to the alt type via the shared
+`_type_is_eligible`/`_type_pool_nonempty` helpers.
+
 **Data model**: `approval_workflows` (one named, orderable chain per
 institution+module) and `approval_workflow_steps`. Each of the 5 request
 tables gets `approval_workflow_id` (snapshotted at submission — editing
