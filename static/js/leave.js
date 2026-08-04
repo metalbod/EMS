@@ -33,11 +33,12 @@ async function renderLeaveBalanceCards() {
   if(!res?.ok){ wrap.innerHTML=''; return; }
   const balances=await res.json();
   wrap.innerHTML=balances.map(b=>{
-    const available=b.entitled_days+b.carried_forward_days-b.used_days;
+    const entitled=b.accrued_days ?? b.entitled_days;
+    const available=entitled+b.carried_forward_days-b.used_days;
     return `<div class="bg-white border border-slate-200 rounded-xl p-4">
       <p class="text-xs text-slate-400 uppercase tracking-wide mb-1">${esc(b.leave_type_name)}</p>
       <p class="text-2xl font-semibold text-slate-800">${available}</p>
-      <p class="text-xs text-slate-400 mt-1">of ${b.entitled_days+b.carried_forward_days} day(s) left</p>
+      <p class="text-xs text-slate-400 mt-1">of ${entitled+b.carried_forward_days} day(s) left</p>
     </div>`;
   }).join('');
 }
