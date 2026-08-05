@@ -92,16 +92,39 @@ function switchProjectTab(name) {
   });
 }
 
+function renderProjectManagersChecklist(selectedIds) {
+  const wrap=document.getElementById('projectManagersList');
+  const active=(employees||[]).filter(e=>e.status==='Active');
+  wrap.innerHTML=active.map(e=>`
+    <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 cursor-pointer">
+      <input type="checkbox" class="project-manager-checkbox" value="${e.employee_id}" ${selectedIds.includes(e.employee_id)?'checked':''} onchange="syncProjectManagersSelectAll()"/>
+      ${esc(e.full_name)} (${esc(e.employee_id)})
+    </label>`).join('');
+  syncProjectManagersSelectAll();
+}
+
+function syncProjectManagersSelectAll() {
+  const boxes=[...document.querySelectorAll('.project-manager-checkbox')];
+  document.getElementById('projectManagersSelectAll').checked = boxes.length>0 && boxes.every(b=>b.checked);
+}
+
+function toggleAllProjectManagers() {
+  const checked=document.getElementById('projectManagersSelectAll').checked;
+  document.querySelectorAll('.project-manager-checkbox').forEach(b=>b.checked=checked);
+}
+
 async function openProjectModal(projectId) {
   document.getElementById('projectId').value=projectId||'';
   document.getElementById('projectModalTitle').textContent=projectId?'Edit Project':'Add Project';
   const tasksBtn=document.getElementById('projectTabTasksBtn');
   switchProjectTab('details');
+  if(!employees || !employees.length) await loadEmployees();
   if(projectId){
     const p=projectsCache.find(x=>x.id===projectId);
     document.getElementById('projectName').value=p?.name||'';
     document.getElementById('projectDesc').value=p?.description||'';
     document.getElementById('projectStatus').value=p?.status||'Active';
+    renderProjectManagersChecklist(p?.manager_ids||[]);
     tasksBtn.classList.remove('hidden');
     await loadProjectTasksForManage(projectId);
     resetProjectTaskForm();
@@ -109,6 +132,7 @@ async function openProjectModal(projectId) {
     document.getElementById('projectName').value='';
     document.getElementById('projectDesc').value='';
     document.getElementById('projectStatus').value='Active';
+    renderProjectManagersChecklist([]);
     tasksBtn.classList.add('hidden');
   }
   document.getElementById('projectModal').classList.remove('hidden');
@@ -121,6 +145,7 @@ async function submitProject() {
     name: document.getElementById('projectName').value.trim(),
     description: document.getElementById('projectDesc').value.trim()||null,
     status: document.getElementById('projectStatus').value,
+    manager_ids: [...document.querySelectorAll('.project-manager-checkbox:checked')].map(b=>b.value),
   };
   if(!body.name){ alert('Project name is required'); return; }
   const url=id?`/api/projects/${id}`:'/api/projects';

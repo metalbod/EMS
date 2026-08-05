@@ -15,9 +15,9 @@ except ImportError:
     from ems.core.org_queries import subordinates_in_clause
 
 try:
-    from core.approval_workflow import start_workflow, advance_or_finalize
+    from core.approval_workflow import start_workflow, advance_or_finalize, project_ids_for_row
 except ImportError:
-    from ems.core.approval_workflow import start_workflow, advance_or_finalize
+    from ems.core.approval_workflow import start_workflow, advance_or_finalize, project_ids_for_row
 
 try:
     from db import get_db
@@ -202,7 +202,8 @@ def update_timesheet_status(conn, ts_id: int, body: TimesheetStatusIn, user: dic
         entry_count = conn.execute("SELECT COUNT(*) FROM timesheet_entries WHERE timesheet_id=?", (ts_id,)).fetchone()[0]
         if entry_count == 0:
             raise HTTPException(400, "Cannot submit an empty timesheet")
-        workflow_id, step_order, auto_approved = start_workflow(conn, inst_id, "timesheet", ts["employee_id"])
+        project_ids = project_ids_for_row(conn, "timesheet", ts)
+        workflow_id, step_order, auto_approved = start_workflow(conn, inst_id, "timesheet", ts["employee_id"], project_ids)
         new_status = "Approved" if auto_approved else "Submitted"
         conn.execute(
             "UPDATE timesheets SET status=?,submitted_at=to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'),"
@@ -215,9 +216,10 @@ def update_timesheet_status(conn, ts_id: int, body: TimesheetStatusIn, user: dic
         action = "reject" if body.status == "Rejected" else "approve"
         if ts["approval_workflow_id"] and ts["approval_step"] is not None:
             try:
+                project_ids = project_ids_for_row(conn, "timesheet", ts)
                 outcome, next_step = advance_or_finalize(
                     conn, inst_id, "timesheet", ts["employee_id"],
-                    ts["approval_workflow_id"], ts["approval_step"], action, user
+                    ts["approval_workflow_id"], ts["approval_step"], action, user, project_ids
                 )
             except PermissionError as e:
                 raise HTTPException(403, str(e))

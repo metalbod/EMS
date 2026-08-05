@@ -238,6 +238,10 @@ class ClaimCreate(BaseModel):
     claim_date: str = Field(..., description="YYYY-MM-DD")
     amount_claimed: float = Field(..., gt=0)
     description: Optional[str] = None
+    # Which of the employee's projects a project_manager approval step (if
+    # the applicable claims workflow has one) should route through. Ignored
+    # if the workflow has no such step; a step with none picked auto-skips.
+    project_id: Optional[int] = None
 
 
 class ClaimDecide(BaseModel):
@@ -259,6 +263,7 @@ class ClaimResponse(BaseModel):
     reviewed_by_user_id: Optional[int] = None
     review_date: Optional[str] = None
     payout_date: Optional[str] = None
+    project_id: Optional[int] = None
     created_at: str
     updated_at: str
 

@@ -682,11 +682,26 @@ function renderMyClaimsTable(claims) {
   `).join('');
 }
 
-function openClaimForm() {
+async function openClaimForm() {
   document.getElementById('claimForm').reset();
   const select = document.getElementById('claimPlan');
   select.innerHTML = myEligiblePlans.map(p => `<option value="${p.id}">${esc(p.plan_name)} (${esc(p.plan_category)})</option>`).join('');
+  await populateClaimProjectField();
   document.getElementById('claimModal').classList.remove('hidden');
+}
+
+async function populateClaimProjectField() {
+  const wrap = document.getElementById('claimProjectWrap');
+  const sel = document.getElementById('claimProjectId');
+  wrap.classList.add('hidden');
+  sel.innerHTML = '';
+  const needed = await moduleHasProjectManagerStep('claims');
+  if (!needed) return;
+  const res = await api('/api/projects/mine');
+  const myProjects = res?.ok ? await res.json() : [];
+  if (!myProjects.length) return;  // no project to pick — step auto-skips
+  sel.innerHTML = myProjects.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  wrap.classList.remove('hidden');
 }
 
 function closeClaimModal() {
@@ -696,11 +711,13 @@ function closeClaimModal() {
 async function submitClaimForm(e) {
   e.preventDefault();
   const g = id => document.getElementById(id).value;
+  const projectWrap = document.getElementById('claimProjectWrap');
   const body = {
     benefit_plan_id: parseInt(g('claimPlan')),
     claim_date: g('claimDate'),
     amount_claimed: parseFloat(g('claimAmount')),
     description: g('claimDesc').trim() || null,
+    project_id: !projectWrap.classList.contains('hidden') && g('claimProjectId') ? parseInt(g('claimProjectId')) : null,
   };
   const res = await api('/api/benefits/claims/mine', { method: 'POST', body: JSON.stringify(body) });
   if (!res || !res.ok) { alert('Error: ' + (await res.json()).detail); return; }

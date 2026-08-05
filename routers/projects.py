@@ -28,6 +28,7 @@ class ProjectIn(BaseModel):
     name: str
     description: Optional[str] = None
     status: str = "Active"  # Active | On Hold | Completed
+    manager_ids: List[str] = []  # employee_ids — a project can have multiple managers
 
 
 class ProjectTaskIn(BaseModel):
@@ -52,6 +53,31 @@ class TaskOpenToAllIn(BaseModel):
 # ---------------------------------------------------------------------------
 # Projects
 # ---------------------------------------------------------------------------
+def _manager_ids_for(conn, project_id: int) -> List[str]:
+    rows = conn.execute(
+        "SELECT employee_id FROM project_managers WHERE project_id=? ORDER BY employee_id", (project_id,)
+    ).fetchall()
+    return [r["employee_id"] for r in rows]
+
+
+def _set_project_managers(conn, inst_id: int, project_id: int, manager_ids: List[str]) -> None:
+    ids = sorted(set(manager_ids))
+    if ids:
+        placeholders = ",".join("?" * len(ids))
+        found = conn.execute(
+            f"SELECT employee_id FROM employees WHERE institution_id=? AND employee_id IN ({placeholders})",
+            (inst_id, *ids)
+        ).fetchall()
+        missing = set(ids) - {r["employee_id"] for r in found}
+        if missing:
+            raise HTTPException(404, f"Employee(s) not found: {', '.join(sorted(missing))}")
+    conn.execute("DELETE FROM project_managers WHERE project_id=?", (project_id,))
+    for emp_id in ids:
+        conn.execute(
+            "INSERT INTO project_managers (project_id,employee_id) VALUES (?,?)", (project_id, emp_id)
+        )
+
+
 @router.get("/api/projects")
 @db_session
 def list_projects(conn, status: Optional[str] = None, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
@@ -70,7 +96,10 @@ def list_projects(conn, status: Optional[str] = None, user: dict = Depends(get_c
     if status: q += " AND p.status=?"; params.append(status)
     q += " GROUP BY p.id ORDER BY p.created_at DESC"
     rows = conn.execute(q, params).fetchall()
-    return [dict(r) for r in rows]
+    out = [dict(r) for r in rows]
+    for p in out:
+        p["manager_ids"] = _manager_ids_for(conn, p["id"])
+    return out
 
 
 @router.get("/api/projects/utilization")
@@ -129,9 +158,13 @@ def create_project(conn, body: ProjectIn, user: dict = Depends(require_roles(*PR
         "INSERT INTO projects (institution_id,name,description,status,created_by) VALUES (?,?,?,?,?)",
         (inst_id, body.name, body.description, body.status, user["username"])
     )
+    project_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    _set_project_managers(conn, inst_id, project_id, body.manager_ids)
     conn.commit()
-    row = conn.execute("SELECT * FROM projects WHERE id=last_insert_rowid()").fetchone()
-    return dict(row)
+    row = conn.execute("SELECT * FROM projects WHERE id=?", (project_id,)).fetchone()
+    d = dict(row)
+    d["manager_ids"] = _manager_ids_for(conn, project_id)
+    return d
 
 
 @router.put("/api/projects/{project_id}")
@@ -144,9 +177,12 @@ def update_project(conn, project_id: int, body: ProjectIn, user: dict = Depends(
         "UPDATE projects SET name=?,description=?,status=? WHERE id=?",
         (body.name, body.description, body.status, project_id)
     )
+    _set_project_managers(conn, inst_id, project_id, body.manager_ids)
     conn.commit()
     row = conn.execute("SELECT * FROM projects WHERE id=?", (project_id,)).fetchone()
-    return dict(row)
+    d = dict(row)
+    d["manager_ids"] = _manager_ids_for(conn, project_id)
+    return d
 
 
 @router.delete("/api/projects/{project_id}", status_code=204)
@@ -155,6 +191,10 @@ def delete_project(conn, project_id: int, user: dict = Depends(require_roles(*PR
     inst_id = need_inst(user)
     if conn.execute("SELECT id FROM timesheet_entries WHERE project_id=? AND institution_id=?", (project_id, inst_id)).fetchone():
         raise HTTPException(400, "Cannot delete a project that already has logged timesheet hours — set it to Completed instead")
+    # project_managers has a foreign key to projects, so it must be deleted
+    # first — same FK-ordering requirement as delete_project_task's
+    # task_assignments cleanup below.
+    conn.execute("DELETE FROM project_managers WHERE project_id=?", (project_id,))
     conn.execute("DELETE FROM projects WHERE id=? AND institution_id=?", (project_id, inst_id))
     conn.commit()
 

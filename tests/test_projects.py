@@ -65,6 +65,41 @@ def test_update_project_not_found_returns_404(client, hr_manager_auth):
     assert res.status_code == 404
 
 
+def test_create_project_with_managers(client, hr_manager_auth, make_test_employee):
+    mgr1 = make_test_employee(full_name="ZZ Project Manager One")
+    mgr2 = make_test_employee(full_name="ZZ Project Manager Two")
+    res = client.post("/api/projects", headers=hr_manager_auth, json={
+        "name": "ZZ Managed Project", "status": "Active",
+        "manager_ids": [mgr1["employee_id"], mgr2["employee_id"]],
+    })
+    assert res.status_code == 201, res.text
+    assert sorted(res.json()["manager_ids"]) == sorted([mgr1["employee_id"], mgr2["employee_id"]])
+
+    listing = client.get("/api/projects", headers=hr_manager_auth).json()
+    row = next(p for p in listing if p["id"] == res.json()["id"])
+    assert sorted(row["manager_ids"]) == sorted([mgr1["employee_id"], mgr2["employee_id"]])
+
+
+def test_create_project_with_unknown_manager_returns_404(client, hr_manager_auth):
+    res = client.post("/api/projects", headers=hr_manager_auth, json={
+        "name": "ZZ Bad Manager Project", "status": "Active", "manager_ids": ["NOPE_NOT_REAL"],
+    })
+    assert res.status_code == 404
+
+
+def test_update_project_managers_replaces_set(client, hr_manager_auth, make_test_employee, make_test_project):
+    mgr1 = make_test_employee(full_name="ZZ Replace Manager One")
+    mgr2 = make_test_employee(full_name="ZZ Replace Manager Two")
+    project = make_test_project()
+
+    client.put(f"/api/projects/{project['id']}", headers=hr_manager_auth,
+               json={"name": project["name"], "status": "Active", "manager_ids": [mgr1["employee_id"]]})
+    res = client.put(f"/api/projects/{project['id']}", headers=hr_manager_auth,
+                      json={"name": project["name"], "status": "Active", "manager_ids": [mgr2["employee_id"]]})
+    assert res.status_code == 200
+    assert res.json()["manager_ids"] == [mgr2["employee_id"]]
+
+
 def test_delete_project_success(client, hr_manager_auth, make_test_project):
     project = make_test_project()
     res = client.delete(f"/api/projects/{project['id']}", headers=hr_manager_auth)

@@ -20,9 +20,9 @@ except ImportError:
     from ems.core.roles import LEAVE_MANAGE_ROLES
 
 try:
-    from core.approval_workflow import APPROVER_TYPES, MAX_STEPS, MODULE_TABLE, get_steps
+    from core.approval_workflow import APPROVER_TYPES, MAX_STEPS, MODULE_TABLE, PROJECT_MANAGER_MODULES, get_steps
 except ImportError:
-    from ems.core.approval_workflow import APPROVER_TYPES, MAX_STEPS, MODULE_TABLE, get_steps
+    from ems.core.approval_workflow import APPROVER_TYPES, MAX_STEPS, MODULE_TABLE, PROJECT_MANAGER_MODULES, get_steps
 
 try:
     from db import get_db
@@ -92,13 +92,15 @@ def _with_steps(conn, workflow_row) -> Dict[str, Any]:
     return d
 
 
-def _validate_step_body(conn, inst_id: int, body: "StepIn") -> None:
+def _validate_step_body(conn, inst_id: int, module: str, body: "StepIn") -> None:
     if body.alt_approver_type and body.alt_approver_type == body.approver_type:
         raise HTTPException(400, "alt_approver_type must differ from approver_type")
     for approver_type, specific_employee_id, field_name in (
         (body.approver_type, body.specific_employee_id, "specific_employee_id"),
         (body.alt_approver_type, body.alt_specific_employee_id, "alt_specific_employee_id"),
     ):
+        if approver_type == "project_manager" and module not in PROJECT_MANAGER_MODULES:
+            raise HTTPException(400, f"project_manager is only available for: {', '.join(PROJECT_MANAGER_MODULES)}")
         if approver_type != "specific_employee":
             continue
         if not specific_employee_id:
@@ -194,8 +196,8 @@ def delete_workflow(conn, workflow_id: int, user: dict = Depends(require_roles(*
 @db_session
 def add_step(conn, workflow_id: int, body: StepIn, user: dict = Depends(require_roles(*WORKFLOW_MANAGE_ROLES))) -> Dict[str, Any]:
     inst_id = need_inst(user)
-    _get_owned_workflow(conn, inst_id, workflow_id)
-    _validate_step_body(conn, inst_id, body)
+    wf = _get_owned_workflow(conn, inst_id, workflow_id)
+    _validate_step_body(conn, inst_id, wf["module"], body)
     existing = get_steps(conn, workflow_id)
     if len(existing) >= MAX_STEPS:
         raise HTTPException(400, f"A workflow can have at most {MAX_STEPS} steps")
@@ -226,7 +228,8 @@ def _get_owned_step(conn, inst_id: int, workflow_id: int, step_id: int):
 def update_step(conn, workflow_id: int, step_id: int, body: StepIn, user: dict = Depends(require_roles(*WORKFLOW_MANAGE_ROLES))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     _get_owned_step(conn, inst_id, workflow_id, step_id)
-    _validate_step_body(conn, inst_id, body)
+    wf = _get_owned_workflow(conn, inst_id, workflow_id)
+    _validate_step_body(conn, inst_id, wf["module"], body)
     conn.execute(
         "UPDATE approval_workflow_steps SET approver_type=?,specific_employee_id=?,alt_approver_type=?,alt_specific_employee_id=? WHERE id=?",
         (body.approver_type, body.specific_employee_id if body.approver_type == "specific_employee" else None,

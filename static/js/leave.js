@@ -124,7 +124,22 @@ async function openLeaveApplyModal() {
 
   updateLeaveApplyBalanceNote();
   document.getElementById('leaveApplyDaysPreview').textContent='';
+  await populateLeaveApplyProjectField();
   document.getElementById('leaveApplyModal').classList.remove('hidden');
+}
+
+async function populateLeaveApplyProjectField() {
+  const wrap=document.getElementById('leaveApplyProjectWrap');
+  const sel=document.getElementById('leaveApplyProjectId');
+  wrap.classList.add('hidden');
+  sel.innerHTML='';
+  const needed=await moduleHasProjectManagerStep('leave');
+  if(!needed) return;
+  const res=await api('/api/projects/mine');
+  const myProjects=res?.ok?await res.json():[];
+  if(!myProjects.length) return;  // no project to pick — step auto-skips
+  sel.innerHTML=myProjects.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  wrap.classList.remove('hidden');
 }
 
 function updateLeaveApplyBalanceNote() {
@@ -214,6 +229,7 @@ async function submitLeaveApplication(e) {
   const err=document.getElementById('leaveApplyErr');
   err.classList.add('hidden');
   const empId=(isLeaveManager()||currentUser?.role==='manager')?document.getElementById('leaveApplyEmpId').value:currentUser?.employee_id;
+  const projectWrap=document.getElementById('leaveApplyProjectWrap');
   const body={
     employee_id: empId,
     leave_type_id: parseInt(document.getElementById('leaveApplyTypeId').value),
@@ -221,6 +237,8 @@ async function submitLeaveApplication(e) {
     end_date: document.getElementById('leaveApplyEnd').value,
     reason: document.getElementById('leaveApplyReason').value.trim()||null,
     attachment: leaveApplyAttachment,
+    project_id: !projectWrap.classList.contains('hidden') && document.getElementById('leaveApplyProjectId').value
+      ? parseInt(document.getElementById('leaveApplyProjectId').value) : null,
   };
   const res=await api('/api/leave/applications',{method:'POST',body:JSON.stringify(body)});
   if(res?.ok){

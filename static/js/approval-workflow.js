@@ -12,7 +12,12 @@ const AW_STEP_LABELS = {
   skip_level_manager: 'Skip-Level Manager',
   hr_manager: 'HR Manager',
   specific_employee: 'Specific Employee',
+  project_manager: 'Project Manager',
 };
+// Mirrors core/approval_workflow.py's PROJECT_MANAGER_MODULES — Requisition
+// and L&D Enrollment have no project link, so that approver type isn't
+// offered for them.
+const AW_PROJECT_MANAGER_MODULES = ['leave', 'claims', 'timesheet'];
 
 let awCurrentModule = 'leave';
 let awWorkflowsCache = [];
@@ -22,7 +27,28 @@ function loadApprovalWorkflowPage() {
   document.getElementById('awModuleTabs').innerHTML = AW_MODULES.map(m =>
     `<button class="view-tab-btn px-4 py-3 text-sm ${m.key===awCurrentModule?'view-tab-active':''}" onclick="switchAwModule('${m.key}')">${esc(m.label)}</button>`
   ).join('');
+  awUpdateProjectManagerOptionVisibility();
   loadAwWorkflows();
+}
+
+// Used by Leave/Claims submission forms to decide whether to show a
+// Project picker — the applicable (default) workflow for the module has
+// to actually have a project_manager step configured, primary or alt.
+async function moduleHasProjectManagerStep(module) {
+  const res = await api(`/api/approval-workflows?module=${module}`);
+  if (!res?.ok) return false;
+  const workflows = await res.json();
+  const wf = workflows.find(w => w.is_default) || workflows[0];
+  if (!wf) return false;
+  return wf.steps.some(s => s.approver_type === 'project_manager' || s.alt_approver_type === 'project_manager');
+}
+
+function awUpdateProjectManagerOptionVisibility() {
+  const allowed = AW_PROJECT_MANAGER_MODULES.includes(awCurrentModule);
+  ['awNewStepType', 'awNewStepAltType'].forEach(id => {
+    const opt = document.querySelector(`#${id} option[value="project_manager"]`);
+    if (opt) opt.hidden = !allowed;
+  });
 }
 
 function switchAwModule(module) {

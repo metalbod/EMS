@@ -48,6 +48,38 @@ def _unique_name(prefix="ZZ Test Workflow"):
     return f"{prefix} {os.urandom(4).hex()}"
 
 
+@pytest.fixture
+def employee_with_login(client, hr_manager_auth, make_test_employee, test_institution):
+    """Factory: creates a real employee with a linked login account.
+    Returns (employee, auth_headers). Usage:
+
+        emp, headers = employee_with_login(full_name="ZZ Someone")
+    """
+    created_user_ids = []
+
+    def _make(**overrides):
+        emp = make_test_employee(**overrides)
+        username = f"zzawuser_{emp['employee_id'].lower()}"
+        password = "ZzPytest@123"
+        res = client.post("/api/users", headers=hr_manager_auth, json={
+            "username": username, "full_name": emp["full_name"], "password": password,
+            "role": "employee", "employee_id": emp["employee_id"],
+        })
+        assert res.status_code == 201, f"failed to create user: {res.text}"
+        created_user_ids.append(res.json()["id"])
+        login = client.post("/api/auth/login", json={
+            "username": username, "password": password, "institution_code": test_institution["code"],
+        })
+        assert login.status_code == 200
+        headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+        return emp, headers
+
+    yield _make
+
+    for uid in created_user_ids:
+        client.delete(f"/api/users/{uid}", headers=hr_manager_auth)
+
+
 # ---------------------------------------------------------------------------
 # Engine behavior (via the Leave module, the simplest requester-linked one)
 # ---------------------------------------------------------------------------
@@ -97,6 +129,87 @@ def test_manager_cannot_approve_unrelated_employees_leave(client, hr_manager_aut
     denied = client.patch(f"/api/leave/applications/{app['id']}/status", headers=mgr_headers,
                            json={"status": "Approved"})
     assert denied.status_code == 403, denied.text
+
+
+def test_project_manager_step_approved_by_project_manager(client, hr_manager_auth, employee_with_login,
+                                                            make_test_project, make_test_leave_type):
+    """A step whose approver_type is project_manager is resolved against
+    whichever project the requester picked at submission — only that
+    project's manager(s) (or superadmin) may approve it."""
+    requester, _ = employee_with_login(full_name="ZZ PM Step Requester")
+    pm_emp, pm_headers = employee_with_login(full_name="ZZ PM Step Manager")
+    unrelated_emp, unrelated_headers = employee_with_login(full_name="ZZ PM Step Unrelated")
+    project = make_test_project(name=_unique_name("ZZ PM Step Project"), manager_ids=[pm_emp["employee_id"]])
+    lt = make_test_leave_type(requires_approval=True)
+
+    wf = client.post("/api/approval-workflows", headers=hr_manager_auth,
+                      json={"module": "leave", "name": _unique_name()}).json()
+    client.post(f"/api/approval-workflows/{wf['id']}/steps", headers=hr_manager_auth,
+                json={"approver_type": "project_manager"})
+    client.put(f"/api/approval-workflows/{wf['id']}", headers=hr_manager_auth,
+               json={"name": wf["name"], "is_default": True})
+
+    start = "2027-06-07"
+    app = client.post("/api/leave/applications", headers=hr_manager_auth, json={
+        "employee_id": requester["employee_id"], "leave_type_id": lt["id"],
+        "start_date": start, "end_date": start, "project_id": project["id"],
+    }).json()
+    assert app["status"] == "Pending Approval"
+
+    denied = client.patch(f"/api/leave/applications/{app['id']}/status", headers=unrelated_headers,
+                           json={"status": "Approved"})
+    assert denied.status_code == 403, denied.text
+
+    approved = client.patch(f"/api/leave/applications/{app['id']}/status", headers=pm_headers,
+                             json={"status": "Approved"})
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["status"] == "Approved"
+
+    client.delete(f"/api/approval-workflows/{wf['id']}", headers=hr_manager_auth)
+
+
+def test_project_manager_step_auto_skips_when_no_project_selected(client, hr_manager_auth, employee_with_login,
+                                                                    make_test_leave_type):
+    """No project picked at submission -> the project_manager step's pool
+    is empty (same auto-skip rule as an empty direct_manager pool)."""
+    requester, _ = employee_with_login(full_name="ZZ PM Skip Requester")
+    lt = make_test_leave_type(requires_approval=True)
+
+    wf = client.post("/api/approval-workflows", headers=hr_manager_auth,
+                      json={"module": "leave", "name": _unique_name()}).json()
+    client.post(f"/api/approval-workflows/{wf['id']}/steps", headers=hr_manager_auth,
+                json={"approver_type": "project_manager"})
+    client.post(f"/api/approval-workflows/{wf['id']}/steps", headers=hr_manager_auth,
+                json={"approver_type": "hr_manager"})
+    client.put(f"/api/approval-workflows/{wf['id']}", headers=hr_manager_auth,
+               json={"name": wf["name"], "is_default": True})
+
+    start = "2027-06-14"
+    app = client.post("/api/leave/applications", headers=hr_manager_auth, json={
+        "employee_id": requester["employee_id"], "leave_type_id": lt["id"],
+        "start_date": start, "end_date": start,
+    }).json()
+    assert app["status"] == "Pending Approval"
+    assert app["approval_step"] == 2  # step 1 (project_manager, no project picked) auto-skipped
+
+    res = client.patch(f"/api/leave/applications/{app['id']}/status", headers=hr_manager_auth,
+                        json={"status": "Approved"})
+    assert res.status_code == 200, res.text
+    assert res.json()["status"] == "Approved"
+
+    client.delete(f"/api/approval-workflows/{wf['id']}", headers=hr_manager_auth)
+
+
+def test_add_step_project_manager_rejected_for_disallowed_module(client, hr_manager_auth):
+    """project_manager is only offered for leave/claims/timesheet — see
+    core/approval_workflow.py's PROJECT_MANAGER_MODULES."""
+    wf = client.post("/api/approval-workflows", headers=hr_manager_auth,
+                      json={"module": "requisition", "name": _unique_name()}).json()
+    res = client.post(f"/api/approval-workflows/{wf['id']}/steps", headers=hr_manager_auth,
+                       json={"approver_type": "project_manager"})
+    assert res.status_code == 400
+
+    client.delete(f"/api/approval-workflows/{wf['id']}", headers=hr_manager_auth)
 
 
 def test_employee_with_no_manager_auto_skips_to_hr(client, hr_manager_auth, make_test_employee, make_test_leave_type):

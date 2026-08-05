@@ -6,12 +6,20 @@ single-step role check (e.g. "role in (manager, hr_manager, hr_admin)")
 with no verification that an approving "manager" was the requester's
 *actual* manager — this replaces that with a per-institution configurable,
 1-4 step chain of direct_manager / skip_level_manager / hr_manager /
-specific_employee approvers.
+specific_employee / project_manager approvers.
 """
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, FrozenSet, List, Optional, Set, Tuple
 
-APPROVER_TYPES = ("direct_manager", "skip_level_manager", "hr_manager", "specific_employee")
+APPROVER_TYPES = ("direct_manager", "skip_level_manager", "hr_manager", "specific_employee", "project_manager")
 MAX_STEPS = 4
+
+# project_manager only makes sense where the request either lets the
+# requester pick a project (Leave, Claims — see project_id on those
+# tables) or already has one via its own line items (Timesheet, via
+# timesheet_entries.project_id — see _project_ids_for_row). Requisition
+# and L&D Enrollment have no project link at all, so the settings UI
+# doesn't offer this type for them.
+PROJECT_MANAGER_MODULES = ("leave", "claims", "timesheet")
 
 # Each module's own "HR-ish" role set, preserved from what that module's
 # hardcoded check allowed before this engine existed (they're not
@@ -66,6 +74,25 @@ def _requester_employee_id(conn, inst_id: int, module: str, row) -> Optional[str
     return u["employee_id"] if u else None
 
 
+def project_ids_for_row(conn, module: str, row) -> Set[int]:
+    """Which project(s) a project_manager step should resolve against for
+    this specific request. Leave/Claims: the single project_id the
+    requester picked at submission (or none, if the applicable workflow
+    has no project_manager step and the field was left blank). Timesheet:
+    the union of every project logged in that week's entries — a
+    timesheet can span multiple projects, so any of their managers is
+    eligible rather than requiring one specific project to be picked."""
+    if module in ("leave", "claims"):
+        pid = row["project_id"] if "project_id" in row.keys() else None
+        return {pid} if pid else set()
+    if module == "timesheet":
+        rows = conn.execute(
+            "SELECT DISTINCT project_id FROM timesheet_entries WHERE timesheet_id=?", (row["id"],)
+        ).fetchall()
+        return {r["project_id"] for r in rows}
+    return set()
+
+
 def get_or_create_default_workflow(conn, inst_id: int, module: str) -> Dict[str, Any]:
     """The active default workflow for this institution+module — created
     lazily (2 steps: Direct Manager, then this module's HR roles) the
@@ -115,8 +142,21 @@ def _skip_level_manager_id(conn, inst_id: int, employee_id: str) -> Optional[str
     return _direct_manager_id(conn, inst_id, mgr) if mgr else None
 
 
+def _project_managers_for(conn, inst_id: int, project_ids) -> FrozenSet[str]:
+    if not project_ids:
+        return frozenset()
+    placeholders = ",".join("?" * len(project_ids))
+    rows = conn.execute(
+        f"SELECT DISTINCT pm.employee_id FROM project_managers pm "
+        f"JOIN projects p ON p.id = pm.project_id "
+        f"WHERE p.institution_id=? AND pm.project_id IN ({placeholders})",
+        (inst_id, *project_ids)
+    ).fetchall()
+    return frozenset(r["employee_id"] for r in rows)
+
+
 def _type_pool_nonempty(conn, inst_id: int, employee_id: str, approver_type: Optional[str],
-                        specific_employee_id: Optional[str]) -> bool:
+                        specific_employee_id: Optional[str], project_ids: Optional[Set[int]] = None) -> bool:
     if approver_type == "direct_manager":
         return bool(_direct_manager_id(conn, inst_id, employee_id))
     if approver_type == "skip_level_manager":
@@ -131,25 +171,29 @@ def _type_pool_nonempty(conn, inst_id: int, employee_id: str, approver_type: Opt
             (specific_employee_id, inst_id)
         ).fetchone()
         return bool(row and row["status"] == "Active")
+    if approver_type == "project_manager":
+        return bool(_project_managers_for(conn, inst_id, project_ids))
     return False
 
 
-def _step_pool_nonempty(conn, inst_id: int, employee_id: str, step) -> bool:
+def _step_pool_nonempty(conn, inst_id: int, employee_id: str, step, project_ids: Optional[Set[int]] = None) -> bool:
     """Whether a step has anyone who could possibly approve it, for this
     specific request — a step with an empty pool (no manager exists, no
-    skip-level exists, or the designated specific employee is inactive)
-    is auto-skipped rather than leaving the request stuck forever. A step
-    with an alternative ("OR") approver type configured is nonempty if
-    either the primary or the alternative pool is nonempty."""
-    if _type_pool_nonempty(conn, inst_id, employee_id, step["approver_type"], step["specific_employee_id"]):
+    skip-level exists, a deactivated named approver, or no project
+    manager for the relevant project(s)) is auto-skipped rather than
+    leaving the request stuck forever. A step with an alternative ("OR")
+    approver type configured is nonempty if either the primary or the
+    alternative pool is nonempty."""
+    if _type_pool_nonempty(conn, inst_id, employee_id, step["approver_type"], step["specific_employee_id"], project_ids):
         return True
     if step.get("alt_approver_type"):
-        return _type_pool_nonempty(conn, inst_id, employee_id, step["alt_approver_type"], step.get("alt_specific_employee_id"))
+        return _type_pool_nonempty(conn, inst_id, employee_id, step["alt_approver_type"], step.get("alt_specific_employee_id"), project_ids)
     return False
 
 
 def _type_is_eligible(conn, inst_id: int, module: str, employee_id: str, approver_type: Optional[str],
-                      specific_employee_id: Optional[str], acting_user: dict) -> bool:
+                      specific_employee_id: Optional[str], acting_user: dict,
+                      project_ids: Optional[Set[int]] = None) -> bool:
     if approver_type == "direct_manager":
         return bool(acting_user.get("employee_id")) and acting_user["employee_id"] == _direct_manager_id(conn, inst_id, employee_id)
     if approver_type == "skip_level_manager":
@@ -158,38 +202,44 @@ def _type_is_eligible(conn, inst_id: int, module: str, employee_id: str, approve
         return acting_user["role"] in MODULE_HR_ROLES[module]
     if approver_type == "specific_employee":
         return bool(acting_user.get("employee_id")) and acting_user["employee_id"] == specific_employee_id
+    if approver_type == "project_manager":
+        return bool(acting_user.get("employee_id")) and acting_user["employee_id"] in _project_managers_for(conn, inst_id, project_ids)
     return False
 
 
-def is_eligible_approver(conn, inst_id: int, module: str, employee_id: str, step, acting_user: dict) -> bool:
+def is_eligible_approver(conn, inst_id: int, module: str, employee_id: str, step, acting_user: dict,
+                         project_ids: Optional[Set[int]] = None) -> bool:
     """A step with an alternative ("OR") approver type is satisfied by
     either the primary or the alternative approver."""
     if acting_user["role"] == "superadmin":
         return True
-    if _type_is_eligible(conn, inst_id, module, employee_id, step["approver_type"], step["specific_employee_id"], acting_user):
+    if _type_is_eligible(conn, inst_id, module, employee_id, step["approver_type"], step["specific_employee_id"], acting_user, project_ids):
         return True
     if step.get("alt_approver_type"):
-        return _type_is_eligible(conn, inst_id, module, employee_id, step["alt_approver_type"], step.get("alt_specific_employee_id"), acting_user)
+        return _type_is_eligible(conn, inst_id, module, employee_id, step["alt_approver_type"], step.get("alt_specific_employee_id"), acting_user, project_ids)
     return False
 
 
-def _first_resolvable_step(conn, inst_id: int, employee_id: str, steps) -> Optional[Dict[str, Any]]:
+def _first_resolvable_step(conn, inst_id: int, employee_id: str, steps, project_ids: Optional[Set[int]] = None) -> Optional[Dict[str, Any]]:
     for step in steps:
-        if _step_pool_nonempty(conn, inst_id, employee_id, step):
+        if _step_pool_nonempty(conn, inst_id, employee_id, step, project_ids):
             return step
     return None
 
 
-def start_workflow(conn, inst_id: int, module: str, employee_id: str) -> Tuple[int, Optional[int], bool]:
+def start_workflow(conn, inst_id: int, module: str, employee_id: str,
+                   project_ids: Optional[Set[int]] = None) -> Tuple[int, Optional[int], bool]:
     """Called when a request is first submitted. Returns
     (approval_workflow_id, approval_step_order_or_None, auto_approved) —
     approval_step is None (and auto_approved True) if no step in the whole
     chain has anyone eligible (e.g. a solo employee with no manager and no
     HR steps configured), so a request never gets permanently stuck with
-    nobody able to act on it."""
+    nobody able to act on it. `project_ids` only matters for a workflow
+    that has a project_manager step configured; pass the requester's
+    selected/logged project(s) — see project_ids_for_row."""
     workflow = get_or_create_default_workflow(conn, inst_id, module)
     steps = get_steps(conn, workflow["id"])
-    first = _first_resolvable_step(conn, inst_id, employee_id, steps)
+    first = _first_resolvable_step(conn, inst_id, employee_id, steps, project_ids)
     if first is None:
         return workflow["id"], None, True
     return workflow["id"], first["step_order"], False
@@ -197,7 +247,8 @@ def start_workflow(conn, inst_id: int, module: str, employee_id: str) -> Tuple[i
 
 def advance_or_finalize(conn, inst_id: int, module: str, employee_id: str,
                         workflow_id: int, current_step_order: int,
-                        action: str, acting_user: dict) -> Tuple[str, Optional[int]]:
+                        action: str, acting_user: dict,
+                        project_ids: Optional[Set[int]] = None) -> Tuple[str, Optional[int]]:
     """Validates `acting_user` can act on the request's current step, then
     returns (outcome, next_step_order): outcome is 'rejected', 'approved'
     (chain fully cleared), or 'advanced' (next_step_order is the new
@@ -207,12 +258,12 @@ def advance_or_finalize(conn, inst_id: int, module: str, employee_id: str,
     current = next((s for s in steps if s["step_order"] == current_step_order), None)
     if current is None:
         raise PermissionError("This request's current approval step no longer exists")
-    if not is_eligible_approver(conn, inst_id, module, employee_id, current, acting_user):
+    if not is_eligible_approver(conn, inst_id, module, employee_id, current, acting_user, project_ids):
         raise PermissionError("You are not an eligible approver for this request's current step")
     if action == "reject":
         return "rejected", None
     remaining = [s for s in steps if s["step_order"] > current_step_order]
-    nxt = _first_resolvable_step(conn, inst_id, employee_id, remaining)
+    nxt = _first_resolvable_step(conn, inst_id, employee_id, remaining, project_ids)
     if nxt is None:
         return "approved", None
     return "advanced", nxt["step_order"]
@@ -239,6 +290,7 @@ def count_pending_for_approver(conn, inst_id: int, user: dict, module: str) -> i
         employee_id = _requester_employee_id(conn, inst_id, module, row)
         if not employee_id:
             continue
-        if is_eligible_approver(conn, inst_id, module, employee_id, current, user):
+        project_ids = project_ids_for_row(conn, module, row)
+        if is_eligible_approver(conn, inst_id, module, employee_id, current, user, project_ids):
             count += 1
     return count

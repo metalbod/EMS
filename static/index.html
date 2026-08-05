@@ -1691,6 +1691,7 @@
               <option value="skip_level_manager">Skip-Level Manager</option>
               <option value="hr_manager">HR Manager</option>
               <option value="specific_employee">Specific Employee</option>
+              <option value="project_manager">Project Manager</option>
             </select>
             <select id="awNewStepEmployee" class="hidden inp" style="width:240px"></select>
             <label class="flex items-center gap-1 text-xs text-slate-500 whitespace-nowrap self-center"><input type="checkbox" id="awNewStepHasAlt" onchange="onAwNewStepAltToggle()"/> OR</label>
@@ -1699,6 +1700,7 @@
               <option value="skip_level_manager">Skip-Level Manager</option>
               <option value="hr_manager">HR Manager</option>
               <option value="specific_employee">Specific Employee</option>
+              <option value="project_manager">Project Manager</option>
             </select>
             <select id="awNewStepAltEmployee" class="hidden inp" style="width:240px"></select>
             <button onclick="addAwStep()" class="btn-primary text-sm px-3">Add Step</button>
@@ -3074,6 +3076,11 @@
         <div><label class="lbl">End Date <span class="text-red-500">*</span></label><input id="leaveApplyEnd" type="date" class="inp" required onchange="updateLeaveApplyDaysPreview()"/></div>
       </div>
       <p id="leaveApplyDaysPreview" class="text-xs text-slate-500"></p>
+      <div id="leaveApplyProjectWrap" class="hidden">
+        <label class="lbl">Project <span class="text-red-500">*</span></label>
+        <select id="leaveApplyProjectId" class="inp"></select>
+        <p class="text-xs text-slate-400 mt-1">This approval requires sign-off from the project's manager.</p>
+      </div>
       <div><label class="lbl">Reason</label><textarea id="leaveApplyReason" class="inp" rows="2" placeholder="Optional notes…"></textarea></div>
       <div id="leaveApplyAttachWrap" class="hidden">
         <label class="lbl">Supporting Document <span class="text-red-500">*</span></label>
@@ -3221,6 +3228,15 @@
             <option value="On Hold">On Hold</option>
             <option value="Completed">Completed</option>
           </select>
+        </div>
+        <div>
+          <label class="lbl">Project Manager(s)</label>
+          <div class="border border-slate-200 rounded-lg max-h-40 overflow-y-auto">
+            <label class="flex items-center gap-2 px-3 py-2 border-b border-slate-100 bg-slate-50 text-sm font-medium cursor-pointer">
+              <input type="checkbox" id="projectManagersSelectAll" onchange="toggleAllProjectManagers()"/> Select All
+            </label>
+            <div id="projectManagersList" class="text-sm"></div>
+          </div>
         </div>
         <div class="flex gap-2">
           <button type="button" onclick="submitProject()" class="btn-primary">Save</button>
@@ -4363,6 +4379,11 @@
         <div><label class="lbl">Amount Claimed (RM)</label><input id="claimAmount" type="number" class="inp" step="0.01" required/></div>
       </div>
       <div><label class="lbl">Description</label><textarea id="claimDesc" class="inp" rows="3"></textarea></div>
+      <div id="claimProjectWrap" class="hidden">
+        <label class="lbl">Project <span class="text-red-500">*</span></label>
+        <select id="claimProjectId" class="inp"></select>
+        <p class="text-xs text-slate-400 mt-1">This approval requires sign-off from the project's manager.</p>
+      </div>
       <div class="flex gap-2">
         <button type="submit" class="btn-primary">Submit Claim</button>
         <button type="button" onclick="closeClaimModal()" class="btn-ghost">Cancel</button>

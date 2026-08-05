@@ -126,6 +126,11 @@ class LeaveApplicationIn(BaseModel):
     end_date: str
     reason: Optional[str] = None
     attachment: Optional[str] = None  # data:... URI, same pattern as institution logo
+    # Which of the employee's projects a project_manager approval step (if
+    # the applicable workflow has one) should route through — see
+    # core/approval_workflow.py's PROJECT_MANAGER_MODULES. Ignored if the
+    # workflow has no such step; a step with none picked just auto-skips.
+    project_id: Optional[int] = None
 
     @field_validator("attachment")
     @classmethod
@@ -557,14 +562,15 @@ def create_leave_application(conn, body: LeaveApplicationIn, user: dict = Depend
     status = "Pending Approval" if lt["requires_approval"] else "Approved"
     workflow_id, step_order = None, None
     if status == "Pending Approval":
-        workflow_id, step_order, auto_approved = start_workflow(conn, inst_id, "leave", body.employee_id)
+        project_ids = {body.project_id} if body.project_id else set()
+        workflow_id, step_order, auto_approved = start_workflow(conn, inst_id, "leave", body.employee_id, project_ids)
         if auto_approved:
             status = "Approved"
     conn.execute(
-        "INSERT INTO leave_applications (institution_id,employee_id,leave_type_id,start_date,end_date,days_count,status,reason,attachment,requested_by,approval_workflow_id,approval_step) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO leave_applications (institution_id,employee_id,leave_type_id,start_date,end_date,days_count,status,reason,attachment,requested_by,approval_workflow_id,approval_step,project_id) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (inst_id, body.employee_id, body.leave_type_id, body.start_date, body.end_date, days, status,
-         body.reason, body.attachment, user["username"], workflow_id, step_order)
+         body.reason, body.attachment, user["username"], workflow_id, step_order, body.project_id)
     )
     app_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
@@ -595,9 +601,10 @@ def update_leave_status(conn, app_id: int, body: LeaveStatusIn, user: dict = Dep
         action = "reject" if body.status == "Rejected" else "approve"
         if application["approval_workflow_id"] and application["approval_step"] is not None:
             try:
+                project_ids = {application["project_id"]} if application["project_id"] else set()
                 outcome, next_step = advance_or_finalize(
                     conn, inst_id, "leave", application["employee_id"],
-                    application["approval_workflow_id"], application["approval_step"], action, user
+                    application["approval_workflow_id"], application["approval_step"], action, user, project_ids
                 )
             except PermissionError as e:
                 raise HTTPException(403, str(e))

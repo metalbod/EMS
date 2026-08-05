@@ -1128,7 +1128,8 @@ def _submit_claim(conn, inst_id: int, employee_id: str, payload: ClaimCreate) ->
         raise HTTPException(404, detail="Benefit plan not found")
 
     now = datetime.utcnow().isoformat()
-    workflow_id, step_order, auto_approved = start_workflow(conn, inst_id, "claims", employee_id)
+    project_ids = {payload.project_id} if payload.project_id else set()
+    workflow_id, step_order, auto_approved = start_workflow(conn, inst_id, "claims", employee_id, project_ids)
     # A fully-unresolvable chain (no manager, no HR user at all) auto-approves
     # rather than getting stuck — skips the reimbursement-cap check decide_claim
     # normally runs, which is an acceptable trade-off for this edge case only.
@@ -1138,11 +1139,12 @@ def _submit_claim(conn, inst_id: int, employee_id: str, payload: ClaimCreate) ->
         """
         INSERT INTO benefit_claims
         (institution_id, employee_id, benefit_plan_id, claim_date, amount_claimed,
-         description, status, amount_approved, created_at, updated_at, approval_workflow_id, approval_step)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         description, status, amount_approved, created_at, updated_at, approval_workflow_id, approval_step, project_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (inst_id, employee_id, payload.benefit_plan_id, payload.claim_date,
-         payload.amount_claimed, payload.description, status, amount_approved, now, now, workflow_id, step_order),
+         payload.amount_claimed, payload.description, status, amount_approved, now, now, workflow_id, step_order,
+         payload.project_id),
     )
     claim_id = conn._last_id
 
@@ -1271,9 +1273,10 @@ async def decide_claim(
         action = "reject" if payload.status == "Rejected" else "approve"
         if claim["approval_workflow_id"] and claim["approval_step"] is not None:
             try:
+                project_ids = {claim["project_id"]} if claim["project_id"] else set()
                 outcome, next_step = advance_or_finalize(
                     conn, inst_id, "claims", claim["employee_id"],
-                    claim["approval_workflow_id"], claim["approval_step"], action, current_user
+                    claim["approval_workflow_id"], claim["approval_step"], action, current_user, project_ids
                 )
             except PermissionError as e:
                 raise HTTPException(403, detail=str(e))
