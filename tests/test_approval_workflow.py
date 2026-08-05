@@ -48,38 +48,6 @@ def _unique_name(prefix="ZZ Test Workflow"):
     return f"{prefix} {os.urandom(4).hex()}"
 
 
-@pytest.fixture
-def employee_with_login(client, hr_manager_auth, make_test_employee, test_institution):
-    """Factory: creates a real employee with a linked login account.
-    Returns (employee, auth_headers). Usage:
-
-        emp, headers = employee_with_login(full_name="ZZ Someone")
-    """
-    created_user_ids = []
-
-    def _make(**overrides):
-        emp = make_test_employee(**overrides)
-        username = f"zzawuser_{emp['employee_id'].lower()}"
-        password = "ZzPytest@123"
-        res = client.post("/api/users", headers=hr_manager_auth, json={
-            "username": username, "full_name": emp["full_name"], "password": password,
-            "role": "employee", "employee_id": emp["employee_id"],
-        })
-        assert res.status_code == 201, f"failed to create user: {res.text}"
-        created_user_ids.append(res.json()["id"])
-        login = client.post("/api/auth/login", json={
-            "username": username, "password": password, "institution_code": test_institution["code"],
-        })
-        assert login.status_code == 200
-        headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
-        return emp, headers
-
-    yield _make
-
-    for uid in created_user_ids:
-        client.delete(f"/api/users/{uid}", headers=hr_manager_auth)
-
-
 # ---------------------------------------------------------------------------
 # Engine behavior (via the Leave module, the simplest requester-linked one)
 # ---------------------------------------------------------------------------

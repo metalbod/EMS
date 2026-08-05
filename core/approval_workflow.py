@@ -16,10 +16,11 @@ MAX_STEPS = 4
 # project_manager only makes sense where the request either lets the
 # requester pick a project (Leave, Claims — see project_id on those
 # tables) or already has one via its own line items (Timesheet, via
-# timesheet_entries.project_id — see _project_ids_for_row). Requisition
-# and L&D Enrollment have no project link at all, so the settings UI
-# doesn't offer this type for them.
-PROJECT_MANAGER_MODULES = ("leave", "claims", "timesheet")
+# timesheet_entries.project_id, and Overtime — via its parent timesheet's
+# entries, see project_ids_for_row). Requisition and L&D Enrollment have
+# no project link at all, so the settings UI doesn't offer this type for
+# them.
+PROJECT_MANAGER_MODULES = ("leave", "claims", "timesheet", "overtime")
 
 # Each module's own "HR-ish" role set, preserved from what that module's
 # hardcoded check allowed before this engine existed (they're not
@@ -32,6 +33,7 @@ MODULE_HR_ROLES = {
     "claims": ("hr_manager", "payroll_manager", "compensation_manager"),
     "requisition": ("hr_manager",),
     "ld_enrollment": ("hr_manager", "hr_admin"),
+    "overtime": ("hr_manager", "hr_admin"),
 }
 
 # table + the employee column identifying who the request is *for* (the
@@ -45,6 +47,7 @@ MODULE_TABLE = {
     "claims": "benefit_claims",
     "requisition": "job_requisitions",
     "ld_enrollment": "ld_enrollments",
+    "overtime": "overtime_records",
 }
 MODULE_EMPLOYEE_COL = {
     "leave": "employee_id",
@@ -52,6 +55,7 @@ MODULE_EMPLOYEE_COL = {
     "claims": "employee_id",
     "requisition": None,  # resolved via created_by -> users.employee_id
     "ld_enrollment": "employee_id",
+    "overtime": "employee_id",
 }
 MODULE_PENDING_STATUSES = {
     "leave": ("Pending Approval",),
@@ -59,6 +63,7 @@ MODULE_PENDING_STATUSES = {
     "claims": ("Submitted", "Under Review"),
     "requisition": ("Pending Approval",),
     "ld_enrollment": ("Pending Approval",),
+    "overtime": ("Pending",),
 }
 
 
@@ -74,6 +79,13 @@ def _requester_employee_id(conn, inst_id: int, module: str, row) -> Optional[str
     return u["employee_id"] if u else None
 
 
+def _timesheet_project_ids(conn, timesheet_id: int) -> Set[int]:
+    rows = conn.execute(
+        "SELECT DISTINCT project_id FROM timesheet_entries WHERE timesheet_id=?", (timesheet_id,)
+    ).fetchall()
+    return {r["project_id"] for r in rows}
+
+
 def project_ids_for_row(conn, module: str, row) -> Set[int]:
     """Which project(s) a project_manager step should resolve against for
     this specific request. Leave/Claims: the single project_id the
@@ -81,15 +93,17 @@ def project_ids_for_row(conn, module: str, row) -> Set[int]:
     has no project_manager step and the field was left blank). Timesheet:
     the union of every project logged in that week's entries — a
     timesheet can span multiple projects, so any of their managers is
-    eligible rather than requiring one specific project to be picked."""
+    eligible rather than requiring one specific project to be picked.
+    Overtime: the same union, via its parent timesheet — an overtime
+    record has no project of its own, it just follows whatever the
+    timesheet it was detected on already logged."""
     if module in ("leave", "claims"):
         pid = row["project_id"] if "project_id" in row.keys() else None
         return {pid} if pid else set()
     if module == "timesheet":
-        rows = conn.execute(
-            "SELECT DISTINCT project_id FROM timesheet_entries WHERE timesheet_id=?", (row["id"],)
-        ).fetchall()
-        return {r["project_id"] for r in rows}
+        return _timesheet_project_ids(conn, row["id"])
+    if module == "overtime":
+        return _timesheet_project_ids(conn, row["timesheet_id"])
     return set()
 
 

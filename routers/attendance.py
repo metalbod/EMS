@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from db import get_db, set_rls_context
 from core.deps import get_current_user, hash_password, verify_password
 from core.leave_balance_ops import _consume_balance
+from core.attendance_helpers import parse_time as _parse_time, match_attendance_setting as _match_attendance_setting, resolve_shift as _resolve_shift
 from core.attendance_schemas import (
     ShiftCreate, ShiftUpdate, ShiftResponse,
     ShiftAssignmentCreate, ShiftAssignmentResponse,
@@ -48,12 +49,6 @@ def _haversine_meters(lat1: float, lng1: float, lat2: float, lng2: float) -> int
     dlmb = math.radians(lng2 - lng1)
     a = math.sin(dphi / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlmb / 2) ** 2
     return round(2 * r * math.asin(math.sqrt(a)))
-
-
-def _parse_time(t) -> "datetime.time":
-    if isinstance(t, str):
-        return datetime.strptime(t[:5], "%H:%M").time()
-    return t  # already a time object (psycopg returns datetime.time for TIME columns)
 
 
 # ============================================================================
@@ -408,47 +403,9 @@ async def delete_attendance_setting(
 # ============================================================================
 # RESOLUTION HELPERS (shift lookup, geofence, sweep)
 # ============================================================================
-
-def _match_attendance_setting(conn, inst_id: int, employee_id: str, department: Optional[str]):
-    """Employee-specific rule takes priority over a department rule.
-    No matching rule = not required (opt-in only, per product decision)."""
-    row = conn.execute(
-        "SELECT * FROM attendance_settings WHERE institution_id=? AND employee_id=? AND is_active=1",
-        (inst_id, employee_id),
-    ).fetchone()
-    if row:
-        return row
-    if department:
-        row = conn.execute(
-            "SELECT * FROM attendance_settings WHERE institution_id=? AND department=? AND employee_id IS NULL AND is_active=1",
-            (inst_id, department),
-        ).fetchone()
-        if row:
-            return row
-    return None
-
-
-def _resolve_shift(conn, inst_id: int, employee_id: str, department: Optional[str], work_date: str):
-    """Shift applicable to this employee on work_date: an explicit
-    effective-dated assignment wins over the matching setting's
-    default_shift_id."""
-    assignment = conn.execute(
-        """
-        SELECT s.* FROM employee_shift_assignments esa
-        JOIN shifts s ON esa.shift_id = s.id
-        WHERE esa.employee_id = ? AND esa.institution_id = ? AND esa.is_active = 1 AND s.is_active = 1
-          AND esa.effective_from <= ?
-          AND (esa.effective_to IS NULL OR esa.effective_to >= ?)
-        ORDER BY esa.effective_from DESC LIMIT 1
-        """,
-        (employee_id, inst_id, work_date, work_date),
-    ).fetchone()
-    if assignment:
-        return assignment
-    setting = _match_attendance_setting(conn, inst_id, employee_id, department)
-    if setting and setting["default_shift_id"]:
-        return conn.execute("SELECT * FROM shifts WHERE id = ? AND is_active = 1", (setting["default_shift_id"],)).fetchone()
-    return None
+# _match_attendance_setting / _resolve_shift live in core/attendance_helpers.py
+# (imported above) — shared with Overtime detection, which resolves the same
+# per-employee shift as the daily working-hours threshold.
 
 
 def _employee_location(conn, inst_id: int, employee_id: str):

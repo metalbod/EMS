@@ -6,6 +6,7 @@ const AW_MODULES = [
   {key:'requisition', label:'Job Requisition'},
   {key:'timesheet', label:'Timesheet'},
   {key:'ld_enrollment', label:'L&D Enrollment'},
+  {key:'overtime', label:'Overtime'},
 ];
 const AW_STEP_LABELS = {
   direct_manager: 'Direct Manager',
@@ -16,8 +17,8 @@ const AW_STEP_LABELS = {
 };
 // Mirrors core/approval_workflow.py's PROJECT_MANAGER_MODULES — Requisition
 // and L&D Enrollment have no project link, so that approver type isn't
-// offered for them.
-const AW_PROJECT_MANAGER_MODULES = ['leave', 'claims', 'timesheet'];
+// offered for them. Overtime follows its parent timesheet's own projects.
+const AW_PROJECT_MANAGER_MODULES = ['leave', 'claims', 'timesheet', 'overtime'];
 
 let awCurrentModule = 'leave';
 let awWorkflowsCache = [];
@@ -28,7 +29,40 @@ function loadApprovalWorkflowPage() {
     `<button class="view-tab-btn px-4 py-3 text-sm ${m.key===awCurrentModule?'view-tab-active':''}" onclick="switchAwModule('${m.key}')">${esc(m.label)}</button>`
   ).join('');
   awUpdateProjectManagerOptionVisibility();
+  document.getElementById('awOvertimeSettings')?.classList.toggle('hidden', awCurrentModule !== 'overtime');
+  if (awCurrentModule === 'overtime') loadOvertimeSettingsPanel();
   loadAwWorkflows();
+}
+
+async function loadOvertimeSettingsPanel() {
+  const res = await api('/api/overtime/settings');
+  if (!res?.ok) return;
+  const s = await res.json();
+  document.getElementById('awOtMode').value = s.overtime_conversion_mode;
+  document.getElementById('awOtMultiplier').value = s.overtime_pay_multiplier;
+  if (!leaveTypesCache || !leaveTypesCache.length) await loadLeaveTypesCache();
+  const sel = document.getElementById('awOtLeaveType');
+  sel.innerHTML = leaveTypesCache.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('');
+  if (s.overtime_leave_type_id) sel.value = String(s.overtime_leave_type_id);
+  onAwOtModeChange();
+}
+
+function onAwOtModeChange() {
+  const isLeave = document.getElementById('awOtMode').value === 'leave';
+  document.getElementById('awOtLeaveTypeWrap').classList.toggle('hidden', !isLeave);
+  document.getElementById('awOtMultiplierWrap').classList.toggle('hidden', isLeave);
+}
+
+async function saveOvertimeSettings() {
+  const mode = document.getElementById('awOtMode').value;
+  const body = {
+    overtime_conversion_mode: mode,
+    overtime_leave_type_id: mode === 'leave' ? parseInt(document.getElementById('awOtLeaveType').value) : null,
+    overtime_pay_multiplier: parseFloat(document.getElementById('awOtMultiplier').value) || 1.5,
+  };
+  const res = await api('/api/overtime/settings', {method: 'PUT', body: JSON.stringify(body)});
+  if (!res?.ok) { const d = await res?.json().catch(()=>({})); alert(d?.detail || 'Failed to save'); return; }
+  alert('Overtime settings saved.');
 }
 
 // Used by Leave/Claims submission forms to decide whether to show a

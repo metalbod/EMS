@@ -309,6 +309,40 @@ def make_test_employee(client, hr_manager_auth):
 
 
 @pytest.fixture
+def employee_with_login(client, hr_manager_auth, make_test_employee, test_institution):
+    """Factory: creates a real employee with a linked login account. Shared
+    by test_approval_workflow.py and test_overtime.py, both of which need
+    a real user session to exercise eligibility (not just an employee
+    record). Returns (employee, auth_headers). Usage:
+
+        emp, headers = employee_with_login(full_name="ZZ Someone")
+    """
+    created_user_ids = []
+
+    def _make(**overrides):
+        emp = make_test_employee(**overrides)
+        username = f"zzawuser_{emp['employee_id'].lower()}"
+        password = "ZzPytest@123"
+        res = client.post("/api/users", headers=hr_manager_auth, json={
+            "username": username, "full_name": emp["full_name"], "password": password,
+            "role": "employee", "employee_id": emp["employee_id"],
+        })
+        assert res.status_code == 201, f"failed to create user: {res.text}"
+        created_user_ids.append(res.json()["id"])
+        login = client.post("/api/auth/login", json={
+            "username": username, "password": password, "institution_code": test_institution["code"],
+        })
+        assert login.status_code == 200
+        headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+        return emp, headers
+
+    yield _make
+
+    for uid in created_user_ids:
+        client.delete(f"/api/users/{uid}", headers=hr_manager_auth)
+
+
+@pytest.fixture
 def make_test_project(client, hr_manager_auth):
     """Factory fixture: creates a disposable project, deletes it on teardown.
     Shared by test_projects.py and (later) test_leave.py/test_timesheets.py,

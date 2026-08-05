@@ -535,7 +535,59 @@ async function openTimesheetDetail(tsId) {
     <button onclick="reviewTimesheet(${ts.id},'Approved')" class="btn-primary text-sm">Approve</button>
     <button onclick="reviewTimesheet(${ts.id},'Rejected')" class="btn-ghost text-sm text-red-600">Reject</button>
   `:'';
+  await loadTimesheetDetailOvertime(tsId);
   document.getElementById('timesheetDetailModal').classList.remove('hidden');
+}
+
+const OT_STATUS_COLORS={'Pending':'bg-amber-100 text-amber-700','Approved':'bg-green-100 text-green-700','Rejected':'bg-red-100 text-red-700'};
+
+async function loadTimesheetDetailOvertime(tsId) {
+  const wrap=document.getElementById('timesheetDetailOvertimeWrap');
+  const list=document.getElementById('timesheetDetailOvertimeList');
+  const res=await api(`/api/timesheets/${tsId}/overtime`);
+  const records=res?.ok?await res.json():[];
+  if(!records.length){ wrap.classList.add('hidden'); list.innerHTML=''; return; }
+  wrap.classList.remove('hidden');
+  list.innerHTML=records.map(o=>`
+    <div class="flex items-center gap-3 bg-slate-50 rounded-lg px-3 py-2">
+      <span class="text-sm text-slate-700 flex-shrink-0">${o.work_date}</span>
+      <span class="text-xs text-slate-500 flex-shrink-0">${o.logged_hours}h logged, ${o.threshold_hours}h normal</span>
+      <span class="text-sm font-medium text-amber-700 flex-shrink-0">+${o.overtime_hours}h OT</span>
+      <span class="badge ${OT_STATUS_COLORS[o.status]||'bg-slate-100 text-slate-600'} text-xs flex-shrink-0">${o.status}</span>
+      <span class="flex-1"></span>
+      ${o.status==='Pending'?`
+        <button onclick="reviewOvertime(${o.id},${tsId},'Approved')" class="btn-primary text-xs px-2 py-1">Approve</button>
+        <button onclick="reviewOvertime(${o.id},${tsId},'Rejected')" class="btn-ghost text-xs px-2 py-1 text-red-600">Reject</button>
+      `:''}
+    </div>`).join('');
+}
+
+async function reviewOvertime(recordId, tsId, status) {
+  const res=await api(`/api/overtime/${recordId}/status`,{method:'PATCH',body:JSON.stringify({status})});
+  if(res?.ok){ loadTimesheetDetailOvertime(tsId); }
+  else { const d=await res.json(); alert(d.detail||'Failed to update overtime record'); }
+}
+
+// ---------------------------------------------------------------------------
+// My Overtime (employee)
+// ---------------------------------------------------------------------------
+async function loadMyOvertimePage() {
+  const listEl=document.getElementById('myOvertimeList');
+  const emptyEl=document.getElementById('myOvertimeEmpty');
+  listEl.innerHTML='<p class="text-slate-400 text-sm text-center py-8">Loading…</p>';
+  const res=await api('/api/overtime');
+  const records=res?.ok?await res.json():[];
+  if(!records.length){ listEl.innerHTML=''; emptyEl?.classList.remove('hidden'); return; }
+  emptyEl?.classList.add('hidden');
+  listEl.innerHTML=records.map(o=>`
+    <div class="bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-3">
+      <div class="flex-1">
+        <p class="font-medium text-slate-800">${o.work_date}</p>
+        <p class="text-xs text-slate-500">${o.logged_hours}h logged vs ${o.threshold_hours}h normal — <span class="font-medium text-amber-700">${o.overtime_hours}h overtime</span></p>
+        ${o.status==='Approved'?`<p class="text-xs text-green-700 mt-1">${o.conversion_mode==='leave'?`+${o.leave_days_credited} day(s) credited`:`RM ${Number(o.pay_amount).toFixed(2)} tracked`}</p>`:''}
+      </div>
+      <span class="badge ${OT_STATUS_COLORS[o.status]||'bg-slate-100 text-slate-600'} text-xs">${o.status}</span>
+    </div>`).join('');
 }
 function closeTimesheetDetailModal() { document.getElementById('timesheetDetailModal').classList.add('hidden'); }
 

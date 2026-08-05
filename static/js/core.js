@@ -9,7 +9,7 @@ let openGroups = new Set(['empMgmt']);
 const TABS = ['personal','employment','statutory','dependents'];
 const VIEW_TABS = ['vt-personal','vt-employment','vt-locations','vt-statutory','vt-compensation','vt-notes'];
 const HR_NOTE_ROLES = ['superadmin','hr_manager','hr_admin'];
-const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','leave-my','leave-approvals','leave-holidays','projects','timesheet-my','timesheet-approvals','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','comp-paygrades','comp-joblevels','comp-jobroles','comp-meritcycles','comp-bonusplans','comp-commissions','comp-equity','comp-totalrewards','comp-payequity','ben-plans','ben-periods','ben-lifeevents','ben-claims','ben-compliance','payroll-runs','payroll-my','payroll-myrewards','payroll-mybenefits','perf-my','perf-team','perf-cycles','perf-calibration','attendance-clock','attendance-review','settings-attendance','settings-approval-workflow','coming-soon'];
+const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','leave-my','leave-approvals','leave-holidays','projects','timesheet-my','timesheet-approvals','overtime-my','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','comp-paygrades','comp-joblevels','comp-jobroles','comp-meritcycles','comp-bonusplans','comp-commissions','comp-equity','comp-totalrewards','comp-payequity','ben-plans','ben-periods','ben-lifeevents','ben-claims','ben-compliance','payroll-runs','payroll-my','payroll-myrewards','payroll-mybenefits','perf-my','perf-team','perf-cycles','perf-calibration','attendance-clock','attendance-review','settings-attendance','settings-approval-workflow','coming-soon'];
 
 // ---------------------------------------------------------------------------
 // Global loading indicator
@@ -340,7 +340,7 @@ function showPage(page) {
     onboarding:'Onboarding', offboarding:'Offboarding',
     'ld-catalog':'Course Catalog', 'ld-trainings':'My Trainings',
     'leave-my':'My Leave', 'leave-approvals':'Leave Approvals', 'leave-holidays':'Holiday Manager',
-    'projects':'Projects', 'timesheet-my':'My Timesheet', 'timesheet-approvals':'Timesheet Approvals',
+    'projects':'Projects', 'timesheet-my':'My Timesheet', 'timesheet-approvals':'Timesheet Approvals', 'overtime-my':'My Overtime',
     'settings-notifications':'Settings — Notifications',
     'settings-system-notifications':'System-Wide Notifications',
     'settings-bulk-upload':'Bulk Upload Employees',
@@ -388,6 +388,7 @@ function showPage(page) {
   if (page === 'projects')            loadProjects();
   if (page === 'timesheet-my')        loadTimesheetPage();
   if (page === 'timesheet-approvals') loadTimesheetApprovals();
+  if (page === 'overtime-my')         loadMyOvertimePage();
   if (page === 'settings-notifications') loadNotificationSettings();
   if (page === 'settings-system-notifications') loadSystemNotificationSettings();
   if (page === 'payroll-runs') loadPayrollRuns();

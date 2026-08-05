@@ -20,6 +20,11 @@ except ImportError:
     from ems.core.approval_workflow import start_workflow, advance_or_finalize, project_ids_for_row
 
 try:
+    from core.overtime import generate_overtime_records
+except ImportError:
+    from ems.core.overtime import generate_overtime_records
+
+try:
     from db import get_db
 except ImportError:
     from ems.db import get_db
@@ -210,6 +215,7 @@ def update_timesheet_status(conn, ts_id: int, body: TimesheetStatusIn, user: dic
             "approval_workflow_id=?,approval_step=? WHERE id=?",
             (new_status, workflow_id, step_order, ts_id)
         )
+        generate_overtime_records(conn, inst_id, ts)
     else:  # Approved | Rejected
         if ts["status"] != "Submitted":
             raise HTTPException(400, f"Only a Submitted timesheet can be reviewed (current status: {ts['status']})")

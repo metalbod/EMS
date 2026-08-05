@@ -98,6 +98,14 @@ def _consume_balance(conn, bal, days: float):
     )
 
 
+def _credit_balance(conn, bal, days: float):
+    """Adds `days` onto a balance's entitled_days — used by Overtime's
+    leave-conversion path (core/overtime.py) to grant extra days earned
+    from approved overtime, on top of whatever the leave type's normal
+    entitlement already is."""
+    conn.execute("UPDATE leave_balances SET entitled_days=entitled_days+? WHERE id=?", (days, bal["id"]))
+
+
 def _release_balance(conn, bal, days: float):
     """Reverses _consume_balance (cancellation/rejection-after-approval),
     giving back to the carried-forward bucket first — mirroring consumption
