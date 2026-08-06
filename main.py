@@ -21,6 +21,7 @@ try:
     from routers.holidays import router as holidays_router
     from routers.hr_notes import router as hr_notes_router
     from routers.users import router as users_router
+    from routers.roles import router as roles_router
     from routers.leave import router as leave_router
     from routers.approval_workflow_settings import router as approval_workflow_router
     from routers.projects import router as projects_router
@@ -60,6 +61,7 @@ except ImportError:
     from ems.routers.holidays import router as holidays_router
     from ems.routers.hr_notes import router as hr_notes_router
     from ems.routers.users import router as users_router
+    from ems.routers.roles import router as roles_router
     from ems.routers.leave import router as leave_router
     from ems.routers.approval_workflow_settings import router as approval_workflow_router
     from ems.routers.projects import router as projects_router
@@ -181,6 +183,7 @@ app.include_router(orgchart_router)
 app.include_router(holidays_router)
 app.include_router(hr_notes_router)
 app.include_router(users_router)
+app.include_router(roles_router)
 app.include_router(leave_router)
 app.include_router(approval_workflow_router)
 app.include_router(projects_router)

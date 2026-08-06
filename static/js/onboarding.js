@@ -1,8 +1,12 @@
 // Onboarding / Offboarding
 // ---------------------------------------------------------------------------
 let viewingObId=null, obCurrentType='onboarding', obTemplatesCache={};
-const OB_ROLE_COLORS={employee:'bg-purple-100 text-purple-700',manager:'bg-amber-100 text-amber-700',hr_admin:'bg-cyan-100 text-cyan-700',hr_manager:'bg-blue-100 text-blue-700'};
-const OB_ROLE_LABELS={employee:'Employee',manager:'Manager',hr_admin:'HR Admin',hr_manager:'HR Manager'};
+const OB_ROLE_COLORS={employee:'bg-purple-100 text-purple-700',manager:'bg-amber-100 text-amber-700',hr_admin:'bg-cyan-100 text-cyan-700',hr_manager:'bg-blue-100 text-blue-700',payroll_manager:'bg-emerald-100 text-emerald-700',compensation_manager:'bg-rose-100 text-rose-700'};
+const OB_ROLE_LABELS={employee:'Employee',manager:'Manager',hr_admin:'HR Admin',hr_manager:'HR Manager',payroll_manager:'Payroll Manager',compensation_manager:'Compensation Manager'};
+// Custom roles (Settings > Roles) have no fixed color/label above — fall
+// back to a neutral badge and the role's own display_name from rolesCache.
+function obRoleColor(role){ return OB_ROLE_COLORS[role]||'bg-slate-100 text-slate-600'; }
+function obRoleLabel(role){ return OB_ROLE_LABELS[role]||rolesCache.find(r=>r.role_key===role)?.display_name||role; }
 
 async function loadObChecklists(type, statusFilter) {
   obCurrentType=type;
@@ -78,7 +82,7 @@ async function openObDetail(clId) {
     if(!items.length) return;
     html+=`<div class="mb-4">
       <div class="flex items-center gap-2 mb-2">
-        <span class="badge ${OB_ROLE_COLORS[role]||'bg-slate-100 text-slate-600'} text-xs">${OB_ROLE_LABELS[role]||role}</span>
+        <span class="badge ${obRoleColor(role)} text-xs">${esc(obRoleLabel(role))}</span>
         <span class="text-xs text-slate-400">${items.filter(i=>i.status==='Done'||i.status==='N/A').length}/${items.length} done</span>
       </div>
       ${items.map(item=>{
@@ -249,8 +253,17 @@ function switchObSubTab(type,tab) {
   }
 }
 
+function populateObRoleSelect(el, selected) {
+  if(!el || !rolesCache.length) return;  // keep the static HTML fallback if roles failed to load
+  el.innerHTML=rolesCache.map(r=>`<option value="${r.role_key}">${esc(r.display_name)}</option>`).join('');
+  el.value=selected||'hr_admin';
+}
+
 async function loadObTemplatesTab(type) {
   hideObSetForm(type);
+  if(!rolesCache.length) await loadRolesCache();
+  populateObRoleSelect(oel(type,'obTmplRole'));
+  populateObRoleSelect(document.getElementById('obTmplItemRole'));
   const coursesRes=await api('/api/ld/courses');
   obTmplCoursesCache[type]=coursesRes?.ok?await coursesRes.json():[];
   const courseOptions='<option value="">No linked course — manual completion</option>'+
@@ -423,24 +436,30 @@ function renderObSwimlane(type) {
   wrap.classList.remove('hidden');
   emptyEl.classList.add('hidden');
 
+  // Base 4 built-in roles, plus any custom role actually assigned to one
+  // of this set's items (appended in the order first seen) — so an
+  // "IT Infra" item still gets its own swimlane row instead of vanishing.
+  const rolesOrder=[...OB_ROLES_ORDER];
+  items.forEach(item=>{ if(!rolesOrder.includes(item.assigned_role)) rolesOrder.push(item.assigned_role); });
+
   const colWidth=190, labelWidth=120, gap=12;
   grid.style.display='grid';
   grid.style.gridTemplateColumns=`${labelWidth}px repeat(${items.length}, ${colWidth}px)`;
-  grid.style.gridTemplateRows=`repeat(${OB_ROLES_ORDER.length}, minmax(80px,auto))`;
+  grid.style.gridTemplateRows=`repeat(${rolesOrder.length}, minmax(80px,auto))`;
   grid.style.gap=`${gap}px`;
 
   const canManage=['superadmin','hr_manager','hr_admin'].includes(currentUser?.role);
   let html='';
-  OB_ROLES_ORDER.forEach((role,rIdx)=>{
+  rolesOrder.forEach((role,rIdx)=>{
     html+=`<div style="grid-column:1;grid-row:${rIdx+1}" class="flex items-center">
-      <span class="badge ${OB_ROLE_COLORS[role]} text-xs whitespace-nowrap">${OB_ROLE_LABELS[role]}</span>
+      <span class="badge ${obRoleColor(role)} text-xs whitespace-nowrap">${esc(obRoleLabel(role))}</span>
     </div>`;
   });
   items.forEach((item,cIdx)=>{
-    const rIdx=OB_ROLES_ORDER.indexOf(item.assigned_role);
+    const rIdx=rolesOrder.indexOf(item.assigned_role);
     const linkedCourse=obTmplCoursesCache[type].find(c=>c.id===item.linked_ld_course_id);
     html+=`<div style="grid-column:${cIdx+2};grid-row:${rIdx+1}">
-      <div id="${oid(type,'obSwimStep')}_${item.id}" class="${OB_ROLE_COLORS[item.assigned_role]} rounded-lg p-2 h-full flex flex-col shadow-sm border border-black/5">
+      <div id="${oid(type,'obSwimStep')}_${item.id}" class="${obRoleColor(item.assigned_role)} rounded-lg p-2 h-full flex flex-col shadow-sm border border-black/5">
         <div class="flex items-center justify-between gap-1 mb-1">
           <button onclick="moveObTemplate('${type}',${item.id},'up')" ${cIdx===0?'disabled':''} class="opacity-60 hover:opacity-100 disabled:opacity-20" title="Move earlier"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/></svg></button>
           <span class="text-[10px] font-semibold opacity-60">${cIdx+1}</span>

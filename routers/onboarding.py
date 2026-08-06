@@ -21,6 +21,11 @@ except ImportError:
     from ems.core.ob_ld_shared import log_ob, auto_enroll_ld_course
 
 try:
+    from core.roles import get_valid_roles
+except ImportError:
+    from ems.core.roles import get_valid_roles
+
+try:
     from db import get_db
 except ImportError:
     from ems.db import get_db
@@ -32,7 +37,6 @@ except ImportError:
 
 router = APIRouter()
 
-OB_ROLES = ["employee", "manager", "hr_admin", "hr_manager"]
 OB_MANAGE_ROLES = ("superadmin", "hr_manager", "hr_admin")
 
 
@@ -228,8 +232,9 @@ def create_ob_template(conn, body: OBTemplateIn, user: dict = Depends(require_ro
     inst_id = need_inst(user)
     if body.type not in ("onboarding","offboarding"):
         raise HTTPException(400, "type must be onboarding or offboarding")
-    if body.assigned_role not in OB_ROLES:
-        raise HTTPException(400, f"assigned_role must be one of: {', '.join(OB_ROLES)}")
+    valid_roles = get_valid_roles(conn, inst_id)
+    if body.assigned_role not in valid_roles:
+        raise HTTPException(400, f"assigned_role must be one of: {', '.join(valid_roles)}")
     if body.template_set_id:
         _get_owning_template_set(conn, inst_id, body.template_set_id, body.type)
     else:
@@ -251,8 +256,9 @@ def create_ob_template(conn, body: OBTemplateIn, user: dict = Depends(require_ro
 @db_session
 def update_ob_template(conn, tmpl_id: int, body: OBTemplateIn, user: dict = Depends(require_roles(*OB_MANAGE_ROLES))) -> Dict[str, Any]:
     inst_id = need_inst(user)
-    if body.assigned_role not in OB_ROLES:
-        raise HTTPException(400, f"assigned_role must be one of: {', '.join(OB_ROLES)}")
+    valid_roles = get_valid_roles(conn, inst_id)
+    if body.assigned_role not in valid_roles:
+        raise HTTPException(400, f"assigned_role must be one of: {', '.join(valid_roles)}")
     tmpl = conn.execute("SELECT id FROM ob_templates WHERE id=? AND institution_id=?", (tmpl_id, inst_id)).fetchone()
     if not tmpl:
         raise HTTPException(404, "Template not found")
@@ -478,8 +484,9 @@ def edit_ob_item(conn, cl_id: int, item_id: int, body: OBItemEditIn,
         raise HTTPException(404, "Checklist not found")
     if not conn.execute("SELECT id FROM ob_checklist_items WHERE id=? AND checklist_id=?", (item_id, cl_id)).fetchone():
         raise HTTPException(404, "Item not found")
-    if body.assigned_role not in OB_ROLES:
-        raise HTTPException(400, f"assigned_role must be one of: {', '.join(OB_ROLES)}")
+    valid_roles = get_valid_roles(conn, inst_id)
+    if body.assigned_role not in valid_roles:
+        raise HTTPException(400, f"assigned_role must be one of: {', '.join(valid_roles)}")
     old = conn.execute("SELECT * FROM ob_checklist_items WHERE id=? AND checklist_id=?", (item_id, cl_id)).fetchone()
     cl2 = conn.execute("SELECT * FROM ob_checklists WHERE id=?", (cl_id,)).fetchone()
     conn.execute(
@@ -503,8 +510,9 @@ def add_ob_item(conn, cl_id: int, body: OBItemAddIn,
     cl = conn.execute("SELECT * FROM ob_checklists WHERE id=? AND institution_id=?", (cl_id, inst_id)).fetchone()
     if not cl:
         raise HTTPException(404, "Checklist not found")
-    if body.assigned_role not in OB_ROLES:
-        raise HTTPException(400, f"assigned_role must be one of: {', '.join(OB_ROLES)}")
+    valid_roles = get_valid_roles(conn, inst_id)
+    if body.assigned_role not in valid_roles:
+        raise HTTPException(400, f"assigned_role must be one of: {', '.join(valid_roles)}")
     max_order = conn.execute("SELECT MAX(order_index) FROM ob_checklist_items WHERE checklist_id=?", (cl_id,)).fetchone()[0] or 0
     enrollment_id = None
     if body.linked_ld_course_id:

@@ -380,20 +380,25 @@ function populateMetaSelects() {
   sel('fMaritalStatus',meta.marital_statuses||[]); sel('fEmploymentType',meta.employment_types||[]);
   const bk=document.getElementById('fBankName');
   if(bk){while(bk.options.length>1)bk.remove(1);(meta.banks||[]).forEach(b=>{const o=document.createElement('option');o.value=b;o.textContent=b;bk.appendChild(o);});}
-  // User roles — checkboxes + primary dropdown
-  const roleList=currentUser?.role==='superadmin'?(meta.roles||[]):(meta.institution_roles||[]);
+  // User roles — checkboxes + primary dropdown. Superadmin (creating other
+  // platform-level accounts) still sees the static meta.roles list; every
+  // other institution's role picker is now built-ins + that institution's
+  // custom_roles (rolesCache, see routers/roles.py / Settings > Roles).
+  const roleList=currentUser?.role==='superadmin'
+    ? (meta.roles||[]).map(r=>({role_key:r, display_name:meta.role_labels?.[r]||r}))
+    : rolesCache;
   const rolesWrap=document.getElementById('uRolesWrap');
   if(rolesWrap){
     rolesWrap.innerHTML=roleList.map(r=>`
       <label class="flex items-center gap-1.5 text-sm cursor-pointer">
-        <input type="checkbox" class="uRoleCheck w-4 h-4" value="${r}" onchange="syncRolePrimary()"/>
-        ${meta.role_labels?.[r]||r}
+        <input type="checkbox" class="uRoleCheck w-4 h-4" value="${r.role_key}" onchange="syncRolePrimary()"/>
+        ${esc(r.display_name)}
       </label>`).join('');
   }
   const roleEl=document.getElementById('uRole');
   if(roleEl){
     roleEl.innerHTML='';
-    roleList.forEach(r=>{const o=document.createElement('option');o.value=r;o.textContent=meta.role_labels?.[r]||r;roleEl.appendChild(o);});
+    roleList.forEach(r=>{const o=document.createElement('option');o.value=r.role_key;o.textContent=r.display_name;roleEl.appendChild(o);});
   }
 }
 

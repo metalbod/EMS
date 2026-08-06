@@ -330,6 +330,10 @@
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2M9 12l2 2 4-4"/></svg>
             Approval Workflows
           </div>
+          <div id="nav-roles" class="hidden nav-sub-item" onclick="showPage('settings-roles');closeBurgerMenu();" data-page="settings-roles">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 100-8 4 4 0 000 8zm6 3.13a4 4 0 00-3-3.87m-9 3.87a4 4 0 013-3.87"/></svg>
+            Roles
+          </div>
         </div>
       </div>
       <!-- Compensation (HR Manager / Payroll Manager only) -->
@@ -1739,6 +1743,24 @@
             <select id="awNewStepAltEmployee" class="hidden inp" style="width:240px"></select>
             <button onclick="addAwStep()" class="btn-primary text-sm px-3">Add Step</button>
           </div>
+        </div>
+      </div>
+
+      <!-- ROLES (HR Manager / HR Admin) -->
+      <div id="page-settings-roles" class="hidden">
+        <p class="text-xs text-slate-400 mb-4">6 built-in roles are always available. Add more here — e.g. "IT Infra" — to assign in Users and in onboarding/offboarding checklist templates.</p>
+        <div class="flex items-center gap-2 mb-4 flex-wrap">
+          <input id="roleNewName" class="inp flex-1 min-w-[220px] max-w-xs" placeholder="New role name, e.g. IT Infra"/>
+          <button onclick="createRole()" class="btn-primary text-sm px-3">+ Add Role</button>
+        </div>
+        <p id="roleFormErr" class="hidden text-xs text-red-600 mb-3"></p>
+        <div class="bg-white border border-slate-200 rounded-xl overflow-hidden">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 text-slate-500 text-xs uppercase">
+              <tr><th class="px-4 py-2 text-left">Role</th><th class="px-4 py-2 text-left">Key</th><th class="px-4 py-2 text-left">Type</th><th class="px-4 py-2"></th></tr>
+            </thead>
+            <tbody id="rolesTableBody"></tbody>
+          </table>
         </div>
       </div>
 
@@ -4680,6 +4702,7 @@
 <script src="/static/js/ld.js?v=74"></script>
 <script src="/static/js/leave.js?v=74"></script>
 <script src="/static/js/approval-workflow.js?v=74"></script>
+<script src="/static/js/roles.js?v=1"></script>
 <script src="/static/js/timesheet.js?v=74"></script>
 <script src="/static/js/notifications.js?v=74"></script>
 <script src="/static/js/payroll.js?v=74"></script>

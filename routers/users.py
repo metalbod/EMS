@@ -2,7 +2,7 @@
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel
 
 try:
     from core.deps import hash_password, require_roles
@@ -10,9 +10,9 @@ except ImportError:
     from ems.core.deps import hash_password, require_roles
 
 try:
-    from core.roles import ROLES
+    from core.roles import ROLES, get_valid_roles
 except ImportError:
-    from ems.core.roles import ROLES
+    from ems.core.roles import ROLES, get_valid_roles
 
 try:
     from db import get_db, IntegrityError
@@ -39,11 +39,11 @@ class UserIn(BaseModel):
     employee_id: Optional[str] = None
     institution_id: Optional[int] = None  # superadmin can specify
 
-    @field_validator("role")
-    @classmethod
-    def val(cls, v):
-        if v not in ROLES: raise ValueError(f"Role must be one of: {', '.join(ROLES)}")
-        return v
+    # role is validated in create_user's body instead of a static
+    # field_validator — the valid set is per-institution (built-ins plus
+    # that institution's custom_roles, see core/roles.py's
+    # get_valid_roles), which needs a DB connection and inst_id neither
+    # of which a Pydantic validator has access to.
 
 
 class UserUpdate(BaseModel):
@@ -55,11 +55,7 @@ class UserUpdate(BaseModel):
     employee_id: Optional[str] = None
     is_active: bool = True
 
-    @field_validator("role")
-    @classmethod
-    def val(cls, v):
-        if v not in ROLES: raise ValueError(f"Role must be one of: {', '.join(ROLES)}")
-        return v
+    # role validated in update_user's body — see UserIn's note above.
 
 
 @router.get("/api/users")
@@ -112,6 +108,11 @@ def create_user(conn, body: UserIn, user: dict = Depends(require_roles(*CAN_MANA
             raise HTTPException(403, "HR Managers cannot create Platform Admin accounts")
         inst_id = user["institution_id"]
 
+    if body.role != "superadmin":
+        valid_roles = get_valid_roles(conn, inst_id)
+        if body.role not in valid_roles:
+            raise HTTPException(400, f"role must be one of: {', '.join(valid_roles)}")
+
     roles_str = ",".join(body.roles) if body.roles else body.role
     # Force a password change on first login for every role except HR
     # Manager/HR Admin — those two are trusted to pick their own password
@@ -149,6 +150,10 @@ def update_user(conn, user_id: int, body: UserUpdate, user: dict = Depends(requi
             raise HTTPException(403, "Access denied to this user")
     if user_id == user["id"] and body.role != user["role"]:
         raise HTTPException(400, "Cannot change your own role")
+    if body.role != "superadmin":
+        valid_roles = get_valid_roles(conn, target["institution_id"])
+        if body.role not in valid_roles:
+            raise HTTPException(400, f"role must be one of: {', '.join(valid_roles)}")
     new_hash = hash_password(body.password) if body.password else target["password_hash"]
     # Any real password change (not just leaving it unset) clears a pending
     # forced-rotation flag — see main.py's superadmin seeding.

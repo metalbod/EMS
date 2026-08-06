@@ -30,12 +30,16 @@ def test_hr_manager_cannot_create_superadmin(client, hr_manager_auth):
     assert res.status_code == 403
 
 
-def test_create_user_invalid_role_returns_422(client, hr_manager_auth):
+def test_create_user_invalid_role_returns_400(client, hr_manager_auth):
+    # Role validity is now checked in the endpoint body against
+    # core/roles.py's get_valid_roles (built-ins + this institution's
+    # custom_roles) rather than a static Pydantic field_validator, since
+    # the valid set needs a DB connection and inst_id — 400, not 422.
     res = client.post("/api/users", headers=hr_manager_auth, json={
         "username": f"zztest_{os.urandom(4).hex()}", "full_name": "ZZ Nope",
         "password": "ZzPytest@123", "role": "not_a_real_role",
     })
-    assert res.status_code == 422
+    assert res.status_code == 400
 
 
 def test_create_user_duplicate_username_returns_400(client, hr_manager_auth):
