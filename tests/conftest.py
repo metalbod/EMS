@@ -48,7 +48,7 @@ def superadmin_token():
     import main as app_module
     c = TestClient(app_module.app)
     res = c.post("/api/auth/login", json={
-        "username": "superadmin", "password": "Admin@123", "institution_code": None,
+        "username": "superadmin", "password": "admin123", "institution_code": None,
     })
     assert res.status_code == 200, f"seeded superadmin login failed: {res.text}"
     return res.json()["access_token"]

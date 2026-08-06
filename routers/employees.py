@@ -278,6 +278,20 @@ def gen_employee_id(conn, inst_id: int) -> str:
         n += 1
 
 
+def _resolve_manager_name(conn, inst_id: int, reports_to: Optional[str]) -> Optional[str]:
+    """Single-employee equivalent of list_employees' bulk manager_name
+    lookup — used by create/get/update so their responses (which the
+    frontend patches straight into its cached employee list, see
+    submitEmpForm) don't silently blank out the Manager column until the
+    next full list reload."""
+    if not reports_to:
+        return None
+    row = conn.execute(
+        "SELECT full_name FROM employees WHERE institution_id=? AND employee_id=?", (inst_id, reports_to)
+    ).fetchone()
+    return row["full_name"] if row else None
+
+
 @router.get("/api/employees", response_model=List[EmployeeOut])
 @db_session
 def list_employees(
@@ -461,6 +475,7 @@ def create_employee(conn, emp: EmployeeIn, request: Request, user: dict = Depend
             loc = get_primary_locations(conn, inst_id, [emp_id]).get(emp_id)
             result["default_location_id"] = loc["location_id"] if loc else None
             result["location_name"] = loc["location_name"] if loc else None
+            result["manager_name"] = _resolve_manager_name(conn, inst_id, result.get("reports_to"))
             return result
         except IntegrityError as e:
             conn.rollback()
@@ -555,6 +570,7 @@ def get_employee(conn, employee_id: str, user: dict = Depends(get_current_user))
     loc = get_primary_locations(conn, inst_id, [employee_id]).get(employee_id)
     result["default_location_id"] = loc["location_id"] if loc else None
     result["location_name"] = loc["location_name"] if loc else None
+    result["manager_name"] = _resolve_manager_name(conn, inst_id, result.get("reports_to"))
     return result
 
 
@@ -673,6 +689,7 @@ def update_employee(conn, employee_id: str, emp: EmployeeIn, request: Request,
         loc = get_primary_locations(conn, inst_id, [new_id]).get(new_id)
         result["default_location_id"] = loc["location_id"] if loc else None
         result["location_name"] = loc["location_name"] if loc else None
+        result["manager_name"] = _resolve_manager_name(conn, inst_id, result.get("reports_to"))
         result["pay_grade_warning"] = pay_grade_warning
         return result
     except IntegrityError as e:
