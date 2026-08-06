@@ -245,6 +245,9 @@ class EmployeeOut(BaseModel):
     default_location_id: Optional[int] = None
     location_name: Optional[str] = None
     manager_name: Optional[str] = None
+    # Non-blocking notice from update_employee when basic_salary was saved
+    # outside the employee's current pay grade band — None everywhere else.
+    pay_grade_warning: Optional[str] = None
 
 
 class BulkUploadIn(BaseModel):
@@ -569,11 +572,14 @@ def update_employee(conn, employee_id: str, emp: EmployeeIn, request: Request,
 
     # basic_salary is the one source of truth payroll actually reads (see
     # routers/compensation.py) — if this employee has a current compensation
-    # record with a pay grade assigned, keep the two in sync by rejecting a
-    # save that would put basic_salary outside that grade's band, rather than
-    # silently letting them drift apart. Looked up by the *original*
-    # employee_id since employee_compensation isn't touched by the
-    # employee_id-rename block below.
+    # record with a pay grade assigned, a basic_salary outside that grade's
+    # band is flagged as a non-blocking warning (returned to the caller,
+    # not raised) rather than rejected outright — per product decision, HR
+    # may have a legitimate reason to save it anyway (e.g. an approved
+    # exception pending a grade change) and shouldn't be locked out.
+    # Looked up by the *original* employee_id since employee_compensation
+    # isn't touched by the employee_id-rename block below.
+    pay_grade_warning = None
     if emp.salary_type == "Monthly":
         current_comp = conn.execute(
             "SELECT pay_grade_id FROM employee_compensation WHERE employee_id=? AND institution_id=? AND is_current=1",
@@ -585,8 +591,7 @@ def update_employee(conn, employee_id: str, emp: EmployeeIn, request: Request,
                 (current_comp["pay_grade_id"],)
             ).fetchone()
             if grade and not (float(grade["min_salary"]) <= emp.basic_salary <= float(grade["max_salary"])):
-                raise HTTPException(
-                    422,
+                pay_grade_warning = (
                     f"RM {emp.basic_salary:,.2f} is outside the '{grade['grade_name']} ({grade['grade_code']})' "
                     f"pay grade range of RM {float(grade['min_salary']):,.2f} – RM {float(grade['max_salary']):,.2f} "
                     f"assigned to this employee. Consider changing their job role, level, or pay grade in the "
@@ -668,6 +673,7 @@ def update_employee(conn, employee_id: str, emp: EmployeeIn, request: Request,
         loc = get_primary_locations(conn, inst_id, [new_id]).get(new_id)
         result["default_location_id"] = loc["location_id"] if loc else None
         result["location_name"] = loc["location_name"] if loc else None
+        result["pay_grade_warning"] = pay_grade_warning
         return result
     except IntegrityError as e:
         conn.rollback()

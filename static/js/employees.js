@@ -521,6 +521,7 @@ async function submitEmpForm(e) {
   if(currentEmpId){const idx=employees.findIndex(em=>em.employee_id===currentEmpId);if(idx>=0)employees[idx]=saved;}
   else employees.unshift(saved);
   closeEmpModal(); filterEmployees(); renderDashboard();
+  if(saved.pay_grade_warning) alert(saved.pay_grade_warning);
 }
 
 // ---------------------------------------------------------------------------
