@@ -100,14 +100,16 @@ def get_todos(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, An
 
     # Onboarding/Offboarding checklist items assigned to this user's role —
     # same "my_pending" scoping list_ob_checklists (routers/onboarding.py)
-    # already uses per-checklist, aggregated here across all of them. An
-    # employee only sees their own checklist's items, a manager only their
-    # subordinates', HR sees institution-wide — matching that endpoint's
-    # existing role scoping exactly.
+    # already uses per-checklist, one row per pending item here so the
+    # To-Do card shows what the task actually is (title), not just a
+    # count. An employee only sees their own checklist's items, a manager
+    # only their subordinates', HR sees institution-wide — matching that
+    # endpoint's existing role scoping exactly.
     ob_q = """
-        SELECT c.type, COUNT(*) AS cnt
+        SELECT i.id, i.title, c.type, c.employee_id, e.full_name AS employee_name
         FROM ob_checklist_items i
         JOIN ob_checklists c ON c.id = i.checklist_id
+        JOIN employees e ON e.employee_id = c.employee_id AND e.institution_id = c.institution_id
         WHERE c.institution_id=? AND i.status='Pending' AND i.assigned_role=?
     """
     ob_params: list = [inst_id, role]
@@ -116,16 +118,19 @@ def get_todos(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, An
         ob_q += f" AND c.employee_id IN {frag}"; ob_params.extend(fp)
     elif role == "employee":
         ob_q += " AND c.employee_id=?"; ob_params.append(emp_id or "")
-    ob_q += " GROUP BY c.type"
+    ob_q += " ORDER BY c.type, c.employee_id, i.order_index"
     ob_rows = conn.execute(ob_q, ob_params).fetchall()
-    ob_labels = {"onboarding": "onboarding task", "offboarding": "offboarding task"}
+    ob_type_labels = {"onboarding": "Onboarding", "offboarding": "Offboarding"}
     for r in ob_rows:
-        cnt = r["cnt"]
-        noun = ob_labels.get(r["type"], f"{r['type']} task")
+        type_label = ob_type_labels.get(r["type"], r["type"].capitalize())
+        # An employee's own items are obviously about themselves — only
+        # name-drop the employee for HR/manager viewers looking at
+        # someone else's checklist.
+        label = r["title"] if role == "employee" else f"{r['title']} — {r['employee_name']}"
         todos.append({
-            "key": f"ob-{r['type']}",
-            "label": f"{cnt} {noun}{'s' if cnt != 1 else ''} assigned to you",
-            "page": r["type"], "count": cnt,
+            "key": f"ob-item-{r['id']}",
+            "label": f"{label} ({type_label})",
+            "page": r["type"], "count": 1,
         })
 
     return todos

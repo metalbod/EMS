@@ -65,9 +65,11 @@ def test_employee_with_draft_timesheet_this_week_gets_todo(
 def test_onboarding_checklist_items_appear_for_assigned_role(client, hr_manager_auth, test_institution, make_test_employee):
     """A checklist item's assigned_role determines whose To-Do it shows up
     in — the new hire sees their own 'employee'-assigned items, HR sees
-    the institution's 'hr_manager'-assigned items. See routers/dashboard.py's
-    ob_q, which mirrors list_ob_checklists' (routers/onboarding.py) existing
-    my_pending scoping."""
+    the institution's 'hr_manager'-assigned items — one row per pending
+    item (not an aggregate count), each labeled with the item's title so
+    the To-Do card shows what the task actually is. See
+    routers/dashboard.py's ob_q, which mirrors list_ob_checklists'
+    (routers/onboarding.py) existing my_pending scoping."""
     emp = make_test_employee(full_name="ZZ Dashboard OB Employee")
     username = f"zztdashob_{emp['employee_id'].lower()}"
     password = "ZzPytest@123"
@@ -87,21 +89,25 @@ def test_onboarding_checklist_items_appear_for_assigned_role(client, hr_manager_
                            json={"employee_id": emp["employee_id"], "type": "onboarding"})
     assert started.status_code == 201, started.text
     cl_id = started.json()["id"]
+    item_ids = {i["id"] for i in client.get(f"/api/ob/checklists/{cl_id}", headers=hr_manager_auth).json()["items"]}
 
     # The new hire sees their own 'employee'-assigned items (e.g. "Welcome
-    # Acknowledgement" in the seeded default templates).
+    # Acknowledgement" in the seeded default templates) as individual rows,
+    # not their own name (that'd be redundant for their own to-do).
     emp_todos = client.get("/api/todos", headers=emp_headers).json()
-    ob_todo = next((t for t in emp_todos if t["key"] == "ob-onboarding"), None)
-    assert ob_todo is not None, f"expected an ob-onboarding todo, got: {emp_todos}"
-    assert ob_todo["page"] == "onboarding"
-    assert ob_todo["count"] > 0
+    emp_ob_todos = [t for t in emp_todos if t["key"].startswith("ob-item-") and int(t["key"].removeprefix("ob-item-")) in item_ids]
+    assert emp_ob_todos, f"expected at least one ob-item todo, got: {emp_todos}"
+    assert all(t["page"] == "onboarding" and t["count"] == 1 for t in emp_ob_todos)
+    assert any("Welcome Acknowledgement" in t["label"] for t in emp_ob_todos)
+    assert not any(emp["full_name"] in t["label"] for t in emp_ob_todos)
 
     # HR sees their own 'hr_admin'/'hr_manager'-assigned items across the
-    # institution, not the employee's — hr_manager_auth's role is hr_manager.
+    # institution (not the employee's), each labeled with the employee's
+    # name since it's someone else's checklist.
     hr_todos = client.get("/api/todos", headers=hr_manager_auth).json()
-    hr_ob_todo = next((t for t in hr_todos if t["key"] == "ob-onboarding"), None)
-    assert hr_ob_todo is not None
-    assert hr_ob_todo["count"] > 0
+    hr_ob_todos = [t for t in hr_todos if t["key"].startswith("ob-item-") and int(t["key"].removeprefix("ob-item-")) in item_ids]
+    assert hr_ob_todos
+    assert all(emp["full_name"] in t["label"] for t in hr_ob_todos)
 
     client.delete(f"/api/ob/checklists/{cl_id}", headers=hr_manager_auth)
     client.delete(f"/api/users/{user_id}", headers=hr_manager_auth)
