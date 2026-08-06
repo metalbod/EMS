@@ -454,16 +454,19 @@ def _sweep_absences(conn, inst_id: int):
     deadline has passed with no attendance_records row at all. Days
     that already have a row (Present/Late/etc.) are left untouched.
 
-    Batches its lookups (existing records, shift assignments) into one
-    query each up front instead of one query per employee per day —
-    the previous per-day querying made this O(employees x window_days)
-    round trips, which is what made the Review screen slow to load."""
-    rules = conn.execute(
-        "SELECT * FROM attendance_settings WHERE institution_id = ? AND is_active = 1 AND required = 1",
+    Batches every lookup (settings, existing records, shift assignments)
+    into one query each up front instead of one (or several) per employee
+    — the previous version queried attendance_settings again for every
+    employee on top of the per-day querying, which is what made the
+    Review screen slow to load even after the per-day fix."""
+    settings_rows = conn.execute(
+        "SELECT * FROM attendance_settings WHERE institution_id = ? AND is_active = 1",
         (inst_id,),
     ).fetchall()
-    if not rules:
+    if not settings_rows:
         return
+    settings_by_emp = {r["employee_id"]: r for r in settings_rows if r["employee_id"]}
+    settings_by_dept = {r["department"]: r for r in settings_rows if r["department"] and not r["employee_id"]}
 
     employees = conn.execute(
         "SELECT employee_id, department, start_date FROM employees WHERE institution_id = ? AND status = 'Active'",
@@ -496,16 +499,14 @@ def _sweep_absences(conn, inst_id: int):
     for a in assignment_rows:
         assignments_by_emp.setdefault(a["employee_id"], []).append(a)
 
-    shift_by_id: dict = {}
-
-    def _get_shift(shift_id):
-        if shift_id not in shift_by_id:
-            shift_by_id[shift_id] = conn.execute("SELECT * FROM shifts WHERE id=? AND is_active=1", (shift_id,)).fetchone()
-        return shift_by_id[shift_id]
+    shift_rows = conn.execute("SELECT * FROM shifts WHERE institution_id = ? AND is_active = 1", (inst_id,)).fetchall()
+    shift_by_id = {s["id"]: s for s in shift_rows}
 
     now_iso = now.isoformat()
     for emp in employees:
-        setting = _match_attendance_setting(conn, inst_id, emp["employee_id"], emp["department"])
+        # Employee-specific rule takes priority over a department rule —
+        # same precedence as _match_attendance_setting/resolve_shift.
+        setting = settings_by_emp.get(emp["employee_id"]) or settings_by_dept.get(emp["department"])
         if not setting or not setting["required"]:
             continue
 
@@ -518,7 +519,7 @@ def _sweep_absences(conn, inst_id: int):
                 pass
 
         emp_assignments = assignments_by_emp.get(emp["employee_id"], [])
-        default_shift = _get_shift(setting["default_shift_id"]) if setting["default_shift_id"] else None
+        default_shift = shift_by_id.get(setting["default_shift_id"]) if setting["default_shift_id"] else None
 
         d = rule_start
         while d <= today:
