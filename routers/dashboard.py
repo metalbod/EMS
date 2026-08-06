@@ -98,4 +98,34 @@ def get_todos(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, An
                 "page": page, "count": cnt,
             })
 
+    # Onboarding/Offboarding checklist items assigned to this user's role —
+    # same "my_pending" scoping list_ob_checklists (routers/onboarding.py)
+    # already uses per-checklist, aggregated here across all of them. An
+    # employee only sees their own checklist's items, a manager only their
+    # subordinates', HR sees institution-wide — matching that endpoint's
+    # existing role scoping exactly.
+    ob_q = """
+        SELECT c.type, COUNT(*) AS cnt
+        FROM ob_checklist_items i
+        JOIN ob_checklists c ON c.id = i.checklist_id
+        WHERE c.institution_id=? AND i.status='Pending' AND i.assigned_role=?
+    """
+    ob_params: list = [inst_id, role]
+    if role == "manager":
+        frag, fp = subordinates_in_clause(inst_id, emp_id or "")
+        ob_q += f" AND c.employee_id IN {frag}"; ob_params.extend(fp)
+    elif role == "employee":
+        ob_q += " AND c.employee_id=?"; ob_params.append(emp_id or "")
+    ob_q += " GROUP BY c.type"
+    ob_rows = conn.execute(ob_q, ob_params).fetchall()
+    ob_labels = {"onboarding": "onboarding task", "offboarding": "offboarding task"}
+    for r in ob_rows:
+        cnt = r["cnt"]
+        noun = ob_labels.get(r["type"], f"{r['type']} task")
+        todos.append({
+            "key": f"ob-{r['type']}",
+            "label": f"{cnt} {noun}{'s' if cnt != 1 else ''} assigned to you",
+            "page": r["type"], "count": cnt,
+        })
+
     return todos

@@ -31,6 +31,35 @@ def _unique_title(prefix="ZZ Test Template"):
     return f"{prefix} {os.urandom(4).hex()}"
 
 
+@pytest.fixture
+def make_test_ob_checklist(client, hr_manager_auth):
+    """Factory fixture: starts a checklist, deletes it (and its items) on
+    teardown. Every test in this file that starts a checklist without
+    cleaning it up left its snapshotted items (several assigned_role=
+    hr_manager/hr_admin) pending forever — across enough test runs in the
+    shared ZZPYTEST institution that routers/dashboard.py's To-Do count
+    for those roles reached ~5,300 pending items. Usage:
+
+        checklist = make_test_ob_checklist(employee_id=emp["employee_id"])
+        checklist = make_test_ob_checklist(employee_id=emp["employee_id"], type="offboarding")
+    """
+    created_ids = []
+
+    def _make(**overrides):
+        payload = {"type": "onboarding"}
+        payload.update(overrides)
+        res = client.post("/api/ob/checklists", headers=hr_manager_auth, json=payload)
+        assert res.status_code == 201, f"failed to start test checklist: {res.text}"
+        checklist = res.json()
+        created_ids.append(checklist["id"])
+        return checklist
+
+    yield _make
+
+    for cl_id in created_ids:
+        client.delete(f"/api/ob/checklists/{cl_id}", headers=hr_manager_auth)
+
+
 # ---------------------------------------------------------------------------
 # Templates
 # ---------------------------------------------------------------------------
@@ -122,15 +151,12 @@ def test_start_checklist_employee_not_found_returns_404(client, hr_manager_auth)
     assert res.status_code == 404
 
 
-def test_start_checklist_success_snapshots_active_templates(client, hr_manager_auth, make_test_employee):
+def test_start_checklist_success_snapshots_active_templates(client, hr_manager_auth, make_test_employee, make_test_ob_checklist):
     title = _unique_title()
     client.post("/api/ob/templates", headers=hr_manager_auth,
                 json={"title": title, "type": "onboarding", "assigned_role": "hr_admin"})
     emp = make_test_employee()
-    res = client.post("/api/ob/checklists", headers=hr_manager_auth,
-                       json={"employee_id": emp["employee_id"], "type": "onboarding"})
-    assert res.status_code == 201, res.text
-    checklist = res.json()
+    checklist = make_test_ob_checklist(employee_id=emp["employee_id"])
     assert checklist["status"] == "In Progress"
 
     detail = client.get(f"/api/ob/checklists/{checklist['id']}", headers=hr_manager_auth)
@@ -139,11 +165,9 @@ def test_start_checklist_success_snapshots_active_templates(client, hr_manager_a
     assert any(i["title"] == title for i in items)
 
 
-def test_start_checklist_duplicate_active_returns_400(client, hr_manager_auth, make_test_employee):
+def test_start_checklist_duplicate_active_returns_400(client, hr_manager_auth, make_test_employee, make_test_ob_checklist):
     emp = make_test_employee()
-    res1 = client.post("/api/ob/checklists", headers=hr_manager_auth,
-                        json={"employee_id": emp["employee_id"], "type": "onboarding"})
-    assert res1.status_code == 201, res1.text
+    make_test_ob_checklist(employee_id=emp["employee_id"])
     res2 = client.post("/api/ob/checklists", headers=hr_manager_auth,
                         json={"employee_id": emp["employee_id"], "type": "onboarding"})
     assert res2.status_code == 400
@@ -154,36 +178,31 @@ def test_get_checklist_not_found_returns_404(client, hr_manager_auth):
     assert res.status_code == 404
 
 
-def test_employee_can_view_own_checklist_but_only_own_role_items(client, hr_manager_auth, employee_with_user):
+def test_employee_can_view_own_checklist_but_only_own_role_items(client, hr_manager_auth, employee_with_user, make_test_ob_checklist):
     emp, emp_headers = employee_with_user
     title = _unique_title()
     client.post("/api/ob/templates", headers=hr_manager_auth,
                 json={"title": title, "type": "onboarding", "assigned_role": "hr_admin"})
-    start = client.post("/api/ob/checklists", headers=hr_manager_auth,
-                         json={"employee_id": emp["employee_id"], "type": "onboarding"})
-    checklist_id = start.json()["id"]
+    checklist = make_test_ob_checklist(employee_id=emp["employee_id"])
 
-    res = client.get(f"/api/ob/checklists/{checklist_id}", headers=emp_headers)
+    res = client.get(f"/api/ob/checklists/{checklist['id']}", headers=emp_headers)
     assert res.status_code == 200
     items = res.json()["items"]
     assert all(i["assigned_role"] == "employee" for i in items)
 
 
-def test_employee_cannot_view_someone_elses_checklist(client, hr_manager_auth, make_test_employee, employee_with_user):
+def test_employee_cannot_view_someone_elses_checklist(client, hr_manager_auth, make_test_employee, employee_with_user, make_test_ob_checklist):
     other_emp = make_test_employee()
-    start = client.post("/api/ob/checklists", headers=hr_manager_auth,
-                         json={"employee_id": other_emp["employee_id"], "type": "onboarding"})
-    checklist_id = start.json()["id"]
+    checklist = make_test_ob_checklist(employee_id=other_emp["employee_id"])
 
     _, emp_headers = employee_with_user
-    res = client.get(f"/api/ob/checklists/{checklist_id}", headers=emp_headers)
+    res = client.get(f"/api/ob/checklists/{checklist['id']}", headers=emp_headers)
     assert res.status_code == 403
 
 
-def test_update_item_invalid_status_returns_400(client, hr_manager_auth, make_test_employee):
+def test_update_item_invalid_status_returns_400(client, hr_manager_auth, make_test_employee, make_test_ob_checklist):
     emp = make_test_employee()
-    checklist = client.post("/api/ob/checklists", headers=hr_manager_auth,
-                             json={"employee_id": emp["employee_id"], "type": "onboarding"}).json()
+    checklist = make_test_ob_checklist(employee_id=emp["employee_id"])
     add = client.post(f"/api/ob/checklists/{checklist['id']}/items", headers=hr_manager_auth,
                        json={"title": _unique_title(), "assigned_role": "hr_admin"})
     item = add.json()
@@ -192,19 +211,17 @@ def test_update_item_invalid_status_returns_400(client, hr_manager_auth, make_te
     assert res.status_code == 400
 
 
-def test_update_item_not_found_returns_404(client, hr_manager_auth, make_test_employee):
+def test_update_item_not_found_returns_404(client, hr_manager_auth, make_test_employee, make_test_ob_checklist):
     emp = make_test_employee()
-    checklist = client.post("/api/ob/checklists", headers=hr_manager_auth,
-                             json={"employee_id": emp["employee_id"], "type": "onboarding"}).json()
+    checklist = make_test_ob_checklist(employee_id=emp["employee_id"])
     res = client.patch(f"/api/ob/checklists/{checklist['id']}/items/999999999", headers=hr_manager_auth,
                         json={"status": "Done"})
     assert res.status_code == 404
 
 
-def test_update_item_denied_for_wrong_role(client, hr_manager_auth, make_test_employee, employee_with_user):
+def test_update_item_denied_for_wrong_role(client, hr_manager_auth, make_test_employee, employee_with_user, make_test_ob_checklist):
     emp = make_test_employee()
-    checklist = client.post("/api/ob/checklists", headers=hr_manager_auth,
-                             json={"employee_id": emp["employee_id"], "type": "onboarding"}).json()
+    checklist = make_test_ob_checklist(employee_id=emp["employee_id"])
     add = client.post(f"/api/ob/checklists/{checklist['id']}/items", headers=hr_manager_auth,
                        json={"title": _unique_title(), "assigned_role": "manager"})
     item = add.json()
@@ -215,10 +232,9 @@ def test_update_item_denied_for_wrong_role(client, hr_manager_auth, make_test_em
     assert res.status_code == 403
 
 
-def test_update_item_success_and_auto_completes_checklist(client, hr_manager_auth, make_test_employee):
+def test_update_item_success_and_auto_completes_checklist(client, hr_manager_auth, make_test_employee, make_test_ob_checklist):
     emp = make_test_employee()
-    checklist = client.post("/api/ob/checklists", headers=hr_manager_auth,
-                             json={"employee_id": emp["employee_id"], "type": "onboarding"}).json()
+    checklist = make_test_ob_checklist(employee_id=emp["employee_id"])
     add = client.post(f"/api/ob/checklists/{checklist['id']}/items", headers=hr_manager_auth,
                        json={"title": _unique_title(), "assigned_role": "hr_admin"})
     item = add.json()
@@ -240,10 +256,9 @@ def test_update_item_success_and_auto_completes_checklist(client, hr_manager_aut
     assert final["status"] == "Completed"
 
 
-def test_edit_item_success(client, hr_manager_auth, make_test_employee):
+def test_edit_item_success(client, hr_manager_auth, make_test_employee, make_test_ob_checklist):
     emp = make_test_employee()
-    checklist = client.post("/api/ob/checklists", headers=hr_manager_auth,
-                             json={"employee_id": emp["employee_id"], "type": "onboarding"}).json()
+    checklist = make_test_ob_checklist(employee_id=emp["employee_id"])
     add = client.post(f"/api/ob/checklists/{checklist['id']}/items", headers=hr_manager_auth,
                        json={"title": _unique_title(), "assigned_role": "hr_admin"})
     item = add.json()
@@ -257,19 +272,17 @@ def test_edit_item_success(client, hr_manager_auth, make_test_employee):
     assert updated_item["assigned_role"] == "manager"
 
 
-def test_add_item_invalid_role_returns_400(client, hr_manager_auth, make_test_employee):
+def test_add_item_invalid_role_returns_400(client, hr_manager_auth, make_test_employee, make_test_ob_checklist):
     emp = make_test_employee()
-    checklist = client.post("/api/ob/checklists", headers=hr_manager_auth,
-                             json={"employee_id": emp["employee_id"], "type": "onboarding"}).json()
+    checklist = make_test_ob_checklist(employee_id=emp["employee_id"])
     res = client.post(f"/api/ob/checklists/{checklist['id']}/items", headers=hr_manager_auth,
                        json={"title": _unique_title(), "assigned_role": "bogus_role"})
     assert res.status_code == 400
 
 
-def test_delete_item_success(client, hr_manager_auth, make_test_employee):
+def test_delete_item_success(client, hr_manager_auth, make_test_employee, make_test_ob_checklist):
     emp = make_test_employee()
-    checklist = client.post("/api/ob/checklists", headers=hr_manager_auth,
-                             json={"employee_id": emp["employee_id"], "type": "onboarding"}).json()
+    checklist = make_test_ob_checklist(employee_id=emp["employee_id"])
     add = client.post(f"/api/ob/checklists/{checklist['id']}/items", headers=hr_manager_auth,
                        json={"title": _unique_title(), "assigned_role": "hr_admin"})
     item = add.json()
@@ -290,10 +303,9 @@ def test_delete_checklist_success(client, hr_manager_auth, make_test_employee):
     assert get.status_code == 404
 
 
-def test_get_ob_history_records_checklist_started(client, hr_manager_auth, make_test_employee):
+def test_get_ob_history_records_checklist_started(client, hr_manager_auth, make_test_employee, make_test_ob_checklist):
     emp = make_test_employee()
-    checklist = client.post("/api/ob/checklists", headers=hr_manager_auth,
-                             json={"employee_id": emp["employee_id"], "type": "onboarding"}).json()
+    checklist = make_test_ob_checklist(employee_id=emp["employee_id"])
     assert checklist["status"] == "In Progress"
 
     history = client.get(f"/api/employees/{emp['employee_id']}/ob-history", headers=hr_manager_auth)
