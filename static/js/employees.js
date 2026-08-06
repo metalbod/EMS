@@ -106,7 +106,9 @@ function viewEmployee(id) {
   const tb = document.getElementById('viewToggleBtn');
   tb.textContent = e.status==='Active' ? 'Deactivate' : 'Activate';
   tb.style.color = e.status==='Active' ? '#dc2626' : '#059669';
-  const rt = e.reports_to===e.employee_id ? '⭐ CEO / Top of Org' : (e.reports_to||'—');
+  const reportsToEmp = e.reports_to ? (employees||[]).find(x=>x.employee_id===e.reports_to) : null;
+  const rt = e.reports_to===e.employee_id ? '⭐ CEO / Top of Org'
+    : (e.reports_to ? `${reportsToEmp?reportsToEmp.full_name:e.reports_to} (${e.reports_to})` : '—');
   document.getElementById('vt-personal').innerHTML = vgrid([
     ['Full Name',e.full_name,false,true],['Preferred Name',e.preferred_name||'—'],
     ['IC Number',e.ic_number,true],['Passport No.',e.passport_number||'—'],
