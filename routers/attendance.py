@@ -433,13 +433,31 @@ def _record_response(row) -> AttendanceRecordResponse:
     return AttendanceRecordResponse(**d)
 
 
+def _pick_assignment_shift(assignments, work_date: str):
+    """In-memory equivalent of the assignment half of resolve_shift — same
+    "most recent effective_from wins" tie-break, just against a
+    pre-fetched list instead of a fresh query per day."""
+    candidates = [
+        a for a in assignments
+        if a["effective_from"] <= work_date and (not a["effective_to"] or a["effective_to"] >= work_date)
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda a: a["effective_from"])
+
+
 def _sweep_absences(conn, inst_id: int):
     """Lazy evaluation: run on every load of the review queue / HR
     dashboard. For each employee with an active required=true rule,
     walk back over the sweep window and materialize an
     'Absent (Pending Review)' record for any work day whose clock-in
     deadline has passed with no attendance_records row at all. Days
-    that already have a row (Present/Late/etc.) are left untouched."""
+    that already have a row (Present/Late/etc.) are left untouched.
+
+    Batches its lookups (existing records, shift assignments) into one
+    query each up front instead of one query per employee per day —
+    the previous per-day querying made this O(employees x window_days)
+    round trips, which is what made the Review screen slow to load."""
     rules = conn.execute(
         "SELECT * FROM attendance_settings WHERE institution_id = ? AND is_active = 1 AND required = 1",
         (inst_id,),
@@ -451,11 +469,41 @@ def _sweep_absences(conn, inst_id: int):
         "SELECT employee_id, department, start_date FROM employees WHERE institution_id = ? AND status = 'Active'",
         (inst_id,),
     ).fetchall()
+    if not employees:
+        return
 
     now = datetime.utcnow()
     today = now.date()
     window_start = today - timedelta(days=_ABSENCE_SWEEP_WINDOW_DAYS)
+    window_start_iso = window_start.isoformat()
 
+    existing_rows = conn.execute(
+        "SELECT employee_id, work_date FROM attendance_records WHERE institution_id = ? AND work_date >= ?",
+        (inst_id, window_start_iso),
+    ).fetchall()
+    existing = {(r["employee_id"], str(r["work_date"])[:10]) for r in existing_rows}
+
+    assignment_rows = conn.execute(
+        """
+        SELECT esa.employee_id, esa.effective_from, esa.effective_to, s.*
+        FROM employee_shift_assignments esa
+        JOIN shifts s ON esa.shift_id = s.id
+        WHERE esa.institution_id = ? AND esa.is_active = 1 AND s.is_active = 1
+        """,
+        (inst_id,),
+    ).fetchall()
+    assignments_by_emp: dict = {}
+    for a in assignment_rows:
+        assignments_by_emp.setdefault(a["employee_id"], []).append(a)
+
+    shift_by_id: dict = {}
+
+    def _get_shift(shift_id):
+        if shift_id not in shift_by_id:
+            shift_by_id[shift_id] = conn.execute("SELECT * FROM shifts WHERE id=? AND is_active=1", (shift_id,)).fetchone()
+        return shift_by_id[shift_id]
+
+    now_iso = now.isoformat()
     for emp in employees:
         setting = _match_attendance_setting(conn, inst_id, emp["employee_id"], emp["department"])
         if not setting or not setting["required"]:
@@ -469,19 +517,17 @@ def _sweep_absences(conn, inst_id: int):
             except ValueError:
                 pass
 
+        emp_assignments = assignments_by_emp.get(emp["employee_id"], [])
+        default_shift = _get_shift(setting["default_shift_id"]) if setting["default_shift_id"] else None
+
         d = rule_start
         while d <= today:
             work_date = d.isoformat()
-            existing = conn.execute(
-                "SELECT 1 FROM attendance_records WHERE employee_id = ? AND work_date = ?",
-                (emp["employee_id"], work_date),
-            ).fetchone()
-            if not existing:
-                shift = _resolve_shift(conn, inst_id, emp["employee_id"], emp["department"], work_date)
+            if (emp["employee_id"], work_date) not in existing:
+                shift = _pick_assignment_shift(emp_assignments, work_date) or default_shift
                 if shift:
                     deadline = _shift_deadline(work_date, shift)
                     if now > deadline:
-                        now_iso = now.isoformat()
                         conn.execute(
                             """
                             INSERT INTO attendance_records
