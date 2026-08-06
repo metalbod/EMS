@@ -73,14 +73,15 @@ class InstStatusIn(BaseModel):
 @router.get("/api/institutions")
 @db_session
 def list_institutions(conn, user: dict = Depends(require_roles("superadmin"))) -> List[Dict[str, Any]]:
+    # Correlated subqueries instead of LEFT JOIN + COUNT(DISTINCT) — the
+    # join fan-out (every employee row paired with every user row per
+    # institution before GROUP BY collapses it) made this take ~7s across
+    # 1300+ institutions; subqueries avoid the cross product entirely.
     rows = conn.execute("""
         SELECT i.*,
-               COUNT(DISTINCT e.id)  AS employee_count,
-               COUNT(DISTINCT u.id)  AS user_count
-        FROM   institutions i
-        LEFT JOIN employees e ON e.institution_id = i.id
-        LEFT JOIN users     u ON u.institution_id = i.id
-        GROUP BY i.id
+               (SELECT COUNT(*) FROM employees e WHERE e.institution_id = i.id) AS employee_count,
+               (SELECT COUNT(*) FROM users u WHERE u.institution_id = i.id) AS user_count
+        FROM institutions i
         ORDER BY i.created_at DESC
     """).fetchall()
     return [dict(r) for r in rows]
