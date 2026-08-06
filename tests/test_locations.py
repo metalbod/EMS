@@ -3,10 +3,9 @@ import pytest
 from tests.conftest import make_test_user, _valid_location_payload
 
 
-def test_create_location(client, hr_manager_auth, test_institution):
+def test_create_location(client, hr_manager_auth, test_institution, make_test_location):
     """Test creating a new location."""
-    location_data = _valid_location_payload(
-        test_institution["id"],
+    body = make_test_location(
         name="Kuala Lumpur HQ",
         address="123 Jln Merdeka",
         city="Kuala Lumpur",
@@ -17,43 +16,30 @@ def test_create_location(client, hr_manager_auth, test_institution):
         capacity=100,
     )
 
-    res = client.post("/api/locations", headers=hr_manager_auth, json=location_data)
-    assert res.status_code == 201, res.text
-    body = res.json()
-
     assert body["name"] == "Kuala Lumpur HQ"
-    assert body["code"] == location_data["code"]
     assert body["location_type"] == "hq"
     assert body["capacity"] == 100
     assert body["is_active"] == True
     assert body["employee_count"] == 0
 
 
-def test_create_location_duplicate_code(client, hr_manager_auth, test_institution):
+def test_create_location_duplicate_code(client, hr_manager_auth, test_institution, make_test_location):
     """Test that duplicate location codes are rejected."""
-    location_data = _valid_location_payload(test_institution["id"], name="Location 1")
+    location = make_test_location(name="Location 1")
 
-    # First create should succeed
-    res = client.post("/api/locations", headers=hr_manager_auth, json=location_data)
-    assert res.status_code == 201
-
-    # Second with same code should fail
-    res = client.post("/api/locations", headers=hr_manager_auth, json=location_data)
+    # Same code should fail
+    res = client.post("/api/locations", headers=hr_manager_auth,
+                       json=_valid_location_payload(test_institution["id"], name="Location 1", code=location["code"]))
     assert res.status_code == 400
     assert "already exists" in res.text.lower()
 
 
-def test_list_locations(client, hr_manager_auth, test_institution):
+def test_list_locations(client, hr_manager_auth, test_institution, make_test_location):
     """Test listing locations for an institution — the shared test
     institution accumulates locations from other tests/files running in
     the same session, so this checks the created codes are present rather
     than asserting an exact total (which would be fragile under xdist)."""
-    created_codes = []
-    for i in range(2):
-        location_data = _valid_location_payload(test_institution["id"], name=f"Location {i+1}")
-        res = client.post("/api/locations", headers=hr_manager_auth, json=location_data)
-        assert res.status_code == 201, res.text
-        created_codes.append(location_data["code"])
+    created_codes = [make_test_location(name=f"Location {i+1}")["code"] for i in range(2)]
 
     # List locations
     inst_id = test_institution["id"]
@@ -67,73 +53,58 @@ def test_list_locations(client, hr_manager_auth, test_institution):
     assert body["total_locations"] == len(body["locations"])
 
 
-def test_get_location(client, hr_manager_auth, test_institution):
+def test_get_location(client, hr_manager_auth, test_institution, make_test_location):
     """Test getting a specific location."""
-    location_data = _valid_location_payload(test_institution["id"], name="Test Location", capacity=50)
+    location = make_test_location(name="Test Location", capacity=50)
 
-    res = client.post("/api/locations", headers=hr_manager_auth, json=location_data)
-    assert res.status_code == 201
-    location_id = res.json()["id"]
-
-    res = client.get(f"/api/locations/{location_id}", headers=hr_manager_auth)
+    res = client.get(f"/api/locations/{location['id']}", headers=hr_manager_auth)
     assert res.status_code == 200
     body = res.json()
 
-    assert body["id"] == location_id
+    assert body["id"] == location["id"]
     assert body["name"] == "Test Location"
-    assert body["code"] == location_data["code"]
+    assert body["code"] == location["code"]
 
 
-def test_update_location(client, hr_manager_auth, test_institution):
+def test_update_location(client, hr_manager_auth, test_institution, make_test_location):
     """Test updating a location."""
-    location_data = _valid_location_payload(test_institution["id"], name="Original Name")
+    location = make_test_location(name="Original Name")
 
-    res = client.post("/api/locations", headers=hr_manager_auth, json=location_data)
-    location_id = res.json()["id"]
-
-    # Update the location
     updates = {
         "name": "Updated Name",
         "city": "Petaling Jaya",
     }
 
-    res = client.put(f"/api/locations/{location_id}", headers=hr_manager_auth, json=updates)
+    res = client.put(f"/api/locations/{location['id']}", headers=hr_manager_auth, json=updates)
     assert res.status_code == 200
     body = res.json()
 
     assert body["name"] == "Updated Name"
     assert body["city"] == "Petaling Jaya"
-    assert body["code"] == location_data["code"]  # Unchanged
+    assert body["code"] == location["code"]  # Unchanged
 
 
-def test_delete_location(client, hr_manager_auth, test_institution):
+def test_delete_location(client, hr_manager_auth, test_institution, make_test_location):
     """Test soft-deleting a location."""
-    location_data = _valid_location_payload(test_institution["id"], name="To Delete")
+    location = make_test_location(name="To Delete")
 
-    res = client.post("/api/locations", headers=hr_manager_auth, json=location_data)
-    location_id = res.json()["id"]
-
-    # Delete the location
-    res = client.delete(f"/api/locations/{location_id}", headers=hr_manager_auth)
+    res = client.delete(f"/api/locations/{location['id']}", headers=hr_manager_auth)
     assert res.status_code == 200
 
     # Verify is_active is now 0
-    res = client.get(f"/api/locations/{location_id}", headers=hr_manager_auth)
+    res = client.get(f"/api/locations/{location['id']}", headers=hr_manager_auth)
     assert res.status_code == 200
     assert res.json()["is_active"] == False
 
 
-def test_get_location_stats(client, hr_manager_auth, test_institution, make_test_employee):
+def test_get_location_stats(client, hr_manager_auth, test_institution, make_test_employee, make_test_location):
     """Test getting location statistics."""
-    # Create location
-    location_data = _valid_location_payload(test_institution["id"], name="Stats Location", location_type="branch", capacity=100)
-    res = client.post("/api/locations", headers=hr_manager_auth, json=location_data)
-    location_id = res.json()["id"]
+    location = make_test_location(name="Stats Location", location_type="branch", capacity=100)
 
     # Create employee and assign to location
     emp = make_test_employee(department="Engineering")
     assignment = {
-        "location_id": location_id,
+        "location_id": location["id"],
         "assignment_type": "primary",
         "start_date": "2026-08-01",
     }
@@ -145,11 +116,11 @@ def test_get_location_stats(client, hr_manager_auth, test_institution, make_test
     assert res.status_code == 201
 
     # Get stats
-    res = client.get(f"/api/locations/{location_id}/stats", headers=hr_manager_auth)
+    res = client.get(f"/api/locations/{location['id']}/stats", headers=hr_manager_auth)
     assert res.status_code == 200
     body = res.json()
 
-    assert body["location_id"] == location_id
+    assert body["location_id"] == location["id"]
     assert body["total_employees"] == 1
     assert body["active_employees"] == 1
     assert body["utilization_percent"] == 1  # 1/100 = 1%
@@ -157,19 +128,14 @@ def test_get_location_stats(client, hr_manager_auth, test_institution, make_test
     assert body["employees_by_department"]["Engineering"] == 1
 
 
-def test_assign_employee_to_location(client, hr_manager_auth, make_test_employee, test_institution):
+def test_assign_employee_to_location(client, hr_manager_auth, make_test_employee, test_institution, make_test_location):
     """Test assigning an employee to a location."""
-    # Create location
-    location_data = _valid_location_payload(test_institution["id"], name="Assignment Location", location_type="branch")
-    res = client.post("/api/locations", headers=hr_manager_auth, json=location_data)
-    location_id = res.json()["id"]
-
-    # Create employee
+    location = make_test_location(name="Assignment Location", location_type="branch")
     emp = make_test_employee()
 
     # Assign employee to location
     assignment = {
-        "location_id": location_id,
+        "location_id": location["id"],
         "assignment_type": "primary",
         "start_date": "2026-08-01",
     }
@@ -182,21 +148,14 @@ def test_assign_employee_to_location(client, hr_manager_auth, make_test_employee
     body = res.json()
 
     assert body["employee_id"] == emp["employee_id"]
-    assert body["location_id"] == location_id
+    assert body["location_id"] == location["id"]
     assert body["assignment_type"] == "primary"
     assert body["is_active"] == True
 
 
-def test_assign_employee_duplicate_primary_location(client, hr_manager_auth, make_test_employee, test_institution):
+def test_assign_employee_duplicate_primary_location(client, hr_manager_auth, make_test_employee, test_institution, make_test_location):
     """Test that employee can't have two primary location assignments."""
-    # Create two locations
-    locations = []
-    for i in range(2):
-        location_data = _valid_location_payload(test_institution["id"], name=f"Location {i+1}", location_type="branch")
-        res = client.post("/api/locations", headers=hr_manager_auth, json=location_data)
-        locations.append(res.json()["id"])
-
-    # Create employee
+    locations = [make_test_location(name=f"Location {i+1}", location_type="branch")["id"] for i in range(2)]
     emp = make_test_employee()
 
     # Assign to first location
@@ -227,15 +186,9 @@ def test_assign_employee_duplicate_primary_location(client, hr_manager_auth, mak
     assert "primary" in res.text.lower()
 
 
-def test_assign_employee_secondary_location(client, hr_manager_auth, make_test_employee, test_institution):
+def test_assign_employee_secondary_location(client, hr_manager_auth, make_test_employee, test_institution, make_test_location):
     """Test assigning employee to secondary location."""
-    # Create locations
-    locations = []
-    for i in range(2):
-        location_data = _valid_location_payload(test_institution["id"], name=f"Location {i+1}", location_type="branch")
-        res = client.post("/api/locations", headers=hr_manager_auth, json=location_data)
-        locations.append(res.json()["id"])
-
+    locations = [make_test_location(name=f"Location {i+1}", location_type="branch")["id"] for i in range(2)]
     emp = make_test_employee()
 
     # Assign primary location
@@ -265,15 +218,9 @@ def test_assign_employee_secondary_location(client, hr_manager_auth, make_test_e
     assert res.status_code == 201
 
 
-def test_get_employee_locations(client, hr_manager_auth, make_test_employee, test_institution):
+def test_get_employee_locations(client, hr_manager_auth, make_test_employee, test_institution, make_test_location):
     """Test getting all locations for an employee."""
-    # Create two locations
-    locations = []
-    for i in range(2):
-        location_data = _valid_location_payload(test_institution["id"], name=f"Location {i+1}", location_type="branch")
-        res = client.post("/api/locations", headers=hr_manager_auth, json=location_data)
-        locations.append(res.json())
-
+    locations = [make_test_location(name=f"Location {i+1}", location_type="branch") for i in range(2)]
     emp = make_test_employee()
 
     # Assign to both locations
@@ -305,18 +252,14 @@ def test_get_employee_locations(client, hr_manager_auth, make_test_employee, tes
     assert body["locations"][1]["assignment_type"] == "secondary"
 
 
-def test_update_employee_location_assignment(client, hr_manager_auth, make_test_employee, test_institution):
+def test_update_employee_location_assignment(client, hr_manager_auth, make_test_employee, test_institution, make_test_location):
     """Test updating an employee's location assignment."""
-    # Create location
-    location_data = _valid_location_payload(test_institution["id"], name="Update Location", location_type="branch")
-    res = client.post("/api/locations", headers=hr_manager_auth, json=location_data)
-    location_id = res.json()["id"]
-
+    location = make_test_location(name="Update Location", location_type="branch")
     emp = make_test_employee()
 
     # Assign to location
     assignment = {
-        "location_id": location_id,
+        "location_id": location["id"],
         "assignment_type": "primary",
         "start_date": "2026-08-01",
     }
@@ -333,7 +276,7 @@ def test_update_employee_location_assignment(client, hr_manager_auth, make_test_
         "department_at_location": "Engineering",
     }
     res = client.put(
-        f"/api/employees/{emp['employee_id']}/locations/{location_id}",
+        f"/api/employees/{emp['employee_id']}/locations/{location['id']}",
         headers=hr_manager_auth,
         json=updates,
     )
@@ -344,18 +287,14 @@ def test_update_employee_location_assignment(client, hr_manager_auth, make_test_
     assert body["department_at_location"] == "Engineering"
 
 
-def test_remove_employee_from_location(client, hr_manager_auth, make_test_employee, test_institution):
+def test_remove_employee_from_location(client, hr_manager_auth, make_test_employee, test_institution, make_test_location):
     """Test removing an employee from a location."""
-    # Create location
-    location_data = _valid_location_payload(test_institution["id"], name="Remove Location", location_type="branch")
-    res = client.post("/api/locations", headers=hr_manager_auth, json=location_data)
-    location_id = res.json()["id"]
-
+    location = make_test_location(name="Remove Location", location_type="branch")
     emp = make_test_employee()
 
     # Assign to location
     assignment = {
-        "location_id": location_id,
+        "location_id": location["id"],
         "assignment_type": "primary",
         "start_date": "2026-08-01",
     }
@@ -368,7 +307,7 @@ def test_remove_employee_from_location(client, hr_manager_auth, make_test_employ
 
     # Remove from location
     res = client.delete(
-        f"/api/employees/{emp['employee_id']}/locations/{location_id}",
+        f"/api/employees/{emp['employee_id']}/locations/{location['id']}",
         headers=hr_manager_auth,
     )
     assert res.status_code == 200
@@ -384,21 +323,16 @@ def test_remove_employee_from_location(client, hr_manager_auth, make_test_employ
     assert len(body["locations"]) == 0
 
 
-def test_bulk_assign_locations(client, hr_manager_auth, make_test_employee, test_institution):
+def test_bulk_assign_locations(client, hr_manager_auth, make_test_employee, test_institution, make_test_location):
     """Test bulk assigning employees to locations."""
-    # Create location
-    location_data = _valid_location_payload(test_institution["id"], name="Bulk Location", location_type="branch")
-    res = client.post("/api/locations", headers=hr_manager_auth, json=location_data)
-    location_id = res.json()["id"]
-
-    # Create employees
+    location = make_test_location(name="Bulk Location", location_type="branch")
     employees = [make_test_employee() for _ in range(3)]
 
     # Bulk assign
     assignments = [
         {
             "employee_id": emp["employee_id"],
-            "location_id": location_id,
+            "location_id": location["id"],
             "assignment_type": "primary",
             "start_date": "2026-08-01",
         }
@@ -417,24 +351,21 @@ def test_bulk_assign_locations(client, hr_manager_auth, make_test_employee, test
     assert len(body["errors"]) == 0
 
 
-def test_bulk_assign_locations_with_errors(client, hr_manager_auth, make_test_employee, test_institution):
+def test_bulk_assign_locations_with_errors(client, hr_manager_auth, make_test_employee, test_institution, make_test_location):
     """Test bulk assign with some invalid assignments."""
-    location_data = _valid_location_payload(test_institution["id"], name="Error Location", location_type="branch")
-    res = client.post("/api/locations", headers=hr_manager_auth, json=location_data)
-    location_id = res.json()["id"]
-
+    location = make_test_location(name="Error Location", location_type="branch")
     emp = make_test_employee()
 
     assignments = [
         {
             "employee_id": emp["employee_id"],
-            "location_id": location_id,
+            "location_id": location["id"],
             "assignment_type": "primary",
             "start_date": "2026-08-01",
         },
         {
             "employee_id": "NONEXISTENT",
-            "location_id": location_id,
+            "location_id": location["id"],
             "assignment_type": "primary",
             "start_date": "2026-08-01",
         },
@@ -453,18 +384,12 @@ def test_bulk_assign_locations_with_errors(client, hr_manager_auth, make_test_em
     assert "NONEXISTENT" in str(body["errors"])
 
 
-def test_get_institution_location_summary(client, hr_manager_auth, test_institution, make_test_employee):
+def test_get_institution_location_summary(client, hr_manager_auth, test_institution, make_test_employee, make_test_location):
     """Test getting location summary for an institution. The shared test
     institution accumulates locations/employees from other tests running
     in the same session, so this checks the two locations created here by
     their codes rather than asserting institution-wide exact totals."""
-    # Create locations
-    locations = []
-    for i in range(2):
-        location_data = _valid_location_payload(test_institution["id"], name=f"Summary Location {i+1}", location_type="branch")
-        res = client.post("/api/locations", headers=hr_manager_auth, json=location_data)
-        assert res.status_code == 201, res.text
-        locations.append(res.json())
+    locations = [make_test_location(name=f"Summary Location {i+1}", location_type="branch") for i in range(2)]
 
     # Assign employees
     for i, loc in enumerate(locations):
@@ -497,12 +422,7 @@ def test_get_institution_location_summary(client, hr_manager_auth, test_institut
     assert body["total_employees"] == sum(loc["employee_count"] for loc in body["locations"])
 
 
-def test_location_manager_optional(client, hr_manager_auth, test_institution):
+def test_location_manager_optional(client, hr_manager_auth, test_institution, make_test_location):
     """Test that location manager is optional."""
-    location_data = _valid_location_payload(test_institution["id"], name="No Manager Location")
-
-    res = client.post("/api/locations", headers=hr_manager_auth, json=location_data)
-    assert res.status_code == 201
-    body = res.json()
-
+    body = make_test_location(name="No Manager Location")
     assert body["manager_user_id"] is None

@@ -282,6 +282,36 @@ def _valid_location_payload(institution_id, **overrides):
 
 
 @pytest.fixture
+def make_test_location(client, hr_manager_auth, test_institution):
+    """Factory fixture: creates a disposable location, soft-deletes it on
+    teardown (DELETE /api/locations/{id} only sets is_active=0 — there's
+    no hard-delete endpoint). tests/test_locations.py used to create
+    locations with no cleanup at all, which had accumulated 7,000+
+    leftover rows in the shared ZZPYTEST institution and measurably slowed
+    down routers/location_phase2.py's payroll-by-location summary query
+    (see migrations/versions/20260806_0004_payslips_employee_id_index.py's
+    commit message). Usage:
+
+        location = make_test_location()
+        location = make_test_location(name="Branch A", capacity=20)
+    """
+    created_ids = []
+
+    def _make(**overrides):
+        payload = _valid_location_payload(test_institution["id"], **overrides)
+        res = client.post("/api/locations", headers=hr_manager_auth, json=payload)
+        assert res.status_code == 201, f"failed to create test location: {res.text}"
+        location = res.json()
+        created_ids.append(location["id"])
+        return location
+
+    yield _make
+
+    for loc_id in created_ids:
+        client.delete(f"/api/locations/{loc_id}", headers=hr_manager_auth)
+
+
+@pytest.fixture
 def make_test_employee(client, hr_manager_auth):
     """Factory fixture: creates a disposable employee (via the hr_manager_auth
     user), deactivates it on teardown (employees have no delete endpoint,

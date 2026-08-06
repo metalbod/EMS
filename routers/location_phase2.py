@@ -412,7 +412,7 @@ async def get_institution_payroll_summary(
             FROM locations l
             LEFT JOIN employee_location_assignments ela ON l.id = ela.location_id AND ela.is_active = 1
             LEFT JOIN payslips ps ON ela.employee_id = ps.employee_id
-            WHERE l.institution_id = ?
+            WHERE l.institution_id = ? AND l.is_active = 1
             GROUP BY l.id, l.name
             ORDER BY total_gross_pay DESC NULLS LAST
             """,
