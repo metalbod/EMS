@@ -313,6 +313,72 @@ def test_get_ob_history_records_checklist_started(client, hr_manager_auth, make_
     assert any(h["action"] == "Checklist Started" for h in history.json())
 
 
+def _tiny_data_url():
+    return "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+
+
+def test_add_item_attachment_success(client, hr_manager_auth, make_test_employee, make_test_ob_checklist):
+    """Optional proof-of-completion upload — not required to mark an item
+    Done, attachable any time. See routers/onboarding.py's
+    add_ob_item_attachments, same shape as candidate_documents."""
+    emp = make_test_employee()
+    checklist = make_test_ob_checklist(employee_id=emp["employee_id"])
+    item = client.post(f"/api/ob/checklists/{checklist['id']}/items", headers=hr_manager_auth,
+                        json={"title": _unique_title(), "assigned_role": "hr_admin"}).json()
+
+    res = client.post(f"/api/ob/checklists/{checklist['id']}/items/{item['id']}/attachments", headers=hr_manager_auth,
+                       json=[{"file_name": "handover.png", "mime_type": "image/png", "data_url": _tiny_data_url()}])
+    assert res.status_code == 201, res.text
+    attachments = res.json()
+    assert len(attachments) == 1
+    assert attachments[0]["file_name"] == "handover.png"
+    assert attachments[0]["uploaded_by"]  # non-empty
+
+    listing = client.get(f"/api/ob/checklists/{checklist['id']}/items/{item['id']}/attachments", headers=hr_manager_auth)
+    assert listing.status_code == 200
+    assert len(listing.json()) == 1
+
+    detail = client.get(f"/api/ob/checklists/{checklist['id']}", headers=hr_manager_auth).json()
+    detail_item = next(i for i in detail["items"] if i["id"] == item["id"])
+    assert detail_item["attachment_count"] == 1
+
+    # Marking the item Done doesn't require any attachment to exist.
+    other_item = client.post(f"/api/ob/checklists/{checklist['id']}/items", headers=hr_manager_auth,
+                              json={"title": _unique_title(), "assigned_role": "hr_admin"}).json()
+    done = client.patch(f"/api/ob/checklists/{checklist['id']}/items/{other_item['id']}", headers=hr_manager_auth,
+                         json={"status": "Done"})
+    assert done.status_code == 200, done.text
+
+
+def test_add_item_attachment_denied_for_wrong_role(client, hr_manager_auth, make_test_employee, employee_with_user, make_test_ob_checklist):
+    emp = make_test_employee()
+    checklist = make_test_ob_checklist(employee_id=emp["employee_id"])
+    item = client.post(f"/api/ob/checklists/{checklist['id']}/items", headers=hr_manager_auth,
+                        json={"title": _unique_title(), "assigned_role": "manager"}).json()
+
+    _, emp_headers = employee_with_user
+    res = client.post(f"/api/ob/checklists/{checklist['id']}/items/{item['id']}/attachments", headers=emp_headers,
+                       json=[{"file_name": "proof.png", "mime_type": "image/png", "data_url": _tiny_data_url()}])
+    assert res.status_code == 403
+
+
+def test_delete_item_attachment_success(client, hr_manager_auth, make_test_employee, make_test_ob_checklist):
+    emp = make_test_employee()
+    checklist = make_test_ob_checklist(employee_id=emp["employee_id"])
+    item = client.post(f"/api/ob/checklists/{checklist['id']}/items", headers=hr_manager_auth,
+                        json={"title": _unique_title(), "assigned_role": "hr_admin"}).json()
+    added = client.post(f"/api/ob/checklists/{checklist['id']}/items/{item['id']}/attachments", headers=hr_manager_auth,
+                         json=[{"file_name": "proof.png", "mime_type": "image/png", "data_url": _tiny_data_url()}]).json()
+    attachment_id = added[0]["id"]
+
+    res = client.delete(f"/api/ob/checklists/{checklist['id']}/items/{item['id']}/attachments/{attachment_id}",
+                         headers=hr_manager_auth)
+    assert res.status_code == 204
+
+    listing = client.get(f"/api/ob/checklists/{checklist['id']}/items/{item['id']}/attachments", headers=hr_manager_auth)
+    assert listing.json() == []
+
+
 def test_get_ob_history_requires_manage_role(client, employee_with_user):
     emp, emp_headers = employee_with_user
     res = client.get(f"/api/employees/{emp['employee_id']}/ob-history", headers=emp_headers)

@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 try:
     from core.deps import get_current_user, need_inst, require_roles
@@ -24,6 +24,11 @@ try:
     from core.roles import get_valid_roles
 except ImportError:
     from ems.core.roles import get_valid_roles
+
+try:
+    from core.validators import validate_document_data_url
+except ImportError:
+    from ems.core.validators import validate_document_data_url
 
 try:
     from db import get_db
@@ -74,6 +79,20 @@ class OBChecklistStartIn(BaseModel):
 class OBItemUpdateIn(BaseModel):
     status: str  # Pending | Done | N/A
     notes: Optional[str] = None
+
+
+class OBItemAttachmentIn(BaseModel):
+    file_name: str
+    mime_type: str
+    data_url: str  # data:...;base64 URI — same pattern as candidate_documents
+
+    @field_validator("data_url")
+    @classmethod
+    def _validate_data_url(cls, v):
+        v = validate_document_data_url(v)
+        if not v:
+            raise ValueError("data_url is required")
+        return v
 
 
 class OBItemEditIn(BaseModel):
@@ -406,7 +425,10 @@ def get_ob_checklist(conn, cl_id: int, user: dict = Depends(get_current_user)) -
     if user["role"] == "manager" and not is_self_or_subordinate(conn, inst_id, user.get("employee_id"), cl["employee_id"]):
         raise HTTPException(403, "Access denied to this checklist")
     items = conn.execute(
-        "SELECT * FROM ob_checklist_items WHERE checklist_id=? ORDER BY order_index",
+        """
+        SELECT i.*, (SELECT COUNT(*) FROM ob_item_attachments a WHERE a.checklist_item_id=i.id) AS attachment_count
+        FROM ob_checklist_items i WHERE i.checklist_id=? ORDER BY i.order_index
+        """,
         (cl_id,)
     ).fetchall()
     result = dict(cl)
@@ -423,15 +445,8 @@ def update_ob_item(conn, cl_id: int, item_id: int, body: OBItemUpdateIn, user: d
     inst_id = need_inst(user)
     if body.status not in ("Pending","Done","N/A"):
         raise HTTPException(400, "status must be Pending, Done or N/A")
-    cl = conn.execute("SELECT * FROM ob_checklists WHERE id=? AND institution_id=?", (cl_id, inst_id)).fetchone()
-    if not cl:
-        raise HTTPException(404, "Checklist not found")
-    item = conn.execute("SELECT * FROM ob_checklist_items WHERE id=? AND checklist_id=?", (item_id, cl_id)).fetchone()
-    if not item:
-        raise HTTPException(404, "Item not found")
-    # Permission: assigned_role must match user role, or HR manager/admin can override
-    can_act = (item["assigned_role"] == user["role"] or user["role"] in ("superadmin","hr_manager","hr_admin"))
-    if not can_act:
+    cl, item = _get_owned_item(conn, inst_id, cl_id, item_id)
+    if not _can_act_on_item(item, user):
         raise HTTPException(403, f"This item is assigned to {item['assigned_role']}")
     completed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S") if body.status in ("Done","N/A") else None
     completed_by = user["username"] if body.status in ("Done","N/A") else None
@@ -459,6 +474,89 @@ def update_ob_item(conn, cl_id: int, item_id: int, body: OBItemUpdateIn, user: d
                user)
     conn.commit()
     return {"ok": True}
+
+
+def _get_owned_item(conn, inst_id: int, cl_id: int, item_id: int):
+    """Shared by the status-update and attachment endpoints — returns
+    (checklist, item) or raises 404."""
+    cl = conn.execute("SELECT * FROM ob_checklists WHERE id=? AND institution_id=?", (cl_id, inst_id)).fetchone()
+    if not cl:
+        raise HTTPException(404, "Checklist not found")
+    item = conn.execute("SELECT * FROM ob_checklist_items WHERE id=? AND checklist_id=?", (item_id, cl_id)).fetchone()
+    if not item:
+        raise HTTPException(404, "Item not found")
+    return cl, item
+
+
+def _can_act_on_item(item, user: dict) -> bool:
+    """assigned_role must match the acting user's role, or HR manager/admin
+    can always override — same rule the item's own status update already
+    enforces, reused here for attaching/removing proof-of-completion files."""
+    return item["assigned_role"] == user["role"] or user["role"] in ("superadmin", "hr_manager", "hr_admin")
+
+
+@router.get("/api/ob/checklists/{cl_id}/items/{item_id}/attachments")
+@db_session
+def list_ob_item_attachments(conn, cl_id: int, item_id: int, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
+    inst_id = need_inst(user)
+    _get_owned_item(conn, inst_id, cl_id, item_id)
+    rows = conn.execute(
+        "SELECT id,file_name,mime_type,data_url,uploaded_by,created_at FROM ob_item_attachments "
+        "WHERE checklist_item_id=? AND institution_id=? ORDER BY created_at",
+        (item_id, inst_id)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@router.post("/api/ob/checklists/{cl_id}/items/{item_id}/attachments", status_code=201)
+@db_session
+def add_ob_item_attachments(conn, cl_id: int, item_id: int, body: List[OBItemAttachmentIn],
+                            user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
+    """Optional proof-of-completion upload(s) — not required to mark an
+    item Done, just supporting evidence attachable any time (before,
+    during, or after). Same permission rule as updating the item's own
+    status: assigned_role must match, or HR manager/admin can override."""
+    inst_id = need_inst(user)
+    cl, item = _get_owned_item(conn, inst_id, cl_id, item_id)
+    if not _can_act_on_item(item, user):
+        raise HTTPException(403, f"This item is assigned to {item['assigned_role']}")
+    for doc in body:
+        conn.execute(
+            "INSERT INTO ob_item_attachments (institution_id,checklist_item_id,file_name,mime_type,data_url,uploaded_by) VALUES (?,?,?,?,?,?)",
+            (inst_id, item_id, doc.file_name, doc.mime_type, doc.data_url, user["username"])
+        )
+    if body:
+        log_ob(conn, inst_id, cl_id, cl["employee_id"], cl["type"],
+               "Attachment Uploaded",
+               f"{len(body)} file(s) attached to '{item['title']}': {', '.join(d.file_name for d in body)}",
+               user)
+    conn.commit()
+    rows = conn.execute(
+        "SELECT id,file_name,mime_type,data_url,uploaded_by,created_at FROM ob_item_attachments "
+        "WHERE checklist_item_id=? AND institution_id=? ORDER BY created_at",
+        (item_id, inst_id)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@router.delete("/api/ob/checklists/{cl_id}/items/{item_id}/attachments/{attachment_id}", status_code=204)
+@db_session
+def delete_ob_item_attachment(conn, cl_id: int, item_id: int, attachment_id: int,
+                              user: dict = Depends(get_current_user)) -> None:
+    inst_id = need_inst(user)
+    cl, item = _get_owned_item(conn, inst_id, cl_id, item_id)
+    if not _can_act_on_item(item, user):
+        raise HTTPException(403, f"This item is assigned to {item['assigned_role']}")
+    att = conn.execute(
+        "SELECT file_name FROM ob_item_attachments WHERE id=? AND checklist_item_id=? AND institution_id=?",
+        (attachment_id, item_id, inst_id)
+    ).fetchone()
+    if not att:
+        raise HTTPException(404, "Attachment not found")
+    conn.execute("DELETE FROM ob_item_attachments WHERE id=?", (attachment_id,))
+    log_ob(conn, inst_id, cl_id, cl["employee_id"], cl["type"],
+           "Attachment Removed", f"Removed '{att['file_name']}' from '{item['title']}'", user)
+    conn.commit()
 
 
 @router.delete("/api/ob/checklists/{cl_id}", status_code=204)

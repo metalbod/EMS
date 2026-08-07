@@ -104,9 +104,14 @@ async function openObDetail(clId) {
             ${isLinked&&!isDone&&!isHR?`<p class="text-xs text-blue-600 mt-0.5">Complete this in <a href="#" onclick="closeObDetail();document.querySelector('[data-page=\\'ld-trainings\\']')?.click();return false;" class="underline">My Trainings</a> to auto-complete this item.</p>`:''}
             ${item.completed_by?`<p class="text-xs text-green-600 mt-0.5">✓ ${esc(item.completed_by)} · ${item.completed_at?.slice(0,10)}</p>`:''}
             ${item.notes?`<p class="text-xs text-slate-500 italic mt-0.5">${esc(item.notes)}</p>`:''}
+            <div id="obitem-attach-${item.id}" class="hidden mt-1.5 space-y-1"></div>
           </div>
           <div class="flex items-center gap-1 flex-shrink-0">
             ${canAct&&isDone?`<button onclick="toggleObItem(${clId},${item.id},false)" class="text-xs text-slate-400 hover:text-orange-500 px-1">Undo</button>`:''}
+            ${canComplete(role)?`<button onclick="toggleObItemAttachments(${clId},${item.id})" class="text-slate-300 hover:text-blue-500 relative" title="Attach proof (optional)">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.485 8.486L20.5 13"/></svg>
+              <span id="obitem-attach-badge-${item.id}" class="${item.attachment_count>0?'':'hidden'} absolute -top-1.5 -right-1.5 bg-blue-500 text-white text-[9px] rounded-full min-w-[14px] h-3.5 px-0.5 flex items-center justify-center">${item.attachment_count||''}</span>
+            </button>`:''}
             ${canEdit?`<button onclick="showObItemEdit(${clId},${item.id},'${esc(item.title).replace(/'/g,"\\'")}','${esc(item.description||'').replace(/'/g,"\\'")}','${item.assigned_role}')" class="text-slate-300 hover:text-blue-500" title="Edit"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
             <button onclick="deleteObItem(${clId},${item.id})" class="text-slate-300 hover:text-red-500" title="Remove"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>`:''}
           </div>
@@ -142,6 +147,75 @@ async function toggleObItem(clId,itemId,done) {
 }
 
 function closeObDetail(){document.getElementById('obDetailModal').classList.add('hidden');viewingObId=null;}
+
+// ---------------------------------------------------------------------------
+// Checklist item attachments (optional proof-of-completion, e.g. a photo of
+// laptop handover) — not required to mark an item Done, attachable any time.
+// ---------------------------------------------------------------------------
+const OB_ATTACH_MAX_BYTES = 6 * 1024 * 1024;
+
+async function toggleObItemAttachments(clId, itemId) {
+  const wrap = document.getElementById(`obitem-attach-${itemId}`);
+  if (!wrap) return;
+  const willShow = wrap.classList.contains('hidden');
+  wrap.classList.toggle('hidden');
+  if (willShow) await loadObItemAttachments(clId, itemId);
+}
+
+async function loadObItemAttachments(clId, itemId) {
+  const res = await api(`/api/ob/checklists/${clId}/items/${itemId}/attachments`);
+  const atts = res?.ok ? await res.json() : [];
+  renderObItemAttachments(clId, itemId, atts);
+}
+
+function renderObItemAttachments(clId, itemId, atts) {
+  const wrap = document.getElementById(`obitem-attach-${itemId}`);
+  if (wrap) {
+    wrap.innerHTML = atts.map(a=>`
+      <div class="flex items-center gap-2 text-xs bg-slate-50 rounded px-2 py-1">
+        <a href="${a.data_url}" download="${esc(a.file_name)}" class="text-blue-600 hover:underline truncate flex-1">${esc(a.file_name)}</a>
+        <span class="text-slate-400 flex-shrink-0">${esc(a.uploaded_by)} · ${a.created_at?.slice(0,10)}</span>
+        <button onclick="deleteObItemAttachment(${clId},${itemId},${a.id})" class="text-slate-400 hover:text-red-600 flex-shrink-0">✕</button>
+      </div>`).join('') +
+      `<label class="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline cursor-pointer">
+        + Attach photo/document
+        <input type="file" multiple class="hidden" onchange="handleObAttachFiles(event,${clId},${itemId})"/>
+      </label>`;
+  }
+  const badge = document.getElementById(`obitem-attach-badge-${itemId}`);
+  if (badge) {
+    badge.textContent = atts.length || '';
+    badge.classList.toggle('hidden', atts.length === 0);
+  }
+}
+
+async function handleObAttachFiles(e, clId, itemId) {
+  const files = [...(e.target.files||[])];
+  e.target.value = '';
+  const payload = [];
+  for (const file of files) {
+    if (file.size > OB_ATTACH_MAX_BYTES) { alert(`"${file.name}" is too large. Please choose a file under ~6MB.`); continue; }
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+    payload.push({file_name: file.name, mime_type: file.type||'application/octet-stream', data_url: dataUrl});
+  }
+  if (!payload.length) return;
+  const res = await api(`/api/ob/checklists/${clId}/items/${itemId}/attachments`, {method:'POST', body: JSON.stringify(payload)});
+  if (!res?.ok) { const d = await res?.json().catch(()=>({})); alert(d?.detail || 'Failed to upload'); return; }
+  const atts = await res.json();
+  renderObItemAttachments(clId, itemId, atts);
+}
+
+async function deleteObItemAttachment(clId, itemId, attachmentId) {
+  if (!confirm('Remove this attachment?')) return;
+  const res = await api(`/api/ob/checklists/${clId}/items/${itemId}/attachments/${attachmentId}`, {method:'DELETE'});
+  if (!res?.ok) { const d = await res?.json().catch(()=>({})); alert(d?.detail || 'Failed to remove attachment'); return; }
+  await loadObItemAttachments(clId, itemId);
+}
 
 
 async function openStartObModal(type) {
