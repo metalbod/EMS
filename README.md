@@ -1,10 +1,14 @@
 # EMS — Employee Management System
 
-Multi-tenant HR platform: employees, recruitment, L&D, leave, timesheets/projects,
-payroll (Malaysia EPF/SOCSO/EIS/PCB), performance management, compensation
-(pay grades, bonus/commission plans, equity grants), benefits (enrollment,
-dependents, claims, compliance reporting), and attendance (shifts, clock-in/out,
-geofencing, device integrations).
+Multi-tenant HR platform: employees, recruitment, onboarding/offboarding
+checklists, L&D, leave, timesheets/projects/overtime, payroll (Malaysia
+EPF/SOCSO/EIS/PCB), performance management, compensation (pay grades,
+bonus/commission plans, equity grants), benefits (enrollment, dependents,
+claims, compliance reporting), attendance (shifts, clock-in/out,
+geofencing, device integrations), and per-institution custom roles.
+
+New to this codebase? Read `CLAUDE.md` first — it's a map of every
+module and the gotchas that have bitten this project more than once.
 
 FastAPI + Postgres (Supabase) backend, vanilla JS frontend, deployed to Fly.io.
 
@@ -551,6 +555,88 @@ list (`routers/dashboard.py`) — "N leave applications awaiting your
 approval" etc. — generalizing the one precedent that already existed
 there (the ManagerReview appraisal item) rather than introducing a new
 exception to that endpoint's "personal items only" design.
+
+## Timesheet & Overtime modules
+
+`routers/timesheets.py` / `routers/overtime.py` / `core/overtime.py` /
+`core/attendance_helpers.py`.
+
+Timesheets are weekly: one `timesheets` header row (`Draft` →
+`Submitted` → `Approved`/`Rejected`) with `timesheet_entries` logging
+hours per day against a project+task. `Submitted` triggers the shared
+approval-workflow engine (module `"timesheet"`, see below).
+
+**Overtime is detected automatically**, not user-submitted: on
+submission, `core/overtime.py`'s `generate_overtime_records` groups that
+week's entries by date and compares each day's total hours against the
+employee's resolved Attendance shift (`core/attendance_helpers.py`'s
+`resolve_shift` — the same function `routers/attendance.py` uses, shared
+so both modules agree on "an employee's normal working hours"). No shift
+on file for that employee means no overtime detection at all — there's
+nothing to compare against. Any day over threshold becomes one
+`overtime_records` row, routed through its own approval-workflow chain
+(module `"overtime"`), including project-manager eligibility resolved
+via the union of projects the parent timesheet actually logged that
+week (a timesheet has no single project of its own).
+
+On approval, an overtime record converts per an institution-level
+setting (`institutions.overtime_conversion_mode`, `GET/PUT
+/api/overtime/settings`): either **credited as leave** (proportional to
+that employee's own shift length, onto an HR-configured leave type) or
+**tracked as a pay amount** (`hours × hourly-rate-equivalent ×
+overtime_pay_multiplier` — Monthly-salary employees get an approximated
+hourly rate of `basic_salary / 176`, matching `payroll.py`'s existing
+approximation). Pay conversion is tracking-only this round — not yet
+summed into an actual payslip.
+
+## Onboarding & Offboarding module
+
+`routers/onboarding.py` / `core/ob_ld_shared.py` / `static/js/onboarding.js`.
+
+`ob_template_sets` → `ob_templates` (reusable, per institution+type,
+each with an `assigned_role` and up to 4-ish ordering via
+`order_index`) get snapshotted into a real `ob_checklists` +
+`ob_checklist_items` row pair when HR starts a checklist for a specific
+employee (`POST /api/ob/checklists`) — editing a template afterward
+never reshuffles an in-flight checklist, same "snapshot at start"
+principle the Approval Workflow module uses. A template can optionally
+link an L&D course (`linked_ld_course_id`); its checklist item then
+auto-completes when the employee finishes that course rather than
+needing manual completion.
+
+**Item completion permission**: `item["assigned_role"] == user["role"]`,
+or HR (`superadmin`/`hr_manager`/`hr_admin`) can always override — this
+same rule gates the optional proof-of-completion **attachments**
+(`ob_item_attachments`, `POST/GET/DELETE
+/api/ob/checklists/{cl_id}/items/{item_id}/attachments`): a photo or
+document (~6MB cap, same `data:...;base64` URI pattern as
+`candidate_documents`), never required to mark an item Done, just
+supporting evidence attachable any time. A checklist auto-completes
+(`status='Completed'`) the moment every item reaches `Done`/`N/A`.
+
+`assigned_role` (on both templates and items) accepts any of the 6
+built-in roles plus this institution's custom roles (see below) —
+validated dynamically via `core/roles.py`'s `get_valid_roles`, not a
+fixed list.
+
+## Custom roles
+
+`core/roles.py` / `routers/roles.py` / Settings → Roles UI.
+
+6 built-in roles (`hr_manager`, `hr_admin`, `manager`,
+`payroll_manager`, `compensation_manager`, `employee`) are fixed and
+always available; `superadmin` is platform-level and never shown here.
+HR can add more per institution (`custom_roles` table) — e.g. "IT
+Infra" — usable both as a user's `role` (`routers/users.py`) and as an
+onboarding/offboarding item's `assigned_role`. Deleting a custom role is
+blocked while it's still assigned to any user, template, or in-progress
+checklist item (`DELETE /api/roles/{id}` reports exactly how many of
+each).
+
+Role validity checks moved out of `UserIn`/`UserUpdate`'s Pydantic
+`field_validator`s (which can't see the DB or the institution) into the
+endpoint bodies, once `inst_id` is known — an invalid role on user
+create/update now returns `400`, not Pydantic's `422`.
 
 ## Deployment (Fly.io)
 
