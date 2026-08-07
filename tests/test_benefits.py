@@ -24,6 +24,39 @@ def _make_active_plan(client, hr_manager_auth, **overrides):
     return plan
 
 
+def test_list_claims_manager_sees_subordinates_not_403(client, hr_manager_auth, make_test_employee, employee_with_login):
+    """A manager eligible to approve a subordinate's claim via the
+    approval-workflow engine's direct_manager/skip_level_manager step
+    types must be able to see it in the claims list — this used to
+    blanket-403 anyone who wasn't HR/Payroll/Compensation, so a manager's
+    Dashboard To-Do item ("N benefit claims awaiting your approval") led
+    to a page they couldn't view at all."""
+    mgr_emp, mgr_headers = employee_with_login(full_name="ZZ Claims Manager")
+    report_emp = make_test_employee(full_name="ZZ Claims Report", reports_to=mgr_emp["employee_id"])
+
+    # Give the manager account a 'manager' role (employee_with_login
+    # defaults to 'employee') so list_claims' manager-scoping branch applies.
+    users = client.get("/api/users", headers=hr_manager_auth).json()
+    mgr_user = next(u for u in users if u["employee_id"] == mgr_emp["employee_id"])
+    client.put(f"/api/users/{mgr_user['id']}", headers=hr_manager_auth, json={
+        "full_name": mgr_user["full_name"], "role": "manager", "employee_id": mgr_emp["employee_id"], "is_active": True,
+    })
+
+    plan = _make_active_plan(client, hr_manager_auth)
+    claim = client.post(f"/api/benefits/employees/{report_emp['employee_id']}/claims", headers=hr_manager_auth, json={
+        "benefit_plan_id": plan["id"], "claim_date": "2026-08-07", "amount_claimed": 100,
+    }).json()
+
+    res = client.get("/api/benefits/claims", headers=mgr_headers)
+    assert res.status_code == 200, res.text
+    assert any(c["id"] == claim["id"] for c in res.json())
+
+    # An employee role with no manager/HR access still gets 403.
+    other_emp, other_headers = employee_with_login(full_name="ZZ Claims Unrelated Employee")
+    res2 = client.get("/api/benefits/claims", headers=other_headers)
+    assert res2.status_code == 403
+
+
 def test_auto_enroll_all_requires_manage_role(client, make_test_user, test_institution, hr_manager_auth):
     plan = _make_active_plan(client, hr_manager_auth)
     token, _ = make_test_user(role="employee")

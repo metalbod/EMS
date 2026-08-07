@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from db import get_db
 from core.deps import get_current_user
 from core.approval_workflow import start_workflow, advance_or_finalize
+from core.org_queries import subordinates_in_clause
 from core.benefits_schemas import (
     BenefitPlanCreate, BenefitPlanUpdate, BenefitPlanResponse,
     EligibilityRuleCreate, EligibilityRuleResponse, EligiblePlanResponse,
@@ -1226,8 +1227,14 @@ async def list_claims(
     status: Optional[str] = None,
     current_user: dict = Depends(get_current_user),
 ) -> List[ClaimWithDetails]:
-    """HR-facing: all claims, optionally filtered by status."""
-    require_benefits_role(current_user)
+    """HR-facing: all claims, optionally filtered by status. A manager
+    (eligible to approve a subordinate's claim via the approval-workflow
+    engine's direct_manager/skip_level_manager step types — see
+    core/approval_workflow.py) sees their subordinates' claims instead of
+    the full institution list, the same scoping list_leave_applications/
+    list_timesheets already use — previously this blanket-gated to HR/
+    Payroll/Compensation roles only, so a manager's pending-approval
+    To-Do item led to a page they got 403'd out of."""
     conn = get_db()
     try:
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
@@ -1239,6 +1246,12 @@ async def list_claims(
             WHERE c.institution_id = ?
         """
         params = [inst_id]
+        if current_user.get("role") == "manager":
+            frag, fp = subordinates_in_clause(inst_id, current_user.get("employee_id", ""))
+            query += f" AND e.employee_id IN {frag}"
+            params.extend(fp)
+        else:
+            require_benefits_role(current_user)
         if status:
             query += " AND c.status = ?"
             params.append(status)
