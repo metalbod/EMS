@@ -114,6 +114,20 @@ def test_institution(superadmin_token):
         "plan": "enterprise",
         "max_employees": MAX_EMPLOYEES,
     })
+    if res.status_code == 400 and "already exists" in res.text:
+        # The find-or-create check above isn't atomic — under pytest-xdist,
+        # every parallel worker runs this fixture in its own session, and on
+        # a genuinely empty DB (e.g. right after a test-DB reset) they can
+        # all race to create ZZPYTEST simultaneously. Only the first INSERT
+        # wins; everyone else loses the race here instead of at the earlier
+        # SELECT. Whoever lost just needs to look the row up now that it
+        # exists — normally invisible once the institution exists for good
+        # after the first-ever run, but surfaces every time the test DB
+        # starts from empty.
+        existing = c.get("/api/institutions", headers=headers).json()
+        for inst in existing:
+            if inst["code"] == code:
+                return {"id": inst["id"], "code": code}
     assert res.status_code == 201, f"failed to create test institution: {res.text}"
     return {"id": res.json()["id"], "code": code}
 
