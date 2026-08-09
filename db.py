@@ -283,8 +283,47 @@ def _return_to_pool(raw, leaked, admin=False):
         logger.exception("Failed to return a connection to the pool")
 
 
+_LIVENESS_RETRIES = 2
+
+
+def _get_live_raw(pool):
+    """Borrow a connection from `pool`, discarding it (not returning it to
+    the pool — it's broken) and retrying if it turns out to be dead.
+
+    Supabase's pooler can silently close a connection that's sat idle in
+    the pool for a while (or after a deploy/restart on its end); psycopg2's
+    SimpleConnectionPool does no liveness check on getconn(), so the first
+    query on a stale connection surfaces as
+    `psycopg2.OperationalError: server closed the connection unexpectedly`
+    at a random, unrelated call site — this is the actual mechanism behind
+    that "transient" error seen intermittently in the test suite and,
+    presumably, in production. A cheap `SELECT 1` here catches it at
+    checkout time instead, where it's safe to just get another connection."""
+    last_exc = None
+    for _ in range(_LIVENESS_RETRIES + 1):
+        raw = pool.getconn()
+        try:
+            cur = raw.cursor()
+            cur.execute("SELECT 1")
+            cur.close()
+            raw.rollback()  # SELECT 1 opened a transaction; don't hand that out
+            return raw
+        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+            last_exc = e
+            logger.warning("Discarding a dead pooled connection: %s", e)
+            # close=True both closes the raw connection and tells the pool's
+            # own bookkeeping to drop it rather than recycle it — without
+            # this the pool would consider it still "checked out" forever,
+            # eventually exhausting maxconn.
+            try:
+                pool.putconn(raw, close=True)
+            except Exception:
+                pass
+    raise last_exc
+
+
 def get_db():
-    raw = _get_pool().getconn()
+    raw = _get_live_raw(_get_pool())
     return Conn(raw)
 
 
@@ -292,5 +331,5 @@ def get_admin_db():
     """Owner-privileged connection for schema DDL only (init_db(),
     Alembic) — see ADMIN_DATABASE_URL above for why this must be a
     separate connection from get_db()'s regular app-role pool."""
-    raw = _get_admin_pool().getconn()
+    raw = _get_live_raw(_get_admin_pool())
     return Conn(raw, admin=True)

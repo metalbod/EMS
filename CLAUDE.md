@@ -117,6 +117,31 @@ wrapper everywhere.
   detection, overtime detection) is instead computed **lazily on
   read/use** or triggered by an adjacent action (timesheet submission
   triggers overtime detection, not a nightly job).
+- **Tests run against a dedicated test Supabase project, not prod** —
+  `TEST_DATABASE_URL`/`TEST_ADMIN_DATABASE_URL` in `.env`,
+  `tests/conftest.py` swaps them in for `DATABASE_URL`/`ADMIN_DATABASE_URL`
+  before anything else imports `db.py`/`main.py`. Falls back to running
+  against prod if the `TEST_*` vars aren't set. When a new Alembic
+  migration is added, apply it to the test project too (`alembic upgrade
+  head` with `ADMIN_DATABASE_URL` env-overridden to
+  `TEST_ADMIN_DATABASE_URL`) — it does **not** happen automatically,
+  `deploy.sh` only migrates prod.
+  - Provisioning note: the historical Alembic chain assumes the schema
+    already exists (it grew out of the pre-Alembic `main.py init_db()`
+    era) and is **not** currently replayable from a truly empty database —
+    `20260717_0001_full_schema_ddl.py` itself contains ALTER statements
+    against tables added by later migrations. The test project was
+    bootstrapped by dumping prod's schema (`pg_dump --schema-only
+    --no-owner --no-privileges -n public`), restoring it into the empty
+    project, granting `ems_app` the same DML privileges as prod, then
+    `alembic stamp head` (schema already matches head; this just writes
+    the bookkeeping row). Re-provisioning a fresh test project should
+    follow the same recipe, not `alembic upgrade head` from empty — that
+    still fails partway through today. (`eb95a484c74a`'s `depends_on` was
+    fixed to require `20260717_0001` first, which was a real, separate
+    ordering bug, but doesn't make the chain fully bootstrap-clean on its
+    own — a from-scratch-safe migration chain is a larger, separate
+    project.)
 - **`tests/conftest.py`'s `test_institution` fixture is
   session-scoped** — created once, shared by every test in one pytest
   invocation, and never cleaned up. Data your test creates (workflows,
@@ -126,10 +151,16 @@ wrapper everywhere.
   (thousands of leftover rows, measurable query slowdowns) — always add
   teardown (a factory fixture with `yield` + cleanup, matching
   `make_test_project`/`make_test_ob_checklist`/`make_test_location`).
-- **Test runs against the shared DB are often slow** (each round trip
-  can be 0.5–1s+) and occasionally hit transient
+  Now that tests hit an isolated test project rather than prod, a leak is
+  much lower-stakes, but still adds noise/slowdown to future test runs —
+  keep adding teardown.
+- **`get_db()`/`get_admin_db()` (`db.py`) validate a pooled connection
+  before handing it out** (`_get_live_raw`, a `SELECT 1`, discarding and
+  retrying on a dead one) — Supabase's pooler can silently close an
+  idle-in-pool connection, which used to surface as a random
   `psycopg2.OperationalError: server closed the connection unexpectedly`
-  — this is DB/connection-pool flakiness, not a code bug. Retry the
+  at an unrelated call site. Genuinely transient DB flakiness (network
+  blips, not stale connections) can still happen occasionally — retry the
   specific failing test in isolation before concluding something broke;
   only real `AssertionError`s indicate an actual regression.
 - **Bash tool's cwd resets between calls** — always use absolute paths

@@ -1,11 +1,15 @@
 """
 Shared pytest fixtures.
 
-These tests import the real `main.app` and, for the auth tests, hit the real
-database configured via .env (DATABASE_URL) — there is no local test DB yet
-(see tech-debt notes). Keep DB-touching tests strictly read-only or scoped to
-disposable, clearly-prefixed data with guaranteed teardown; never assume it's
-safe to mutate arbitrary rows.
+These tests import the real `main.app` and, for the auth tests, hit a real
+database — a dedicated Supabase test project (TEST_DATABASE_URL /
+TEST_ADMIN_DATABASE_URL in .env), NOT prod, as of the test-DB-isolation
+tech-debt fix. Falls back to DATABASE_URL/ADMIN_DATABASE_URL if the TEST_*
+vars aren't set, for any environment that hasn't provisioned a test project
+yet — so this still runs against prod in that case. Keep DB-touching tests
+strictly read-only or scoped to disposable, clearly-prefixed data with
+guaranteed teardown regardless; never assume it's safe to mutate arbitrary
+rows, since the fallback path is still real prod data.
 
 IMPORTANT: `main` must NOT be imported at module level here. main.py raises
 at import time if DATABASE_URL/JWT_SECRET aren't set (by design — see
@@ -25,6 +29,20 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+# Must happen before anything below (or any test module) imports db.py/main.py
+# — db.py reads DATABASE_URL/ADMIN_DATABASE_URL as module-level constants at
+# import time, not lazily, so this has to win the race and run first. Since
+# pytest always loads conftest.py before collecting any test file in this
+# directory, this is early enough. load_dotenv()'s default override=False
+# means it won't clobber a DATABASE_URL the environment already set (e.g. in
+# CI), matching main.py's own load_dotenv() call later in the process.
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+if os.environ.get("TEST_DATABASE_URL"):
+    os.environ["DATABASE_URL"] = os.environ["TEST_DATABASE_URL"]
+if os.environ.get("TEST_ADMIN_DATABASE_URL"):
+    os.environ["ADMIN_DATABASE_URL"] = os.environ["TEST_ADMIN_DATABASE_URL"]
 
 # Configure Celery to execute tasks synchronously during tests (no Redis/worker needed)
 os.environ.setdefault("CELERY_TASK_ALWAYS_EAGER", "true")

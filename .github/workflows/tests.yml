@@ -65,8 +65,15 @@ jobs:
 
       - name: Validate Alembic migrations are up-to-date
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          ADMIN_DATABASE_URL: ${{ secrets.ADMIN_DATABASE_URL }}
+          # TEST_* secrets point at a dedicated test Supabase project, not
+          # prod — see CLAUDE.md's test-DB-isolation notes. Falls back to
+          # DATABASE_URL/ADMIN_DATABASE_URL only if the TEST_* secrets
+          # aren't configured, for repos that haven't provisioned a test
+          # project yet (in which case this step, like the tests below,
+          # would be running against prod — configure TEST_DATABASE_URL/
+          # TEST_ADMIN_DATABASE_URL to fix that).
+          DATABASE_URL: ${{ secrets.TEST_DATABASE_URL || secrets.DATABASE_URL }}
+          ADMIN_DATABASE_URL: ${{ secrets.TEST_ADMIN_DATABASE_URL || secrets.ADMIN_DATABASE_URL }}
         run: |
           if [ -z "$DATABASE_URL" ]; then
             echo "::warning::Skipping migration validation (no DATABASE_URL secret configured)"
@@ -83,10 +90,15 @@ jobs:
       - name: Run payroll_calc unit tests (no external dependencies)
         run: pytest tests/test_payroll_calc.py -v
 
-      - name: Run app integration tests (requires DATABASE_URL/ADMIN_DATABASE_URL/JWT_SECRET secrets)
+      - name: Run app integration tests (requires TEST_DATABASE_URL/TEST_ADMIN_DATABASE_URL/JWT_SECRET secrets)
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          ADMIN_DATABASE_URL: ${{ secrets.ADMIN_DATABASE_URL }}
+          # See the migration-validation step above re: TEST_* vs prod
+          # fallback. tests/conftest.py also does its own TEST_* ->
+          # DATABASE_URL swap, but that only helps for a git checkout that
+          # already has a real .env; CI has no .env file, so the env vars
+          # need to arrive as DATABASE_URL/ADMIN_DATABASE_URL directly here.
+          DATABASE_URL: ${{ secrets.TEST_DATABASE_URL || secrets.DATABASE_URL }}
+          ADMIN_DATABASE_URL: ${{ secrets.TEST_ADMIN_DATABASE_URL || secrets.ADMIN_DATABASE_URL }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
         run: |
           if [ -z "$DATABASE_URL" ]; then

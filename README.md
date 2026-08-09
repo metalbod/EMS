@@ -244,19 +244,24 @@ and are located in `static/js/__tests__/`. All 15 tests passing validates the
 burger-menu redesign and ensures menu interactions remain correct as the
 codebase evolves.
 
-There is currently no dedicated test database — integration tests run
-against whatever `DATABASE_URL` points to. Keep new DB-touching tests
-read-only, or scope them to clearly-prefixed disposable data with
-guaranteed teardown.
+Integration tests run against a dedicated test Supabase project, configured
+via `TEST_DATABASE_URL`/`TEST_ADMIN_DATABASE_URL` in `.env`
+(`tests/conftest.py` swaps them in for `DATABASE_URL`/`ADMIN_DATABASE_URL`
+before anything else imports the DB layer — falls back to running against
+prod if the `TEST_*` vars aren't set). Keep new DB-touching tests read-only,
+or scope them to clearly-prefixed disposable data with guaranteed teardown,
+regardless — the fallback path is still real prod data. See CLAUDE.md for
+how the test project was provisioned (a schema dump/restore from prod, not
+`alembic upgrade head` from empty — the historical migration chain isn't
+currently replayable from a truly empty database).
 
 CI (`.github/workflows/tests.yml`) runs on every push/PR: the CSS build is
 checked for drift, `payroll_calc` tests always run, and the DB-backed
-integration tests require `DATABASE_URL`/`ADMIN_DATABASE_URL`/`JWT_SECRET`
-to be configured as repo secrets (Settings → Secrets and variables →
-Actions) — without `DATABASE_URL`, that step logs a warning and skips
-rather than failing the build; `ADMIN_DATABASE_URL` must also be wired into
-the step's `env:` block (not just added as a secret) since `init_db()`'s
-schema DDL needs it — see the two-role split above.
+integration tests need `TEST_DATABASE_URL`/`TEST_ADMIN_DATABASE_URL`/
+`JWT_SECRET` configured as repo secrets (Settings → Secrets and variables →
+Actions) — falls back to `DATABASE_URL`/`ADMIN_DATABASE_URL` (i.e. prod) if
+the `TEST_*` secrets aren't set, and skips DB-backed steps entirely if
+neither is configured.
 
 ## Database schema migrations
 

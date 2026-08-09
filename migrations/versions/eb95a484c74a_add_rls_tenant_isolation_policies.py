@@ -15,7 +15,16 @@ import sqlalchemy as sa
 revision: str = 'eb95a484c74a'
 down_revision: Union[str, Sequence[str], None] = '75b14e73962f'
 branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+# This branch (and everything downstream of it, up to the merge at
+# 20260719_0004) assumes the app's tables already exist — true on every
+# environment so far, since they predate Alembic entirely (see 75b14e73962f's
+# baseline marker). '20260717_0001' is the sibling branch off that same
+# baseline that actually issues the CREATE TABLEs (moved from main.py's old
+# init_db()). Without this depends_on, `alembic upgrade head` on a genuinely
+# empty database can topologically sort this branch first and fail with
+# "relation ... does not exist" — this pins the order so a fresh database
+# can be provisioned from migrations alone.
+depends_on: Union[str, Sequence[str], None] = '20260717_0001'
 
 
 """RLS was enabled (ENABLE ROW LEVEL SECURITY) on every tenant table years
@@ -58,7 +67,16 @@ import sqlalchemy as sa
 revision: str = 'eb95a484c74a'
 down_revision: Union[str, Sequence[str], None] = '75b14e73962f'
 branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+# This branch (and everything downstream of it, up to the merge at
+# 20260719_0004) assumes the app's tables already exist — true on every
+# environment so far, since they predate Alembic entirely (see 75b14e73962f's
+# baseline marker). '20260717_0001' is the sibling branch off that same
+# baseline that actually issues the CREATE TABLEs (moved from main.py's old
+# init_db()). Without this depends_on, `alembic upgrade head` on a genuinely
+# empty database can topologically sort this branch first and fail with
+# "relation ... does not exist" — this pins the order so a fresh database
+# can be provisioned from migrations alone.
+depends_on: Union[str, Sequence[str], None] = '20260717_0001'
 
 
 # Tables with a direct institution_id column.
