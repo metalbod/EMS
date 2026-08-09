@@ -134,10 +134,11 @@ wrapper everywhere.
   only real `AssertionError`s indicate an actual regression.
 - **Bash tool's cwd resets between calls** — always use absolute paths
   or prefix `cd /path/to/ems &&`.
-- **`fly deploy` does not run migrations.** `alembic upgrade head` is a
-  separate, manual step against the shared DB — do it before or as part
-  of shipping a change that adds a migration, not as part of the deploy
-  command itself.
+- **`fly deploy` does not run migrations on its own** — use `./deploy.sh`
+  (repo root) instead of calling `fly deploy` directly; it runs `alembic
+  upgrade head` against the shared DB first, then deploys, then curl-
+  verifies `/` returns 200. This exists so a migration can never ship
+  silently un-applied.
 - **VACUUM requires the admin DB connection**, not the app's normal
   `DATABASE_URL` role (`permission denied to vacuum ..., skipping it`).
   Use `ADMIN_DATABASE_URL` via a direct `psycopg2.connect(...)` for any
@@ -151,9 +152,9 @@ wrapper everywhere.
 - **Never commit, push, or deploy without being explicitly told to.**
   Implement → verify (tests and/or browser) → wait for an explicit
   instruction like "commit and push and deploy".
-- Deploys are `fly deploy --app ems-app`; verify with
-  `curl -s -o /dev/null -w "%{http_code}\n" https://ems-app.fly.dev/`
-  afterward (expect `200`).
+- Deploys are `./deploy.sh` (runs pending migrations, then
+  `fly deploy --app ems-app`, then verifies `https://ems-app.fly.dev/`
+  returns `200`).
 - For any non-trivial feature request, research the current
   implementation and present a plan (and ask clarifying questions where
   the request is ambiguous) before writing code — this project's owner

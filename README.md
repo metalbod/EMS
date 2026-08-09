@@ -285,10 +285,10 @@ alembic current                                # what's applied now
 
 Alembic reads `ADMIN_DATABASE_URL` (falling back to `DATABASE_URL`) from the
 same `.env` file the app uses (see `migrations/env.py`) — migrations run DDL,
-so they need the schema-owning role, not the restricted `ems_app` role. Not
-yet wired into deployment (the app still self-migrates via `init_db()` on
-boot); running `alembic upgrade head` is a manual step for now when a
-migration is added.
+so they need the schema-owning role, not the restricted `ems_app` role.
+Deploys go through `./deploy.sh` (repo root), which runs `alembic upgrade
+head` before `fly deploy` so a migration can never ship un-applied — don't
+call `fly deploy` directly.
 
 ## Currency storage
 
