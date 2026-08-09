@@ -136,6 +136,77 @@ def test_project_manager_step_approved_by_project_manager(client, hr_manager_aut
     client.delete(f"/api/approval-workflows/{wf['id']}", headers=hr_manager_auth)
 
 
+def test_project_manager_step_auto_skips_when_approver_is_the_requester(client, hr_manager_auth, employee_with_login,
+                                                                          make_test_project, make_test_leave_type):
+    """If the requester is also the (only) manager of the project their
+    request is routed through, that step's pool must be treated as empty
+    for them specifically — a requester can never approve their own
+    request — so the workflow auto-skips to the next step instead of
+    letting them self-approve."""
+    requester, requester_headers = employee_with_login(full_name="ZZ PM Self Requester")
+    project = make_test_project(name=_unique_name("ZZ PM Self Project"), manager_ids=[requester["employee_id"]])
+    lt = make_test_leave_type(requires_approval=True)
+
+    wf = client.post("/api/approval-workflows", headers=hr_manager_auth,
+                      json={"module": "leave", "name": _unique_name()}).json()
+    client.post(f"/api/approval-workflows/{wf['id']}/steps", headers=hr_manager_auth,
+                json={"approver_type": "project_manager"})
+    client.post(f"/api/approval-workflows/{wf['id']}/steps", headers=hr_manager_auth,
+                json={"approver_type": "hr_manager"})
+    client.put(f"/api/approval-workflows/{wf['id']}", headers=hr_manager_auth,
+               json={"name": wf["name"], "is_default": True})
+
+    start = "2027-06-21"
+    app = client.post("/api/leave/applications", headers=hr_manager_auth, json={
+        "employee_id": requester["employee_id"], "leave_type_id": lt["id"],
+        "start_date": start, "end_date": start, "project_id": project["id"],
+    }).json()
+    assert app["status"] == "Pending Approval"
+    assert app["approval_step"] == 2  # step 1 (project_manager == requester) auto-skipped
+
+    # The requester still can't approve it themselves even at step 2.
+    denied = client.patch(f"/api/leave/applications/{app['id']}/status", headers=requester_headers,
+                           json={"status": "Approved"})
+    assert denied.status_code == 403, denied.text
+
+    res = client.patch(f"/api/leave/applications/{app['id']}/status", headers=hr_manager_auth,
+                        json={"status": "Approved"})
+    assert res.status_code == 200, res.text
+    assert res.json()["status"] == "Approved"
+
+    client.delete(f"/api/approval-workflows/{wf['id']}", headers=hr_manager_auth)
+
+
+def test_project_manager_step_auto_approves_when_only_approver_is_the_requester(client, hr_manager_auth,
+                                                                                  employee_with_login,
+                                                                                  make_test_project,
+                                                                                  make_test_leave_type):
+    """If the requester is the only person on the entire chain who'd
+    otherwise be eligible (sole project manager, single-step workflow),
+    the whole chain is unresolvable excluding them -> auto-approved on
+    submission, same as any other fully-unresolvable chain."""
+    requester, _ = employee_with_login(full_name="ZZ PM Self Auto Requester")
+    project = make_test_project(name=_unique_name("ZZ PM Self Auto Project"), manager_ids=[requester["employee_id"]])
+    lt = make_test_leave_type(requires_approval=True)
+
+    wf = client.post("/api/approval-workflows", headers=hr_manager_auth,
+                      json={"module": "leave", "name": _unique_name()}).json()
+    client.post(f"/api/approval-workflows/{wf['id']}/steps", headers=hr_manager_auth,
+                json={"approver_type": "project_manager"})
+    client.put(f"/api/approval-workflows/{wf['id']}", headers=hr_manager_auth,
+               json={"name": wf["name"], "is_default": True})
+
+    start = "2027-06-28"
+    app = client.post("/api/leave/applications", headers=hr_manager_auth, json={
+        "employee_id": requester["employee_id"], "leave_type_id": lt["id"],
+        "start_date": start, "end_date": start, "project_id": project["id"],
+    }).json()
+    assert app["status"] == "Approved"
+    assert app["approval_step"] is None
+
+    client.delete(f"/api/approval-workflows/{wf['id']}", headers=hr_manager_auth)
+
+
 def test_project_manager_step_auto_skips_when_no_project_selected(client, hr_manager_auth, employee_with_login,
                                                                     make_test_leave_type):
     """No project picked at submission -> the project_manager step's pool

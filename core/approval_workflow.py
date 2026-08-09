@@ -169,16 +169,38 @@ def _project_managers_for(conn, inst_id: int, project_ids) -> FrozenSet[str]:
     return frozenset(r["employee_id"] for r in rows)
 
 
-def _type_pool_nonempty(conn, inst_id: int, employee_id: str, approver_type: Optional[str],
+def _hr_pool_has_other(conn, inst_id: int, module: str, employee_id: str) -> bool:
+    """Whether some HR-role user besides the requester themselves exists —
+    a staff-only HR account with no linked employee record (employee_id
+    IS NULL) always counts, since it can never literally *be* the
+    requester; an HR account that IS linked only counts if it's not this
+    request's own requester."""
+    roles = MODULE_HR_ROLES[module]
+    placeholders = ",".join("?" * len(roles))
+    rows = conn.execute(
+        f"SELECT employee_id FROM users WHERE institution_id=? AND role IN ({placeholders}) AND is_active=1",
+        (inst_id, *roles)
+    ).fetchall()
+    return any(r["employee_id"] is None or r["employee_id"] != employee_id for r in rows)
+
+
+def _type_pool_nonempty(conn, inst_id: int, module: str, employee_id: str, approver_type: Optional[str],
                         specific_employee_id: Optional[str], project_ids: Optional[Set[int]] = None) -> bool:
+    """Nonempty here means "someone other than the requester themselves is
+    eligible" — a step whose only possible approver would be the
+    applicant is treated the same as a step with no approver at all (see
+    _step_pool_nonempty), so the engine auto-skips it instead of letting
+    someone approve their own request."""
     if approver_type == "direct_manager":
-        return bool(_direct_manager_id(conn, inst_id, employee_id))
+        mgr = _direct_manager_id(conn, inst_id, employee_id)
+        return bool(mgr) and mgr != employee_id
     if approver_type == "skip_level_manager":
-        return bool(_skip_level_manager_id(conn, inst_id, employee_id))
+        mgr = _skip_level_manager_id(conn, inst_id, employee_id)
+        return bool(mgr) and mgr != employee_id
     if approver_type == "hr_manager":
-        return True  # role-based; assume every institution has at least one HR user
+        return _hr_pool_has_other(conn, inst_id, module, employee_id)
     if approver_type == "specific_employee":
-        if not specific_employee_id:
+        if not specific_employee_id or specific_employee_id == employee_id:
             return False
         row = conn.execute(
             "SELECT status FROM employees WHERE employee_id=? AND institution_id=?",
@@ -186,22 +208,23 @@ def _type_pool_nonempty(conn, inst_id: int, employee_id: str, approver_type: Opt
         ).fetchone()
         return bool(row and row["status"] == "Active")
     if approver_type == "project_manager":
-        return bool(_project_managers_for(conn, inst_id, project_ids))
+        return bool(_project_managers_for(conn, inst_id, project_ids) - {employee_id})
     return False
 
 
-def _step_pool_nonempty(conn, inst_id: int, employee_id: str, step, project_ids: Optional[Set[int]] = None) -> bool:
+def _step_pool_nonempty(conn, inst_id: int, module: str, employee_id: str, step, project_ids: Optional[Set[int]] = None) -> bool:
     """Whether a step has anyone who could possibly approve it, for this
     specific request — a step with an empty pool (no manager exists, no
-    skip-level exists, a deactivated named approver, or no project
-    manager for the relevant project(s)) is auto-skipped rather than
-    leaving the request stuck forever. A step with an alternative ("OR")
-    approver type configured is nonempty if either the primary or the
-    alternative pool is nonempty."""
-    if _type_pool_nonempty(conn, inst_id, employee_id, step["approver_type"], step["specific_employee_id"], project_ids):
+    skip-level exists, a deactivated named approver, no project manager
+    for the relevant project(s), or the only possible approver would be
+    the requester themselves) is auto-skipped rather than leaving the
+    request stuck forever, or letting someone approve their own request.
+    A step with an alternative ("OR") approver type configured is
+    nonempty if either the primary or the alternative pool is nonempty."""
+    if _type_pool_nonempty(conn, inst_id, module, employee_id, step["approver_type"], step["specific_employee_id"], project_ids):
         return True
     if step.get("alt_approver_type"):
-        return _type_pool_nonempty(conn, inst_id, employee_id, step["alt_approver_type"], step.get("alt_specific_employee_id"), project_ids)
+        return _type_pool_nonempty(conn, inst_id, module, employee_id, step["alt_approver_type"], step.get("alt_specific_employee_id"), project_ids)
     return False
 
 
@@ -224,9 +247,15 @@ def _type_is_eligible(conn, inst_id: int, module: str, employee_id: str, approve
 def is_eligible_approver(conn, inst_id: int, module: str, employee_id: str, step, acting_user: dict,
                          project_ids: Optional[Set[int]] = None) -> bool:
     """A step with an alternative ("OR") approver type is satisfied by
-    either the primary or the alternative approver."""
+    either the primary or the alternative approver. A requester can never
+    be eligible to approve their own request, regardless of approver type
+    (defense in depth — _step_pool_nonempty should already have
+    auto-skipped any step where the requester was the only possible
+    approver, but this guards decision time too)."""
     if acting_user["role"] == "superadmin":
         return True
+    if acting_user.get("employee_id") and acting_user["employee_id"] == employee_id:
+        return False
     if _type_is_eligible(conn, inst_id, module, employee_id, step["approver_type"], step["specific_employee_id"], acting_user, project_ids):
         return True
     if step.get("alt_approver_type"):
@@ -234,9 +263,9 @@ def is_eligible_approver(conn, inst_id: int, module: str, employee_id: str, step
     return False
 
 
-def _first_resolvable_step(conn, inst_id: int, employee_id: str, steps, project_ids: Optional[Set[int]] = None) -> Optional[Dict[str, Any]]:
+def _first_resolvable_step(conn, inst_id: int, module: str, employee_id: str, steps, project_ids: Optional[Set[int]] = None) -> Optional[Dict[str, Any]]:
     for step in steps:
-        if _step_pool_nonempty(conn, inst_id, employee_id, step, project_ids):
+        if _step_pool_nonempty(conn, inst_id, module, employee_id, step, project_ids):
             return step
     return None
 
@@ -253,7 +282,7 @@ def start_workflow(conn, inst_id: int, module: str, employee_id: str,
     selected/logged project(s) — see project_ids_for_row."""
     workflow = get_or_create_default_workflow(conn, inst_id, module)
     steps = get_steps(conn, workflow["id"])
-    first = _first_resolvable_step(conn, inst_id, employee_id, steps, project_ids)
+    first = _first_resolvable_step(conn, inst_id, module, employee_id, steps, project_ids)
     if first is None:
         return workflow["id"], None, True
     return workflow["id"], first["step_order"], False
@@ -277,7 +306,7 @@ def advance_or_finalize(conn, inst_id: int, module: str, employee_id: str,
     if action == "reject":
         return "rejected", None
     remaining = [s for s in steps if s["step_order"] > current_step_order]
-    nxt = _first_resolvable_step(conn, inst_id, employee_id, remaining, project_ids)
+    nxt = _first_resolvable_step(conn, inst_id, module, employee_id, remaining, project_ids)
     if nxt is None:
         return "approved", None
     return "advanced", nxt["step_order"]
