@@ -1,7 +1,7 @@
 """Pydantic schemas for the Attendance module (shifts, clock-in/out,
 attendance settings, HR review)."""
 from typing import Optional, List, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ============================================================================
@@ -34,8 +34,7 @@ class ShiftResponse(ShiftBase):
     created_at: str
     updated_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ============================================================================
@@ -59,8 +58,7 @@ class ShiftAssignmentResponse(BaseModel):
     is_active: bool
     created_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ============================================================================
@@ -90,8 +88,7 @@ class AttendanceSettingResponse(BaseModel):
     is_active: bool
     created_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ============================================================================
@@ -129,8 +126,7 @@ class AttendanceRecordResponse(BaseModel):
     leave_application_id: Optional[int] = None
     created_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AttendanceRecordWithEmployee(AttendanceRecordResponse):
@@ -168,8 +164,7 @@ class DeviceResponse(BaseModel):
     last_used_at: Optional[str] = None
     created_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class DeviceCreateResponse(DeviceResponse):

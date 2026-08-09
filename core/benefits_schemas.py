@@ -1,6 +1,6 @@
 """Pydantic schemas for the Benefits module."""
 from typing import Optional, List, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ============================================================================
@@ -47,8 +47,7 @@ class BenefitPlanResponse(BenefitPlanBase):
     created_at: str
     updated_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ============================================================================
@@ -73,8 +72,7 @@ class EligibilityRuleResponse(BaseModel):
     pay_grade_name: Optional[str] = None
     created_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class EligiblePlanResponse(BenefitPlanResponse):
@@ -108,8 +106,7 @@ class EnrollmentPeriodResponse(EnrollmentPeriodCreate):
     created_at: str
     updated_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class LifeEventCreate(BaseModel):
@@ -135,8 +132,7 @@ class LifeEventResponse(LifeEventCreate):
     created_at: str
     updated_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class LifeEventWithEmployee(LifeEventResponse):
@@ -169,8 +165,7 @@ class EnrollmentResponse(BaseModel):
     created_at: str
     updated_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class EnrollmentWithPlan(EnrollmentResponse):
@@ -219,8 +214,7 @@ class DependentResponse(DependentBase):
     created_at: str
     updated_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class EnrollmentDependentLink(BaseModel):
@@ -267,8 +261,7 @@ class ClaimResponse(BaseModel):
     created_at: str
     updated_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ClaimWithDetails(ClaimResponse):

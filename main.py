@@ -1,5 +1,6 @@
 import os
 import logging
+from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
@@ -143,6 +144,25 @@ if sentry_dsn:
 # ---------------------------------------------------------------------------
 # App + OpenAPI + CORS
 # ---------------------------------------------------------------------------
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Seed initial data (superadmin user, OB templates) on app startup.
+
+    Schema migrations are applied separately via `alembic upgrade head`
+    (run manually / in CI before deploy) — NOT here. An earlier version of
+    this hook shelled out to `alembic upgrade head` synchronously, which
+    blocks the asyncio event loop for the full subprocess duration since
+    startup handlers run directly on the loop, not in a thread. That call
+    could hang indefinitely on lock contention with a concurrent migration
+    run, keeping uvicorn from ever accepting connections — do not
+    reintroduce it here.
+    """
+    try:
+        init_db_seed()
+    except Exception as e:
+        logger.error(f"Error seeding database: {e}")
+    yield
+
 app = FastAPI(
     title="EMS Multi-Tenant",
     description="Employee Management System: multi-tenant HR platform with employees, recruitment, L&D, leave, timesheets, payroll, and performance management.",
@@ -150,25 +170,8 @@ app = FastAPI(
     docs_url="/api/docs",
     redoc_url="/api/redoc",
     openapi_url="/api/openapi.json",
+    lifespan=lifespan,
 )
-
-@app.on_event("startup")
-def run_seed():
-    """Seed initial data (superadmin user, OB templates) on app startup.
-
-    Schema migrations are applied separately via `alembic upgrade head`
-    (run manually / in CI before deploy) — NOT here. An earlier version of
-    this hook shelled out to `alembic upgrade head` synchronously, which
-    blocks the asyncio event loop for the full subprocess duration since
-    on_event startup handlers run directly on the loop, not in a thread.
-    That call could hang indefinitely on lock contention with a concurrent
-    migration run, keeping uvicorn from ever accepting connections — do not
-    reintroduce it here.
-    """
-    try:
-        init_db_seed()
-    except Exception as e:
-        logger.error(f"Error seeding database: {e}")
 
 # Registration order matters: matches the original @app.middleware decorator
 # order this was extracted from (core/middleware.py) — cors_middleware first,

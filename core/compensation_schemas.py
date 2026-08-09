@@ -1,6 +1,6 @@
 """Pydantic schemas for Compensation Framework."""
 from typing import Optional, List, Literal
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from datetime import date
 
 
@@ -42,8 +42,7 @@ class PayGradeResponse(PayGradeBase):
     created_at: str
     updated_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ============================================================================
@@ -78,8 +77,7 @@ class JobLevelResponse(JobLevelBase):
     created_at: str
     updated_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ============================================================================
@@ -117,8 +115,7 @@ class JobRoleResponse(JobRoleBase):
     created_at: str
     updated_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class JobRoleWithGrades(JobRoleResponse):
@@ -168,8 +165,7 @@ class SalaryComponentResponse(SalaryComponentBase):
     is_active: int
     created_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SalaryStructureBase(BaseModel):
@@ -200,8 +196,7 @@ class SalaryStructureResponse(SalaryStructureBase):
     created_at: str
     updated_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ============================================================================
@@ -238,8 +233,7 @@ class EmployeeCompensationResponse(EmployeeCompensationBase):
     created_at: str
     updated_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class EmployeeCompensationDetail(EmployeeCompensationResponse):
@@ -281,8 +275,7 @@ class SalaryChangeResponse(SalaryChangeBase):
     status: str
     created_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ============================================================================
@@ -312,8 +305,7 @@ class MeritReviewCycleResponse(MeritReviewCycleBase):
     created_at: str
     updated_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class MeritRecommendationBase(BaseModel):
@@ -367,8 +359,7 @@ class MeritRecommendationResponse(MeritRecommendationBase):
     created_at: str
     updated_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class MeritRecommendationWithEmployee(MeritRecommendationResponse):
@@ -411,8 +402,7 @@ class BonusPlanResponse(BonusPlanBase):
     created_at: str
     updated_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class BonusPayoutBase(BaseModel):
@@ -445,8 +435,7 @@ class BonusPayoutResponse(BonusPayoutBase):
     created_at: str
     updated_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class BonusPayoutWithEmployee(BonusPayoutResponse):
@@ -489,8 +478,7 @@ class CommissionPlanResponse(CommissionPlanBase):
     created_at: str
     updated_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CommissionEntryBase(BaseModel):
@@ -527,8 +515,7 @@ class CommissionEntryResponse(CommissionEntryBase):
     created_at: str
     updated_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CommissionEntryWithEmployee(CommissionEntryResponse):
@@ -575,8 +562,7 @@ class EquityGrantResponse(EquityGrantBase):
     created_at: str
     updated_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class EquityGrantWithEmployee(EquityGrantResponse):
@@ -600,8 +586,7 @@ class VestingEventResponse(BaseModel):
     created_at: str
     updated_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class VestingEventSettle(BaseModel):
