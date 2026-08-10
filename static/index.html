@@ -893,22 +893,28 @@
 
       <!-- ORG CHART -->
       <div id="page-orgchart" class="hidden">
+        <div class="flex items-center gap-1 border-b border-slate-200 mb-3">
+          <button id="orgTab_tree" class="view-tab-btn view-tab-active px-4 py-2 text-sm" onclick="orgSwitchView('tree')">Tree View</button>
+          <button id="orgTab_list" class="view-tab-btn px-4 py-2 text-sm text-slate-500" onclick="orgSwitchView('list')">List View</button>
+        </div>
         <div class="flex items-center gap-3 mb-4 flex-wrap">
           <select id="orgStatusFilter" class="inp w-40" onchange="loadOrgChart()">
             <option value="Active">Active Only</option>
             <option value="">All</option>
           </select>
           <div id="orgBreadcrumb" class="flex items-center gap-1 text-sm text-slate-500 flex-1 min-w-0 flex-wrap"></div>
-          <div class="flex items-center gap-1 flex-shrink-0">
+          <div id="orgZoomControls" class="flex items-center gap-1 flex-shrink-0">
             <button onclick="orgZoomBy(0.8)" class="btn-ghost text-xs px-2" title="Zoom out">−</button>
             <button onclick="orgZoomBy(1.25)" class="btn-ghost text-xs px-2" title="Zoom in">+</button>
             <button onclick="orgResetView()" class="btn-ghost text-xs px-2" title="Reset zoom/pan">Reset View</button>
           </div>
         </div>
-        <p class="text-xs text-slate-400 mb-2">Click a card to focus on that person's team. Click the −/+ badge to collapse or expand a branch. Drag to pan, scroll to zoom.</p>
+        <p id="orgTreeHint" class="text-xs text-slate-400 mb-2">Click a card to focus on that person's team. Click the −/+ badge to collapse or expand a branch. Drag to pan, scroll to zoom.</p>
+        <p id="orgListHint" class="text-xs text-slate-400 mb-2 hidden">Click the chevron to collapse or expand a branch. Click a name to focus on that person's team.</p>
         <div id="orgChartWrap" class="bg-white rounded-xl border border-slate-200 overflow-hidden min-h-64 p-4" style="cursor:grab">
           <svg id="orgSvg" class="block"></svg>
         </div>
+        <div id="orgListWrap" class="hidden bg-white rounded-xl border border-slate-200 min-h-64 p-2 overflow-x-auto"></div>
       </div>
 
       <!-- AUDIT LOG -->
@@ -4694,7 +4700,7 @@
 <script src="/static/js/dashboard.js?v=74"></script>
 <script src="/static/js/institutions.js?v=74"></script>
 <script src="/static/js/employees.js?v=74"></script>
-<script src="/static/js/orgchart.js?v=74"></script>
+<script src="/static/js/orgchart.js?v=75"></script>
 <script src="/static/js/audit.js?v=74"></script>
 <script src="/static/js/users.js?v=74"></script>
 <script src="/static/js/recruitment.js?v=74"></script>

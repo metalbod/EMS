@@ -10,6 +10,11 @@ let orgRootId = null;
 let orgCollapsed = new Set();
 let orgView = { scale: 1, tx: 0, ty: 0 };
 let orgDrag = null;
+// 'tree' (SVG boxes-and-lines) or 'list' (plain collapsible nested list,
+// compact horizontally — see renderOrgList). orgRootId/orgCollapsed are
+// shared between both views, so switching tabs mid-drill-down or
+// mid-collapse keeps exactly what you had expanded/focused.
+let orgViewMode = 'tree';
 
 async function loadOrgChart() {
   if(currentUser.role==='superadmin'&&!currentInstitution) return;
@@ -19,6 +24,20 @@ async function loadOrgChart() {
   orgRootId=null;
   orgCollapsed=orgDefaultCollapsed(orgData);
   orgResetView();
+  refreshOrgChart();
+}
+
+function orgSwitchView(mode) {
+  orgViewMode=mode;
+  document.getElementById('orgTab_tree').classList.toggle('view-tab-active', mode==='tree');
+  document.getElementById('orgTab_tree').classList.toggle('text-slate-500', mode!=='tree');
+  document.getElementById('orgTab_list').classList.toggle('view-tab-active', mode==='list');
+  document.getElementById('orgTab_list').classList.toggle('text-slate-500', mode!=='list');
+  document.getElementById('orgChartWrap').classList.toggle('hidden', mode!=='tree');
+  document.getElementById('orgListWrap').classList.toggle('hidden', mode!=='list');
+  document.getElementById('orgZoomControls').classList.toggle('hidden', mode!=='tree');
+  document.getElementById('orgTreeHint').classList.toggle('hidden', mode!=='tree');
+  document.getElementById('orgListHint').classList.toggle('hidden', mode!=='list');
   refreshOrgChart();
 }
 
@@ -47,7 +66,8 @@ function orgDefaultCollapsed(nodes) {
 
 function refreshOrgChart() {
   const sf=document.getElementById('orgStatusFilter')?.value||'';
-  renderOrgChart(sf?orgData.filter(e=>e.status===sf):orgData);
+  const nodes=sf?orgData.filter(e=>e.status===sf):orgData;
+  if(orgViewMode==='list') renderOrgList(nodes); else renderOrgChart(nodes);
 }
 
 function orgFocus(id) {
@@ -148,6 +168,70 @@ function renderOrgChart(nodes) {
   if(!nodes.length) svg.innerHTML='<text x="50%" y="60" text-anchor="middle" fill="#94a3b8" font-size="14" font-family="sans-serif">No employees to display</text>';
   applyOrgView();
   wireOrgPanZoom();
+}
+
+// Plain collapsible nested list — the "compact horizontally" alternative to
+// the SVG tree above. Width only grows with reporting depth (indentation),
+// not headcount, since siblings stack vertically instead of spreading out
+// in a row; height grows with headcount instead, which scrolls naturally.
+// Shares orgCollapsed/orgRootId/orgFocus/orgToggleCollapse with the tree
+// view, so collapse state and department-focus carry over when switching tabs.
+function renderOrgList(nodes) {
+  const byId={};nodes.forEach(n=>byId[n.employee_id]=n);
+  const children={};const roots=[];
+  nodes.forEach(n=>{
+    if(!n.reports_to||n.reports_to===n.employee_id||!byId[n.reports_to]) roots.push(n.employee_id);
+    else (children[n.reports_to]=children[n.reports_to]||[]).push(n.employee_id);
+  });
+  if(!roots.length&&nodes.length) roots.push(nodes[0].employee_id);
+
+  renderOrgBreadcrumb(byId);
+
+  const layoutRoots=(orgRootId&&byId[orgRootId])?[orgRootId]:roots;
+
+  function countDescendants(id){
+    const kids=children[id]||[];
+    let n=kids.length;
+    kids.forEach(k=>n+=countDescendants(k));
+    return n;
+  }
+
+  const visited=new Set();
+  function renderNode(id){
+    if(visited.has(id)) return '';
+    visited.add(id);
+    const n=byId[id];if(!n) return '';
+    const kids=children[id]||[];
+    const hasKids=kids.length>0;
+    const collapsed=orgCollapsed.has(id);
+    const active=n.status==='Active';
+    const toggle=hasKids
+      ?`<button onclick="event.stopPropagation();orgToggleCollapse('${id}')" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-slate-400 hover:text-slate-700 rounded hover:bg-slate-100" title="${collapsed?'Expand':'Collapse'}">
+          <svg class="w-3.5 h-3.5 transition-transform ${collapsed?'':'rotate-90'}" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.21 5.23a.75.75 0 011.06.02l4.5 4.75a.75.75 0 010 1.04l-4.5 4.75a.75.75 0 11-1.08-1.04L11.168 10 7.23 5.79a.75.75 0 01-.02-1.06z" clip-rule="evenodd"/></svg>
+        </button>`
+      :`<span class="w-5 h-5 flex-shrink-0"></span>`;
+    const childCount=hasKids?`<span class="text-[10px] text-slate-400 flex-shrink-0">${collapsed?countDescendants(id)+' hidden':kids.length}</span>`:'';
+    const row=`<div class="flex items-center gap-1.5 py-1.5 px-2 rounded-lg hover:bg-slate-50 group">
+        ${toggle}
+        <span class="w-2 h-2 rounded-full flex-shrink-0 ${active?'bg-emerald-500':'bg-slate-300'}"></span>
+        <button onclick="orgFocus('${id}')" class="text-sm font-medium text-slate-800 hover:text-blue-600 truncate text-left flex-shrink-0 max-w-[220px]">${esc(n.full_name)}</button>
+        <span class="text-xs text-slate-400 truncate">${esc(n.designation)}</span>
+        <span class="text-[10px] text-slate-400 truncate ml-auto flex-shrink-0 hidden sm:inline">${esc(n.department)}</span>
+        ${childCount}
+        <button onclick="event.stopPropagation();viewEmployee('${id}')" class="opacity-0 group-hover:opacity-100 flex-shrink-0 text-slate-400 hover:text-slate-700" title="View profile">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z"/><path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/></svg>
+        </button>
+      </div>`;
+    const childrenHtml=(hasKids&&!collapsed)
+      ?`<div class="ml-[9px] border-l border-slate-200 pl-2">${kids.map(renderNode).join('')}</div>`
+      :'';
+    return `<div>${row}${childrenHtml}</div>`;
+  }
+
+  const listEl=document.getElementById('orgListWrap');
+  if(!listEl) return;
+  const html=layoutRoots.map(renderNode).join('');
+  listEl.innerHTML=html||'<p class="text-sm text-slate-400 p-4">No employees to display</p>';
 }
 
 function renderOrgBreadcrumb(byId) {
