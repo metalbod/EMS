@@ -27,7 +27,22 @@ def test_rls_blocks_cross_institution_row_even_without_a_where_filter(
     query forgets `WHERE institution_id=?` and would otherwise leak another
     institution's row. Here we deliberately query WITHOUT any institution
     filter — matching that mistake exactly — and confirm Postgres's RLS
-    policy hides the other institution's row regardless."""
+    policy hides the other institution's row regardless.
+
+    KNOWN FLAKY under the full test suite (tracked, not yet root-caused):
+    passes reliably standalone and under `-n 2` with a handful of files, but
+    has intermittently failed ("RLS scoped to institution B still saw
+    institution A's employee") only when run as part of the full 400+ test
+    suite via CI. Not reproduced in isolated bisection (single-threaded, or
+    `-n 2` with 3 files) as of 2026-08-10. Leading theory: some interaction
+    with Supabase's PgBouncer transaction pooler (both TEST_DATABASE_URL and
+    prod's DATABASE_URL route through it on port 6543) under the connection
+    churn of a long, large test run — unconfirmed; a direct (non-pooled,
+    port 5432) connection would have ruled this in/out but Supabase's direct
+    connections are IPv6-only and GitHub Actions runners are IPv4-only by
+    default, making that experiment impractical without paying for
+    Supabase's IPv4 add-on. If this starts failing reliably (not just
+    occasionally under full-suite load), that's the place to look first."""
     emp_a = make_test_employee()
     inst_a_id = test_institution["id"]
 

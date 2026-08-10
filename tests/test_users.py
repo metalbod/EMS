@@ -152,6 +152,12 @@ def test_hr_manager_cannot_edit_superadmin(client, hr_manager_auth, superadmin_h
     # return 403. Arguably more secure than before: hr_manager can no
     # longer even confirm the superadmin row exists, rather than being
     # explicitly told "found it, but access denied."
+    #
+    # KNOWN FLAKY under the full test suite, same tracked issue as
+    # test_rls_enforcement.py's cross-institution test (see its docstring)
+    # — a 403 here means RLS didn't hide the row that run. Not root-caused
+    # as of 2026-08-10; a real regression would fail this reliably, not
+    # just occasionally under full-suite load.
     assert res.status_code == 404
 
 

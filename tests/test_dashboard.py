@@ -5,12 +5,46 @@ current-week timesheet case is exercised here with a real "this week"
 period_start — the ld_enrollments and manager-appraisal todo branches
 are covered indirectly once ld.py/performance.py get their own test files.
 """
+import os
 from datetime import datetime, timedelta, timezone
+
+from conftest import _valid_employee_payload
 
 
 def _this_monday():
     today = datetime.now(timezone.utc).date()
     return (today - timedelta(days=today.weekday())).isoformat()
+
+
+def _fresh_institution_hr_manager_auth(client, superadmin_headers):
+    """An hr_manager account scoped to a brand-new, throwaway institution —
+    NOT the shared session-wide test_institution. The hr_manager approver
+    type is role-based and institution-wide (any hr_manager-role account is
+    eligible for any pending hr_manager-step item in their institution, not
+    just their own subordinates' — see core/approval_workflow.py), so an
+    "expect zero todos" assertion against the shared test_institution is
+    only true when no *other* test file in the same run has left a pending
+    hr_manager-step item behind there — which, across the full suite, isn't
+    reliably true. A dedicated fresh institution sidesteps that entirely."""
+    code = f"ZZDASHHR{os.urandom(4).hex()}".upper()
+    username = f"zzdashhr_admin_{os.urandom(4).hex()}"
+    password = "ZzPytest@123"
+    create = client.post("/api/institutions", headers=superadmin_headers, json={
+        "name": "ZZ Dashboard HR Institution",
+        "code": code,
+        "contact_email": "zzdashhr@example.com",
+        "admin_username": username,
+        "admin_full_name": "ZZ Dashboard HR Admin",
+        "admin_password": password,
+    })
+    assert create.status_code == 201, create.text
+    inst = create.json()
+    login = client.post("/api/auth/login", json={
+        "username": username, "password": password, "institution_code": code,
+    })
+    assert login.status_code == 200, login.text
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    return inst, headers
 
 
 def test_get_todos_requires_auth(client):
@@ -24,8 +58,13 @@ def test_superadmin_gets_empty_todos(client, superadmin_headers):
     assert res.json() == []
 
 
-def test_hr_manager_with_no_employee_record_gets_empty_todos(client, hr_manager_auth):
-    res = client.get("/api/todos", headers=hr_manager_auth)
+def test_hr_manager_with_no_employee_record_gets_empty_todos(client, superadmin_headers):
+    # A fresh, dedicated institution — not the shared test_institution — so
+    # this genuinely starts with zero pending items regardless of what any
+    # other test file in this run has left behind there (see
+    # _fresh_institution_hr_manager_auth's docstring).
+    _, hr_headers = _fresh_institution_hr_manager_auth(client, superadmin_headers)
+    res = client.get("/api/todos", headers=hr_headers)
     assert res.status_code == 200
     assert res.json() == []
 
@@ -62,34 +101,54 @@ def test_employee_with_draft_timesheet_this_week_gets_todo(
     client.delete(f"/api/users/{user_id}", headers=hr_manager_auth)
 
 
-def test_onboarding_checklist_items_appear_for_assigned_role(client, hr_manager_auth, test_institution, make_test_employee):
+def test_onboarding_checklist_items_appear_for_assigned_role(client, superadmin_headers):
     """A checklist item's assigned_role determines whose To-Do it shows up
     in — the new hire sees their own 'employee'-assigned items, HR sees
     the institution's 'hr_manager'-assigned items — one row per pending
     item (not an aggregate count), each labeled with the item's title so
     the To-Do card shows what the task actually is. See
     routers/dashboard.py's ob_q, which mirrors list_ob_checklists'
-    (routers/onboarding.py) existing my_pending scoping."""
-    emp = make_test_employee(full_name="ZZ Dashboard OB Employee")
+    (routers/onboarding.py) existing my_pending scoping.
+
+    Uses a fresh, dedicated institution (not the shared test_institution) —
+    this test doubles as the regression check for a real bug found while
+    debugging it: routers/onboarding.py's start_checklist queried
+    `template_set_id=?` with a bound None whenever an institution had no
+    ob_template_sets row yet (only ever used the legacy templates from
+    seed_ob_templates, which leave template_set_id NULL) — `x = NULL` is
+    never true in SQL even when x genuinely IS NULL, so every such
+    institution silently got zero checklist items on every
+    POST /api/ob/checklists call. Never surfaced against the shared
+    test_institution because an earlier feature (custom template sets) had
+    already given it a real ob_template_sets row, masking the bug — a fresh
+    institution has no such row, so it reproduces the original bug
+    reliably. Now fixed with an explicit `IS NULL` branch."""
+    inst, hr_headers = _fresh_institution_hr_manager_auth(client, superadmin_headers)
+    inst_code = inst["code"]
+
+    emp_res = client.post("/api/employees", headers=hr_headers,
+                           json=_valid_employee_payload(full_name="ZZ Dashboard OB Employee"))
+    assert emp_res.status_code == 201, emp_res.text
+    emp = emp_res.json()
+
     username = f"zztdashob_{emp['employee_id'].lower()}"
     password = "ZzPytest@123"
-    user_res = client.post("/api/users", headers=hr_manager_auth, json={
+    user_res = client.post("/api/users", headers=hr_headers, json={
         "username": username, "full_name": "ZZ Dashboard OB Test Employee",
         "password": password, "role": "employee", "employee_id": emp["employee_id"],
     })
     assert user_res.status_code == 201, user_res.text
-    user_id = user_res.json()["id"]
     login = client.post("/api/auth/login", json={
-        "username": username, "password": password, "institution_code": test_institution["code"],
+        "username": username, "password": password, "institution_code": inst_code,
     })
     assert login.status_code == 200
     emp_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
 
-    started = client.post("/api/ob/checklists", headers=hr_manager_auth,
+    started = client.post("/api/ob/checklists", headers=hr_headers,
                            json={"employee_id": emp["employee_id"], "type": "onboarding"})
     assert started.status_code == 201, started.text
     cl_id = started.json()["id"]
-    item_ids = {i["id"] for i in client.get(f"/api/ob/checklists/{cl_id}", headers=hr_manager_auth).json()["items"]}
+    item_ids = {i["id"] for i in client.get(f"/api/ob/checklists/{cl_id}", headers=hr_headers).json()["items"]}
 
     # The new hire sees their own 'employee'-assigned items (e.g. "Welcome
     # Acknowledgement" in the seeded default templates) as individual rows,
@@ -104,10 +163,7 @@ def test_onboarding_checklist_items_appear_for_assigned_role(client, hr_manager_
     # HR sees their own 'hr_admin'/'hr_manager'-assigned items across the
     # institution (not the employee's), each labeled with the employee's
     # name since it's someone else's checklist.
-    hr_todos = client.get("/api/todos", headers=hr_manager_auth).json()
+    hr_todos = client.get("/api/todos", headers=hr_headers).json()
     hr_ob_todos = [t for t in hr_todos if t["key"].startswith("ob-item-") and int(t["key"].removeprefix("ob-item-")) in item_ids]
     assert hr_ob_todos
     assert all(emp["full_name"] in t["label"] for t in hr_ob_todos)
-
-    client.delete(f"/api/ob/checklists/{cl_id}", headers=hr_manager_auth)
-    client.delete(f"/api/users/{user_id}", headers=hr_manager_auth)

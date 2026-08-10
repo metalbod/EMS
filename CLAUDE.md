@@ -163,6 +163,15 @@ wrapper everywhere.
   blips, not stale connections) can still happen occasionally — retry the
   specific failing test in isolation before concluding something broke;
   only real `AssertionError`s indicate an actual regression.
+- **`tests/test_rls_enforcement.py::test_rls_blocks_cross_institution_row_even_without_a_where_filter`
+  is a known-flaky test under the full suite** (tracked, not root-caused as
+  of 2026-08-10) — passes reliably alone or in a small `-n 2` subset, but
+  has intermittently failed only during a full 400+ test CI run. See its
+  docstring for the leading theory (possible PgBouncer transaction-pooler
+  interaction) and why the obvious next diagnostic step (a direct,
+  non-pooled connection) isn't practical in CI. A real regression here
+  would show up as this test failing *reliably*, not just occasionally
+  under full-suite load.
 - **Bash tool's cwd resets between calls** — always use absolute paths
   or prefix `cd /path/to/ems &&`.
 - **`fly deploy` does not run migrations on its own** — use `./deploy.sh`

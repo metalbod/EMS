@@ -307,10 +307,21 @@ def move_ob_template(conn, tmpl_id: int, body: OBTemplateMoveIn, user: dict = De
     tmpl = conn.execute("SELECT * FROM ob_templates WHERE id=? AND institution_id=? AND is_active=1", (tmpl_id, inst_id)).fetchone()
     if not tmpl:
         raise HTTPException(404, "Template not found")
-    siblings = conn.execute(
-        "SELECT * FROM ob_templates WHERE template_set_id=? AND is_active=1 ORDER BY order_index",
-        (tmpl["template_set_id"],)
-    ).fetchall()
+    # tmpl["template_set_id"] is NULL for a legacy template (seeded before
+    # ob_template_sets existed — see seed_ob_templates) — `= ?` with a bound
+    # None never matches even a genuinely-NULL column (SQL NULL = NULL is
+    # unknown, not true), so this needs an explicit IS NULL branch instead
+    # of always using `=?`.
+    if tmpl["template_set_id"] is not None:
+        siblings = conn.execute(
+            "SELECT * FROM ob_templates WHERE template_set_id=? AND is_active=1 ORDER BY order_index",
+            (tmpl["template_set_id"],)
+        ).fetchall()
+    else:
+        siblings = conn.execute(
+            "SELECT * FROM ob_templates WHERE template_set_id IS NULL AND institution_id=? AND type=? AND is_active=1 ORDER BY order_index",
+            (inst_id, tmpl["type"])
+        ).fetchall()
     idx = next((i for i, s in enumerate(siblings) if s["id"] == tmpl_id), None)
     if idx is None:
         raise HTTPException(404, "Template not found")
@@ -387,11 +398,23 @@ def start_ob_checklist(conn, body: OBChecklistStartIn, user: dict = Depends(requ
         (inst_id, body.employee_id, body.type, user["username"], body.notes)
     )
     cl_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-    # Snapshot active templates from the chosen (or default) template set as items
-    templates = conn.execute(
-        "SELECT * FROM ob_templates WHERE institution_id=? AND type=? AND template_set_id=? AND is_active=1 ORDER BY order_index",
-        (inst_id, body.type, template_set_id)
-    ).fetchall()
+    # Snapshot active templates from the chosen (or default) template set as
+    # items. template_set_id is NULL for an institution that's never had an
+    # ob_template_sets row created (only ever used the legacy templates from
+    # seed_ob_templates, which leaves template_set_id unset) — `= ?` with a
+    # bound None never matches even a genuinely-NULL column (SQL NULL = NULL
+    # is unknown, not true), which silently produced zero checklist items
+    # for every such institution until this IS NULL branch was added.
+    if template_set_id is not None:
+        templates = conn.execute(
+            "SELECT * FROM ob_templates WHERE institution_id=? AND type=? AND template_set_id=? AND is_active=1 ORDER BY order_index",
+            (inst_id, body.type, template_set_id)
+        ).fetchall()
+    else:
+        templates = conn.execute(
+            "SELECT * FROM ob_templates WHERE institution_id=? AND type=? AND template_set_id IS NULL AND is_active=1 ORDER BY order_index",
+            (inst_id, body.type)
+        ).fetchall()
     for t in templates:
         enrollment_id = None
         if t["linked_ld_course_id"]:
