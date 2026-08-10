@@ -3,6 +3,8 @@ import os
 
 import pytest
 
+from conftest import _valid_employee_payload
+
 
 @pytest.fixture
 def employee_with_user(make_test_employee, hr_manager_auth, client, test_institution):
@@ -29,6 +31,30 @@ def employee_with_user(make_test_employee, hr_manager_auth, client, test_institu
 
 def _unique_title(prefix="ZZ Test Template"):
     return f"{prefix} {os.urandom(4).hex()}"
+
+
+def _fresh_institution_hr_manager_auth(client, superadmin_headers):
+    """An hr_manager account scoped to a brand-new institution — one that's
+    never had an ob_template_sets row created, only the legacy
+    (template_set_id IS NULL) templates from seed_ob_templates. Needed for
+    tests that specifically exercise that legacy state, which the shared
+    test_institution no longer has (see the "= NULL never matches" bug this
+    file's regression test covers)."""
+    code = f"ZZOBHR{os.urandom(4).hex()}".upper()
+    username = f"zzobhr_admin_{os.urandom(4).hex()}"
+    password = "ZzPytest@123"
+    create = client.post("/api/institutions", headers=superadmin_headers, json={
+        "name": "ZZ Onboarding HR Institution", "code": code,
+        "contact_email": "zzobhr@example.com",
+        "admin_username": username, "admin_full_name": "ZZ Onboarding HR Admin",
+        "admin_password": password,
+    })
+    assert create.status_code == 201, create.text
+    login = client.post("/api/auth/login", json={
+        "username": username, "password": password, "institution_code": code,
+    })
+    assert login.status_code == 200, login.text
+    return {"Authorization": f"Bearer {login.json()['access_token']}"}
 
 
 @pytest.fixture
@@ -163,6 +189,61 @@ def test_start_checklist_success_snapshots_active_templates(client, hr_manager_a
     assert detail.status_code == 200
     items = detail.json()["items"]
     assert any(i["title"] == title for i in items)
+
+
+def test_legacy_default_templates_survive_first_custom_template_add(client, superadmin_headers):
+    """Regression test for two bugs found together:
+
+    1. start_checklist queried `template_set_id=?` with a bound None for
+       any institution with no ob_template_sets row (only ever using the
+       legacy templates from seed_ob_templates, which leave template_set_id
+       NULL) — `x = NULL` is never true in SQL even when x genuinely IS
+       NULL, so every such institution silently got zero checklist items on
+       every checklist creation. Affected every institution created after
+       migration 20260802_0001 shipped (that migration only backfilled
+       institutions that existed *at the time*) — 293 of them in prod as of
+       2026-08-10.
+
+    2. Even after fixing #1, _resolve_or_create_default_set (called by
+       POST /api/ob/templates when no template_set_id is given) created a
+       brand-new, near-empty "Default" set instead of adopting the existing
+       legacy templates — so the moment anyone added ONE custom template
+       item on an affected institution, the entire legacy default checklist
+       (18 onboarding items) would be silently orphaned forever, since
+       start_checklist only looks at the real template_set_id from then on.
+
+    A fresh institution (like this one) has never had an ob_template_sets
+    row, exactly reproducing the state that triggered both bugs."""
+    hr_headers = _fresh_institution_hr_manager_auth(client, superadmin_headers)
+
+    emp_res = client.post("/api/employees", headers=hr_headers, json=_valid_employee_payload())
+    assert emp_res.status_code == 201, emp_res.text
+    emp = emp_res.json()
+
+    # Bug #1: this alone must already produce the full legacy checklist.
+    started = client.post("/api/ob/checklists", headers=hr_headers,
+                           json={"employee_id": emp["employee_id"], "type": "onboarding"})
+    assert started.status_code == 201, started.text
+    items_before = client.get(f"/api/ob/checklists/{started.json()['id']}", headers=hr_headers).json()["items"]
+    assert len(items_before) >= 15, f"expected the full legacy default checklist, got: {items_before}"
+    assert any("Welcome Acknowledgement" in i["title"] for i in items_before)
+    client.delete(f"/api/ob/checklists/{started.json()['id']}", headers=hr_headers)
+
+    # Bug #2: adding one custom template must not orphan the rest.
+    custom_title = _unique_title()
+    add = client.post("/api/ob/templates", headers=hr_headers,
+                       json={"title": custom_title, "type": "onboarding", "assigned_role": "hr_admin"})
+    assert add.status_code == 201, add.text
+
+    started2 = client.post("/api/ob/checklists", headers=hr_headers,
+                            json={"employee_id": emp["employee_id"], "type": "onboarding"})
+    assert started2.status_code == 201, started2.text
+    items_after = client.get(f"/api/ob/checklists/{started2.json()['id']}", headers=hr_headers).json()["items"]
+    assert any("Welcome Acknowledgement" in i["title"] for i in items_after), (
+        "adding a custom template orphaned the legacy default checklist"
+    )
+    assert any(i["title"] == custom_title for i in items_after)
+    assert len(items_after) == len(items_before) + 1
 
 
 def test_start_checklist_duplicate_active_returns_400(client, hr_manager_auth, make_test_employee, make_test_ob_checklist):

@@ -231,7 +231,16 @@ def _resolve_or_create_default_set(conn, inst_id: int, ob_type: str) -> int:
     """Find this institution's default template set for `ob_type`, or create
     a "Default" one if none exists yet — callers (e.g. adding a template item
     without picking a set) shouldn't be forced through set-management UI
-    just to keep working the way the single-template-list version did."""
+    just to keep working the way the single-template-list version did.
+
+    Any institution created before migration 20260802_0001 (or backfilled by
+    it) already has one. Any institution created since only ever got legacy,
+    un-set-scoped templates from seed_ob_templates (template_set_id IS
+    NULL) — creating a brand-new, empty "Default" set for those would
+    silently orphan that entire legacy checklist the moment anyone added one
+    custom item (start_checklist and move_ob_template only look at the real
+    template_set_id from that point on). So the new set adopts those legacy
+    rows instead of leaving them stranded."""
     row = conn.execute(
         "SELECT id FROM ob_template_sets WHERE institution_id=? AND type=? AND is_active=1 ORDER BY is_default DESC, id LIMIT 1",
         (inst_id, ob_type)
@@ -242,7 +251,12 @@ def _resolve_or_create_default_set(conn, inst_id: int, ob_type: str) -> int:
         "INSERT INTO ob_template_sets (institution_id,type,name,is_default) VALUES (?,?,?,1)",
         (inst_id, ob_type, "Default")
     )
-    return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    set_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.execute(
+        "UPDATE ob_templates SET template_set_id=? WHERE institution_id=? AND type=? AND template_set_id IS NULL AND is_active=1",
+        (set_id, inst_id, ob_type)
+    )
+    return set_id
 
 
 @router.post("/api/ob/templates", status_code=201)
