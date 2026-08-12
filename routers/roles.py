@@ -26,6 +26,11 @@ except ImportError:
     from ems.core.constants import ROLE_LABELS
 
 try:
+    from core.permission_matrix import ALL_ROLES, MATRIX
+except ImportError:
+    from ems.core.permission_matrix import ALL_ROLES, MATRIX
+
+try:
     from core.db_session import db_session
 except ImportError:
     from ems.core.db_session import db_session
@@ -68,6 +73,45 @@ def list_roles(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, A
     ).fetchall()
     custom = [{"id": r["id"], "role_key": r["role_key"], "display_name": r["display_name"], "is_builtin": False} for r in custom_rows]
     return builtin + custom
+
+
+@router.get("/api/roles/permission-matrix")
+@db_session
+def get_permission_matrix(conn, user: dict = Depends(require_roles(*ROLE_MANAGE_ROLES))) -> Dict[str, Any]:
+    """Static, hand-curated "who can do what" reference for the 6 built-in
+    roles (see core/permission_matrix.py's module docstring for why this
+    isn't derived from the routers at runtime), plus this institution's
+    actual custom roles (see routers/roles.py's create_role) expanded as
+    their own columns rather than one generic "custom role" placeholder —
+    a custom role never unlocks a require_roles(...) gate (see
+    permission_matrix.py), so each one's access is just a copy of the
+    Employee column for every action."""
+    inst_id = need_inst(user)
+    custom_rows = conn.execute(
+        "SELECT role_key, display_name FROM custom_roles WHERE institution_id=? ORDER BY display_name", (inst_id,)
+    ).fetchall()
+    custom_roles = [{"role_key": r["role_key"], "display_name": r["display_name"]} for r in custom_rows]
+
+    modules = []
+    for mod in MATRIX:
+        actions = []
+        for a in mod["actions"]:
+            access = dict(a["access"])
+            for cr in custom_roles:
+                access[cr["role_key"]] = access.get("employee", "deny")
+            actions.append({**a, "access": access})
+        modules.append({"module": mod["module"], "actions": actions})
+
+    role_labels = dict(ROLE_LABELS)
+    for cr in custom_roles:
+        role_labels[cr["role_key"]] = cr["display_name"]
+
+    return {
+        "roles": ALL_ROLES,
+        "custom_roles": [cr["role_key"] for cr in custom_roles],
+        "role_labels": role_labels,
+        "modules": modules,
+    }
 
 
 @router.post("/api/roles", status_code=201)
