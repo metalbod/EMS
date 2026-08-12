@@ -9,9 +9,9 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ValidationError, field_validator
 
 try:
-    from core.deps import get_current_user, need_inst, require_roles
+    from core.deps import get_current_user, need_inst
 except ImportError:
-    from ems.core.deps import get_current_user, need_inst, require_roles
+    from ems.core.deps import get_current_user, need_inst
 
 try:
     from core.org_queries import is_self_or_subordinate
@@ -53,10 +53,28 @@ try:
 except ImportError:
     from ems.core.location_assignments import get_primary_location, get_primary_locations, set_primary_location
 
+try:
+    from core.permission_matrix import has_permission
+except ImportError:
+    from ems.core.permission_matrix import has_permission
+
 router = APIRouter()
 
 CAN_WRITE  = ("superadmin", "hr_manager", "hr_admin")
 CAN_TOGGLE = ("superadmin", "hr_manager")
+
+
+def _require_permission(conn, user: dict, action_key: str) -> None:
+    """Pilot for the Settings > Roles > Permission Matrix override system
+    (core/permission_matrix.py) — manager/employee/custom-role access to
+    these 6 actions can be loosened per-institution via
+    role_permission_overrides; hr_manager/hr_admin (this module's default
+    CAN_WRITE/CAN_TOGGLE roles) and superadmin are never affected by an
+    override. See permission_matrix.py's module docstring for why this
+    started as a small pilot instead of every router at once."""
+    inst_id = need_inst(user)
+    if not has_permission(conn, inst_id, user, action_key):
+        raise HTTPException(403, "Insufficient permissions")
 
 SENSITIVE = {"bank_account", "income_tax_number", "socso_number", "epf_number"}
 FIELD_LABELS = {
@@ -445,7 +463,8 @@ def _update_bulk_employee(conn, inst_id, employee_id: str, emp: EmployeeIn, user
 
 @router.post("/api/employees", status_code=201, response_model=EmployeeOut)
 @db_session
-def create_employee(conn, emp: EmployeeIn, request: Request, user: dict = Depends(require_roles(*CAN_WRITE))) -> Dict[str, Any]:
+def create_employee(conn, emp: EmployeeIn, request: Request, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    _require_permission(conn, user, "employees.create_employee")
     inst_id = need_inst(user)
     # Enforce max_employees
     inst = conn.execute("SELECT max_employees FROM institutions WHERE id=?", (inst_id,)).fetchone()
@@ -506,7 +525,9 @@ BULK_UPLOAD_REQUIRED = [
 
 
 @router.get("/api/employees/bulk-template")
-def download_bulk_template(user: dict = Depends(require_roles(*BULK_UPLOAD_ROLES))) -> StreamingResponse:
+@db_session
+def download_bulk_template(conn, user: dict = Depends(get_current_user)) -> StreamingResponse:
+    _require_permission(conn, user, "employees.download_bulk_upload_template")
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow(BULK_UPLOAD_COLUMNS)
@@ -527,7 +548,8 @@ def download_bulk_template(user: dict = Depends(require_roles(*BULK_UPLOAD_ROLES
 
 @router.post("/api/employees/bulk-upload", status_code=202)
 @db_session
-def bulk_upload_employees(conn, body: BulkUploadIn, request: Request, user: dict = Depends(require_roles(*BULK_UPLOAD_ROLES))) -> Dict[str, Any]:
+def bulk_upload_employees(conn, body: BulkUploadIn, request: Request, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    _require_permission(conn, user, "employees.bulk_upload_employees")
     inst_id = need_inst(user)
 
     # Queue async task to process bulk upload
@@ -577,7 +599,8 @@ def get_employee(conn, employee_id: str, user: dict = Depends(get_current_user))
 @router.put("/api/employees/{employee_id}", response_model=EmployeeOut)
 @db_session
 def update_employee(conn, employee_id: str, emp: EmployeeIn, request: Request,
-                    user: dict = Depends(require_roles(*CAN_WRITE))) -> Dict[str, Any]:
+                    user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    _require_permission(conn, user, "employees.edit_employee")
     inst_id = need_inst(user)
     old_row = conn.execute(
         "SELECT * FROM employees WHERE institution_id=? AND employee_id=?", (inst_id, employee_id)
@@ -700,7 +723,8 @@ def update_employee(conn, employee_id: str, emp: EmployeeIn, request: Request,
 @router.patch("/api/employees/{employee_id}/status")
 @db_session
 def update_status(conn, employee_id: str, body: StatusUpdate, request: Request,
-                  user: dict = Depends(require_roles(*CAN_TOGGLE))) -> Dict[str, Any]:
+                  user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    _require_permission(conn, user, "employees.activate_deactivate_employee")
     inst_id = need_inst(user)
     row = conn.execute(
         "SELECT * FROM employees WHERE institution_id=? AND employee_id=?", (inst_id, employee_id)
@@ -751,8 +775,9 @@ def get_related_contracts(conn, employee_id: str, user: dict = Depends(get_curre
 
 @router.get("/api/employees/{employee_id}/rehire-prefill")
 @db_session
-def rehire_prefill(conn, employee_id: str, user: dict = Depends(require_roles(*CAN_WRITE))) -> Dict[str, Any]:
+def rehire_prefill(conn, employee_id: str, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     """Pre-fill personal details for a rehire from an existing employee record."""
+    _require_permission(conn, user, "employees.rehire_prefill")
     inst_id = need_inst(user)
     row = conn.execute(
         "SELECT * FROM employees WHERE employee_id=? AND institution_id=?",

@@ -36,6 +36,30 @@ columns at request time, each one a straight copy of the Employee column
 — custom roles never unlock a require_roles(...) gate, they only ever
 function as an assignable `role`/`assigned_role` value, so they behave
 like `employee` for every action in this table.
+
+---
+Overridable access (role_permission_overrides table, see routers/roles.py)
+---
+hr_manager/hr_admin/payroll_manager/compensation_manager are permanently
+locked (LOCKED_ROLES) — an institution can never loosen or tighten what
+those roles can do from the UI, only manager/employee/custom roles.
+Within that, only a row whose default access for the target role is
+ALLOW or DENY is override-eligible at all — OWN/SUBORDINATE/CONFIGURABLE/
+NO_RESTRICTION rows stay fixed, since "allow" doesn't mean anything for a
+relationship-based or approval-workflow-resolved check without also
+rewriting that check's own logic, not just a flag.
+
+Even within "override-eligible", an override only actually changes
+behavior for actions whose endpoint has been retrofitted to call
+has_permission() below instead of its old hardcoded require_roles(...) —
+see ENFORCED_ACTION_KEYS. Rows outside that set still show as
+theoretically overridable in the data model (so the UI/API don't need a
+second, separate notion of "editable"), but routers/roles.py's override
+endpoint rejects writes to a non-enforced action_key, and the frontend is
+expected to only offer editing controls where enforced=True comes back
+from the API — this is a deliberately incremental rollout (see
+ENFORCED_ACTION_KEYS's own comment), not a one-shot rewrite of every
+router's access control.
 """
 from typing import Any, Dict, List
 
@@ -47,6 +71,9 @@ OWN = "own"
 SUBORDINATE = "subordinate"
 CONFIGURABLE = "configurable"
 NO_RESTRICTION = "no_restriction"
+
+# Never overridable, regardless of action — see module docstring.
+LOCKED_ROLES = frozenset({"hr_manager", "hr_admin", "payroll_manager", "compensation_manager"})
 
 
 def _flat(*allowed: str) -> Dict[str, str]:
@@ -331,3 +358,72 @@ MATRIX: List[Dict[str, Any]] = [
         ],
     },
 ]
+
+
+# ---------------------------------------------------------------------------
+# Stable per-action keys + lookup, assigned here (not hand-written per
+# _action() call) so adding/reordering a row can never silently collide or
+# renumber an existing key that role_permission_overrides rows reference.
+# ---------------------------------------------------------------------------
+def _slugify(text: str) -> str:
+    import re
+    return re.sub(r"_+", "_", re.sub(r"[^a-z0-9]+", "_", text.lower())).strip("_")
+
+
+ACTION_BY_KEY: Dict[str, Dict[str, Any]] = {}
+for _mod in MATRIX:
+    _mod_slug = _slugify(_mod["module"])
+    for _a in _mod["actions"]:
+        _key = f"{_mod_slug}.{_slugify(_a['action'])}"
+        assert _key not in ACTION_BY_KEY, f"duplicate permission_matrix key: {_key}"
+        _a["key"] = _key
+        _a["module"] = _mod["module"]
+        ACTION_BY_KEY[_key] = _a
+
+
+# Action keys actually retrofitted to call has_permission() below instead
+# of their old hardcoded require_roles(...) — i.e. where a
+# role_permission_overrides row genuinely changes behavior, not just the
+# matrix's own display. Deliberately starts as a small pilot (Employees
+# module's flat-gated actions — see routers/employees.py) rather than
+# every override-eligible row in the file; expand this set only as each
+# router is actually retrofitted, in a follow-up change, not by adding
+# keys here speculatively ahead of the code.
+ENFORCED_ACTION_KEYS = frozenset({
+    "employees.create_employee",
+    "employees.edit_employee",
+    "employees.activate_deactivate_employee",
+    "employees.download_bulk_upload_template",
+    "employees.bulk_upload_employees",
+    "employees.rehire_prefill",
+})
+
+
+def is_override_eligible(action: Dict[str, Any], role: str) -> bool:
+    if role in LOCKED_ROLES:
+        return False
+    return action["access"].get(role) in (ALLOW, DENY)
+
+
+def has_permission(conn, inst_id: int, user: dict, action_key: str) -> bool:
+    """The enforcement half of the override system — call this from a
+    retrofitted endpoint instead of checking user["role"] against a fixed
+    tuple. Superadmin always passes, matching every existing require_roles(...)
+    call in this codebase that lists it explicitly. Falls back to this
+    file's hardcoded default the moment anything is ambiguous (unknown
+    action_key, locked role, non-flat access type, no override row) —
+    never fails open."""
+    role = user["role"]
+    if role == "superadmin":
+        return True
+    action = ACTION_BY_KEY.get(action_key)
+    if not action:
+        return False
+    default = action["access"].get(role, DENY)
+    if not is_override_eligible(action, role):
+        return default == ALLOW
+    row = conn.execute(
+        "SELECT access_value FROM role_permission_overrides WHERE institution_id=? AND action_key=? AND role=?",
+        (inst_id, action_key, role)
+    ).fetchone()
+    return (row["access_value"] if row else default) == ALLOW

@@ -26,9 +26,9 @@ except ImportError:
     from ems.core.constants import ROLE_LABELS
 
 try:
-    from core.permission_matrix import ALL_ROLES, MATRIX
+    from core.permission_matrix import ALL_ROLES, MATRIX, LOCKED_ROLES, ENFORCED_ACTION_KEYS, ACTION_BY_KEY, is_override_eligible
 except ImportError:
-    from ems.core.permission_matrix import ALL_ROLES, MATRIX
+    from ems.core.permission_matrix import ALL_ROLES, MATRIX, LOCKED_ROLES, ENFORCED_ACTION_KEYS, ACTION_BY_KEY, is_override_eligible
 
 try:
     from core.db_session import db_session
@@ -75,31 +75,63 @@ def list_roles(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, A
     return builtin + custom
 
 
+def _eligibility_proxy_role(role: str) -> str:
+    """Custom roles have no row of their own in MATRIX's static access
+    dicts (see permission_matrix.py) — they're synthesized as a copy of
+    Employee at request time, so eligibility for a custom role is
+    whatever Employee's eligibility is for that action."""
+    return role if role in ALL_ROLES else "employee"
+
+
 @router.get("/api/roles/permission-matrix")
 @db_session
 def get_permission_matrix(conn, user: dict = Depends(require_roles(*ROLE_MANAGE_ROLES))) -> Dict[str, Any]:
-    """Static, hand-curated "who can do what" reference for the 6 built-in
-    roles (see core/permission_matrix.py's module docstring for why this
-    isn't derived from the routers at runtime), plus this institution's
-    actual custom roles (see routers/roles.py's create_role) expanded as
-    their own columns rather than one generic "custom role" placeholder —
-    a custom role never unlocks a require_roles(...) gate (see
-    permission_matrix.py), so each one's access is just a copy of the
-    Employee column for every action."""
+    """Hand-curated "who can do what" reference for the 6 built-in roles
+    (see core/permission_matrix.py's module docstring for why this isn't
+    derived from the routers at runtime), plus this institution's actual
+    custom roles (see create_role below) expanded as their own columns —
+    a custom role never unlocks a require_roles(...) gate, so each one's
+    default access is just a copy of the Employee column for every
+    action, same as before.
+
+    On top of that default, this institution's saved
+    role_permission_overrides are applied for whichever (action, role)
+    cells are actually enforced (ENFORCED_ACTION_KEYS) — manager/employee/
+    custom roles only, never the locked HR/payroll/compensation roles.
+    Each action also carries an `editable` map so the frontend knows
+    exactly which cells to render as an edit control rather than plain
+    text, without re-deriving the eligibility rules itself."""
     inst_id = need_inst(user)
     custom_rows = conn.execute(
         "SELECT role_key, display_name FROM custom_roles WHERE institution_id=? ORDER BY display_name", (inst_id,)
     ).fetchall()
     custom_roles = [{"role_key": r["role_key"], "display_name": r["display_name"]} for r in custom_rows]
+    custom_role_keys = [cr["role_key"] for cr in custom_roles]
+    all_columns = list(ALL_ROLES) + custom_role_keys
+
+    override_rows = conn.execute(
+        "SELECT action_key, role, access_value FROM role_permission_overrides WHERE institution_id=?", (inst_id,)
+    ).fetchall()
+    overrides = {(r["action_key"], r["role"]): r["access_value"] for r in override_rows}
 
     modules = []
     for mod in MATRIX:
         actions = []
         for a in mod["actions"]:
-            access = dict(a["access"])
-            for cr in custom_roles:
-                access[cr["role_key"]] = access.get("employee", "deny")
-            actions.append({**a, "access": access})
+            access_default = dict(a["access"])
+            for role_key in custom_role_keys:
+                access_default[role_key] = access_default.get("employee", "deny")
+            access = dict(access_default)
+            enforced = a["key"] in ENFORCED_ACTION_KEYS
+            editable = {}
+            for role in all_columns:
+                elig = enforced and role not in LOCKED_ROLES and is_override_eligible(a, _eligibility_proxy_role(role))
+                editable[role] = elig
+                if elig:
+                    override_val = overrides.get((a["key"], role))
+                    if override_val:
+                        access[role] = override_val
+            actions.append({**a, "access": access, "access_default": access_default, "enforced": enforced, "editable": editable})
         modules.append({"module": mod["module"], "actions": actions})
 
     role_labels = dict(ROLE_LABELS)
@@ -108,10 +140,73 @@ def get_permission_matrix(conn, user: dict = Depends(require_roles(*ROLE_MANAGE_
 
     return {
         "roles": ALL_ROLES,
-        "custom_roles": [cr["role_key"] for cr in custom_roles],
+        "custom_roles": custom_role_keys,
         "role_labels": role_labels,
         "modules": modules,
     }
+
+
+class PermissionOverrideIn(BaseModel):
+    action_key: str
+    role: str
+    access_value: str
+
+    @field_validator("access_value")
+    @classmethod
+    def _validate_access_value(cls, v):
+        if v not in ("allow", "deny"):
+            raise ValueError("access_value must be 'allow' or 'deny'")
+        return v
+
+
+def _validate_overridable(conn, inst_id: int, action_key: str, role: str) -> Dict[str, Any]:
+    if role in LOCKED_ROLES:
+        raise HTTPException(400, f"'{ROLE_LABELS.get(role, role)}' access is locked and can't be overridden")
+    action = ACTION_BY_KEY.get(action_key)
+    if not action:
+        raise HTTPException(404, "Unknown action")
+    if action_key not in ENFORCED_ACTION_KEYS:
+        raise HTTPException(400, "This action isn't wired up for overrides yet")
+    if role not in ALL_ROLES:
+        exists = conn.execute(
+            "SELECT 1 FROM custom_roles WHERE institution_id=? AND role_key=?", (inst_id, role)
+        ).fetchone()
+        if not exists:
+            raise HTTPException(400, f"Unknown role '{role}'")
+    if not is_override_eligible(action, _eligibility_proxy_role(role)):
+        raise HTTPException(400, "This action's default access for this role can't be overridden")
+    return action
+
+
+@router.put("/api/roles/permission-matrix/override")
+@db_session
+def set_permission_override(conn, body: PermissionOverrideIn, user: dict = Depends(require_roles(*ROLE_MANAGE_ROLES))) -> Dict[str, Any]:
+    inst_id = need_inst(user)
+    _validate_overridable(conn, inst_id, body.action_key, body.role)
+    conn.execute(
+        """INSERT INTO role_permission_overrides (institution_id, action_key, role, access_value, updated_by)
+           VALUES (?,?,?,?,?)
+           ON CONFLICT (institution_id, action_key, role)
+           DO UPDATE SET access_value=EXCLUDED.access_value, updated_by=EXCLUDED.updated_by,
+                         updated_at=to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS')""",
+        (inst_id, body.action_key, body.role, body.access_value, user["username"])
+    )
+    conn.commit()
+    return {"ok": True}
+
+
+@router.delete("/api/roles/permission-matrix/override", status_code=204)
+@db_session
+def reset_permission_override(conn, action_key: str, role: str, user: dict = Depends(require_roles(*ROLE_MANAGE_ROLES))) -> None:
+    """Removes the override, reverting that cell to permission_matrix.py's
+    hardcoded default — not a way to explicitly set a cell to Deny (use
+    the PUT endpoint with access_value='deny' for that)."""
+    inst_id = need_inst(user)
+    conn.execute(
+        "DELETE FROM role_permission_overrides WHERE institution_id=? AND action_key=? AND role=?",
+        (inst_id, action_key, role)
+    )
+    conn.commit()
 
 
 @router.post("/api/roles", status_code=201)

@@ -85,6 +85,21 @@ wrapper everywhere.
 - **Dashboard To-Do** now also surfaces pending onboarding/offboarding
   checklist items (one row per item, not an aggregate count) alongside
   the approval-workflow items.
+- **Settings → Roles → Permission Matrix** (`core/permission_matrix.py`,
+  `routers/roles.py`): a hand-curated, read-only reference of role access
+  across ~90 actions/24 modules — not derived from the routers at
+  runtime, since most gates are inline checks, not a uniform decorator.
+  On top of that, `manager`/`employee`/custom-role access is now actually
+  **editable per institution** via `role_permission_overrides`
+  (`PUT`/`DELETE /api/roles/permission-matrix/override`) —
+  `hr_manager`/`hr_admin`/`payroll_manager`/`compensation_manager` are
+  permanently locked and can never be overridden. This is a deliberate
+  **pilot**, wired into only 6 of `routers/employees.py`'s actions so far
+  (`ENFORCED_ACTION_KEYS`) — retrofitting the other ~23 modules to call
+  `has_permission()` instead of their existing `require_roles(...)`/inline
+  checks is intentionally left as separate, incremental follow-up work,
+  not a one-shot rewrite of the app's access control. See
+  `permission_matrix.py`'s module docstring before touching either file.
 
 ## Recurring gotchas (hit more than once this project's history)
 

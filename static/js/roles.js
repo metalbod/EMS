@@ -83,6 +83,31 @@ function matrixToggleModule(name) {
   renderPermissionMatrix();
 }
 
+async function matrixSetOverride(actionKey, role, accessValue) {
+  const res = await api('/api/roles/permission-matrix/override', {
+    method: 'PUT',
+    body: JSON.stringify({action_key: actionKey, role, access_value: accessValue}),
+  });
+  if (!res?.ok) {
+    const d = await res?.json().catch(() => ({}));
+    alert(d?.detail || 'Failed to update permission');
+    return;
+  }
+  await loadPermissionMatrix();
+}
+
+async function matrixResetOverride(actionKey, role) {
+  const res = await api(`/api/roles/permission-matrix/override?action_key=${encodeURIComponent(actionKey)}&role=${encodeURIComponent(role)}`, {
+    method: 'DELETE',
+  });
+  if (!res?.ok) {
+    const d = await res?.json().catch(() => ({}));
+    alert(d?.detail || 'Failed to reset permission');
+    return;
+  }
+  await loadPermissionMatrix();
+}
+
 const MATRIX_CELL_STYLE = {
   allow: {cls: 'bg-emerald-100 text-emerald-700', label: 'Allowed'},
   deny: {cls: 'bg-slate-100 text-slate-400', label: 'Denied'},
@@ -119,8 +144,21 @@ function renderPermissionMatrix() {
         ${roles.map(r => {
           const status = a.access[r] || 'deny';
           const style = MATRIX_CELL_STYLE[status] || MATRIX_CELL_STYLE.deny;
+          const isEditable = !!(a.editable && a.editable[r]);
+          const isOverridden = isEditable && a.access_default && a.access_default[r] !== status;
+          if (!isEditable) {
+            return `<td class="px-2 py-2.5 text-center align-top">
+              <span class="inline-block text-[10px] font-semibold px-2 py-1 rounded ${style.cls}" title="${esc(labels[r] || r)}: ${style.label}">${style.label}</span>
+            </td>`;
+          }
+          const nextVal = status === 'allow' ? 'deny' : 'allow';
           return `<td class="px-2 py-2.5 text-center align-top">
-            <span class="inline-block text-[10px] font-semibold px-2 py-1 rounded ${style.cls}" title="${esc(labels[r] || r)}: ${style.label}">${style.label}</span>
+            <button onclick="matrixSetOverride('${esc(a.key)}','${esc(r)}','${nextVal}')"
+                    class="inline-block text-[10px] font-semibold px-2 py-1 rounded ${style.cls} ring-2 ring-offset-1 ${isOverridden ? 'ring-slate-400' : 'ring-transparent'} hover:ring-slate-300 cursor-pointer"
+                    title="${esc(labels[r] || r)}: ${style.label} — click to set ${nextVal === 'allow' ? 'Allowed' : 'Denied'}${isOverridden ? ' (customized for this institution)' : ''}">
+              ${style.label}
+            </button>
+            ${isOverridden ? `<button onclick="matrixResetOverride('${esc(a.key)}','${esc(r)}')" class="block mx-auto mt-0.5 text-[9px] text-slate-400 hover:text-slate-600 underline" title="Reset to default">reset</button>` : ''}
           </td>`;
         }).join('')}
       </tr>`).join('');
