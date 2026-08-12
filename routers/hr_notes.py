@@ -5,9 +5,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 try:
-    from core.deps import need_inst, require_roles
+    from core.deps import get_current_user, need_inst
 except ImportError:
-    from ems.core.deps import need_inst, require_roles
+    from ems.core.deps import get_current_user, need_inst
+
+try:
+    from core.permission_matrix import require_permission
+except ImportError:
+    from ems.core.permission_matrix import require_permission
 
 try:
     from db import get_db
@@ -30,7 +35,8 @@ class NoteIn(BaseModel):
 
 @router.get("/api/employees/{employee_id}/notes")
 @db_session
-def get_notes(conn, employee_id: str, user: dict = Depends(require_roles(*HR_NOTE_ROLES))) -> List[Dict[str, Any]]:
+def get_notes(conn, employee_id: str, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
+    require_permission(conn, user, "hr_notes.view_create_hr_note")
     inst_id = need_inst(user)
     rows = conn.execute(
         "SELECT id,note_type,body,created_by,created_at FROM hr_notes "
@@ -42,7 +48,8 @@ def get_notes(conn, employee_id: str, user: dict = Depends(require_roles(*HR_NOT
 
 @router.post("/api/employees/{employee_id}/notes", status_code=201)
 @db_session
-def create_note(conn, employee_id: str, note: NoteIn, user: dict = Depends(require_roles(*HR_NOTE_ROLES))) -> Dict[str, Any]:
+def create_note(conn, employee_id: str, note: NoteIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    require_permission(conn, user, "hr_notes.view_create_hr_note")
     inst_id = need_inst(user)
     if not conn.execute(
         "SELECT id FROM employees WHERE institution_id=? AND employee_id=?", (inst_id, employee_id)
@@ -59,7 +66,8 @@ def create_note(conn, employee_id: str, note: NoteIn, user: dict = Depends(requi
 @router.delete("/api/employees/{employee_id}/notes/{note_id}", status_code=204)
 @db_session
 def delete_note(conn, employee_id: str, note_id: int,
-                user: dict = Depends(require_roles("superadmin", "hr_manager"))) -> None:
+                user: dict = Depends(get_current_user)) -> None:
+    require_permission(conn, user, "hr_notes.delete_hr_note")
     inst_id = need_inst(user)
     conn.execute(
         "UPDATE hr_notes SET deleted=1 WHERE id=? AND institution_id=? AND employee_id=?",

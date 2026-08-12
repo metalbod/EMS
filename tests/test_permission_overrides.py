@@ -356,3 +356,60 @@ def test_attendance_clock_in_out_action_stays_non_enforced(client, hr_manager_au
         "action_key": "attendance.clock_in_out_view_own_attendance", "role": "manager", "access_value": "allow",
     })
     assert res.status_code == 400, res.text
+
+
+# ---------------------------------------------------------------------------
+# Sixth pilot module: HR Notes (routers/hr_notes.py) — view_create_hr_note,
+# delete_hr_note. (This module has no other test coverage yet, so this is
+# also the first exercise of its endpoints.)
+# ---------------------------------------------------------------------------
+def test_hr_notes_override_lets_manager_view_and_create_notes(client, hr_manager_auth, make_test_user, make_test_employee, test_institution):
+    mgr_token, _ = make_test_user(role="manager")
+    mgr_headers = {"Authorization": f"Bearer {mgr_token}", "X-Institution-Id": str(test_institution["id"])}
+    emp = make_test_employee()
+
+    before = client.get(f"/api/employees/{emp['employee_id']}/notes", headers=mgr_headers)
+    assert before.status_code == 403, before.text
+
+    override = client.put("/api/roles/permission-matrix/override", headers=hr_manager_auth, json={
+        "action_key": "hr_notes.view_create_hr_note", "role": "manager", "access_value": "allow",
+    })
+    assert override.status_code == 200, override.text
+    try:
+        created = client.post(f"/api/employees/{emp['employee_id']}/notes", headers=mgr_headers,
+                               json={"body": "ZZ perm test note"})
+        assert created.status_code == 201, created.text
+        listed = client.get(f"/api/employees/{emp['employee_id']}/notes", headers=mgr_headers)
+        assert listed.status_code == 200, listed.text
+        assert any(n["body"] == "ZZ perm test note" for n in listed.json())
+    finally:
+        client.delete("/api/roles/permission-matrix/override", headers=hr_manager_auth,
+                       params={"action_key": "hr_notes.view_create_hr_note", "role": "manager"})
+
+    after_reset = client.get(f"/api/employees/{emp['employee_id']}/notes", headers=mgr_headers)
+    assert after_reset.status_code == 403, after_reset.text
+
+
+def test_hr_notes_override_lets_employee_delete_notes(client, hr_manager_auth, make_test_user, make_test_employee, test_institution):
+    emp_token, _ = make_test_user(role="employee")
+    emp_headers = {"Authorization": f"Bearer {emp_token}", "X-Institution-Id": str(test_institution["id"])}
+    emp = make_test_employee()
+    created = client.post(f"/api/employees/{emp['employee_id']}/notes", headers=hr_manager_auth,
+                           json={"body": "ZZ perm delete test note"})
+    assert created.status_code == 201, created.text
+    notes = client.get(f"/api/employees/{emp['employee_id']}/notes", headers=hr_manager_auth).json()
+    note_id = next(n["id"] for n in notes if n["body"] == "ZZ perm delete test note")
+
+    before = client.delete(f"/api/employees/{emp['employee_id']}/notes/{note_id}", headers=emp_headers)
+    assert before.status_code == 403, before.text
+
+    override = client.put("/api/roles/permission-matrix/override", headers=hr_manager_auth, json={
+        "action_key": "hr_notes.delete_hr_note", "role": "employee", "access_value": "allow",
+    })
+    assert override.status_code == 200, override.text
+    try:
+        after = client.delete(f"/api/employees/{emp['employee_id']}/notes/{note_id}", headers=emp_headers)
+        assert after.status_code == 204, after.text
+    finally:
+        client.delete("/api/roles/permission-matrix/override", headers=hr_manager_auth,
+                       params={"action_key": "hr_notes.delete_hr_note", "role": "employee"})

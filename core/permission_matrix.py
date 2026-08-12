@@ -438,6 +438,8 @@ ENFORCED_ACTION_KEYS = frozenset({
     # NOT attendance.clock_in_out_view_own_attendance or
     # attendance.device_webhook_clock_event — both NO_RESTRICTION (self-serve
     # / device-API-key auth respectively), not a flat role list.
+    "hr_notes.view_create_hr_note",
+    "hr_notes.delete_hr_note",
 })
 
 
