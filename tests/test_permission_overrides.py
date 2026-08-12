@@ -153,3 +153,92 @@ def test_leave_utilization_dashboard_stays_non_enforced(client, hr_manager_auth)
         "action_key": "leave.leave_utilization_dashboard", "role": "manager", "access_value": "allow",
     })
     assert res.status_code == 400, res.text
+
+
+# ---------------------------------------------------------------------------
+# Third pilot module: Onboarding / Offboarding (routers/onboarding.py) —
+# manage_template_sets_templates, start_delete_checklist,
+# add_edit_delete_checklist_item_hr, view_onboarding_offboarding_history.
+# (view_checklist, complete_update_checklist_item, and
+# attach_view_delete_item_proof_file stay non-enforced — assigned_role
+# matched per item, not a flat role list.)
+# ---------------------------------------------------------------------------
+def test_onboarding_override_lets_employee_manage_template_sets(client, hr_manager_auth, make_test_user, test_institution):
+    emp_token, _ = make_test_user(role="employee")
+    emp_headers = {"Authorization": f"Bearer {emp_token}", "X-Institution-Id": str(test_institution["id"])}
+
+    before = client.post("/api/ob/template-sets", headers=emp_headers, json={"type": "onboarding", "name": "ZZ Perm Set"})
+    assert before.status_code == 403, before.text
+
+    override = client.put("/api/roles/permission-matrix/override", headers=hr_manager_auth, json={
+        "action_key": "onboarding_offboarding.manage_template_sets_templates", "role": "employee", "access_value": "allow",
+    })
+    assert override.status_code == 200, override.text
+    try:
+        after = client.post("/api/ob/template-sets", headers=emp_headers, json={"type": "onboarding", "name": "ZZ Perm Set 2"})
+        assert after.status_code == 201, after.text
+    finally:
+        client.delete("/api/roles/permission-matrix/override", headers=hr_manager_auth,
+                       params={"action_key": "onboarding_offboarding.manage_template_sets_templates", "role": "employee"})
+
+    after_reset = client.post("/api/ob/template-sets", headers=emp_headers, json={"type": "onboarding", "name": "ZZ Perm Set 3"})
+    assert after_reset.status_code == 403, after_reset.text
+
+
+def test_onboarding_override_lets_manager_start_checklist(client, hr_manager_auth, make_test_user, make_test_employee, test_institution):
+    mgr_token, _ = make_test_user(role="manager")
+    mgr_headers = {"Authorization": f"Bearer {mgr_token}", "X-Institution-Id": str(test_institution["id"])}
+    emp = make_test_employee()
+
+    before = client.post("/api/ob/checklists", headers=mgr_headers, json={"employee_id": emp["employee_id"], "type": "onboarding"})
+    assert before.status_code == 403, before.text
+
+    override = client.put("/api/roles/permission-matrix/override", headers=hr_manager_auth, json={
+        "action_key": "onboarding_offboarding.start_delete_checklist", "role": "manager", "access_value": "allow",
+    })
+    assert override.status_code == 200, override.text
+    try:
+        after = client.post("/api/ob/checklists", headers=mgr_headers, json={"employee_id": emp["employee_id"], "type": "onboarding"})
+        assert after.status_code == 201, after.text
+        client.delete(f"/api/ob/checklists/{after.json()['id']}", headers=mgr_headers)
+    finally:
+        client.delete("/api/roles/permission-matrix/override", headers=hr_manager_auth,
+                       params={"action_key": "onboarding_offboarding.start_delete_checklist", "role": "manager"})
+
+
+def test_onboarding_item_edit_actions_stay_non_enforced_by_default_but_can_be_enforced(client, hr_manager_auth, make_test_user, make_test_employee, test_institution):
+    mgr_token, _ = make_test_user(role="manager")
+    mgr_headers = {"Authorization": f"Bearer {mgr_token}", "X-Institution-Id": str(test_institution["id"])}
+    emp = make_test_employee()
+    started = client.post("/api/ob/checklists", headers=hr_manager_auth,
+                           json={"employee_id": emp["employee_id"], "type": "onboarding"})
+    assert started.status_code == 201, started.text
+    checklist = started.json()
+
+    try:
+        before = client.post(f"/api/ob/checklists/{checklist['id']}/items", headers=mgr_headers,
+                              json={"title": "ZZ Perm Item", "assigned_role": "employee"})
+        assert before.status_code == 403, before.text
+
+        override = client.put("/api/roles/permission-matrix/override", headers=hr_manager_auth, json={
+            "action_key": "onboarding_offboarding.add_edit_delete_checklist_item_hr", "role": "manager", "access_value": "allow",
+        })
+        assert override.status_code == 200, override.text
+        try:
+            after = client.post(f"/api/ob/checklists/{checklist['id']}/items", headers=mgr_headers,
+                                 json={"title": "ZZ Perm Item 2", "assigned_role": "employee"})
+            assert after.status_code == 201, after.text
+            client.delete(f"/api/ob/checklists/{checklist['id']}/items/{after.json()['id']}", headers=hr_manager_auth)
+        finally:
+            client.delete("/api/roles/permission-matrix/override", headers=hr_manager_auth,
+                           params={"action_key": "onboarding_offboarding.add_edit_delete_checklist_item_hr", "role": "manager"})
+    finally:
+        client.delete(f"/api/ob/checklists/{checklist['id']}", headers=hr_manager_auth)
+
+
+def test_onboarding_complete_item_action_stays_non_enforced(client, hr_manager_auth):
+    """Assigned_role-matched, not a flat role list — must be rejected."""
+    res = client.put("/api/roles/permission-matrix/override", headers=hr_manager_auth, json={
+        "action_key": "onboarding_offboarding.complete_update_checklist_item", "role": "manager", "access_value": "allow",
+    })
+    assert res.status_code == 400, res.text

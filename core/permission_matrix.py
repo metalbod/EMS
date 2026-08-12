@@ -203,8 +203,10 @@ MATRIX: List[Dict[str, Any]] = [
             _action("View checklist", "GET /api/ob/checklists/{id}", _no_restriction(), note="Visible to the assigned employee and anyone whose role matches an item's assigned_role."),
             _action("Complete / update checklist item", "PATCH /api/ob/checklists/{id}/items/{item_id}", _no_restriction(),
                      note="Allowed only if the acting user's role matches that item's assigned_role (can be a custom role) — not a fixed list."),
+            _action("Add / edit / delete checklist item (HR)", "POST/PUT/DELETE /api/ob/checklists/{id}/items[/{item_id}]", _flat(*_OB_MANAGE),
+                     note="HR editing a live checklist's items directly — distinct from completing an assigned item, and from editing a template."),
             _action("Attach / view / delete item proof file", "routers/onboarding.py attachment endpoints", _no_restriction(), note="Same assigned_role match as completing the item."),
-            _action("View onboarding/offboarding history", "GET /api/ob/history", _flat(*_OB_MANAGE)),
+            _action("View onboarding/offboarding history", "GET /api/employees/{id}/ob-history", _flat(*_OB_MANAGE)),
         ],
     },
     {
@@ -417,6 +419,15 @@ ENFORCED_ACTION_KEYS = frozenset({
     # it here would let someone "grant" a role approval rights that the
     # engine would still ignore — never add a CONFIGURABLE-noted action
     # to this set no matter what its access dict looks like structurally.
+    "onboarding_offboarding.manage_template_sets_templates",
+    "onboarding_offboarding.start_delete_checklist",
+    "onboarding_offboarding.add_edit_delete_checklist_item_hr",
+    "onboarding_offboarding.view_onboarding_offboarding_history",
+    # NOT onboarding_offboarding.view_checklist,
+    # complete_update_checklist_item, or attach_view_delete_item_proof_file
+    # — all three are assigned_role-matched (NO_RESTRICTION at the role
+    # level; the real gate is per-item, checked in the endpoint body via
+    # _can_act_on_item), not a flat role list at all.
 })
 
 
