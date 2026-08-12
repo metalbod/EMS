@@ -26,9 +26,9 @@ except ImportError:
     from ems.core.constants import ROLE_LABELS
 
 try:
-    from core.permission_matrix import ALL_ROLES, MATRIX, LOCKED_ROLES, ENFORCED_ACTION_KEYS, ACTION_BY_KEY, is_override_eligible
+    from core.permission_matrix import ALL_ROLES, MATRIX, LOCKED_ROLES, ENFORCED_ACTION_KEYS, ACTION_BY_KEY, is_override_eligible, require_permission
 except ImportError:
-    from ems.core.permission_matrix import ALL_ROLES, MATRIX, LOCKED_ROLES, ENFORCED_ACTION_KEYS, ACTION_BY_KEY, is_override_eligible
+    from ems.core.permission_matrix import ALL_ROLES, MATRIX, LOCKED_ROLES, ENFORCED_ACTION_KEYS, ACTION_BY_KEY, is_override_eligible, require_permission
 
 try:
     from core.db_session import db_session
@@ -211,7 +211,16 @@ def reset_permission_override(conn, action_key: str, role: str, user: dict = Dep
 
 @router.post("/api/roles", status_code=201)
 @db_session
-def create_role(conn, body: RoleIn, user: dict = Depends(require_roles(*ROLE_MANAGE_ROLES))) -> Dict[str, Any]:
+def create_role(conn, body: RoleIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    # Only create/delete are retrofitted here — get_permission_matrix,
+    # set_permission_override, and reset_permission_override above stay on
+    # their own permanently-hardcoded require_roles(*ROLE_MANAGE_ROLES)
+    # gate, never require_permission(). If those three were overridable
+    # too, granting a role "manage custom roles" access would also hand
+    # it the ability to view/edit the permission matrix and create
+    # further overrides — a real escalation chain (grant yourself the
+    # power to grant yourself anything). Don't change that.
+    require_permission(conn, user, "custom_roles.create_delete_custom_role")
     inst_id = need_inst(user)
     role_key = _slugify(body.display_name)
     if not role_key:
@@ -235,7 +244,8 @@ def create_role(conn, body: RoleIn, user: dict = Depends(require_roles(*ROLE_MAN
 
 @router.delete("/api/roles/{role_id}", status_code=204)
 @db_session
-def delete_role(conn, role_id: int, user: dict = Depends(require_roles(*ROLE_MANAGE_ROLES))) -> None:
+def delete_role(conn, role_id: int, user: dict = Depends(get_current_user)) -> None:
+    require_permission(conn, user, "custom_roles.create_delete_custom_role")
     inst_id = need_inst(user)
     row = conn.execute(
         "SELECT * FROM custom_roles WHERE id=? AND institution_id=?", (role_id, inst_id)

@@ -442,3 +442,45 @@ def test_approval_workflows_override_lets_manager_manage_workflows(client, hr_ma
 
     after_reset = client.post("/api/approval-workflows", headers=mgr_headers, json={"module": "leave", "name": "ZZ Perm Workflow 3"})
     assert after_reset.status_code == 403, after_reset.text
+
+
+# ---------------------------------------------------------------------------
+# Eighth pilot module: Custom Roles (routers/roles.py) —
+# create_delete_custom_role ONLY. get_permission_matrix,
+# set_permission_override, and reset_permission_override deliberately stay
+# outside the override system entirely (see ENFORCED_ACTION_KEYS notes) —
+# the escalation-guard test below proves that holds even once a role has
+# create/delete-custom-role access.
+# ---------------------------------------------------------------------------
+def test_custom_roles_override_lets_manager_create_and_delete_roles(client, hr_manager_auth, make_test_user, test_institution):
+    mgr_token, _ = make_test_user(role="manager")
+    mgr_headers = {"Authorization": f"Bearer {mgr_token}", "X-Institution-Id": str(test_institution["id"])}
+
+    before = client.post("/api/roles", headers=mgr_headers, json={"display_name": "ZZ Perm Role"})
+    assert before.status_code == 403, before.text
+
+    override = client.put("/api/roles/permission-matrix/override", headers=hr_manager_auth, json={
+        "action_key": "custom_roles.create_delete_custom_role", "role": "manager", "access_value": "allow",
+    })
+    assert override.status_code == 200, override.text
+    try:
+        after = client.post("/api/roles", headers=mgr_headers, json={"display_name": "ZZ Perm Role 2"})
+        assert after.status_code == 201, after.text
+
+        # Escalation guard: manager still can't touch the matrix itself,
+        # even with create/delete-custom-role access.
+        matrix_res = client.get("/api/roles/permission-matrix", headers=mgr_headers)
+        assert matrix_res.status_code == 403, matrix_res.text
+        override_res = client.put("/api/roles/permission-matrix/override", headers=mgr_headers, json={
+            "action_key": "custom_roles.create_delete_custom_role", "role": "employee", "access_value": "allow",
+        })
+        assert override_res.status_code == 403, override_res.text
+
+        delete_res = client.delete(f"/api/roles/{after.json()['id']}", headers=mgr_headers)
+        assert delete_res.status_code == 204, delete_res.text
+    finally:
+        client.delete("/api/roles/permission-matrix/override", headers=hr_manager_auth,
+                       params={"action_key": "custom_roles.create_delete_custom_role", "role": "manager"})
+
+    after_reset = client.post("/api/roles", headers=mgr_headers, json={"display_name": "ZZ Perm Role 3"})
+    assert after_reset.status_code == 403, after_reset.text

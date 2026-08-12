@@ -441,6 +441,13 @@ ENFORCED_ACTION_KEYS = frozenset({
     "hr_notes.view_create_hr_note",
     "hr_notes.delete_hr_note",
     "approval_workflows.manage_approval_workflows_steps",
+    "custom_roles.create_delete_custom_role",
+    # NOT any Settings > Roles > Permission Matrix management action itself
+    # (viewing the matrix, setting/resetting an override) — those stay
+    # permanently hardcoded to ROLE_MANAGE_ROLES in routers/roles.py,
+    # completely outside this override system. If they were overridable,
+    # granting a role "manage custom roles" would also hand it the power
+    # to grant itself anything else in the app — a real escalation chain.
 })
 
 
