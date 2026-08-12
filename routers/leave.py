@@ -12,9 +12,9 @@ except ImportError:
     from ems.core.deps import get_current_user, need_inst, require_roles
 
 try:
-    from core.roles import LEAVE_MANAGE_ROLES
+    from core.permission_matrix import require_permission
 except ImportError:
-    from ems.core.roles import LEAVE_MANAGE_ROLES
+    from ems.core.permission_matrix import require_permission
 
 try:
     from core.org_queries import subordinates_in_clause
@@ -312,7 +312,8 @@ def list_leave_types(conn, user: dict = Depends(get_current_user)) -> List[Dict[
 
 @router.post("/api/leave/types", status_code=201)
 @db_session
-def create_leave_type(conn, body: LeaveTypeIn, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))) -> Dict[str, Any]:
+def create_leave_type(conn, body: LeaveTypeIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    require_permission(conn, user, "leave.manage_leave_types")
     inst_id = need_inst(user)
     _validate_shares_entitlement(conn, inst_id, None, body.shares_entitlement_with_id, body.name)
     conn.execute(
@@ -331,7 +332,8 @@ def create_leave_type(conn, body: LeaveTypeIn, user: dict = Depends(require_role
 
 @router.put("/api/leave/types/{type_id}")
 @db_session
-def update_leave_type(conn, type_id: int, body: LeaveTypeIn, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))) -> Dict[str, Any]:
+def update_leave_type(conn, type_id: int, body: LeaveTypeIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    require_permission(conn, user, "leave.manage_leave_types")
     inst_id = need_inst(user)
     if not conn.execute("SELECT id FROM leave_types WHERE id=? AND institution_id=?", (type_id, inst_id)).fetchone():
         raise HTTPException(404, "Leave type not found")
@@ -352,7 +354,8 @@ def update_leave_type(conn, type_id: int, body: LeaveTypeIn, user: dict = Depend
 
 @router.delete("/api/leave/types/{type_id}", status_code=204)
 @db_session
-def delete_leave_type(conn, type_id: int, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))) -> None:
+def delete_leave_type(conn, type_id: int, user: dict = Depends(get_current_user)) -> None:
+    require_permission(conn, user, "leave.manage_leave_types")
     inst_id = need_inst(user)
     conn.execute("UPDATE leave_types SET is_active=0 WHERE id=? AND institution_id=?", (type_id, inst_id))
     conn.commit()
@@ -429,7 +432,8 @@ def list_leave_balances(conn, employee_id: Optional[str] = None, year: Optional[
 
 @router.patch("/api/leave/balances/{balance_id}")
 @db_session
-def adjust_leave_balance(conn, balance_id: int, body: LeaveBalanceAdjustIn, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))) -> Dict[str, Any]:
+def adjust_leave_balance(conn, balance_id: int, body: LeaveBalanceAdjustIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    require_permission(conn, user, "leave.adjust_leave_balance")
     inst_id = need_inst(user)
     bal = conn.execute("SELECT * FROM leave_balances WHERE id=? AND institution_id=?", (balance_id, inst_id)).fetchone()
     if not bal:
@@ -656,6 +660,12 @@ def update_leave_status(conn, app_id: int, body: LeaveStatusIn, user: dict = Dep
 @db_session
 def get_leave_utilization_dashboard(conn, year: Optional[int] = None,
                                     user: dict = Depends(require_roles("hr_manager", "hr_admin"))) -> Dict[str, Any]:
+    # NOT retrofitted onto require_permission() — a dedicated test
+    # (test_leave_utilization_dashboard_superadmin_denied) confirms
+    # excluding superadmin here is deliberate, not an oversight, and
+    # require_permission()'s standard "superadmin always passes" rule
+    # would silently break that. Leave this on its own explicit
+    # require_roles(...) gate instead of adding it to the pilot.
     """Institution-wide leave utilization for the HR dashboard's Leave tab:
     usage by leave type, and the 10 employees with the highest and lowest
     overall utilization (their leave_balances rows summed across every
@@ -727,7 +737,8 @@ def get_leave_utilization_dashboard(conn, year: Optional[int] = None,
 
 @router.get("/api/employees/{employee_id}/leave-history")
 @db_session
-def get_employee_leave_history(conn, employee_id: str, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))) -> List[Dict[str, Any]]:
+def get_employee_leave_history(conn, employee_id: str, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
+    require_permission(conn, user, "leave.view_leave_audit_history")
     inst_id = need_inst(user)
     rows = conn.execute(
         "SELECT * FROM leave_audit_log WHERE employee_id=? AND institution_id=? ORDER BY created_at ASC",

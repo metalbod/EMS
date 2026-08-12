@@ -78,3 +78,78 @@ def test_override_requires_role_manage_permission(client, make_test_user, test_i
         "action_key": "employees.create_employee", "role": "manager", "access_value": "allow",
     })
     assert res.status_code == 403, res.text
+
+
+# ---------------------------------------------------------------------------
+# Second pilot module: Leave (routers/leave.py, routers/holidays.py) —
+# leave.manage_leave_types, leave.adjust_leave_balance,
+# leave.view_leave_audit_history, leave.manage_public_holidays.
+# (leave.leave_utilization_dashboard is deliberately NOT enforced — see
+# permission_matrix.py's ENFORCED_ACTION_KEYS comment on that key.)
+# ---------------------------------------------------------------------------
+def test_leave_override_lets_employee_manage_leave_types(client, hr_manager_auth, make_test_user, test_institution):
+    emp_token, _ = make_test_user(role="employee")
+    emp_headers = {"Authorization": f"Bearer {emp_token}", "X-Institution-Id": str(test_institution["id"])}
+
+    before = client.post("/api/leave/types", headers=emp_headers, json={"name": "ZZ Perm Test LT", "annual_entitlement": 10})
+    assert before.status_code == 403, before.text
+
+    override = client.put("/api/roles/permission-matrix/override", headers=hr_manager_auth, json={
+        "action_key": "leave.manage_leave_types", "role": "employee", "access_value": "allow",
+    })
+    assert override.status_code == 200, override.text
+
+    try:
+        after = client.post("/api/leave/types", headers=emp_headers, json={"name": "ZZ Perm Test LT 2", "annual_entitlement": 10})
+        assert after.status_code == 201, after.text
+        client.delete(f"/api/leave/types/{after.json()['id']}", headers=hr_manager_auth)
+    finally:
+        client.delete("/api/roles/permission-matrix/override", headers=hr_manager_auth,
+                       params={"action_key": "leave.manage_leave_types", "role": "employee"})
+
+    after_reset = client.post("/api/leave/types", headers=emp_headers, json={"name": "ZZ Perm Test LT 3", "annual_entitlement": 10})
+    assert after_reset.status_code == 403, after_reset.text
+
+
+def test_leave_override_lets_manager_manage_public_holidays(client, hr_manager_auth, make_test_user, test_institution):
+    mgr_token, _ = make_test_user(role="manager")
+    mgr_headers = {"Authorization": f"Bearer {mgr_token}", "X-Institution-Id": str(test_institution["id"])}
+
+    before = client.post("/api/holidays", headers=mgr_headers, json={"name": "ZZ Perm Holiday", "date": "2027-03-03", "year": 2027})
+    assert before.status_code == 403, before.text
+
+    override = client.put("/api/roles/permission-matrix/override", headers=hr_manager_auth, json={
+        "action_key": "leave.manage_public_holidays", "role": "manager", "access_value": "allow",
+    })
+    assert override.status_code == 200, override.text
+    try:
+        after = client.post("/api/holidays", headers=mgr_headers, json={"name": "ZZ Perm Holiday 2", "date": "2027-03-04", "year": 2027})
+        assert after.status_code == 201, after.text
+        client.delete(f"/api/holidays/{after.json()['id']}", headers=mgr_headers)
+    finally:
+        client.delete("/api/roles/permission-matrix/override", headers=hr_manager_auth,
+                       params={"action_key": "leave.manage_public_holidays", "role": "manager"})
+
+
+def test_leave_approval_action_stays_non_enforced(client, hr_manager_auth):
+    """The approve/reject action has a flat-looking access dict but its
+    real gate is the approval-workflow engine — must never be added to
+    ENFORCED_ACTION_KEYS no matter how it looks structurally (see
+    permission_matrix.py's comment on this exact key)."""
+    res = client.put("/api/roles/permission-matrix/override", headers=hr_manager_auth, json={
+        "action_key": "leave.approve_reject_leave_application", "role": "manager", "access_value": "allow",
+    })
+    assert res.status_code == 400, res.text
+
+
+def test_leave_utilization_dashboard_stays_non_enforced(client, hr_manager_auth):
+    """This one's default access dict is a plain flat allow/deny, unlike
+    the approval-workflow rows above — but excluding superadmin from it is
+    a deliberate, separately-tested app behavior (see
+    test_leave.py::test_leave_utilization_dashboard_superadmin_denied),
+    which require_permission()'s standard superadmin-always-passes rule
+    would silently break. Confirms it's kept out of ENFORCED_ACTION_KEYS."""
+    res = client.put("/api/roles/permission-matrix/override", headers=hr_manager_auth, json={
+        "action_key": "leave.leave_utilization_dashboard", "role": "manager", "access_value": "allow",
+    })
+    assert res.status_code == 400, res.text

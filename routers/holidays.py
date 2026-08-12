@@ -5,14 +5,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 try:
-    from core.deps import get_current_user, need_inst, require_roles
+    from core.deps import get_current_user, need_inst
 except ImportError:
-    from ems.core.deps import get_current_user, need_inst, require_roles
+    from ems.core.deps import get_current_user, need_inst
 
 try:
-    from core.roles import LEAVE_MANAGE_ROLES
+    from core.permission_matrix import require_permission
 except ImportError:
-    from ems.core.roles import LEAVE_MANAGE_ROLES
+    from ems.core.permission_matrix import require_permission
 
 try:
     from db import get_db, IntegrityError
@@ -47,7 +47,8 @@ def list_holidays(conn, year: Optional[int] = None, user: dict = Depends(get_cur
 
 @router.post("/api/holidays", status_code=201)
 @db_session
-def create_holiday(conn, body: HolidayIn, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))) -> Dict[str, Any]:
+def create_holiday(conn, body: HolidayIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    require_permission(conn, user, "leave.manage_public_holidays")
     inst_id = need_inst(user)
     try:
         conn.execute(
@@ -63,7 +64,8 @@ def create_holiday(conn, body: HolidayIn, user: dict = Depends(require_roles(*LE
 
 @router.delete("/api/holidays/{holiday_id}", status_code=204)
 @db_session
-def delete_holiday(conn, holiday_id: int, user: dict = Depends(require_roles(*LEAVE_MANAGE_ROLES))) -> None:
+def delete_holiday(conn, holiday_id: int, user: dict = Depends(get_current_user)) -> None:
+    require_permission(conn, user, "leave.manage_public_holidays")
     inst_id = need_inst(user)
     conn.execute("DELETE FROM holidays WHERE id=? AND institution_id=?", (holiday_id, inst_id))
     conn.commit()

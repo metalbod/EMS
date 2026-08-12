@@ -54,27 +54,14 @@ except ImportError:
     from ems.core.location_assignments import get_primary_location, get_primary_locations, set_primary_location
 
 try:
-    from core.permission_matrix import has_permission
+    from core.permission_matrix import require_permission as _require_permission
 except ImportError:
-    from ems.core.permission_matrix import has_permission
+    from ems.core.permission_matrix import require_permission as _require_permission
 
 router = APIRouter()
 
 CAN_WRITE  = ("superadmin", "hr_manager", "hr_admin")
 CAN_TOGGLE = ("superadmin", "hr_manager")
-
-
-def _require_permission(conn, user: dict, action_key: str) -> None:
-    """Pilot for the Settings > Roles > Permission Matrix override system
-    (core/permission_matrix.py) — manager/employee/custom-role access to
-    these 6 actions can be loosened per-institution via
-    role_permission_overrides; hr_manager/hr_admin (this module's default
-    CAN_WRITE/CAN_TOGGLE roles) and superadmin are never affected by an
-    override. See permission_matrix.py's module docstring for why this
-    started as a small pilot instead of every router at once."""
-    inst_id = need_inst(user)
-    if not has_permission(conn, inst_id, user, action_key):
-        raise HTTPException(403, "Insufficient permissions")
 
 SENSITIVE = {"bank_account", "income_tax_number", "socso_number", "epf_number"}
 FIELD_LABELS = {

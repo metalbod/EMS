@@ -396,6 +396,27 @@ ENFORCED_ACTION_KEYS = frozenset({
     "employees.download_bulk_upload_template",
     "employees.bulk_upload_employees",
     "employees.rehire_prefill",
+    "leave.manage_leave_types",
+    "leave.adjust_leave_balance",
+    "leave.view_leave_audit_history",
+    "leave.manage_public_holidays",
+    # NOT leave.leave_utilization_dashboard — its default access dict
+    # (built with _flat("hr_manager","hr_admin")) looks override-eligible
+    # structurally, but a dedicated test
+    # (test_leave_utilization_dashboard_superadmin_denied) confirms
+    # excluding superadmin from it is deliberate, not an oversight. Every
+    # other row in this set is safe to feed through require_permission()'s
+    # standard "superadmin always passes" rule; this one specifically
+    # is not, so it stays on its own explicit require_roles(...) gate in
+    # routers/leave.py instead of being retrofitted.
+    #
+    # NOT leave.approve_reject_leave_application — despite having a flat
+    # ALLOW/DENY access dict like the rows above (is_override_eligible
+    # would say yes), that row's real gate is the approval-workflow
+    # engine (core/approval_workflow.py), not require_roles(...). Adding
+    # it here would let someone "grant" a role approval rights that the
+    # engine would still ignore — never add a CONFIGURABLE-noted action
+    # to this set no matter what its access dict looks like structurally.
 })
 
 
@@ -427,3 +448,18 @@ def has_permission(conn, inst_id: int, user: dict, action_key: str) -> bool:
         (inst_id, action_key, role)
     ).fetchone()
     return (row["access_value"] if row else default) == ALLOW
+
+
+def require_permission(conn, user: dict, action_key: str) -> None:
+    """403-raising convenience wrapper around has_permission() for
+    retrofitted endpoints — needs need_inst/HTTPException imported lazily
+    to avoid this core/ module depending on FastAPI or core/deps for
+    every caller that only wants the plain boolean check."""
+    from fastapi import HTTPException
+    try:
+        from core.deps import need_inst
+    except ImportError:
+        from ems.core.deps import need_inst
+    inst_id = need_inst(user)
+    if not has_permission(conn, inst_id, user, action_key):
+        raise HTTPException(403, "Insufficient permissions")
