@@ -440,6 +440,7 @@ ENFORCED_ACTION_KEYS = frozenset({
     # / device-API-key auth respectively), not a flat role list.
     "hr_notes.view_create_hr_note",
     "hr_notes.delete_hr_note",
+    "approval_workflows.manage_approval_workflows_steps",
 })
 
 

@@ -413,3 +413,32 @@ def test_hr_notes_override_lets_employee_delete_notes(client, hr_manager_auth, m
     finally:
         client.delete("/api/roles/permission-matrix/override", headers=hr_manager_auth,
                        params={"action_key": "hr_notes.delete_hr_note", "role": "employee"})
+
+
+# ---------------------------------------------------------------------------
+# Seventh pilot module: Approval Workflows
+# (routers/approval_workflow_settings.py) — manage_approval_workflows_steps.
+# Institution-scoped, unlike Institutions/system-wide Notifications (see
+# ENFORCED_ACTION_KEYS notes on why those two are deliberately excluded).
+# ---------------------------------------------------------------------------
+def test_approval_workflows_override_lets_manager_manage_workflows(client, hr_manager_auth, make_test_user, test_institution):
+    mgr_token, _ = make_test_user(role="manager")
+    mgr_headers = {"Authorization": f"Bearer {mgr_token}", "X-Institution-Id": str(test_institution["id"])}
+
+    before = client.post("/api/approval-workflows", headers=mgr_headers, json={"module": "leave", "name": "ZZ Perm Workflow"})
+    assert before.status_code == 403, before.text
+
+    override = client.put("/api/roles/permission-matrix/override", headers=hr_manager_auth, json={
+        "action_key": "approval_workflows.manage_approval_workflows_steps", "role": "manager", "access_value": "allow",
+    })
+    assert override.status_code == 200, override.text
+    try:
+        after = client.post("/api/approval-workflows", headers=mgr_headers, json={"module": "leave", "name": "ZZ Perm Workflow 2"})
+        assert after.status_code == 201, after.text
+        client.delete(f"/api/approval-workflows/{after.json()['id']}", headers=hr_manager_auth)
+    finally:
+        client.delete("/api/roles/permission-matrix/override", headers=hr_manager_auth,
+                       params={"action_key": "approval_workflows.manage_approval_workflows_steps", "role": "manager"})
+
+    after_reset = client.post("/api/approval-workflows", headers=mgr_headers, json={"module": "leave", "name": "ZZ Perm Workflow 3"})
+    assert after_reset.status_code == 403, after_reset.text

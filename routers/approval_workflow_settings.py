@@ -10,14 +10,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 
 try:
-    from core.deps import get_current_user, need_inst, require_roles
+    from core.deps import get_current_user, need_inst
 except ImportError:
-    from ems.core.deps import get_current_user, need_inst, require_roles
+    from ems.core.deps import get_current_user, need_inst
 
 try:
-    from core.roles import LEAVE_MANAGE_ROLES
+    from core.permission_matrix import require_permission
 except ImportError:
-    from ems.core.roles import LEAVE_MANAGE_ROLES
+    from ems.core.permission_matrix import require_permission
 
 try:
     from core.approval_workflow import APPROVER_TYPES, MAX_STEPS, MODULE_TABLE, PROJECT_MANAGER_MODULES, get_steps
@@ -39,7 +39,7 @@ router = APIRouter()
 MODULES = tuple(MODULE_TABLE.keys())
 # Same role set that already manages Leave Types / Holidays — approval
 # workflows are an HR-configuration concern, not a superadmin-only one.
-WORKFLOW_MANAGE_ROLES = LEAVE_MANAGE_ROLES
+WORKFLOW_MANAGE_ROLES = ("superadmin", "hr_manager", "hr_admin")
 
 
 class WorkflowIn(BaseModel):
@@ -128,7 +128,8 @@ def list_workflows(conn, module: Optional[str] = None, user: dict = Depends(get_
 
 @router.post("/api/approval-workflows", status_code=201)
 @db_session
-def create_workflow(conn, body: WorkflowIn, user: dict = Depends(require_roles(*WORKFLOW_MANAGE_ROLES))) -> Dict[str, Any]:
+def create_workflow(conn, body: WorkflowIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    require_permission(conn, user, "approval_workflows.manage_approval_workflows_steps")
     inst_id = need_inst(user)
     if not body.name.strip():
         raise HTTPException(400, "name is required")
@@ -155,7 +156,8 @@ def _get_owned_workflow(conn, inst_id: int, workflow_id: int):
 
 @router.put("/api/approval-workflows/{workflow_id}")
 @db_session
-def update_workflow(conn, workflow_id: int, body: WorkflowUpdateIn, user: dict = Depends(require_roles(*WORKFLOW_MANAGE_ROLES))) -> Dict[str, Any]:
+def update_workflow(conn, workflow_id: int, body: WorkflowUpdateIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    require_permission(conn, user, "approval_workflows.manage_approval_workflows_steps")
     inst_id = need_inst(user)
     wf = _get_owned_workflow(conn, inst_id, workflow_id)
     if not body.name.strip():
@@ -175,7 +177,8 @@ def update_workflow(conn, workflow_id: int, body: WorkflowUpdateIn, user: dict =
 
 @router.delete("/api/approval-workflows/{workflow_id}", status_code=204)
 @db_session
-def delete_workflow(conn, workflow_id: int, user: dict = Depends(require_roles(*WORKFLOW_MANAGE_ROLES))) -> None:
+def delete_workflow(conn, workflow_id: int, user: dict = Depends(get_current_user)) -> None:
+    require_permission(conn, user, "approval_workflows.manage_approval_workflows_steps")
     inst_id = need_inst(user)
     wf = _get_owned_workflow(conn, inst_id, workflow_id)
     conn.execute("UPDATE approval_workflows SET is_active=0 WHERE id=?", (workflow_id,))
@@ -194,7 +197,8 @@ def delete_workflow(conn, workflow_id: int, user: dict = Depends(require_roles(*
 
 @router.post("/api/approval-workflows/{workflow_id}/steps", status_code=201)
 @db_session
-def add_step(conn, workflow_id: int, body: StepIn, user: dict = Depends(require_roles(*WORKFLOW_MANAGE_ROLES))) -> Dict[str, Any]:
+def add_step(conn, workflow_id: int, body: StepIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    require_permission(conn, user, "approval_workflows.manage_approval_workflows_steps")
     inst_id = need_inst(user)
     wf = _get_owned_workflow(conn, inst_id, workflow_id)
     _validate_step_body(conn, inst_id, wf["module"], body)
@@ -225,7 +229,8 @@ def _get_owned_step(conn, inst_id: int, workflow_id: int, step_id: int):
 
 @router.put("/api/approval-workflows/{workflow_id}/steps/{step_id}")
 @db_session
-def update_step(conn, workflow_id: int, step_id: int, body: StepIn, user: dict = Depends(require_roles(*WORKFLOW_MANAGE_ROLES))) -> Dict[str, Any]:
+def update_step(conn, workflow_id: int, step_id: int, body: StepIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    require_permission(conn, user, "approval_workflows.manage_approval_workflows_steps")
     inst_id = need_inst(user)
     _get_owned_step(conn, inst_id, workflow_id, step_id)
     wf = _get_owned_workflow(conn, inst_id, workflow_id)
@@ -242,7 +247,8 @@ def update_step(conn, workflow_id: int, step_id: int, body: StepIn, user: dict =
 
 @router.delete("/api/approval-workflows/{workflow_id}/steps/{step_id}", status_code=204)
 @db_session
-def delete_step(conn, workflow_id: int, step_id: int, user: dict = Depends(require_roles(*WORKFLOW_MANAGE_ROLES))) -> None:
+def delete_step(conn, workflow_id: int, step_id: int, user: dict = Depends(get_current_user)) -> None:
+    require_permission(conn, user, "approval_workflows.manage_approval_workflows_steps")
     inst_id = need_inst(user)
     _get_owned_step(conn, inst_id, workflow_id, step_id)
     conn.execute("DELETE FROM approval_workflow_steps WHERE id=?", (step_id,))
@@ -259,7 +265,8 @@ def delete_step(conn, workflow_id: int, step_id: int, user: dict = Depends(requi
 
 @router.post("/api/approval-workflows/{workflow_id}/steps/{step_id}/move")
 @db_session
-def move_step(conn, workflow_id: int, step_id: int, body: StepMoveIn, user: dict = Depends(require_roles(*WORKFLOW_MANAGE_ROLES))) -> Dict[str, Any]:
+def move_step(conn, workflow_id: int, step_id: int, body: StepMoveIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    require_permission(conn, user, "approval_workflows.manage_approval_workflows_steps")
     inst_id = need_inst(user)
     _get_owned_step(conn, inst_id, workflow_id, step_id)
     if body.direction not in ("up", "down"):
