@@ -458,6 +458,15 @@ ENFORCED_ACTION_KEYS = frozenset({
     # user["role"] == "hr_manager", not "any non-superadmin actor" — a
     # role newly granted this action via an override would have bypassed
     # all of them. Generalized to `!= "superadmin"` before adding these keys.
+    "projects_tasks.manage_projects_tasks_assignments",
+    "projects_tasks.utilization_report",
+    # NOT projects_tasks.view_my_projects_project_tasks_assignments —
+    # NO_RESTRICTION, self-scoped, nothing to enforce.
+    # NOT projects_tasks.get_task_by_id — pre-existing note flags this row's
+    # access dict as suspiciously broad ("missing only manager and
+    # compensation_manager, confirm intentional") and it doesn't correspond
+    # to any route in routers/projects.py; leaving untouched rather than
+    # enforcing a gate nobody has verified is correct.
 })
 
 

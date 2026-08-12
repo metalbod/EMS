@@ -590,3 +590,25 @@ def test_users_override_escalation_guard_manager_cannot_touch_superadmin(client,
                        params={"action_key": "users.list_create_update_user", "role": "manager"})
         client.delete("/api/roles/permission-matrix/override", headers=hr_manager_auth,
                        params={"action_key": "users.delete_user", "role": "manager"})
+
+
+def test_projects_override_lets_manager_manage_projects(client, hr_manager_auth, make_test_user, test_institution):
+    mgr_token, _ = make_test_user(role="manager")
+    mgr_headers = {"Authorization": f"Bearer {mgr_token}", "X-Institution-Id": str(test_institution["id"])}
+
+    before = client.post("/api/projects", headers=mgr_headers, json={"name": "ZZ Perm Project", "status": "Active"})
+    assert before.status_code == 403, before.text
+
+    override = client.put("/api/roles/permission-matrix/override", headers=hr_manager_auth, json={
+        "action_key": "projects_tasks.manage_projects_tasks_assignments", "role": "manager", "access_value": "allow",
+    })
+    assert override.status_code == 200, override.text
+    try:
+        after = client.post("/api/projects", headers=mgr_headers, json={"name": "ZZ Perm Project", "status": "Active"})
+        assert after.status_code == 201, after.text
+        util = client.get("/api/projects/utilization", headers=mgr_headers)
+        assert util.status_code == 403, util.text  # separate action key, not granted here
+        client.delete(f"/api/projects/{after.json()['id']}", headers=hr_manager_auth)
+    finally:
+        client.delete("/api/roles/permission-matrix/override", headers=hr_manager_auth,
+                       params={"action_key": "projects_tasks.manage_projects_tasks_assignments", "role": "manager"})
