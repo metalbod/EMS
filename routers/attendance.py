@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from db import get_db, set_rls_context
 from core.deps import get_current_user, hash_password, verify_password
+from core.permission_matrix import require_permission
 from core.leave_balance_ops import _consume_balance
 from core.attendance_helpers import parse_time as _parse_time, match_attendance_setting as _match_attendance_setting, resolve_shift as _resolve_shift
 from core.attendance_schemas import (
@@ -69,9 +70,9 @@ async def create_shift(
     payload: ShiftCreate,
     current_user: dict = Depends(get_current_user),
 ) -> ShiftResponse:
-    require_attendance_manage_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "attendance.manage_shifts_assignments_settings")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         now = datetime.utcnow().isoformat()
         start_t = _parse_time(payload.start_time)
@@ -99,9 +100,9 @@ async def create_shift(
 async def list_shifts(
     current_user: dict = Depends(get_current_user),
 ) -> List[ShiftResponse]:
-    require_attendance_manage_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "attendance.manage_shifts_assignments_settings")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         rows = conn.execute(
             "SELECT * FROM shifts WHERE institution_id = ? ORDER BY start_time",
@@ -118,9 +119,9 @@ async def update_shift(
     payload: ShiftUpdate,
     current_user: dict = Depends(get_current_user),
 ) -> ShiftResponse:
-    require_attendance_manage_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "attendance.manage_shifts_assignments_settings")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         shift = conn.execute("SELECT * FROM shifts WHERE id = ? AND institution_id = ?", (shift_id, inst_id)).fetchone()
         if not shift:
@@ -149,9 +150,9 @@ async def delete_shift(
     shift_id: int,
     current_user: dict = Depends(get_current_user),
 ):
-    require_attendance_manage_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "attendance.manage_shifts_assignments_settings")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         shift = conn.execute("SELECT * FROM shifts WHERE id = ? AND institution_id = ?", (shift_id, inst_id)).fetchone()
         if not shift:
@@ -171,9 +172,9 @@ async def create_shift_assignment(
     payload: ShiftAssignmentCreate,
     current_user: dict = Depends(get_current_user),
 ) -> ShiftAssignmentResponse:
-    require_attendance_manage_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "attendance.manage_shifts_assignments_settings")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         emp = conn.execute("SELECT 1 FROM employees WHERE employee_id=? AND institution_id=?", (payload.employee_id, inst_id)).fetchone()
         if not emp:
@@ -216,9 +217,9 @@ async def list_shift_assignments(
     employee_id: Optional[str] = None,
     current_user: dict = Depends(get_current_user),
 ) -> List[ShiftAssignmentResponse]:
-    require_attendance_manage_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "attendance.manage_shifts_assignments_settings")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         if employee_id:
             rows = conn.execute(
@@ -255,9 +256,9 @@ async def delete_shift_assignment(
     assignment_id: int,
     current_user: dict = Depends(get_current_user),
 ):
-    require_attendance_manage_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "attendance.manage_shifts_assignments_settings")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         row = conn.execute("SELECT 1 FROM employee_shift_assignments WHERE id=? AND institution_id=?", (assignment_id, inst_id)).fetchone()
         if not row:
@@ -284,11 +285,11 @@ async def create_attendance_setting(
     payload: AttendanceSettingCreate,
     current_user: dict = Depends(get_current_user),
 ) -> AttendanceSettingResponse:
-    require_attendance_manage_role(current_user)
-    if not payload.department and not payload.employee_id:
-        raise HTTPException(400, detail="Specify a department or an employee to scope this rule to")
     conn = get_db()
     try:
+        require_permission(conn, current_user, "attendance.manage_shifts_assignments_settings")
+        if not payload.department and not payload.employee_id:
+            raise HTTPException(400, detail="Specify a department or an employee to scope this rule to")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         if payload.employee_id:
             emp = conn.execute("SELECT 1 FROM employees WHERE employee_id=? AND institution_id=?", (payload.employee_id, inst_id)).fetchone()
@@ -328,9 +329,9 @@ async def create_attendance_setting(
 async def list_attendance_settings(
     current_user: dict = Depends(get_current_user),
 ) -> List[AttendanceSettingResponse]:
-    require_attendance_manage_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "attendance.manage_shifts_assignments_settings")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         rows = conn.execute(
             """
@@ -352,9 +353,9 @@ async def update_attendance_setting(
     payload: AttendanceSettingUpdate,
     current_user: dict = Depends(get_current_user),
 ) -> AttendanceSettingResponse:
-    require_attendance_manage_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "attendance.manage_shifts_assignments_settings")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         setting = conn.execute("SELECT * FROM attendance_settings WHERE id=? AND institution_id=?", (setting_id, inst_id)).fetchone()
         if not setting:
@@ -387,9 +388,9 @@ async def delete_attendance_setting(
     setting_id: int,
     current_user: dict = Depends(get_current_user),
 ):
-    require_attendance_manage_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "attendance.manage_shifts_assignments_settings")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         row = conn.execute("SELECT 1 FROM attendance_settings WHERE id=? AND institution_id=?", (setting_id, inst_id)).fetchone()
         if not row:
@@ -706,9 +707,9 @@ async def my_attendance(
 async def review_queue(
     current_user: dict = Depends(get_current_user),
 ) -> List[AttendanceRecordWithEmployee]:
-    require_attendance_manage_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "attendance.review_queue_resolve_attendance_record")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         _sweep_absences(conn, inst_id)
         rows = conn.execute(
@@ -736,9 +737,9 @@ async def resolve_attendance_record(
     payload: AttendanceResolve,
     current_user: dict = Depends(get_current_user),
 ) -> AttendanceRecordResponse:
-    require_attendance_manage_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "attendance.review_queue_resolve_attendance_record")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         rec = conn.execute("SELECT * FROM attendance_records WHERE id = ? AND institution_id = ?", (record_id, inst_id)).fetchone()
         if not rec:
@@ -841,9 +842,9 @@ async def create_device(
     payload: DeviceCreate,
     current_user: dict = Depends(get_current_user),
 ) -> DeviceCreateResponse:
-    require_attendance_manage_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "attendance.manage_attendance_devices")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         if payload.location_id and not conn.execute(
             "SELECT 1 FROM locations WHERE id=? AND institution_id=?", (payload.location_id, inst_id)
@@ -877,9 +878,9 @@ async def create_device(
 async def list_devices(
     current_user: dict = Depends(get_current_user),
 ) -> List[DeviceResponse]:
-    require_attendance_manage_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "attendance.manage_attendance_devices")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         rows = conn.execute(
             """
@@ -900,9 +901,9 @@ async def delete_device(
     device_id: int,
     current_user: dict = Depends(get_current_user),
 ):
-    require_attendance_manage_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "attendance.manage_attendance_devices")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         if not conn.execute("SELECT 1 FROM attendance_devices WHERE id=? AND institution_id=?", (device_id, inst_id)).fetchone():
             raise HTTPException(404, detail="Device not found")

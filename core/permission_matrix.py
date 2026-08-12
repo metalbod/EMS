@@ -432,6 +432,12 @@ ENFORCED_ACTION_KEYS = frozenset({
     "learning_development.view_l_d_history_for_an_employee",
     # NOT learning_development.approve_reject_enrollment — approval-workflow
     # engine, same reasoning as every other *.approve_reject_* key.
+    "attendance.manage_shifts_assignments_settings",
+    "attendance.review_queue_resolve_attendance_record",
+    "attendance.manage_attendance_devices",
+    # NOT attendance.clock_in_out_view_own_attendance or
+    # attendance.device_webhook_clock_event — both NO_RESTRICTION (self-serve
+    # / device-API-key auth respectively), not a flat role list.
 })
 
 

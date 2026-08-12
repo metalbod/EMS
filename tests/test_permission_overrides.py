@@ -281,3 +281,78 @@ def test_ld_enrollment_approval_action_stays_non_enforced(client, hr_manager_aut
         "action_key": "learning_development.approve_reject_enrollment", "role": "manager", "access_value": "allow",
     })
     assert res.status_code == 400, res.text
+
+
+# ---------------------------------------------------------------------------
+# Fifth pilot module: Attendance (routers/attendance.py) —
+# manage_shifts_assignments_settings, review_queue_resolve_attendance_record,
+# manage_attendance_devices.
+# ---------------------------------------------------------------------------
+def test_attendance_override_lets_employee_manage_shifts(client, hr_manager_auth, make_test_user, test_institution):
+    emp_token, _ = make_test_user(role="employee")
+    emp_headers = {"Authorization": f"Bearer {emp_token}", "X-Institution-Id": str(test_institution["id"])}
+    payload = {"name": "ZZ Perm Shift", "start_time": "09:00", "end_time": "18:00", "grace_period_minutes": 15}
+
+    before = client.post("/api/attendance/shifts", headers=emp_headers, json=payload)
+    assert before.status_code == 403, before.text
+
+    override = client.put("/api/roles/permission-matrix/override", headers=hr_manager_auth, json={
+        "action_key": "attendance.manage_shifts_assignments_settings", "role": "employee", "access_value": "allow",
+    })
+    assert override.status_code == 200, override.text
+    try:
+        after = client.post("/api/attendance/shifts", headers=emp_headers, json=payload)
+        assert after.status_code == 201, after.text
+        client.delete(f"/api/attendance/shifts/{after.json()['id']}", headers=hr_manager_auth)
+    finally:
+        client.delete("/api/roles/permission-matrix/override", headers=hr_manager_auth,
+                       params={"action_key": "attendance.manage_shifts_assignments_settings", "role": "employee"})
+
+    after_reset = client.post("/api/attendance/shifts", headers=emp_headers, json=payload)
+    assert after_reset.status_code == 403, after_reset.text
+
+
+def test_attendance_override_lets_manager_view_review_queue(client, hr_manager_auth, make_test_user, test_institution):
+    mgr_token, _ = make_test_user(role="manager")
+    mgr_headers = {"Authorization": f"Bearer {mgr_token}", "X-Institution-Id": str(test_institution["id"])}
+
+    before = client.get("/api/attendance/review", headers=mgr_headers)
+    assert before.status_code == 403, before.text
+
+    override = client.put("/api/roles/permission-matrix/override", headers=hr_manager_auth, json={
+        "action_key": "attendance.review_queue_resolve_attendance_record", "role": "manager", "access_value": "allow",
+    })
+    assert override.status_code == 200, override.text
+    try:
+        after = client.get("/api/attendance/review", headers=mgr_headers)
+        assert after.status_code == 200, after.text
+    finally:
+        client.delete("/api/roles/permission-matrix/override", headers=hr_manager_auth,
+                       params={"action_key": "attendance.review_queue_resolve_attendance_record", "role": "manager"})
+
+
+def test_attendance_override_lets_employee_manage_devices(client, hr_manager_auth, make_test_user, test_institution):
+    emp_token, _ = make_test_user(role="employee")
+    emp_headers = {"Authorization": f"Bearer {emp_token}", "X-Institution-Id": str(test_institution["id"])}
+
+    before = client.get("/api/attendance/devices", headers=emp_headers)
+    assert before.status_code == 403, before.text
+
+    override = client.put("/api/roles/permission-matrix/override", headers=hr_manager_auth, json={
+        "action_key": "attendance.manage_attendance_devices", "role": "employee", "access_value": "allow",
+    })
+    assert override.status_code == 200, override.text
+    try:
+        after = client.get("/api/attendance/devices", headers=emp_headers)
+        assert after.status_code == 200, after.text
+    finally:
+        client.delete("/api/roles/permission-matrix/override", headers=hr_manager_auth,
+                       params={"action_key": "attendance.manage_attendance_devices", "role": "employee"})
+
+
+def test_attendance_clock_in_out_action_stays_non_enforced(client, hr_manager_auth):
+    """Self-serve, NO_RESTRICTION — not a flat role list, must be rejected."""
+    res = client.put("/api/roles/permission-matrix/override", headers=hr_manager_auth, json={
+        "action_key": "attendance.clock_in_out_view_own_attendance", "role": "manager", "access_value": "allow",
+    })
+    assert res.status_code == 400, res.text
