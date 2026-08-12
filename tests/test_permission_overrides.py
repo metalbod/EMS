@@ -5,6 +5,8 @@ routers/employees.py's 6 flat-gated actions. See permission_matrix.py's
 module docstring for why this started as a small pilot instead of every
 router at once.
 """
+import os
+
 from conftest import _valid_employee_payload
 
 
@@ -510,3 +512,81 @@ def test_audit_log_override_lets_employee_view_log(client, hr_manager_auth, make
 
     after_reset = client.get("/api/audit-logs", headers=emp_headers)
     assert after_reset.status_code == 403, after_reset.text
+
+
+# ---------------------------------------------------------------------------
+# Tenth pilot module: Users (routers/users.py) —
+# list_create_update_user, delete_user. Retrofitting this required first
+# fixing a real bug: update_user's/delete_user's extra protections were
+# gated on the literal role "hr_manager", not "any non-superadmin actor" —
+# see the escalation-guard test below, which is the whole reason this
+# module needed extra care.
+# ---------------------------------------------------------------------------
+def test_users_override_lets_manager_create_and_update_users(client, hr_manager_auth, make_test_user, test_institution):
+    mgr_token, _ = make_test_user(role="manager")
+    mgr_headers = {"Authorization": f"Bearer {mgr_token}", "X-Institution-Id": str(test_institution["id"])}
+    username = f"zzpermov_user_{os.urandom(3).hex()}"
+
+    before = client.post("/api/users", headers=mgr_headers, json={
+        "username": username, "full_name": "ZZ Perm User", "password": "ZzPytest@123", "role": "employee",
+    })
+    assert before.status_code == 403, before.text
+
+    override = client.put("/api/roles/permission-matrix/override", headers=hr_manager_auth, json={
+        "action_key": "users.list_create_update_user", "role": "manager", "access_value": "allow",
+    })
+    assert override.status_code == 200, override.text
+    try:
+        after = client.post("/api/users", headers=mgr_headers, json={
+            "username": username, "full_name": "ZZ Perm User", "password": "ZzPytest@123", "role": "employee",
+        })
+        assert after.status_code == 201, after.text
+        list_res = client.get("/api/users", headers=mgr_headers)
+        assert list_res.status_code == 200, list_res.text
+        client.delete(f"/api/users/{after.json()['id']}", headers=hr_manager_auth)
+    finally:
+        client.delete("/api/roles/permission-matrix/override", headers=hr_manager_auth,
+                       params={"action_key": "users.list_create_update_user", "role": "manager"})
+
+
+def test_users_override_escalation_guard_manager_cannot_touch_superadmin(client, hr_manager_auth, superadmin_headers, make_test_user, test_institution):
+    """The whole reason this module needed extra care before retrofitting:
+    a manager granted list_create_update_user access must still be unable
+    to assign the Platform Admin role, edit the seeded superadmin account,
+    or delete it."""
+    mgr_token, _ = make_test_user(role="manager")
+    mgr_headers = {"Authorization": f"Bearer {mgr_token}", "X-Institution-Id": str(test_institution["id"])}
+
+    global_list = client.get("/api/users", headers={"Authorization": superadmin_headers["Authorization"]}).json()
+    superadmin_row = next(u for u in global_list if u["role"] == "superadmin")
+
+    override = client.put("/api/roles/permission-matrix/override", headers=hr_manager_auth, json={
+        "action_key": "users.list_create_update_user", "role": "manager", "access_value": "allow",
+    })
+    assert override.status_code == 200, override.text
+    override2 = client.put("/api/roles/permission-matrix/override", headers=hr_manager_auth, json={
+        "action_key": "users.delete_user", "role": "manager", "access_value": "allow",
+    })
+    assert override2.status_code == 200, override2.text
+    try:
+        # Cannot create a new Platform Admin account.
+        create_res = client.post("/api/users", headers=mgr_headers, json={
+            "username": f"zzpermov_sa_{os.urandom(3).hex()}",
+            "full_name": "ZZ Escalation Attempt", "password": "ZzPytest@123", "role": "superadmin",
+        })
+        assert create_res.status_code == 403, create_res.text
+
+        # Cannot edit the existing Platform Admin account.
+        edit_res = client.put(f"/api/users/{superadmin_row['id']}", headers=mgr_headers, json={
+            "full_name": "ZZ Hacked", "role": "superadmin",
+        })
+        assert edit_res.status_code in (403, 404), edit_res.text
+
+        # Cannot delete the existing Platform Admin account.
+        delete_res = client.delete(f"/api/users/{superadmin_row['id']}", headers=mgr_headers)
+        assert delete_res.status_code in (403, 404), delete_res.text
+    finally:
+        client.delete("/api/roles/permission-matrix/override", headers=hr_manager_auth,
+                       params={"action_key": "users.list_create_update_user", "role": "manager"})
+        client.delete("/api/roles/permission-matrix/override", headers=hr_manager_auth,
+                       params={"action_key": "users.delete_user", "role": "manager"})

@@ -449,6 +449,15 @@ ENFORCED_ACTION_KEYS = frozenset({
     # granting a role "manage custom roles" would also hand it the power
     # to grant itself anything else in the app — a real escalation chain.
     "audit_log.view_institution_audit_log",
+    "users.list_create_update_user",
+    "users.delete_user",
+    # Retrofitting these required first fixing a real bug in
+    # routers/users.py: update_user's and delete_user's extra protections
+    # (can't edit/assign the Platform Admin role, can't touch a user
+    # outside your own institution) were gated on the literal string
+    # user["role"] == "hr_manager", not "any non-superadmin actor" — a
+    # role newly granted this action via an override would have bypassed
+    # all of them. Generalized to `!= "superadmin"` before adding these keys.
 })
 
 
@@ -486,7 +495,17 @@ def require_permission(conn, user: dict, action_key: str) -> None:
     """403-raising convenience wrapper around has_permission() for
     retrofitted endpoints — needs need_inst/HTTPException imported lazily
     to avoid this core/ module depending on FastAPI or core/deps for
-    every caller that only wants the plain boolean check."""
+    every caller that only wants the plain boolean check.
+
+    Checks the superadmin bypass BEFORE calling need_inst(), not after —
+    some endpoints (e.g. routers/users.py's list_users) have a legitimate
+    superadmin-with-no-institution-selected code path (a global,
+    cross-institution view). Calling need_inst() unconditionally would
+    401/400 that case even though has_permission() would have granted it
+    anyway, since superadmin always passes regardless of institution
+    context."""
+    if user["role"] == "superadmin":
+        return
     from fastapi import HTTPException
     try:
         from core.deps import need_inst

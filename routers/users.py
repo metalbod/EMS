@@ -5,9 +5,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 try:
-    from core.deps import hash_password, require_roles
+    from core.deps import get_current_user, hash_password
 except ImportError:
-    from ems.core.deps import hash_password, require_roles
+    from ems.core.deps import get_current_user, hash_password
+
+try:
+    from core.permission_matrix import require_permission
+except ImportError:
+    from ems.core.permission_matrix import require_permission
 
 try:
     from core.roles import ROLES, get_valid_roles
@@ -60,7 +65,8 @@ class UserUpdate(BaseModel):
 
 @router.get("/api/users")
 @db_session
-def list_users(conn, user: dict = Depends(require_roles(*CAN_MANAGE_USERS))) -> List[Dict[str, Any]]:
+def list_users(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
+    require_permission(conn, user, "users.list_create_update_user")
     if user["role"] == "superadmin":
         inst_id = user.get("active_institution_id")
         if inst_id:
@@ -95,7 +101,8 @@ def list_users(conn, user: dict = Depends(require_roles(*CAN_MANAGE_USERS))) -> 
 
 @router.post("/api/users", status_code=201)
 @db_session
-def create_user(conn, body: UserIn, user: dict = Depends(require_roles(*CAN_MANAGE_USERS))) -> Dict[str, Any]:
+def create_user(conn, body: UserIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    require_permission(conn, user, "users.list_create_update_user")
     # Determine which institution this user belongs to
     if user["role"] == "superadmin":
         inst_id = body.institution_id or user.get("active_institution_id")
@@ -137,11 +144,22 @@ def create_user(conn, body: UserIn, user: dict = Depends(require_roles(*CAN_MANA
 
 @router.put("/api/users/{user_id}")
 @db_session
-def update_user(conn, user_id: int, body: UserUpdate, user: dict = Depends(require_roles(*CAN_MANAGE_USERS))) -> Dict[str, Any]:
+def update_user(conn, user_id: int, body: UserUpdate, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    require_permission(conn, user, "users.list_create_update_user")
     target = conn.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
     if not target:
         raise HTTPException(404, "User not found")
-    if user["role"] == "hr_manager":
+    if user["role"] != "superadmin":
+        # Was `if user["role"] == "hr_manager":` — only superadmin should
+        # ever be exempt from these three protections (editing a Platform
+        # Admin account, assigning the Platform Admin role, managing users
+        # outside your own institution). Narrowing it to the literal
+        # "hr_manager" string was fine while hr_manager was the only
+        # non-superadmin role that could ever reach this endpoint, but the
+        # permission-override system (core/permission_matrix.py) can now
+        # grant manager/employee/custom-role access to this same action —
+        # any of those would have bypassed all three checks entirely under
+        # the old literal-role comparison.
         if target["role"] == "superadmin":
             raise HTTPException(403, "Cannot edit Platform Admin")
         if body.role == "superadmin":
@@ -174,13 +192,19 @@ def update_user(conn, user_id: int, body: UserUpdate, user: dict = Depends(requi
 
 @router.delete("/api/users/{user_id}", status_code=204)
 @db_session
-def delete_user(conn, user_id: int, user: dict = Depends(require_roles("superadmin", "hr_manager"))) -> None:
+def delete_user(conn, user_id: int, user: dict = Depends(get_current_user)) -> None:
+    require_permission(conn, user, "users.delete_user")
     if user_id == user["id"]:
         raise HTTPException(400, "Cannot delete your own account")
     target = conn.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
     if not target:
         raise HTTPException(404, "User not found")
-    if user["role"] == "hr_manager" and target["institution_id"] != user["institution_id"]:
+    # Was `if user["role"] == "hr_manager" and ...` — same reasoning as
+    # update_user's fix above: only superadmin should be exempt from the
+    # institution boundary. This incidentally also blocks any non-superadmin
+    # actor from deleting a superadmin account, since superadmin's own
+    # institution_id is NULL (never equal to a real institution_id).
+    if user["role"] != "superadmin" and target["institution_id"] != user["institution_id"]:
         raise HTTPException(403, "Access denied")
     conn.execute("DELETE FROM users WHERE id=?", (user_id,))
     conn.commit()
