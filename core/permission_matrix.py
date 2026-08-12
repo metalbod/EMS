@@ -448,6 +448,7 @@ ENFORCED_ACTION_KEYS = frozenset({
     # completely outside this override system. If they were overridable,
     # granting a role "manage custom roles" would also hand it the power
     # to grant itself anything else in the app — a real escalation chain.
+    "audit_log.view_institution_audit_log",
 })
 
 

@@ -484,3 +484,29 @@ def test_custom_roles_override_lets_manager_create_and_delete_roles(client, hr_m
 
     after_reset = client.post("/api/roles", headers=mgr_headers, json={"display_name": "ZZ Perm Role 3"})
     assert after_reset.status_code == 403, after_reset.text
+
+
+# ---------------------------------------------------------------------------
+# Ninth pilot module: Audit Log (routers/audit.py) —
+# view_institution_audit_log.
+# ---------------------------------------------------------------------------
+def test_audit_log_override_lets_employee_view_log(client, hr_manager_auth, make_test_user, test_institution):
+    emp_token, _ = make_test_user(role="employee")
+    emp_headers = {"Authorization": f"Bearer {emp_token}", "X-Institution-Id": str(test_institution["id"])}
+
+    before = client.get("/api/audit-logs", headers=emp_headers)
+    assert before.status_code == 403, before.text
+
+    override = client.put("/api/roles/permission-matrix/override", headers=hr_manager_auth, json={
+        "action_key": "audit_log.view_institution_audit_log", "role": "employee", "access_value": "allow",
+    })
+    assert override.status_code == 200, override.text
+    try:
+        after = client.get("/api/audit-logs", headers=emp_headers)
+        assert after.status_code == 200, after.text
+    finally:
+        client.delete("/api/roles/permission-matrix/override", headers=hr_manager_auth,
+                       params={"action_key": "audit_log.view_institution_audit_log", "role": "employee"})
+
+    after_reset = client.get("/api/audit-logs", headers=emp_headers)
+    assert after_reset.status_code == 403, after_reset.text

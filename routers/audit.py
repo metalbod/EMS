@@ -5,9 +5,14 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends
 
 try:
-    from core.deps import need_inst, require_roles
+    from core.deps import get_current_user, need_inst
 except ImportError:
-    from ems.core.deps import need_inst, require_roles
+    from ems.core.deps import get_current_user, need_inst
+
+try:
+    from core.permission_matrix import require_permission
+except ImportError:
+    from ems.core.permission_matrix import require_permission
 
 try:
     from db import get_db
@@ -28,8 +33,9 @@ def list_audit_logs(
     employee_id: Optional[str] = None,
     action: Optional[str] = None,
     limit: int = 200,
-    user: dict = Depends(require_roles("superadmin", "hr_manager")),
+    user: dict = Depends(get_current_user),
 ) -> List[Dict[str, Any]]:
+    require_permission(conn, user, "audit_log.view_institution_audit_log")
     inst_id = need_inst(user)
     q = "SELECT * FROM audit_logs WHERE institution_id=?"
     p = [inst_id]
