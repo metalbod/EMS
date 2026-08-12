@@ -7,9 +7,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 try:
-    from core.deps import get_current_user, need_inst, require_roles
+    from core.deps import get_current_user, need_inst
 except ImportError:
-    from ems.core.deps import get_current_user, need_inst, require_roles
+    from ems.core.deps import get_current_user, need_inst
 
 try:
     from core.org_queries import subordinates_in_clause
@@ -25,6 +25,11 @@ try:
     from core.approval_workflow import start_workflow, advance_or_finalize
 except ImportError:
     from ems.core.approval_workflow import start_workflow, advance_or_finalize
+
+try:
+    from core.permission_matrix import require_permission
+except ImportError:
+    from ems.core.permission_matrix import require_permission
 
 try:
     from db import get_db, IntegrityError
@@ -113,7 +118,8 @@ def list_ld_courses(conn, category: Optional[str] = None, user: dict = Depends(g
 
 @router.post("/api/ld/courses", status_code=201)
 @db_session
-def create_ld_course(conn, body: LDCourseIn, user: dict = Depends(require_roles(*LD_MANAGE_ROLES))) -> Dict[str, Any]:
+def create_ld_course(conn, body: LDCourseIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    require_permission(conn, user, "learning_development.manage_courses_quizzes")
     inst_id = need_inst(user)
     if body.category not in LD_CATEGORIES:
         raise HTTPException(400, f"category must be one of: {', '.join(LD_CATEGORIES)}")
@@ -128,7 +134,8 @@ def create_ld_course(conn, body: LDCourseIn, user: dict = Depends(require_roles(
 
 @router.put("/api/ld/courses/{course_id}")
 @db_session
-def update_ld_course(conn, course_id: int, body: LDCourseIn, user: dict = Depends(require_roles(*LD_MANAGE_ROLES))) -> Dict[str, Any]:
+def update_ld_course(conn, course_id: int, body: LDCourseIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    require_permission(conn, user, "learning_development.manage_courses_quizzes")
     inst_id = need_inst(user)
     if body.category not in LD_CATEGORIES:
         raise HTTPException(400, f"category must be one of: {', '.join(LD_CATEGORIES)}")
@@ -145,7 +152,8 @@ def update_ld_course(conn, course_id: int, body: LDCourseIn, user: dict = Depend
 
 @router.delete("/api/ld/courses/{course_id}", status_code=204)
 @db_session
-def delete_ld_course(conn, course_id: int, user: dict = Depends(require_roles(*LD_MANAGE_ROLES))) -> None:
+def delete_ld_course(conn, course_id: int, user: dict = Depends(get_current_user)) -> None:
+    require_permission(conn, user, "learning_development.manage_courses_quizzes")
     inst_id = need_inst(user)
     conn.execute("UPDATE ld_courses SET is_active=0 WHERE id=? AND institution_id=?", (course_id, inst_id))
     conn.commit()
@@ -282,7 +290,8 @@ def update_ld_enrollment_status(conn, enr_id: int, body: LDEnrollStatusIn, user:
 
 @router.get("/api/employees/{employee_id}/ld-history")
 @db_session
-def get_employee_ld_history(conn, employee_id: str, user: dict = Depends(require_roles(*LD_MANAGE_ROLES))) -> List[Dict[str, Any]]:
+def get_employee_ld_history(conn, employee_id: str, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
+    require_permission(conn, user, "learning_development.view_l_d_history_for_an_employee")
     inst_id = need_inst(user)
     rows = conn.execute(
         "SELECT * FROM ld_audit_log WHERE employee_id=? AND institution_id=? ORDER BY created_at ASC",
@@ -330,8 +339,9 @@ def get_course_quiz(conn, course_id: int, user: dict = Depends(get_current_user)
 
 @router.get("/api/ld/courses/{course_id}/quiz/manage")
 @db_session
-def get_course_quiz_for_manage(conn, course_id: int, user: dict = Depends(require_roles(*LD_MANAGE_ROLES))) -> Optional[Dict[str, Any]]:
+def get_course_quiz_for_manage(conn, course_id: int, user: dict = Depends(get_current_user)) -> Optional[Dict[str, Any]]:
     """Returns the quiz with correct answers included, for HR to edit."""
+    require_permission(conn, user, "learning_development.manage_courses_quizzes")
     inst_id = need_inst(user)
     quiz = _quiz_for_course(conn, inst_id, course_id)
     if not quiz:
@@ -341,7 +351,8 @@ def get_course_quiz_for_manage(conn, course_id: int, user: dict = Depends(requir
 
 @router.put("/api/ld/courses/{course_id}/quiz")
 @db_session
-def upsert_course_quiz(conn, course_id: int, body: LDQuizIn, user: dict = Depends(require_roles(*LD_MANAGE_ROLES))) -> Dict[str, Any]:
+def upsert_course_quiz(conn, course_id: int, body: LDQuizIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    require_permission(conn, user, "learning_development.manage_courses_quizzes")
     inst_id = need_inst(user)
     if not body.questions:
         raise HTTPException(400, "A quiz needs at least one question")
@@ -387,7 +398,8 @@ def upsert_course_quiz(conn, course_id: int, body: LDQuizIn, user: dict = Depend
 
 @router.delete("/api/ld/courses/{course_id}/quiz", status_code=204)
 @db_session
-def delete_course_quiz(conn, course_id: int, user: dict = Depends(require_roles(*LD_MANAGE_ROLES))) -> None:
+def delete_course_quiz(conn, course_id: int, user: dict = Depends(get_current_user)) -> None:
+    require_permission(conn, user, "learning_development.manage_courses_quizzes")
     inst_id = need_inst(user)
     quiz = conn.execute("SELECT id FROM ld_quizzes WHERE course_id=? AND institution_id=?", (course_id, inst_id)).fetchone()
     if quiz:
@@ -504,8 +516,9 @@ def list_course_modules(conn, course_id: int, enrollment_id: Optional[int] = Non
 @router.put("/api/ld/courses/{course_id}/modules")
 @db_session
 def replace_course_modules(conn, course_id: int, body: LDModulesIn,
-                           user: dict = Depends(require_roles(*LD_MANAGE_ROLES))) -> List[Dict[str, Any]]:
+                           user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
     """Replace the full ordered module list for a course (same upsert pattern as the quiz)."""
+    require_permission(conn, user, "learning_development.manage_courses_quizzes")
     inst_id = need_inst(user)
     for m in body.modules:
         if m.content_type not in ("text", "video"):

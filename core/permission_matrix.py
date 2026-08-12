@@ -287,7 +287,7 @@ MATRIX: List[Dict[str, Any]] = [
         "module": "Learning & Development",
         "actions": [
             _action("Manage courses & quizzes", "routers/ld.py", _flat(*_LD_MANAGE)),
-            _action("View L&D history for an employee", "GET /api/ld/employees/{id}/history", _flat(*_LD_MANAGE)),
+            _action("View L&D history for an employee", "GET /api/employees/{id}/ld-history", _flat(*_LD_MANAGE)),
             _action("Enroll / take quiz / view own progress", "routers/ld.py", _no_restriction(), note="Self-serve."),
             _action("Approve / reject enrollment", "PATCH /api/ld/enrollments/{id}/status", _flat("hr_manager", "hr_admin"),
                      note=CONFIGURABLE + " — approval-workflow engine."),
@@ -428,6 +428,10 @@ ENFORCED_ACTION_KEYS = frozenset({
     # — all three are assigned_role-matched (NO_RESTRICTION at the role
     # level; the real gate is per-item, checked in the endpoint body via
     # _can_act_on_item), not a flat role list at all.
+    "learning_development.manage_courses_quizzes",
+    "learning_development.view_l_d_history_for_an_employee",
+    # NOT learning_development.approve_reject_enrollment — approval-workflow
+    # engine, same reasoning as every other *.approve_reject_* key.
 })
 
 

@@ -242,3 +242,42 @@ def test_onboarding_complete_item_action_stays_non_enforced(client, hr_manager_a
         "action_key": "onboarding_offboarding.complete_update_checklist_item", "role": "manager", "access_value": "allow",
     })
     assert res.status_code == 400, res.text
+
+
+# ---------------------------------------------------------------------------
+# Fourth pilot module: Learning & Development (routers/ld.py) —
+# manage_courses_quizzes, view_l_d_history_for_an_employee.
+# (approve_reject_enrollment stays non-enforced — approval-workflow engine,
+# same as the other *.approve_reject_* keys.)
+# ---------------------------------------------------------------------------
+def test_ld_override_lets_manager_manage_courses(client, hr_manager_auth, make_test_user, test_institution):
+    mgr_token, _ = make_test_user(role="manager")
+    mgr_headers = {"Authorization": f"Bearer {mgr_token}", "X-Institution-Id": str(test_institution["id"])}
+
+    before = client.post("/api/ld/courses", headers=mgr_headers,
+                          json={"title": "ZZ Perm Course", "category": "professional_development", "cost": 0.0})
+    assert before.status_code == 403, before.text
+
+    override = client.put("/api/roles/permission-matrix/override", headers=hr_manager_auth, json={
+        "action_key": "learning_development.manage_courses_quizzes", "role": "manager", "access_value": "allow",
+    })
+    assert override.status_code == 200, override.text
+    try:
+        after = client.post("/api/ld/courses", headers=mgr_headers,
+                             json={"title": "ZZ Perm Course 2", "category": "professional_development", "cost": 0.0})
+        assert after.status_code == 201, after.text
+        client.delete(f"/api/ld/courses/{after.json()['id']}", headers=hr_manager_auth)
+    finally:
+        client.delete("/api/roles/permission-matrix/override", headers=hr_manager_auth,
+                       params={"action_key": "learning_development.manage_courses_quizzes", "role": "manager"})
+
+    after_reset = client.post("/api/ld/courses", headers=mgr_headers,
+                               json={"title": "ZZ Perm Course 3", "category": "professional_development", "cost": 0.0})
+    assert after_reset.status_code == 403, after_reset.text
+
+
+def test_ld_enrollment_approval_action_stays_non_enforced(client, hr_manager_auth):
+    res = client.put("/api/roles/permission-matrix/override", headers=hr_manager_auth, json={
+        "action_key": "learning_development.approve_reject_enrollment", "role": "manager", "access_value": "allow",
+    })
+    assert res.status_code == 400, res.text
