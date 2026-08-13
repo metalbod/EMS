@@ -612,3 +612,28 @@ def test_projects_override_lets_manager_manage_projects(client, hr_manager_auth,
     finally:
         client.delete("/api/roles/permission-matrix/override", headers=hr_manager_auth,
                        params={"action_key": "projects_tasks.manage_projects_tasks_assignments", "role": "manager"})
+
+
+def test_recruitment_override_lets_manager_create_requisition(client, hr_manager_auth, make_test_user, test_institution):
+    mgr_token, _ = make_test_user(role="manager")
+    mgr_headers = {"Authorization": f"Bearer {mgr_token}", "X-Institution-Id": str(test_institution["id"])}
+
+    before = client.post("/api/recruitment/requisitions", headers=mgr_headers, json={
+        "title": "ZZ Perm Role", "department": "Engineering",
+    })
+    assert before.status_code == 403, before.text
+
+    override = client.put("/api/roles/permission-matrix/override", headers=hr_manager_auth, json={
+        "action_key": "recruitment.create_edit_requisition_candidate_interview_offer", "role": "manager", "access_value": "allow",
+    })
+    assert override.status_code == 200, override.text
+    try:
+        after = client.post("/api/recruitment/requisitions", headers=mgr_headers, json={
+            "title": "ZZ Perm Role", "department": "Engineering",
+        })
+        assert after.status_code == 201, after.text
+        audit = client.get(f"/api/recruitment/candidates/999999999/audit-log", headers=mgr_headers)
+        assert audit.status_code == 403, audit.text  # separate action key, not granted here
+    finally:
+        client.delete("/api/roles/permission-matrix/override", headers=hr_manager_auth,
+                       params={"action_key": "recruitment.create_edit_requisition_candidate_interview_offer", "role": "manager"})

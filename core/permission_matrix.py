@@ -467,6 +467,17 @@ ENFORCED_ACTION_KEYS = frozenset({
     # compensation_manager, confirm intentional") and it doesn't correspond
     # to any route in routers/projects.py; leaving untouched rather than
     # enforcing a gate nobody has verified is correct.
+    "recruitment.create_edit_requisition_candidate_interview_offer",
+    "recruitment.view_candidate_audit_log",
+    # NOT recruitment.view_requisitions_candidates_interviews_offers —
+    # NO_RESTRICTION at the matrix level (though several of the underlying
+    # GET endpoints, e.g. list_offers/get_offer, are actually gated the
+    # same as the write action today — a pre-existing doc/reality mismatch,
+    # not something introduced or fixed by this retrofit).
+    # NOT recruitment.approve_requisition — approval-workflow engine, same
+    # reasoning as every other *.approve_reject_*/approve_* key; its inline
+    # fallback (`if user["role"] not in ("superadmin","hr_manager")`) stays
+    # hardcoded in routers/recruitment.py's approve_requisition, untouched.
 })
 
 
