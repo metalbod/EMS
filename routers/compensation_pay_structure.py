@@ -13,7 +13,8 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from db import get_db
 from core.deps import get_current_user
-from core.compensation_helpers import require_hr_role, add_hr_note as _add_hr_note
+from core.compensation_helpers import add_hr_note as _add_hr_note
+from core.permission_matrix import require_permission
 from core.compensation_records import get_current as get_current_compensation, retire_and_replace as retire_and_replace_compensation
 from core.compensation_schemas import (
     PayGradeCreate, PayGradeResponse, PayGradeUpdate,
@@ -37,9 +38,9 @@ async def create_pay_grade(
     current_user: dict = Depends(get_current_user),
 ) -> PayGradeResponse:
     """Create a new pay grade."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_pay_grades_job_levels_roles")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         now = datetime.utcnow().isoformat()
 
@@ -73,9 +74,9 @@ async def list_pay_grades(
     current_user: dict = Depends(get_current_user),
 ) -> List[PayGradeResponse]:
     """List all pay grades."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_pay_grades_job_levels_roles")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         grades = conn.execute(
             "SELECT * FROM pay_grades WHERE institution_id = ? AND is_active = 1 ORDER BY grade_level",
@@ -92,9 +93,9 @@ async def get_pay_grade(
     current_user: dict = Depends(get_current_user),
 ) -> PayGradeResponse:
     """Get pay grade details."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_pay_grades_job_levels_roles")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         grade = conn.execute(
             "SELECT * FROM pay_grades WHERE id = ? AND institution_id = ?",
@@ -114,9 +115,9 @@ async def update_pay_grade(
     current_user: dict = Depends(get_current_user),
 ) -> PayGradeResponse:
     """Update pay grade."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_pay_grades_job_levels_roles")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         grade = conn.execute(
             "SELECT * FROM pay_grades WHERE id = ? AND institution_id = ?",
@@ -167,9 +168,9 @@ async def create_job_level(
     current_user: dict = Depends(get_current_user),
 ) -> JobLevelResponse:
     """Create a new job level."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_pay_grades_job_levels_roles")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         now = datetime.utcnow().isoformat()
 
@@ -197,9 +198,9 @@ async def list_job_levels(
     current_user: dict = Depends(get_current_user),
 ) -> List[JobLevelResponse]:
     """List all job levels."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_pay_grades_job_levels_roles")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         levels = conn.execute(
             "SELECT * FROM job_levels WHERE institution_id = ? AND is_active = 1 ORDER BY level_order",
@@ -216,9 +217,9 @@ async def get_job_level(
     current_user: dict = Depends(get_current_user),
 ) -> JobLevelResponse:
     """Get job level details."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_pay_grades_job_levels_roles")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         level = conn.execute(
             "SELECT * FROM job_levels WHERE id = ? AND institution_id = ?",
@@ -238,9 +239,9 @@ async def update_job_level(
     current_user: dict = Depends(get_current_user),
 ) -> JobLevelResponse:
     """Update job level."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_pay_grades_job_levels_roles")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         level = conn.execute(
             "SELECT * FROM job_levels WHERE id = ? AND institution_id = ?",
@@ -284,9 +285,9 @@ async def create_job_role(
     current_user: dict = Depends(get_current_user),
 ) -> JobRoleResponse:
     """Create a new job role."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_pay_grades_job_levels_roles")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         now = datetime.utcnow().isoformat()
 
@@ -332,9 +333,9 @@ async def list_job_roles(
     overhead on top of the actual query). One extra JOIN query here,
     grouped in Python, replaces all of that.
     """
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_pay_grades_job_levels_roles")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         roles = conn.execute(
             "SELECT * FROM job_roles WHERE institution_id = ? AND is_active = 1",
@@ -377,9 +378,9 @@ async def list_role_pay_grades(
     current_user: dict = Depends(get_current_user),
 ):
     """List pay grades mapped to a job role."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_pay_grades_job_levels_roles")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         role = conn.execute(
             "SELECT * FROM job_roles WHERE id = ? AND institution_id = ?",
@@ -411,9 +412,9 @@ async def map_role_to_grade(
     current_user: dict = Depends(get_current_user),
 ):
     """Map a job role to one or more pay grades."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_pay_grades_job_levels_roles")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
 
         # Verify role exists
@@ -460,9 +461,9 @@ async def set_employee_compensation(
     current_user: dict = Depends(get_current_user),
 ) -> EmployeeCompensationResponse:
     """Set or update employee compensation."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.set_employee_compensation_record_salary_changes")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
 
         # Verify employee exists
@@ -521,9 +522,9 @@ async def get_employee_compensation(
     current_user: dict = Depends(get_current_user),
 ) -> EmployeeCompensationDetail:
     """Get current employee compensation."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.set_employee_compensation_record_salary_changes")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
 
         comp = get_current_compensation(conn, inst_id, employee_id)
@@ -567,9 +568,9 @@ async def record_salary_change(
     current_user: dict = Depends(get_current_user),
 ) -> SalaryChangeResponse:
     """Record a salary change with audit trail."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.set_employee_compensation_record_salary_changes")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
 
         # Verify employee exists
@@ -610,9 +611,9 @@ async def get_salary_history(
     current_user: dict = Depends(get_current_user),
 ) -> List[SalaryChangeResponse]:
     """Get salary change history for an employee."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.set_employee_compensation_record_salary_changes")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         changes = conn.execute(
             """

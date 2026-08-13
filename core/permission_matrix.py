@@ -478,6 +478,30 @@ ENFORCED_ACTION_KEYS = frozenset({
     # reasoning as every other *.approve_reject_*/approve_* key; its inline
     # fallback (`if user["role"] not in ("superadmin","hr_manager")`) stays
     # hardcoded in routers/recruitment.py's approve_requisition, untouched.
+    #
+    # NOT any Payroll action (routers/payroll.py) — PAYROLL_MANAGE_ROLES is
+    # ("payroll_manager",) and PAYROLL_VIEW_ROLES is ("payroll_manager",
+    # "hr_manager"): both deliberately exclude superadmin (same pattern
+    # confirmed intentional for leave.leave_utilization_dashboard above).
+    # has_permission()/require_permission() always grant superadmin first,
+    # by design, so every other retrofitted module works correctly for it —
+    # but that means retrofitting Payroll would silently hand superadmin
+    # payroll management/view access it doesn't have today, a real
+    # escalation rather than just "making the matrix editable". Deliberately
+    # left permanently out of scope for this override system, like
+    # Institutions and system-wide Notifications — routers/payroll.py keeps
+    # its own hardcoded require_roles(...) gates untouched.
+    "compensation.manage_pay_grades_job_levels_roles",
+    "compensation.set_employee_compensation_record_salary_changes",
+    "compensation.manage_bonus_plans_payouts",
+    "compensation.manage_commission_plans_entries",
+    "compensation.manage_equity_grants_vesting",
+    "compensation.manage_merit_cycles_recommendations",
+    "compensation.view_someone_s_total_rewards_pay_equity_report",
+    # NOT compensation.view_own_total_rewards — NO_RESTRICTION, self-scoped.
+    # _COMP_HR (core/compensation_helpers.py's require_hr_role) includes
+    # superadmin, unlike Payroll's role tuples above, so this module doesn't
+    # have that same escalation problem.
 })
 
 

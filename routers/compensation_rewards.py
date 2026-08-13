@@ -5,7 +5,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from db import get_db
 from core.deps import get_current_user
-from core.compensation_helpers import require_hr_role
+from core.permission_matrix import require_permission
 from core.compensation_records import get_current as get_current_compensation
 from core.compensation_schemas import (
     MeritRecommendationResponse,
@@ -125,9 +125,9 @@ async def get_employee_total_rewards(
     current_user: dict = Depends(get_current_user),
 ) -> TotalRewardsStatement:
     """HR-facing: total rewards statement for any employee in the institution."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.view_someone_s_total_rewards_pay_equity_report")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         return _build_total_rewards_statement(conn, inst_id, employee_id, year or datetime.utcnow().year)
     finally:
@@ -143,9 +143,9 @@ async def get_pay_equity_report(
     current_user: dict = Depends(get_current_user),
 ) -> PayEquityReport:
     """Get comprehensive pay equity analysis report."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.view_someone_s_total_rewards_pay_equity_report")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         analysis_date = datetime.utcnow().isoformat()
 

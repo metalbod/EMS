@@ -9,7 +9,8 @@ from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from db import get_db
 from core.deps import get_current_user
-from core.compensation_helpers import require_hr_role, add_hr_note as _add_hr_note
+from core.compensation_helpers import add_hr_note as _add_hr_note
+from core.permission_matrix import require_permission
 from core.compensation_records import get_current as get_current_compensation, retire_and_replace as retire_and_replace_compensation
 from core.compensation_schemas import (
     MeritReviewCycleCreate, MeritReviewCycleResponse,
@@ -31,9 +32,9 @@ async def create_merit_cycle(
     current_user: dict = Depends(get_current_user),
 ) -> MeritReviewCycleResponse:
     """Create a merit review cycle."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_merit_cycles_recommendations")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         now = datetime.utcnow().isoformat()
 
@@ -63,9 +64,9 @@ async def list_merit_cycles(
     current_user: dict = Depends(get_current_user),
 ) -> List[MeritReviewCycleResponse]:
     """List merit review cycles."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_merit_cycles_recommendations")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         cycles = conn.execute(
             "SELECT * FROM merit_review_cycles WHERE institution_id = ? ORDER BY review_year DESC",
@@ -82,9 +83,9 @@ async def list_merit_recommendations(
     current_user: dict = Depends(get_current_user),
 ) -> List[MeritRecommendationWithEmployee]:
     """List merit recommendations for a review cycle, with employee names joined in."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_merit_cycles_recommendations")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
 
         cycle = conn.execute(
@@ -120,9 +121,9 @@ async def create_merit_recommendation(
     current_user: dict = Depends(get_current_user),
 ) -> MeritRecommendationResponse:
     """Create a merit recommendation."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_merit_cycles_recommendations")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         user_id = current_user.get("id")
 
@@ -187,9 +188,9 @@ async def approve_merit_recommendation(
     current_user: dict = Depends(get_current_user),
 ) -> MeritRecommendationResponse:
     """Approve or reject merit recommendation."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_merit_cycles_recommendations")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         user_id = current_user.get("id")
 

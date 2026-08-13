@@ -6,7 +6,8 @@ from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from db import get_db
 from core.deps import get_current_user
-from core.compensation_helpers import require_hr_role, add_hr_note as _add_hr_note
+from core.compensation_helpers import add_hr_note as _add_hr_note
+from core.permission_matrix import require_permission
 from core.compensation_schemas import (
     BonusPlanCreate, BonusPlanUpdate, BonusPlanResponse,
     BonusPayoutCreate, BonusPayoutDecide, BonusPayoutResponse, BonusPayoutWithEmployee,
@@ -25,9 +26,9 @@ async def create_bonus_plan(
     current_user: dict = Depends(get_current_user),
 ) -> BonusPlanResponse:
     """Create a bonus/incentive plan."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_bonus_plans_payouts")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         now = datetime.utcnow().isoformat()
 
@@ -57,9 +58,9 @@ async def list_bonus_plans(
     current_user: dict = Depends(get_current_user),
 ) -> List[BonusPlanResponse]:
     """List bonus/incentive plans."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_bonus_plans_payouts")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         plans = conn.execute(
             "SELECT * FROM bonus_plans WHERE institution_id = ? ORDER BY plan_year DESC, id DESC",
@@ -77,9 +78,9 @@ async def update_bonus_plan(
     current_user: dict = Depends(get_current_user),
 ) -> BonusPlanResponse:
     """Update a bonus plan (name, status, budget, description)."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_bonus_plans_payouts")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         plan = conn.execute(
             "SELECT * FROM bonus_plans WHERE id = ? AND institution_id = ?",
@@ -112,9 +113,9 @@ async def list_bonus_payouts(
     current_user: dict = Depends(get_current_user),
 ) -> List[BonusPayoutWithEmployee]:
     """List payouts for a bonus plan, with employee names joined in."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_bonus_plans_payouts")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
 
         plan = conn.execute(
@@ -149,9 +150,9 @@ async def create_bonus_payout(
     current_user: dict = Depends(get_current_user),
 ) -> BonusPayoutResponse:
     """Award a bonus payout to an employee under a plan."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_bonus_plans_payouts")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         user_id = current_user.get("id")
 
@@ -205,9 +206,9 @@ async def decide_bonus_payout(
     current_user: dict = Depends(get_current_user),
 ) -> BonusPayoutResponse:
     """Approve or reject a bonus payout."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_bonus_plans_payouts")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         user_id = current_user.get("id")
 
@@ -252,9 +253,9 @@ async def mark_bonus_payout_paid(
     current_user: dict = Depends(get_current_user),
 ) -> BonusPayoutResponse:
     """Mark an approved bonus payout as actually paid out."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_bonus_plans_payouts")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
 
         payout = conn.execute(

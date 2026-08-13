@@ -7,7 +7,8 @@ from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from db import get_db
 from core.deps import get_current_user
-from core.compensation_helpers import require_hr_role, add_hr_note as _add_hr_note
+from core.compensation_helpers import add_hr_note as _add_hr_note
+from core.permission_matrix import require_permission
 from core.compensation_schemas import (
     EquityGrantCreate, EquityGrantDecide, EquityGrantResponse, EquityGrantWithEmployee,
     EquityGrantDetail, VestingEventResponse, VestingEventSettle,
@@ -75,9 +76,9 @@ async def create_equity_grant(
 ) -> EquityGrantResponse:
     """Create an equity grant (stock option or RSU), pending HR approval.
     Vesting events aren't generated until the grant is approved."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_equity_grants_vesting")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         user_id = current_user.get("id")
 
@@ -124,9 +125,9 @@ async def list_equity_grants(
     current_user: dict = Depends(get_current_user),
 ) -> List[EquityGrantWithEmployee]:
     """List all equity grants in the institution, with employee names joined in."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_equity_grants_vesting")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         rows = conn.execute(
             """
@@ -149,9 +150,9 @@ async def get_equity_grant(
     current_user: dict = Depends(get_current_user),
 ) -> EquityGrantDetail:
     """Get a single equity grant with its full vesting schedule."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_equity_grants_vesting")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
 
         grant = conn.execute(
@@ -197,9 +198,9 @@ async def decide_equity_grant(
     """Approve or reject an equity grant. Approving generates the full
     vesting schedule as equity_vesting_events rows in the same transaction —
     there's no separate 'activate' step."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_equity_grants_vesting")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         user_id = current_user.get("id")
 
@@ -261,9 +262,9 @@ async def cancel_equity_grant(
     Already-vested tranches are left untouched — only remaining Scheduled
     tranches are cancelled, since vested shares are the employee's regardless
     of what happens to the grant afterward."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_equity_grants_vesting")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
 
         grant = conn.execute(
@@ -304,9 +305,9 @@ async def mark_vesting_event_vested(
 ) -> VestingEventResponse:
     """Mark a scheduled vesting tranche as actually vested (i.e. its vest
     date has passed and the shares/units are now the employee's)."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_equity_grants_vesting")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
 
         event = conn.execute(
@@ -350,9 +351,9 @@ async def settle_vesting_event(
     if the price dropped). Only meaningful for Phantom grants, since RSU/
     ISO/NSO/ESPP settle in actual equity, not cash, and 'Vested' is already
     their terminal state."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_equity_grants_vesting")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
 
         event = conn.execute(

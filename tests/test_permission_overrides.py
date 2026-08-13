@@ -637,3 +637,31 @@ def test_recruitment_override_lets_manager_create_requisition(client, hr_manager
     finally:
         client.delete("/api/roles/permission-matrix/override", headers=hr_manager_auth,
                        params={"action_key": "recruitment.create_edit_requisition_candidate_interview_offer", "role": "manager"})
+
+
+def test_compensation_override_lets_manager_create_pay_grade(client, hr_manager_auth, make_test_user, test_institution):
+    mgr_token, _ = make_test_user(role="manager")
+    mgr_headers = {"Authorization": f"Bearer {mgr_token}", "X-Institution-Id": str(test_institution["id"])}
+    payload = {
+        "grade_code": "ZZPG1", "grade_name": "ZZ Perm Grade",
+        "grade_level": 1, "min_salary": 3000, "midpoint_salary": 4000, "max_salary": 5000,
+    }
+
+    before = client.post("/api/compensation/pay-grades", headers=mgr_headers, json=payload)
+    assert before.status_code == 403, before.text
+
+    override = client.put("/api/roles/permission-matrix/override", headers=hr_manager_auth, json={
+        "action_key": "compensation.manage_pay_grades_job_levels_roles", "role": "manager", "access_value": "allow",
+    })
+    assert override.status_code == 200, override.text
+    try:
+        after = client.post("/api/compensation/pay-grades", headers=mgr_headers, json=payload)
+        assert after.status_code == 201, after.text
+        bonus = client.post("/api/compensation/bonus-plans", headers=mgr_headers, json={
+            "plan_name": "ZZ Perm Bonus", "plan_type": "Spot", "plan_year": 2026,
+            "period_start": "2026-01-01", "period_end": "2026-12-31",
+        })
+        assert bonus.status_code == 403, bonus.text  # separate action key, not granted here
+    finally:
+        client.delete("/api/roles/permission-matrix/override", headers=hr_manager_auth,
+                       params={"action_key": "compensation.manage_pay_grades_job_levels_roles", "role": "manager"})

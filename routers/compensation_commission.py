@@ -6,7 +6,8 @@ from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from db import get_db
 from core.deps import get_current_user
-from core.compensation_helpers import require_hr_role, add_hr_note as _add_hr_note
+from core.compensation_helpers import add_hr_note as _add_hr_note
+from core.permission_matrix import require_permission
 from core.compensation_schemas import (
     CommissionPlanCreate, CommissionPlanUpdate, CommissionPlanResponse,
     CommissionEntryCreate, CommissionEntryDecide, CommissionEntryResponse, CommissionEntryWithEmployee,
@@ -25,9 +26,9 @@ async def create_commission_plan(
     current_user: dict = Depends(get_current_user),
 ) -> CommissionPlanResponse:
     """Create a commission plan."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_commission_plans_entries")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         now = datetime.utcnow().isoformat()
 
@@ -57,9 +58,9 @@ async def list_commission_plans(
     current_user: dict = Depends(get_current_user),
 ) -> List[CommissionPlanResponse]:
     """List commission plans."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_commission_plans_entries")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         plans = conn.execute(
             "SELECT * FROM commission_plans WHERE institution_id = ? ORDER BY plan_year DESC, id DESC",
@@ -77,9 +78,9 @@ async def update_commission_plan(
     current_user: dict = Depends(get_current_user),
 ) -> CommissionPlanResponse:
     """Update a commission plan (name, status, default rate, description)."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_commission_plans_entries")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         plan = conn.execute(
             "SELECT * FROM commission_plans WHERE id = ? AND institution_id = ?",
@@ -112,9 +113,9 @@ async def list_commission_entries(
     current_user: dict = Depends(get_current_user),
 ) -> List[CommissionEntryWithEmployee]:
     """List commission entries for a plan, with employee names joined in."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_commission_plans_entries")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
 
         plan = conn.execute(
@@ -152,9 +153,9 @@ async def create_commission_entry(
     plan. The commission amount is calculated server-side from
     sales_amount x commission_rate_percent and stored, so a later change
     to the plan's default rate never retroactively alters this entry."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_commission_plans_entries")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         user_id = current_user.get("id")
 
@@ -216,9 +217,9 @@ async def decide_commission_entry(
     current_user: dict = Depends(get_current_user),
 ) -> CommissionEntryResponse:
     """Approve or reject a commission entry."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_commission_plans_entries")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         user_id = current_user.get("id")
 
@@ -263,9 +264,9 @@ async def mark_commission_entry_paid(
     current_user: dict = Depends(get_current_user),
 ) -> CommissionEntryResponse:
     """Mark an approved commission entry as actually paid out."""
-    require_hr_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "compensation.manage_commission_plans_entries")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
 
         entry = conn.execute(
