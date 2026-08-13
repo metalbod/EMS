@@ -533,6 +533,20 @@ ENFORCED_ACTION_KEYS = frozenset({
     # enrollments, HR acting on an employee's enrollment — no matching row;
     # "View/elect own enrollment" only covers the self-service /mine
     # endpoints). Not retrofitted rather than guessed onto a mismatched key.
+    #
+    # NOT institution-level Notifications (routers/notifications.py's
+    # "Manage institution notification banners", NOTIFICATION_MANAGE_ROLES =
+    # ("hr_manager", "hr_admin")) — same escalation problem as Payroll
+    # above: this gate deliberately excludes superadmin (matrix row already
+    # carries the note "No superadmin in this gate"), and
+    # has_permission()/require_permission() always grant superadmin first.
+    # Retrofitting would silently hand superadmin banner-management access
+    # it doesn't have today. Confirmed with the project owner to leave this
+    # permanently out of scope, same as Payroll, Institutions, and
+    # system-wide (platform) Notifications. This closes out the permission-
+    # override retrofit rollout — every remaining module has either been
+    # retrofitted or has a documented reason (here or above) for staying on
+    # its own hardcoded gate.
 })
 
 
