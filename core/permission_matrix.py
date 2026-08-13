@@ -502,6 +502,37 @@ ENFORCED_ACTION_KEYS = frozenset({
     # _COMP_HR (core/compensation_helpers.py's require_hr_role) includes
     # superadmin, unlike Payroll's role tuples above, so this module doesn't
     # have that same escalation problem.
+    "benefits.manage_benefit_plans_eligibility_enrollment_periods",
+    "benefits.decide_life_events_auto_enroll_view_compliance_report",
+    "benefits.manage_employee_dependents_hr_side",
+    "benefits.view_reports_dashboard",
+    # NOT benefits.view_elect_own_enrollment — NO_RESTRICTION, self-scoped.
+    # NOT benefits.attach_detach_dependent_to_enrollment — true OR gate at
+    # runtime (an inline `is_hr = role in [...]` literal-list check ORed
+    # with "is this the caller's own enrollment"), not a 1:1 flat-role swap
+    # like the other rows here. has_permission()/require_permission() only
+    # model flat per-role allow/deny, not an OR against a hardcoded
+    # is_hr check — retrofitting would require restructuring that check to
+    # also consult the override table, which is a bigger change than this
+    # pass is scoped for. update_dependent (PUT /api/benefits/dependents/
+    # {id}, the same is_self-OR-HR pattern) has the same issue and is
+    # likewise left on its current hardcoded gate.
+    # NOT benefits.list_decide_claims — same reasoning as leave/recruitment/
+    # L&D's approve_reject_* keys: a manager's path here is the
+    # approval-workflow engine (SUBORDINATE scoping in list_claims,
+    # advance_or_finalize in decide_claim), and the HR fallback branch in
+    # each stays on its hardcoded require_benefits_role call. Two adjacent,
+    # matrix-undocumented endpoints in this same claims lifecycle
+    # (submit_employee_claim, mark_claim_paid) are left untouched for
+    # consistency, rather than making some claims actions overridable and
+    # others not.
+    #
+    # Also left untouched, pre-existing gaps in this matrix's Benefits rows
+    # rather than something this pass introduced: list_employee_enrollments
+    # and elect_employee_enrollment (GET/POST /api/benefits/employees/{id}/
+    # enrollments, HR acting on an employee's enrollment — no matching row;
+    # "View/elect own enrollment" only covers the self-service /mine
+    # endpoints). Not retrofitted rather than guessed onto a mismatched key.
 })
 
 

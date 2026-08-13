@@ -7,6 +7,7 @@ from db import get_db
 from core.deps import get_current_user
 from core.approval_workflow import start_workflow, advance_or_finalize
 from core.org_queries import subordinates_in_clause
+from core.permission_matrix import require_permission
 from core.benefits_schemas import (
     BenefitPlanCreate, BenefitPlanUpdate, BenefitPlanResponse,
     EligibilityRuleCreate, EligibilityRuleResponse, EligiblePlanResponse,
@@ -63,9 +64,9 @@ async def create_benefit_plan(
     current_user: dict = Depends(get_current_user),
 ) -> BenefitPlanResponse:
     """Create a benefit plan."""
-    require_benefits_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "benefits.manage_benefit_plans_eligibility_enrollment_periods")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         now = datetime.utcnow().isoformat()
 
@@ -100,9 +101,9 @@ async def list_benefit_plans(
     current_user: dict = Depends(get_current_user),
 ) -> List[BenefitPlanResponse]:
     """List benefit plans, optionally filtered by category."""
-    require_benefits_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "benefits.manage_benefit_plans_eligibility_enrollment_periods")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         if category:
             plans = conn.execute(
@@ -125,9 +126,9 @@ async def get_benefit_plan(
     current_user: dict = Depends(get_current_user),
 ) -> BenefitPlanResponse:
     """Get a single benefit plan."""
-    require_benefits_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "benefits.manage_benefit_plans_eligibility_enrollment_periods")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         plan = conn.execute(
             "SELECT * FROM benefit_plans WHERE id = ? AND institution_id = ?",
@@ -147,9 +148,9 @@ async def update_benefit_plan(
     current_user: dict = Depends(get_current_user),
 ) -> BenefitPlanResponse:
     """Update a benefit plan (name, status, costs, description, carrier info)."""
-    require_benefits_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "benefits.manage_benefit_plans_eligibility_enrollment_periods")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         plan = conn.execute(
             "SELECT * FROM benefit_plans WHERE id = ? AND institution_id = ?",
@@ -192,11 +193,11 @@ async def create_eligibility_rule(
 ) -> EligibilityRuleResponse:
     """Restrict a plan to a job level and/or pay grade. A plan with no
     rules at all is open to every employee — rules only narrow it down."""
-    require_benefits_role(current_user)
-    if payload.job_level_id is None and payload.pay_grade_id is None:
-        raise HTTPException(400, detail="Provide at least one of job_level_id or pay_grade_id")
     conn = get_db()
     try:
+        require_permission(conn, current_user, "benefits.manage_benefit_plans_eligibility_enrollment_periods")
+        if payload.job_level_id is None and payload.pay_grade_id is None:
+            raise HTTPException(400, detail="Provide at least one of job_level_id or pay_grade_id")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
 
         plan = conn.execute(
@@ -255,9 +256,9 @@ async def list_eligibility_rules(
     current_user: dict = Depends(get_current_user),
 ) -> List[EligibilityRuleResponse]:
     """List eligibility rules for a plan, with level/grade names joined in."""
-    require_benefits_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "benefits.manage_benefit_plans_eligibility_enrollment_periods")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         rules = conn.execute(
             """
@@ -283,9 +284,9 @@ async def delete_eligibility_rule(
 ):
     """Remove an eligibility rule — widens the plan back toward open-to-all
     as rules are removed (a plan with zero rules left is open to everyone)."""
-    require_benefits_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "benefits.manage_benefit_plans_eligibility_enrollment_periods")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         rule = conn.execute(
             "SELECT * FROM benefit_plan_eligibility WHERE id = ? AND benefit_plan_id = ? AND institution_id = ?",
@@ -344,9 +345,9 @@ async def get_employee_eligible_plans(
     current_user: dict = Depends(get_current_user),
 ) -> List[EligiblePlanResponse]:
     """HR-facing: which Active benefit plans an employee is eligible for."""
-    require_benefits_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "benefits.manage_benefit_plans_eligibility_enrollment_periods")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         employee = conn.execute(
             "SELECT * FROM employees WHERE employee_id = ? AND institution_id = ?",
@@ -385,9 +386,9 @@ async def create_enrollment_period(
     current_user: dict = Depends(get_current_user),
 ) -> EnrollmentPeriodResponse:
     """Create an open enrollment period, starting as Draft."""
-    require_benefits_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "benefits.manage_benefit_plans_eligibility_enrollment_periods")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         now = datetime.utcnow().isoformat()
         conn.execute(
@@ -411,9 +412,9 @@ async def list_enrollment_periods(
     current_user: dict = Depends(get_current_user),
 ) -> List[EnrollmentPeriodResponse]:
     """List enrollment periods (HR-facing)."""
-    require_benefits_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "benefits.manage_benefit_plans_eligibility_enrollment_periods")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         periods = conn.execute(
             "SELECT * FROM benefit_enrollment_periods WHERE institution_id = ? ORDER BY plan_year DESC, start_date DESC",
@@ -455,9 +456,9 @@ async def update_enrollment_period(
     current_user: dict = Depends(get_current_user),
 ) -> EnrollmentPeriodResponse:
     """Update an enrollment period's status (Draft -> Open -> Closed)."""
-    require_benefits_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "benefits.manage_benefit_plans_eligibility_enrollment_periods")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         period = conn.execute(
             "SELECT * FROM benefit_enrollment_periods WHERE id = ? AND institution_id = ?",
@@ -537,9 +538,9 @@ async def list_life_events(
     current_user: dict = Depends(get_current_user),
 ) -> List[LifeEventWithEmployee]:
     """HR-facing: list all life event submissions, optionally filtered by status."""
-    require_benefits_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "benefits.decide_life_events_auto_enroll_view_compliance_report")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         query = """
             SELECT le.*, e.full_name AS employee_name
@@ -568,9 +569,9 @@ async def decide_life_event(
     self-service enrollment window from the event date — a fixed,
     generous window rather than something HR has to remember to set
     manually per event."""
-    require_benefits_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "benefits.decide_life_events_auto_enroll_view_compliance_report")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         user_id = current_user.get("id")
 
@@ -679,9 +680,9 @@ async def auto_enroll_all_active_employees(
     _elect_enrollment upsert self-service elections go through, so an
     employee already enrolled just has their row refreshed rather than
     duplicated."""
-    require_benefits_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "benefits.decide_life_events_auto_enroll_view_compliance_report")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         plan = conn.execute(
             "SELECT * FROM benefit_plans WHERE id = ? AND institution_id = ? AND status = 'Active'",
@@ -848,9 +849,9 @@ async def create_dependent(
     current_user: dict = Depends(get_current_user),
 ) -> DependentResponse:
     """HR-facing: add a dependent/beneficiary to an employee's roster."""
-    require_dependents_manage_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "benefits.manage_employee_dependents_hr_side")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         employee = conn.execute(
             "SELECT * FROM employees WHERE employee_id = ? AND institution_id = ?",
@@ -890,9 +891,9 @@ async def list_employee_dependents(
     current_user: dict = Depends(get_current_user),
 ) -> List[DependentResponse]:
     """HR-facing: an employee's dependent/beneficiary roster."""
-    require_dependents_manage_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "benefits.manage_employee_dependents_hr_side")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         rows = conn.execute(
             "SELECT * FROM benefit_dependents WHERE employee_id = ? AND institution_id = ? AND status = 'Active' ORDER BY created_at",
@@ -1423,9 +1424,9 @@ async def get_compliance_report(
     statement). Employer/employee cost totals only sum Fixed Premium
     plans, since Percent of Salary and Reimbursement Cap plans don't
     have a fixed monthly figure to add up the same way."""
-    require_benefits_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "benefits.decide_life_events_auto_enroll_view_compliance_report")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
 
         plans = conn.execute(
@@ -1536,9 +1537,9 @@ async def get_benefits_dashboard(
     """Dashboard-sized cost + utilization summary for HR Manager /
     Compensation Manager / Manager, including cost broken down by
     department — the fuller drill-down report lives at /reports/summary."""
-    require_benefits_dashboard_role(current_user)
     conn = get_db()
     try:
+        require_permission(conn, current_user, "benefits.view_reports_dashboard")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
 
         plans = conn.execute(

@@ -643,7 +643,7 @@ def test_compensation_override_lets_manager_create_pay_grade(client, hr_manager_
     mgr_token, _ = make_test_user(role="manager")
     mgr_headers = {"Authorization": f"Bearer {mgr_token}", "X-Institution-Id": str(test_institution["id"])}
     payload = {
-        "grade_code": "ZZPG1", "grade_name": "ZZ Perm Grade",
+        "grade_code": f"ZZPG{os.urandom(3).hex()}", "grade_name": "ZZ Perm Grade",
         "grade_level": 1, "min_salary": 3000, "midpoint_salary": 4000, "max_salary": 5000,
     }
 
@@ -665,3 +665,32 @@ def test_compensation_override_lets_manager_create_pay_grade(client, hr_manager_
     finally:
         client.delete("/api/roles/permission-matrix/override", headers=hr_manager_auth,
                        params={"action_key": "compensation.manage_pay_grades_job_levels_roles", "role": "manager"})
+
+
+def test_benefits_override_lets_manager_manage_plans(client, hr_manager_auth, make_test_user, test_institution):
+    mgr_token, _ = make_test_user(role="manager")
+    mgr_headers = {"Authorization": f"Bearer {mgr_token}", "X-Institution-Id": str(test_institution["id"])}
+    payload = {
+        "plan_name": "ZZ Perm Plan", "plan_category": "Medical", "contribution_type": "Fixed Premium",
+        "employer_cost": 100, "employee_cost": 0,
+    }
+
+    before = client.post("/api/benefits/plans", headers=mgr_headers, json=payload)
+    assert before.status_code == 403, before.text
+
+    override = client.put("/api/roles/permission-matrix/override", headers=hr_manager_auth, json={
+        "action_key": "benefits.manage_benefit_plans_eligibility_enrollment_periods", "role": "manager", "access_value": "allow",
+    })
+    assert override.status_code == 200, override.text
+    try:
+        after = client.post("/api/benefits/plans", headers=mgr_headers, json=payload)
+        assert after.status_code == 201, after.text
+        dashboard = client.get("/api/benefits/reports/dashboard", headers=mgr_headers)
+        assert dashboard.status_code == 200, dashboard.text  # manager already has this by default (require_benefits_dashboard_role)
+        dependents = client.post(f"/api/benefits/employees/ZZNOPE/dependents", headers=mgr_headers, json={
+            "full_name": "ZZ Dep", "relationship": "Spouse", "date_of_birth": "1990-01-01",
+        })
+        assert dependents.status_code == 403, dependents.text  # separate action key, not granted here
+    finally:
+        client.delete("/api/roles/permission-matrix/override", headers=hr_manager_auth,
+                       params={"action_key": "benefits.manage_benefit_plans_eligibility_enrollment_periods", "role": "manager"})
