@@ -9,3 +9,4 @@ sentry-sdk[fastapi]==1.45.1
 celery==5.3.6
 redis==5.0.1
 alembic==1.14.0
+anthropic==0.122.0

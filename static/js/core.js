@@ -128,6 +128,7 @@ async function bootApp() {
   populateMetaSelects();
   applyRoleUI();
   updateSidebarUser();
+  initAssistant();
   document.getElementById('headerDate').textContent =
     new Date().toLocaleDateString('en-MY',{weekday:'short',year:'numeric',month:'short',day:'numeric'});
   if (currentUser.role === 'superadmin' && !currentInstitution) {
