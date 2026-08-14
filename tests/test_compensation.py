@@ -2,7 +2,7 @@
 import pytest
 from fastapi.testclient import TestClient
 from datetime import datetime
-from tests.conftest import _unique_code
+from conftest import _unique_code
 
 
 class TestPayGrades:

@@ -367,7 +367,16 @@ def make_test_employee(client, hr_manager_auth):
     yield _make
 
     for emp_id in created_ids:
-        client.patch(f"/api/employees/{emp_id}/status", headers=hr_manager_auth, json={"status": "Inactive"})
+        res = client.patch(f"/api/employees/{emp_id}/status", headers=hr_manager_auth, json={"status": "Inactive"})
+        # Not asserted (would abort teardown for the remaining ids, and can
+        # mask the test's own failure), but a silent failure here leaves the
+        # employee permanently Active on the shared test institution — this
+        # kind of unnoticed leak, multiplied across many test files over a
+        # long project history, is what made auto-enroll-all in
+        # test_benefits.py process 1300+ Active employees and effectively
+        # hang. Loud enough in CI output to get noticed.
+        if res.status_code != 200:
+            print(f"WARNING: teardown failed to deactivate test employee {emp_id}: {res.status_code} {res.text}")
 
 
 @pytest.fixture

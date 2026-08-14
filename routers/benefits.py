@@ -676,10 +676,14 @@ async def auto_enroll_all_active_employees(
 ) -> dict:
     """HR-triggered bulk action (button on the plan screen, not an implicit
     side effect of activating a plan) — enrolls every currently Active
-    employee into this plan with status 'Enrolled', reusing the same
-    _elect_enrollment upsert self-service elections go through, so an
-    employee already enrolled just has their row refreshed rather than
-    duplicated."""
+    employee into this plan with status 'Enrolled'. Re-running is
+    idempotent: an employee already enrolled just has their row refreshed
+    (ON CONFLICT DO UPDATE), not duplicated.
+
+    Deliberately a single set-based INSERT...SELECT rather than a Python
+    loop calling _elect_enrollment per employee — institutions here can have
+    thousands of active employees, and a per-employee round trip made this
+    endpoint effectively hang at that scale."""
     conn = get_db()
     try:
         require_permission(conn, current_user, "benefits.decide_life_events_auto_enroll_view_compliance_report")
@@ -691,14 +695,47 @@ async def auto_enroll_all_active_employees(
         if not plan:
             raise HTTPException(404, detail="Benefit plan not found or not Active")
 
-        employees = conn.execute(
-            "SELECT employee_id FROM employees WHERE institution_id = ? AND status = 'Active'",
-            (inst_id,),
-        ).fetchall()
-        for emp in employees:
-            _elect_enrollment(conn, inst_id, emp["employee_id"], plan_id, "Enrolled", None, None)
+        now = datetime.utcnow().isoformat()
+        today = datetime.utcnow().date().isoformat()
+        note_body = f"Enrolled in '{plan['plan_name']}' ({plan['plan_category']})."
 
-        return {"enrolled_count": len(employees)}
+        result = conn.execute(
+            """
+            INSERT INTO benefit_enrollments
+            (institution_id, employee_id, benefit_plan_id, enrollment_period_id, life_event_id,
+             status, employee_cost_snapshot, employer_cost_snapshot, effective_date, elected_at,
+             created_at, updated_at)
+            SELECT ?, e.employee_id, ?, NULL, NULL, 'Enrolled', ?, ?, ?, ?, ?, ?
+            FROM employees e
+            WHERE e.institution_id = ? AND e.status = 'Active'
+            ON CONFLICT (employee_id, benefit_plan_id) DO UPDATE SET
+                status = EXCLUDED.status,
+                enrollment_period_id = EXCLUDED.enrollment_period_id,
+                life_event_id = EXCLUDED.life_event_id,
+                employee_cost_snapshot = EXCLUDED.employee_cost_snapshot,
+                employer_cost_snapshot = EXCLUDED.employer_cost_snapshot,
+                effective_date = EXCLUDED.effective_date,
+                elected_at = EXCLUDED.elected_at,
+                updated_at = EXCLUDED.updated_at
+            RETURNING employee_id
+            """,
+            (inst_id, plan_id, plan["employee_cost"], plan["employer_cost"], today, now, now, now, inst_id),
+        )
+        enrolled_ids = [row["employee_id"] for row in result.fetchall()]
+
+        if enrolled_ids:
+            conn.execute(
+                """
+                INSERT INTO hr_notes (institution_id, employee_id, note_type, body, created_by)
+                SELECT ?, e.employee_id, 'performance', ?, 'benefits-enrollment'
+                FROM employees e
+                WHERE e.institution_id = ? AND e.status = 'Active'
+                """,
+                (inst_id, note_body, inst_id),
+            )
+
+        conn.commit()
+        return {"enrolled_count": len(enrolled_ids)}
     finally:
         conn.close()
 

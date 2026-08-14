@@ -2,7 +2,7 @@
 import pytest
 from datetime import datetime, timedelta
 from db import get_db
-from tests.conftest import _valid_employee_payload
+from conftest import _valid_employee_payload
 
 
 @pytest.fixture
@@ -89,13 +89,23 @@ def setup_location_features(client, hr_manager_auth, test_institution):
     )
     assert asg2_res.status_code == 201, asg2_res.text
 
-    return {
+    yield {
         "inst_id": inst_id,
         "loc1_id": loc1_id,
         "loc2_id": loc2_id,
         "emp1_id": emp1_id,
         "emp2_id": emp2_id,
     }
+
+    # This fixture is function-scoped and runs fresh for every test in this
+    # file (no `test_institution`-level teardown exists for employees), so
+    # without this the two employees it creates every run permanently
+    # accumulate as Active rows on the shared test institution — this was
+    # the single largest contributor (525 of each name) to a real
+    # multi-minute "hang" in test_benefits.py's auto-enroll-all test, which
+    # loops over every Active employee in the institution.
+    for emp_id in (emp1_id, emp2_id):
+        client.patch(f"/api/employees/{emp_id}/status", headers=hr_manager_auth, json={"status": "Inactive"})
 
 
 # ============================================================================

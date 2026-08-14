@@ -1,7 +1,7 @@
 """Tests for Phase 2 location features: transfers, payroll dashboards, trends."""
 import pytest
 from datetime import datetime, timedelta
-from tests.conftest import _valid_employee_payload, _valid_location_payload
+from conftest import _valid_employee_payload, _valid_location_payload
 
 
 @pytest.fixture
@@ -28,13 +28,21 @@ def setup_phase2_data(client, hr_manager_auth, test_institution):
     assert emp_res.status_code in [200, 201]
     employee = emp_res.json()
 
-    return {
+    yield {
         "institution": test_institution,
         "location": location,
         "employee": employee,
         "client": client,
         "auth_headers": hr_manager_auth,
     }
+
+    # Function-scoped and run once per test in this file with no other
+    # cleanup — left unchecked, the created employee stays Active forever
+    # on the shared test institution (see test_location_features.py's
+    # setup_location_features fixture for the same issue and its effect on
+    # test_benefits.py's auto-enroll-all test).
+    client.patch(f"/api/employees/{employee['employee_id']}/status",
+                 headers=hr_manager_auth, json={"status": "Inactive"})
 
 
 class TestLocationTransferWorkflow:
@@ -482,6 +490,9 @@ class TestPhase2IntegrationWorkflows:
                 headers=hr_manager_auth,
             )
             assert response.status_code == 200
+
+        client.patch(f"/api/employees/{employee['employee_id']}/status",
+                     headers=hr_manager_auth, json={"status": "Inactive"})
 
     def test_capacity_and_transfer_workflow(self, setup_phase2_data):
         """Test capacity planning with transfers."""

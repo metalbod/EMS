@@ -28,6 +28,8 @@ def test_override_actually_changes_behavior_not_just_the_matrix(client, hr_manag
     try:
         after = client.post("/api/employees", headers=mgr_headers, json=_valid_employee_payload())
         assert after.status_code == 201, after.text
+        client.patch(f"/api/employees/{after.json()['employee_id']}/status",
+                     headers=hr_manager_auth, json={"status": "Inactive"})
     finally:
         client.delete("/api/roles/permission-matrix/override", headers=hr_manager_auth,
                        params={"action_key": "employees.create_employee", "role": "manager"})

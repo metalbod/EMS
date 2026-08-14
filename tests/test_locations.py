@@ -1,6 +1,6 @@
 """Tests for location and employee location assignment endpoints."""
 import pytest
-from tests.conftest import make_test_user, _valid_location_payload
+from conftest import make_test_user, _valid_location_payload
 
 
 def test_create_location(client, hr_manager_auth, test_institution, make_test_location):
