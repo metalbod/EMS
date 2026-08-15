@@ -84,3 +84,34 @@ body{background:var(--bg-main);color:var(--text-primary)}
 .nav-sub-item.active{background:var(--sidebar-bg-active);color:var(--sidebar-text-active);font-weight:600}
 .nav-sub-item-disabled{color:#94a3b8;cursor:default}
 .nav-sub-item-disabled:hover{background:none}
+
+/* ---------------------------------------------------------------------
+   Sidebar module segment colors — pilot (see the "Segment Color Study"
+   design review). Icon chips are always on; the active/expanded tint
+   below overrides the global indigo --sidebar-bg-active per module so
+   "you are here" reads in that module's own color instead of one flat
+   hue for every module. Scoped to only the 6 piloted groups — the rest
+   (Compensation, Benefits, Attendance, Performance) stay on the default
+   indigo highlight until their own colors are confirmed and rolled out.
+--------------------------------------------------------------------- */
+.nav-icon-chip{border-radius:.44rem;padding:.25rem;box-sizing:content-box;width:1.0625rem;height:1.0625rem;flex-shrink:0}
+.nav-icon-emp{background:#e0e7ff;color:#4f46e5}
+.nav-icon-recruit{background:#ede9fe;color:#7c3aed}
+.nav-icon-ld{background:#ccfbf1;color:#0d9488}
+.nav-icon-leave{background:#e0f2fe;color:#0284c7}
+.nav-icon-timesheet{background:#cffafe;color:#0891b2}
+.nav-icon-payroll{background:#d1fae5;color:#059669}
+
+#nav-emp-group .nav-rail-btn.active,#nav-emp-group .nav-rail-btn.group-active,#nav-emp-group .nav-sub-item.active{background:#e0e7ff;color:#4338ca}
+#nav-recruit-group .nav-rail-btn.active,#nav-recruit-group .nav-rail-btn.group-active,#nav-recruit-group .nav-sub-item.active{background:#ede9fe;color:#6d28d9}
+#nav-ld-group .nav-rail-btn.active,#nav-ld-group .nav-rail-btn.group-active,#nav-ld-group .nav-sub-item.active{background:#ccfbf1;color:#0f766e}
+#nav-leave-group .nav-rail-btn.active,#nav-leave-group .nav-rail-btn.group-active,#nav-leave-group .nav-sub-item.active{background:#e0f2fe;color:#0369a1}
+#nav-timesheet-group .nav-rail-btn.active,#nav-timesheet-group .nav-rail-btn.group-active,#nav-timesheet-group .nav-sub-item.active{background:#cffafe;color:#0e7490}
+#nav-payroll-group .nav-rail-btn.active,#nav-payroll-group .nav-rail-btn.group-active,#nav-payroll-group .nav-sub-item.active{background:#d1fae5;color:#047857}
+
+#submenu-empMgmt{border-left:2px solid #e0e7ff}
+#submenu-recruit{border-left:2px solid #ede9fe}
+#submenu-ld{border-left:2px solid #ccfbf1}
+#submenu-leave{border-left:2px solid #bae6fd}
+#submenu-timesheet{border-left:2px solid #a5f3fc}
+#submenu-payroll{border-left:2px solid #a7f3d0}
