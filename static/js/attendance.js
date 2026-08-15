@@ -55,7 +55,7 @@ function renderAttClockStatus() {
 
   if (open) {
     statusEl.textContent = 'Clocked In';
-    detailEl.textContent = `Since ${new Date(open.clock_in_at).toLocaleString()} (${esc(open.shift_name || 'no shift')})`;
+    detailEl.textContent = `Since ${parseUTC(open.clock_in_at).toLocaleString()} (${esc(open.shift_name || 'no shift')})`;
     inBtn.classList.add('hidden');
     outBtn.classList.remove('hidden');
   } else {
@@ -79,8 +79,8 @@ function renderAttHistory() {
     <tr class="border-t border-slate-100">
       <td class="px-4 py-2 text-sm">${esc(r.work_date)}</td>
       <td class="px-4 py-2 text-sm text-slate-500">${esc(r.shift_name || '—')}</td>
-      <td class="px-4 py-2 text-sm">${r.clock_in_at ? new Date(r.clock_in_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '—'}</td>
-      <td class="px-4 py-2 text-sm">${r.clock_out_at ? new Date(r.clock_out_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '—'}</td>
+      <td class="px-4 py-2 text-sm">${r.clock_in_at ? parseUTC(r.clock_in_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '—'}</td>
+      <td class="px-4 py-2 text-sm">${r.clock_out_at ? parseUTC(r.clock_out_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '—'}</td>
       <td class="px-4 py-2 text-sm text-right">${r.worked_minutes != null ? r.worked_minutes + ' min' : '—'}</td>
       <td class="px-4 py-2">${attStatusBadge(r.status)}${r.outside_geofence ? ' <span class="text-xs text-amber-600">(outside geofence)</span>' : ''}</td>
     </tr>`).join('');
@@ -368,7 +368,7 @@ async function loadAttDevices() {
       <td class="px-4 py-2 text-sm">${esc(d.name)}</td>
       <td class="px-4 py-2 text-sm text-slate-500">${esc(d.location_name || '—')}</td>
       <td class="px-4 py-2 text-sm font-mono text-xs">adk_${esc(d.key_prefix)}_…</td>
-      <td class="px-4 py-2 text-sm text-slate-500">${d.last_used_at ? new Date(d.last_used_at).toLocaleString() : 'Never'}</td>
+      <td class="px-4 py-2 text-sm text-slate-500">${d.last_used_at ? parseUTC(d.last_used_at).toLocaleString() : 'Never'}</td>
       <td class="px-4 py-2 text-right"><button onclick="deleteDevice(${d.id})" class="text-xs text-red-600 hover:underline">Revoke</button></td>
     </tr>`).join('');
 }

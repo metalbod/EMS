@@ -30,6 +30,22 @@ function hideGlobalLoading() {
 }
 
 // ---------------------------------------------------------------------------
+// Timestamp helper
+// ---------------------------------------------------------------------------
+// Every *_at timestamp from the API is a naive UTC string (no "Z"/offset —
+// see db.py's use of datetime.utcnow().isoformat()). Passed straight to
+// `new Date(...)`, the JS Date Time String Format spec treats a date-time
+// string with no zone as LOCAL time, not UTC — silently mislabeling the
+// value by the browser's UTC offset (e.g. an actual 7:28pm MYT clock-in,
+// stored as "11:28:27" UTC, would display as "11:28 AM" instead of "7:28
+// PM"). Append "Z" first so it's parsed as the UTC instant it actually is,
+// then formatting methods correctly convert to the browser's local time.
+function parseUTC(value) {
+  if (!value) return null;
+  return new Date(value.endsWith('Z') ? value : value + 'Z');
+}
+
+// ---------------------------------------------------------------------------
 // API helper
 // ---------------------------------------------------------------------------
 async function api(path, opts = {}) {

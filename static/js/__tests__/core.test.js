@@ -168,3 +168,49 @@ describe('Role Display', () => {
     expect(roleElements[1].classList.contains('active')).toBe(false);
   });
 });
+
+describe('parseUTC', () => {
+  // Matches core.js's parseUTC — every *_at field from the API is a naive
+  // UTC string (db.py's datetime.utcnow().isoformat(), no "Z"/offset).
+  // Regression coverage for the attendance clock-in display bug: passed
+  // straight to `new Date(...)`, a date-time string with no zone is parsed
+  // as LOCAL time per the JS Date Time String Format spec, silently
+  // mislabeling a UTC instant as if it were already local.
+  function parseUTC(value) {
+    if (!value) return null;
+    return new Date(value.endsWith('Z') ? value : value + 'Z');
+  }
+
+  it('interprets a naive timestamp as UTC, not local time', () => {
+    const d = parseUTC('2026-08-15T11:37:04');
+    expect(d.toISOString()).toBe('2026-08-15T11:37:04.000Z');
+  });
+
+  it('is a no-op for a timestamp that already has a Z suffix', () => {
+    const d = parseUTC('2026-08-15T11:37:04Z');
+    expect(d.toISOString()).toBe('2026-08-15T11:37:04.000Z');
+  });
+
+  it('returns null for a missing value instead of an Invalid Date', () => {
+    expect(parseUTC(null)).toBeNull();
+    expect(parseUTC(undefined)).toBeNull();
+    expect(parseUTC('')).toBeNull();
+  });
+
+  it('produces a different wall-clock reading than the pre-fix bare new Date() call', () => {
+    // The actual regression: in any timezone with a non-zero UTC offset,
+    // the old `new Date(raw).toLocaleString()` and the fixed
+    // `parseUTC(raw).toLocaleString()` must disagree — that disagreement
+    // IS the bug this test guards against silently coming back.
+    const raw = '2026-08-15T11:37:04';
+    const buggyOld = new Date(raw).getTime();
+    const fixedNew = parseUTC(raw).getTime();
+    // getTimezoneOffset() is UTC-minus-local (positive west of UTC), so the
+    // gap this bug introduces is the negation of it.
+    const localOffsetMs = new Date().getTimezoneOffset() * 60000;
+    if (localOffsetMs !== 0) {
+      expect(fixedNew).not.toBe(buggyOld);
+    }
+    expect(fixedNew - buggyOld).toBe(-localOffsetMs);
+  });
+});
