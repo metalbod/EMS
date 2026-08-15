@@ -86,13 +86,13 @@ body{background:var(--bg-main);color:var(--text-primary)}
 .nav-sub-item-disabled:hover{background:none}
 
 /* ---------------------------------------------------------------------
-   Sidebar module segment colors — pilot (see the "Segment Color Study"
-   design review). Icon chips are always on; the active/expanded tint
-   below overrides the global indigo --sidebar-bg-active per module so
-   "you are here" reads in that module's own color instead of one flat
-   hue for every module. Scoped to only the 6 piloted groups — the rest
-   (Compensation, Benefits, Attendance, Performance) stay on the default
-   indigo highlight until their own colors are confirmed and rolled out.
+   Sidebar module segment colors (see the "Segment Color Study" design
+   review — piloted on 6 groups + dashboard, now rolled out to the rest).
+   Icon chips are always on; the active/expanded tint below overrides the
+   global indigo --sidebar-bg-active per module so "you are here" reads
+   in that module's own color instead of one flat hue for every module.
+   Attendance has no top-level group of its own (its pages live inside
+   the Timesheet submenu) so it already inherits Timesheet's cyan.
 --------------------------------------------------------------------- */
 .nav-icon-chip{border-radius:.44rem;padding:.25rem;box-sizing:content-box;width:1.0625rem;height:1.0625rem;flex-shrink:0}
 .nav-icon-emp{background:#e0e7ff;color:#4f46e5}
@@ -101,6 +101,10 @@ body{background:var(--bg-main);color:var(--text-primary)}
 .nav-icon-leave{background:#e0f2fe;color:#0284c7}
 .nav-icon-timesheet{background:#cffafe;color:#0891b2}
 .nav-icon-payroll{background:#d1fae5;color:#059669}
+.nav-icon-compensation{background:#fef3c7;color:#d97706}
+.nav-icon-benefits{background:#ffe4e6;color:#e11d48}
+.nav-icon-performance{background:#fae8ff;color:#c026d3}
+.nav-icon-settings{background:#f1f5f9;color:#64748b}
 
 #nav-emp-group .nav-rail-btn.active,#nav-emp-group .nav-rail-btn.group-active,#nav-emp-group .nav-sub-item.active{background:#e0e7ff;color:#4338ca}
 #nav-recruit-group .nav-rail-btn.active,#nav-recruit-group .nav-rail-btn.group-active,#nav-recruit-group .nav-sub-item.active{background:#ede9fe;color:#6d28d9}
@@ -108,6 +112,10 @@ body{background:var(--bg-main);color:var(--text-primary)}
 #nav-leave-group .nav-rail-btn.active,#nav-leave-group .nav-rail-btn.group-active,#nav-leave-group .nav-sub-item.active{background:#e0f2fe;color:#0369a1}
 #nav-timesheet-group .nav-rail-btn.active,#nav-timesheet-group .nav-rail-btn.group-active,#nav-timesheet-group .nav-sub-item.active{background:#cffafe;color:#0e7490}
 #nav-payroll-group .nav-rail-btn.active,#nav-payroll-group .nav-rail-btn.group-active,#nav-payroll-group .nav-sub-item.active{background:#d1fae5;color:#047857}
+#nav-compensation-group .nav-rail-btn.active,#nav-compensation-group .nav-rail-btn.group-active,#nav-compensation-group .nav-sub-item.active{background:#fef3c7;color:#b45309}
+#nav-benefits-group .nav-rail-btn.active,#nav-benefits-group .nav-rail-btn.group-active,#nav-benefits-group .nav-sub-item.active{background:#ffe4e6;color:#be123c}
+#nav-performance-group .nav-rail-btn.active,#nav-performance-group .nav-rail-btn.group-active,#nav-performance-group .nav-sub-item.active{background:#fae8ff;color:#a21caf}
+#nav-settings-wrap .nav-rail-btn.active,#nav-settings-wrap .nav-rail-btn.group-active,#nav-settings-wrap .nav-sub-item.active{background:#f1f5f9;color:#475569}
 
 #submenu-empMgmt{border-left:2px solid #e0e7ff}
 #submenu-recruit{border-left:2px solid #ede9fe}
@@ -115,3 +123,7 @@ body{background:var(--bg-main);color:var(--text-primary)}
 #submenu-leave{border-left:2px solid #bae6fd}
 #submenu-timesheet{border-left:2px solid #a5f3fc}
 #submenu-payroll{border-left:2px solid #a7f3d0}
+#submenu-compensation{border-left:2px solid #fde68a}
+#submenu-benefits{border-left:2px solid #fecdd3}
+#submenu-performance{border-left:2px solid #f5d0fe}
+#submenu-settings{border-left:2px solid #e2e8f0}
