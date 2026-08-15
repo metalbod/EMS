@@ -34,6 +34,39 @@
 body{background:var(--bg-main);color:var(--text-primary)}
 .app-topbar{background:var(--topbar-bg);border-bottom:1px solid var(--topbar-border)}
 .app-sidebar{background:var(--sidebar-bg);border-right:1px solid var(--sidebar-border)}
+
+/* ---------------------------------------------------------------------
+   Diagonal stripe brand background (design review: bold on login, a
+   blurred/lightened version behind the signed-in app so white cards
+   still read as distinct surfaces over dense content).
+--------------------------------------------------------------------- */
+#loginScreen{
+  background-color:#191a35;
+  background-image:repeating-linear-gradient(-24deg,
+    transparent 0 34px,#ffffff 34px 40px,transparent 40px 70px,
+    #26c6da 70px 100px,transparent 100px 118px,
+    #ec1e79 118px 158px,transparent 158px 210px,
+    #26c6da 210px 226px,transparent 226px 268px,
+    #ec1e79 268px 300px,transparent 300px 360px);
+  background-size:480px 480px;
+}
+main{position:relative;overflow-x:hidden}
+main::before{
+  content:"";
+  position:absolute;
+  top:-80px;bottom:-80px;left:0;right:0;
+  z-index:-1;
+  background-color:#f3f4f9;
+  background-image:repeating-linear-gradient(-24deg,
+    transparent 0 34px,#ffffff 34px 40px,transparent 40px 70px,
+    #26c6da 70px 100px,transparent 100px 118px,
+    #ec1e79 118px 158px,transparent 158px 210px,
+    #26c6da 210px 226px,transparent 226px 268px,
+    #ec1e79 268px 300px,transparent 300px 360px);
+  background-size:480px 480px;
+  filter:blur(46px);
+  opacity:.3;
+}
 #globalLoadingBar{position:fixed;top:0;left:0;right:0;height:3px;z-index:9999;overflow:hidden;background:transparent;pointer-events:none}
 #globalLoadingBar .bar{position:absolute;top:0;height:100%;width:30%;background:#2563eb;animation:globalLoadingSlide 1s ease-in-out infinite}
 @keyframes globalLoadingSlide{0%{left:-30%}100%{left:100%}}
