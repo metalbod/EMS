@@ -122,7 +122,7 @@ function renderInstTable() {
       </td>
       <td class="px-4 py-3"><span class="badge ${i.status==='Active'?'bg-emerald-100 text-emerald-700':'bg-red-100 text-red-600'}">${i.status}</span></td>
       <td class="px-4 py-3">
-        <p class="text-sm">${i.created_at.slice(0,10)}</p>
+        <p class="text-sm">${fmtDate(i.created_at)}</p>
         <p class="text-xs text-slate-400">${i.created_at.slice(11,19)}</p>
       </td>
       <td class="px-4 py-3">

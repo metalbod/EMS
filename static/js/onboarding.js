@@ -42,7 +42,7 @@ async function loadObChecklists(type, statusFilter) {
         <div class="flex-1 bg-slate-100 rounded-full h-1.5"><div class="bg-blue-500 h-1.5 rounded-full" style="width:${pct}%"></div></div>
         <span class="text-xs text-slate-500">${c.done_items}/${c.total_items} done</span>
       </div>
-      <p class="text-xs text-slate-400 mt-1">Started ${c.created_at?.slice(0,10)} by ${esc(c.triggered_by)}</p>
+      <p class="text-xs text-slate-400 mt-1">Started ${fmtDate(c.created_at)} by ${esc(c.triggered_by)}</p>
     </div>`;
   }).join('');
 }
@@ -60,7 +60,7 @@ async function openObDetail(clId) {
   const cl=await res.json();
   const type=cl.type;
   document.getElementById('obDetailTitle').textContent=`${type==='onboarding'?'Onboarding':'Offboarding'} — ${esc(cl.employee_name)}`;
-  document.getElementById('obDetailMeta').textContent=`${esc(cl.department||'')}${cl.designation?' · '+esc(cl.designation):''} · Started ${cl.created_at?.slice(0,10)}`;
+  document.getElementById('obDetailMeta').textContent=`${esc(cl.department||'')}${cl.designation?' · '+esc(cl.designation):''} · Started ${fmtDate(cl.created_at)}`;
   const total=cl.items.length;
   const done=cl.items.filter(i=>i.status==='Done'||i.status==='N/A').length;
   const pct=total?Math.round((done/total)*100):0;
@@ -102,7 +102,7 @@ async function openObDetail(clId) {
             </div>
             ${item.description?`<p class="text-xs text-slate-400 mt-0.5">${esc(item.description)}</p>`:''}
             ${isLinked&&!isDone&&!isHR?`<p class="text-xs text-blue-600 mt-0.5">Complete this in <a href="#" onclick="closeObDetail();document.querySelector('[data-page=\\'ld-trainings\\']')?.click();return false;" class="underline">My Trainings</a> to auto-complete this item.</p>`:''}
-            ${item.completed_by?`<p class="text-xs text-green-600 mt-0.5">✓ ${esc(item.completed_by)} · ${item.completed_at?.slice(0,10)}</p>`:''}
+            ${item.completed_by?`<p class="text-xs text-green-600 mt-0.5">✓ ${esc(item.completed_by)} · ${fmtDate(item.completed_at)}</p>`:''}
             ${item.notes?`<p class="text-xs text-slate-500 italic mt-0.5">${esc(item.notes)}</p>`:''}
             <div id="obitem-attach-${item.id}" class="hidden mt-1.5 space-y-1"></div>
           </div>
@@ -174,7 +174,7 @@ function renderObItemAttachments(clId, itemId, atts) {
     wrap.innerHTML = atts.map(a=>`
       <div class="flex items-center gap-2 text-xs bg-slate-50 rounded px-2 py-1">
         <a href="${a.data_url}" download="${esc(a.file_name)}" class="text-blue-600 hover:underline truncate flex-1">${esc(a.file_name)}</a>
-        <span class="text-slate-400 flex-shrink-0">${esc(a.uploaded_by)} · ${a.created_at?.slice(0,10)}</span>
+        <span class="text-slate-400 flex-shrink-0">${esc(a.uploaded_by)} · ${fmtDate(a.created_at)}</span>
         <button onclick="deleteObItemAttachment(${clId},${itemId},${a.id})" class="text-slate-400 hover:text-red-600 flex-shrink-0">✕</button>
       </div>`).join('') +
       `<label class="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline cursor-pointer">

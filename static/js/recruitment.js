@@ -199,7 +199,7 @@ function updateCandSortIcons() {
     el.textContent = f===candSortBy ? (candSortDir==='asc'?'▲':'▼') : '';
   });
 }
-function fmtDateOnly(s) { return s ? s.slice(0,10) : '—'; }
+function fmtDateOnly(s) { return fmtDate(s); }
 
 async function loadCandidates() {
   await loadRecruitMeta();
@@ -427,13 +427,13 @@ async function openCandDetail(candId) {
   const intHtml=(c.interviews||[]).map(i=>`
     <div class="border border-slate-200 rounded-xl p-4 mb-3">
       <div class="flex items-center justify-between mb-2">
-        <div><p class="font-medium text-sm">${esc(i.interview_type)} Interview</p><p class="text-xs text-slate-500">${esc(i.scheduled_date)} at ${esc(i.scheduled_time)} · ${i.duration_mins}min</p></div>
+        <div><p class="font-medium text-sm">${esc(i.interview_type)} Interview</p><p class="text-xs text-slate-500">${fmtDate(i.scheduled_date)} at ${esc(i.scheduled_time)} · ${i.duration_mins}min</p></div>
         <span class="badge ${i.status==='Completed'?'bg-green-100 text-green-700':i.status==='Cancelled'?'bg-red-100 text-red-600':'bg-blue-100 text-blue-700'}">${esc(i.status)}</span>
       </div>
       ${i.interviewers?`<p class="text-xs text-slate-500 mb-2">Interviewers: ${esc(i.interviewers)}</p>`:''}
       <div class="flex gap-2 mb-3">
         ${i.status==='Scheduled'?`<button onclick="markIntStatus(${i.id},'Completed')" class="btn-primary text-xs" style="font-size:.75rem;padding:.2rem .6rem">Mark Completed</button>`:''}
-        <button onclick="openScoreModal(${i.id},'${esc(i.scheduled_date)} ${esc(i.interview_type)}')" class="btn-ghost text-xs" style="font-size:.75rem;padding:.2rem .6rem">Score</button>
+        <button onclick="openScoreModal(${i.id},'${esc(fmtDate(i.scheduled_date))} ${esc(i.interview_type)}')" class="btn-ghost text-xs" style="font-size:.75rem;padding:.2rem .6rem">Score</button>
       </div>
       ${(i.scores&&i.scores.length)?`
         <div class="border-t border-slate-100 pt-2">
@@ -457,7 +457,7 @@ async function openCandDetail(candId) {
   const docsHtml=(c.documents||[]).map(d=>`
     <div class="flex items-center justify-between border border-slate-200 rounded-lg px-3 py-2 mb-2">
       <a href="${d.data_url}" download="${esc(d.file_name)}" target="_blank" class="text-sm text-blue-600 hover:underline truncate flex-1">${esc(d.file_name)}</a>
-      <span class="text-xs text-slate-400 ml-2">${d.created_at.slice(0,10)}</span>
+      <span class="text-xs text-slate-400 ml-2">${fmtDate(d.created_at)}</span>
     </div>`).join('');
   document.getElementById('cdt-resume').innerHTML=`
     ${docsHtml||'<p class="text-slate-400 text-sm mb-3">No files uploaded.</p>'}
@@ -496,7 +496,7 @@ async function loadCandHistory() {
         <span class="absolute -left-[1.65rem] top-0.5 text-base">${actionIcon[r.action]||'•'}</span>
         <p class="text-sm font-medium text-slate-800">${esc(r.action)}</p>
         ${r.detail?`<p class="text-xs text-slate-500 mt-0.5">${esc(r.detail)}</p>`:''}
-        <p class="text-xs text-slate-400 mt-1">${esc(r.performed_by)} · ${r.created_at.replace('T',' ').slice(0,16)}</p>
+        <p class="text-xs text-slate-400 mt-1">${esc(r.performed_by)} · ${fmtDateTime(r.created_at)}</p>
       </div>`).join('')}
   </div>`;
 }
@@ -573,13 +573,13 @@ async function loadInterviews() {
         <p class="text-xs text-slate-400">${esc(i.requisition_title||'—')}</p>
       </td>
       <td class="px-4 py-3 text-slate-600 hidden md:table-cell">${esc(i.interview_type)}</td>
-      <td class="px-4 py-3 text-slate-700">${esc(i.scheduled_date)} ${esc(i.scheduled_time)}</td>
+      <td class="px-4 py-3 text-slate-700">${fmtDate(i.scheduled_date)} ${esc(i.scheduled_time)}</td>
       <td class="px-4 py-3 text-slate-500 text-xs hidden lg:table-cell">${esc(i.interviewers||'—')}</td>
       <td class="px-4 py-3 text-center text-slate-700 hidden sm:table-cell">${i.avg_score!=null?parseFloat(i.avg_score).toFixed(1)+'/5':'—'}</td>
       <td class="px-4 py-3"><span class="badge ${i.status==='Completed'?'bg-green-100 text-green-700':i.status==='Cancelled'?'bg-red-100 text-red-600':i.status==='No-Show'?'bg-slate-200 text-slate-500':'bg-blue-100 text-blue-700'}">${esc(i.status)}</span></td>
       <td class="px-4 py-3 text-right flex gap-1 justify-end">
         ${i.status==='Scheduled'?`<button class="btn-ghost text-xs" onclick="markIntStatus(${i.id},'Completed')">Done</button>`:''}
-        <button class="btn-ghost text-xs" onclick="openScoreModal(${i.id},'${esc(i.scheduled_date)} — ${esc(i.interview_type)}')">Score</button>
+        <button class="btn-ghost text-xs" onclick="openScoreModal(${i.id},'${esc(fmtDate(i.scheduled_date))} — ${esc(i.interview_type)}')">Score</button>
       </td>
     </tr>`).join('');
 }
@@ -776,7 +776,7 @@ async function openOfferView(offerId) {
   if(!res||!res.ok) return;
   const o=await res.json();
   document.getElementById('ovTitle').textContent=`${o.offer_type} Letter — ${o.candidate_name}`;
-  document.getElementById('ovMeta').textContent=o.created_at;
+  document.getElementById('ovMeta').textContent=fmtDateTime(o.created_at, true);
   const badge=document.getElementById('ovBadge');
   badge.textContent=o.status; badge.className=`badge ${offerStatusBadge(o.status)}`;
   document.getElementById('ovContent').textContent=o.letter_content||'(no letter content)';

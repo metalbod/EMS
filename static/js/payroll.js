@@ -24,7 +24,7 @@ async function loadPayrollRuns() {
   emptyEl?.classList.add('hidden');
   listEl.innerHTML=rows.map(r=>`
     <tr class="border-t border-slate-100 cursor-pointer hover:bg-slate-50 transition" onclick="openPayrollRunDetail(${r.id})">
-      <td class="px-4 py-3 font-medium text-slate-800">${r.period_start} → ${r.period_end}</td>
+      <td class="px-4 py-3 font-medium text-slate-800">${fmtDate(r.period_start)} → ${fmtDate(r.period_end)}</td>
       <td class="px-4 py-3"><span class="badge text-xs ${PAYROLL_STATUS_COLORS[r.status]||'bg-slate-100 text-slate-600'}">${r.status}</span></td>
       <td class="px-4 py-3 text-slate-600">${r.employee_count}</td>
       <td class="px-4 py-3 text-slate-600">${fmtMoney(r.total_net_pay)}</td>
@@ -62,7 +62,7 @@ async function openPayrollRunDetail(runId) {
   const res=await api(`/api/payroll/runs/${runId}`);
   if(!res?.ok) return;
   const run=await res.json();
-  document.getElementById('prDetailTitle').textContent=`Payroll Run — ${run.period_start} → ${run.period_end}`;
+  document.getElementById('prDetailTitle').textContent=`Payroll Run — ${fmtDate(run.period_start)} → ${fmtDate(run.period_end)}`;
   document.getElementById('prDetailMeta').innerHTML=`<span class="badge text-xs ${PAYROLL_STATUS_COLORS[run.status]||''}">${run.status}</span>`;
   const canEdit=isPayrollManager() && run.status==='Draft';
   document.getElementById('payrollRunDetailList').innerHTML=run.payslips.length?run.payslips.map(p=>{
@@ -163,7 +163,7 @@ async function loadMyPayslips() {
   listEl.innerHTML=rows.map(p=>`
     <div class="bg-white border border-slate-200 rounded-xl p-4 cursor-pointer hover:shadow-sm transition flex items-center justify-between" onclick="viewPayslip(${p.id})">
       <div>
-        <p class="font-medium text-slate-800">${p.period_start} → ${p.period_end}</p>
+        <p class="font-medium text-slate-800">${fmtDate(p.period_start)} → ${fmtDate(p.period_end)}</p>
         <p class="text-xs text-slate-400">Net Pay: ${fmtMoney(p.net_pay)}</p>
       </div>
       <svg class="w-4 h-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
@@ -182,7 +182,7 @@ async function viewPayslip(payslipId) {
       <p class="text-xs text-slate-400 uppercase tracking-wide">Payslip</p>
       <h3 class="text-lg font-semibold">${esc(p.full_name)}</h3>
       <p class="text-sm text-slate-500">${esc(p.designation||'')}${p.department?' · '+esc(p.department):''}</p>
-      <p class="text-xs text-slate-400 mt-1">Period: ${p.period_start} → ${p.period_end}</p>
+      <p class="text-xs text-slate-400 mt-1">Period: ${fmtDate(p.period_start)} → ${fmtDate(p.period_end)}</p>
     </div>
     <table class="w-full text-sm mb-4">
       ${p.salary_type==='Hourly' ? `

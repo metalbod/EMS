@@ -113,14 +113,14 @@ function viewEmployee(id) {
     ['Full Name',e.full_name,false,true],['Preferred Name',e.preferred_name||'—'],
     ['IC Number',e.ic_number,true],['Passport No.',e.passport_number||'—'],
     ['Nationality',e.nationality],['Race',e.race],['Religion',e.religion],['Gender',e.gender],
-    ['Date of Birth',e.date_of_birth],['Marital Status',e.marital_status],
+    ['Date of Birth',fmtDate(e.date_of_birth)],['Marital Status',e.marital_status],
     ['Personal Email',e.personal_email||'—'],['Phone',e.phone],
     ['Address',e.address||'—',false,true],
   ]);
   document.getElementById('vt-employment').innerHTML = vgrid([
     ['Department',e.department],['Designation',e.designation],
-    ['Employment Type',e.employment_type],['Start Date',e.start_date],
-    ['Probation End',e.probation_end_date||'—'],['Contract End',e.contract_end_date||'—'],
+    ['Employment Type',e.employment_type],['Start Date',fmtDate(e.start_date)],
+    ['Probation End',fmtDate(e.probation_end_date)],['Contract End',fmtDate(e.contract_end_date)],
     ['Work Email',e.work_email||'—'],['Reports To',rt],
   ]) + `<div id="relatedContracts" class="mt-6"></div>`;
   loadRelatedContracts(e.employee_id);
@@ -186,8 +186,8 @@ async function loadEmployeeLocations(empId) {
                   </p>
                   <div class="mt-2 space-y-1 text-sm text-slate-600">
                     <p><strong>Type:</strong> ${esc(loc.assignment_type)}</p>
-                    <p><strong>Start:</strong> ${loc.start_date || '—'}</p>
-                    ${loc.end_date ? `<p><strong>End:</strong> ${loc.end_date}</p>` : ''}
+                    <p><strong>Start:</strong> ${fmtDate(loc.start_date)}</p>
+                    ${loc.end_date ? `<p><strong>End:</strong> ${fmtDate(loc.end_date)}</p>` : ''}
                     <p><strong>Status:</strong> <span class="badge ${loc.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}">${loc.is_active ? 'Active' : 'Inactive'}</span></p>
                   </div>
                 </div>
@@ -228,7 +228,7 @@ async function loadRelatedContracts(empId) {
                 <span class="badge text-xs ${STATUS_COLOR[c.status]||'bg-slate-100 text-slate-600'}">${esc(c.status)}</span>
               </div>
               <p class="text-xs text-slate-500 mt-0.5">${esc(c.designation)} · ${esc(c.department)}</p>
-              <p class="text-xs text-slate-400 mt-0.5">${c.start_date}${c.contract_end_date?' → '+c.contract_end_date:' → present'}</p>
+              <p class="text-xs text-slate-400 mt-0.5">${fmtDate(c.start_date)}${c.contract_end_date?' → '+fmtDate(c.contract_end_date):' → present'}</p>
             </div>
             <svg class="w-4 h-4 text-slate-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
           </div>`).join('')}</div>`
@@ -317,7 +317,7 @@ async function loadNotes() {
         </button>`:''}
       </div>
       <p class="text-sm text-slate-700 whitespace-pre-wrap">${esc(n.body)}</p>
-      <p class="text-xs text-slate-400 mt-2">${esc(n.created_by)} · ${n.created_at.replace('T',' ')}</p>
+      <p class="text-xs text-slate-400 mt-2">${esc(n.created_by)} · ${fmtDateTime(n.created_at, true)}</p>
     </div>
   `).join(''):'<p class="text-sm text-slate-400 text-center py-4">No notes yet.</p>';
 
@@ -335,7 +335,7 @@ async function loadNotes() {
                 <span class="badge text-xs ${OB_TYPE_COLORS[e.ob_type]||'bg-slate-100 text-slate-600'}">${e.ob_type.charAt(0).toUpperCase()+e.ob_type.slice(1)}</span>
                 <span class="text-sm font-medium text-slate-700">${esc(e.action)}</span>
               </div>
-              <span class="text-xs text-slate-400">${e.created_at?.slice(0,16).replace('T',' ')}</span>
+              <span class="text-xs text-slate-400">${fmtDateTime(e.created_at)}</span>
             </div>
             <p class="text-xs text-slate-600">${esc(e.detail||'')}</p>
             <div class="flex items-center gap-2 mt-1">

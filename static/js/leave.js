@@ -62,14 +62,14 @@ async function loadLeaveApplications() {
             <p class="font-medium text-slate-800">${esc(a.leave_type_name)}</p>
             <span class="badge ${LEAVE_STATUS_COLORS[a.status]||'bg-slate-100 text-slate-600'} text-xs">${a.status}</span>
           </div>
-          <p class="text-xs text-slate-500">${a.start_date} → ${a.end_date} · ${a.days_count} working day(s)</p>
+          <p class="text-xs text-slate-500">${fmtDate(a.start_date)} → ${fmtDate(a.end_date)} · ${a.days_count} working day(s)</p>
           ${a.reason?`<p class="text-xs text-slate-400 italic mt-1">${esc(a.reason)}</p>`:''}
           ${a.notes?`<p class="text-xs text-slate-500 mt-1">Note: ${esc(a.notes)}</p>`:''}
           ${a.attachment?`<a href="${a.attachment}" target="_blank" class="text-xs text-blue-600 hover:underline mt-1 inline-block">View attachment</a>`:''}
         </div>
         ${(a.status==='Pending Approval'||a.status==='Approved')?`<button onclick="cancelLeaveApplication(${a.id})" class="text-xs text-red-600 hover:text-red-700 flex-shrink-0">Cancel</button>`:''}
       </div>
-      <p class="text-xs text-slate-400 mt-2">Applied ${a.created_at?.slice(0,10)}</p>
+      <p class="text-xs text-slate-400 mt-2">Applied ${fmtDate(a.created_at)}</p>
     </div>`).join('');
 }
 
@@ -273,7 +273,7 @@ async function loadLeaveApprovals() {
             <p class="font-medium text-slate-800">${esc(a.employee_name)}</p>
             <span class="badge ${LEAVE_STATUS_COLORS[a.status]||'bg-slate-100 text-slate-600'} text-xs">${a.status}</span>
           </div>
-          <p class="text-xs text-slate-500">${esc(a.leave_type_name)} · ${a.start_date} → ${a.end_date} · ${a.days_count} day(s)</p>
+          <p class="text-xs text-slate-500">${esc(a.leave_type_name)} · ${fmtDate(a.start_date)} → ${fmtDate(a.end_date)} · ${a.days_count} day(s)</p>
           <p class="text-xs text-slate-400">${esc(a.department||'')}${a.designation?' · '+esc(a.designation):''}</p>
           ${a.reason?`<p class="text-xs text-slate-400 italic mt-1">${esc(a.reason)}</p>`:''}
           ${a.attachment?`<a href="${a.attachment}" target="_blank" class="text-xs text-blue-600 hover:underline mt-1 inline-block">View attachment</a>`:''}
@@ -283,7 +283,7 @@ async function loadLeaveApprovals() {
         <button onclick="reviewLeaveApplication(${a.id},'Approved')" class="btn-primary text-xs px-3 py-1.5">Approve</button>
         <button onclick="reviewLeaveApplication(${a.id},'Rejected')" class="btn-ghost text-xs px-3 py-1.5 text-red-600">Reject</button>
       </div>`:''}
-      <p class="text-xs text-slate-400 mt-2">Applied ${a.created_at?.slice(0,10)}</p>
+      <p class="text-xs text-slate-400 mt-2">Applied ${fmtDate(a.created_at)}</p>
     </div>`).join('');
 }
 
@@ -348,7 +348,7 @@ async function loadHolidays() {
   tbody.innerHTML=leaveHolidaysCache.map(h=>{
     const d=new Date(h.date+'T00:00:00');
     return `<tr class="border-t border-slate-100">
-      <td class="px-4 py-2">${h.date}</td>
+      <td class="px-4 py-2">${fmtDate(h.date)}</td>
       <td class="px-4 py-2 text-slate-500">${dayNames[d.getDay()]}</td>
       <td class="px-4 py-2">${esc(h.name)}</td>
       <td class="px-4 py-2 text-right"><button onclick="deleteHoliday(${h.id})" class="text-slate-300 hover:text-red-500"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></td>

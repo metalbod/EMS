@@ -246,7 +246,7 @@ function renderEnrollmentPeriodsTable() {
     <tr>
       <td class="px-4 py-3 font-medium">${esc(p.period_name)}</td>
       <td class="px-4 py-3">${p.plan_year}</td>
-      <td class="px-4 py-3 text-sm text-slate-500">${esc(p.start_date)} to ${esc(p.end_date)}</td>
+      <td class="px-4 py-3 text-sm text-slate-500">${fmtDate(p.start_date)} to ${fmtDate(p.end_date)}</td>
       <td class="px-4 py-3 text-center"><span class="badge ${statusBadge(p.status)}">${esc(p.status)}</span></td>
       <td class="px-4 py-3 text-right">
         ${p.status === 'Draft' ? `<button onclick="changeEnrollmentPeriodStatus(${p.id}, 'Open')" class="text-xs text-blue-700 hover:underline">Open</button>` : ''}
@@ -315,10 +315,10 @@ function renderLifeEventsTable(events) {
         <p class="text-xs text-slate-500">${esc(ev.employee_id)}</p>
       </td>
       <td class="px-4 py-3">${esc(ev.event_type)}</td>
-      <td class="px-4 py-3">${esc(ev.event_date)}</td>
+      <td class="px-4 py-3">${fmtDate(ev.event_date)}</td>
       <td class="px-4 py-3">
         <span class="badge ${statusBadge(ev.status)}">${esc(ev.status)}</span>
-        ${ev.window_end_date ? `<p class="text-xs text-slate-400 mt-1">Window until ${ev.window_end_date}</p>` : ''}
+        ${ev.window_end_date ? `<p class="text-xs text-slate-400 mt-1">Window until ${fmtDate(ev.window_end_date)}</p>` : ''}
       </td>
       <td class="px-4 py-3 text-right">
         ${ev.status === 'Pending Review' ? `
@@ -376,11 +376,11 @@ function renderMyBenefitsBanner() {
   const banner = document.getElementById('myBenefitsWindowBanner');
   if (myActivePeriod) {
     banner.className = 'mb-4 rounded-xl border px-4 py-3 text-sm bg-emerald-50 border-emerald-200 text-emerald-800';
-    banner.textContent = `Open enrollment is active: "${myActivePeriod.period_name}" through ${myActivePeriod.end_date}. You can enroll or change your elections now.`;
+    banner.textContent = `Open enrollment is active: "${myActivePeriod.period_name}" through ${fmtDate(myActivePeriod.end_date)}. You can enroll or change your elections now.`;
     banner.classList.remove('hidden');
   } else if (myApprovedWindowEvent) {
     banner.className = 'mb-4 rounded-xl border px-4 py-3 text-sm bg-blue-50 border-blue-200 text-blue-800';
-    banner.textContent = `You have a life-event enrollment window open until ${myApprovedWindowEvent.window_end_date} (${myApprovedWindowEvent.event_type}).`;
+    banner.textContent = `You have a life-event enrollment window open until ${fmtDate(myApprovedWindowEvent.window_end_date)} (${myApprovedWindowEvent.event_type}).`;
     banner.classList.remove('hidden');
   } else {
     banner.className = 'mb-4 rounded-xl border px-4 py-3 text-sm bg-slate-50 border-slate-200 text-slate-600';
@@ -433,7 +433,7 @@ function renderMyLifeEventsTable(events) {
   tbody.innerHTML = events.map(ev => `
     <tr>
       <td class="px-4 py-3">${esc(ev.event_type)}</td>
-      <td class="px-4 py-3">${esc(ev.event_date)}</td>
+      <td class="px-4 py-3">${fmtDate(ev.event_date)}</td>
       <td class="px-4 py-3"><span class="badge ${statusBadge(ev.status)}">${esc(ev.status)}</span></td>
     </tr>
   `).join('');
@@ -487,7 +487,7 @@ function renderDependentsTable(tbody, emptyState, deps, showActions, context, em
         ${d.national_id ? `<p class="text-xs text-slate-500">${esc(d.national_id)}</p>` : ''}
       </td>
       <td class="px-4 py-3">${esc(d.relationship)}</td>
-      <td class="px-4 py-3">${d.date_of_birth ? esc(d.date_of_birth) : '—'}</td>
+      <td class="px-4 py-3">${fmtDate(d.date_of_birth)}</td>
       <td class="px-4 py-3 text-center">
         ${d.is_beneficiary ? `<span class="badge bg-blue-100 text-blue-700">${d.beneficiary_percentage != null ? d.beneficiary_percentage + '%' : 'Yes'}</span>` : '<span class="text-xs text-slate-400">—</span>'}
       </td>
@@ -608,12 +608,12 @@ function renderClaimsTable(claims) {
         <p>${esc(c.plan_name)}</p>
         <p class="text-xs text-slate-500">${esc(c.plan_category)}</p>
       </td>
-      <td class="px-4 py-3">${esc(c.claim_date)}</td>
+      <td class="px-4 py-3">${fmtDate(c.claim_date)}</td>
       <td class="px-4 py-3 text-right">${fmtRM(c.amount_claimed)}</td>
       <td class="px-4 py-3 text-right">${fmtRM(c.amount_approved)}</td>
       <td class="px-4 py-3">
         <span class="badge ${claimStatusBadge(c.status)}">${esc(c.status)}</span>
-        ${c.payout_date ? `<p class="text-xs text-slate-400 mt-1">Paid ${c.payout_date}</p>` : ''}
+        ${c.payout_date ? `<p class="text-xs text-slate-400 mt-1">Paid ${fmtDate(c.payout_date)}</p>` : ''}
       </td>
       <td class="px-4 py-3 text-right">
         ${(c.status === 'Submitted' || c.status === 'Under Review') ? `
@@ -640,7 +640,7 @@ function openClaimDecideModal(claimId) {
   if (!claim) return;
   currentDecideClaimId = claimId;
   document.getElementById('claimDecideInfo').textContent =
-    `${claim.employee_name || claim.employee_id} claimed ${fmtRM(claim.amount_claimed)} under '${claim.plan_name}' (${claim.claim_date}). Reimbursement Cap plans are capped by the employee's remaining annual balance — an over-cap amount will be rejected by the server with the remaining balance shown.`;
+    `${claim.employee_name || claim.employee_id} claimed ${fmtRM(claim.amount_claimed)} under '${claim.plan_name}' (${fmtDate(claim.claim_date)}). Reimbursement Cap plans are capped by the employee's remaining annual balance — an over-cap amount will be rejected by the server with the remaining balance shown.`;
   document.getElementById('claimDecideAmount').value = claim.amount_claimed;
   document.getElementById('claimDecideModal').classList.remove('hidden');
 }
@@ -674,7 +674,7 @@ function renderMyClaimsTable(claims) {
   tbody.innerHTML = claims.map(c => `
     <tr>
       <td class="px-4 py-3">${esc(c.plan_name)}</td>
-      <td class="px-4 py-3">${esc(c.claim_date)}</td>
+      <td class="px-4 py-3">${fmtDate(c.claim_date)}</td>
       <td class="px-4 py-3 text-right">${fmtRM(c.amount_claimed)}</td>
       <td class="px-4 py-3 text-right">${fmtRM(c.amount_approved)}</td>
       <td class="px-4 py-3"><span class="badge ${claimStatusBadge(c.status)}">${esc(c.status)}</span></td>

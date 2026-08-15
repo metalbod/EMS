@@ -307,8 +307,8 @@ async function loadMeritCycles() {
           <p class="text-xs text-slate-500">${cycle.review_year}</p>
         </td>
         <td class="px-4 py-3">
-          <p class="text-sm">${cycle.cycle_start_date} to ${cycle.cycle_end_date}</p>
-          <p class="text-xs text-slate-500">Submit by: ${cycle.submission_deadline}</p>
+          <p class="text-sm">${fmtDate(cycle.cycle_start_date)} to ${fmtDate(cycle.cycle_end_date)}</p>
+          <p class="text-xs text-slate-500">Submit by: ${fmtDate(cycle.submission_deadline)}</p>
         </td>
         <td class="px-4 py-3">
           ${cycle.budget_pool_amount ? `<p>Budget: RM ${Number(cycle.budget_pool_amount).toLocaleString('en-MY', {maximumFractionDigits: 0})}</p>` : '<p>—</p>'}
@@ -334,7 +334,7 @@ async function openMeritCycleDetail(cycleId) {
 
   document.getElementById('meritDetailTitle').textContent = cycle.cycle_name;
   document.getElementById('meritDetailSubtitle').textContent =
-    `${cycle.cycle_start_date} to ${cycle.cycle_end_date} — ${cycle.status}`;
+    `${fmtDate(cycle.cycle_start_date)} to ${fmtDate(cycle.cycle_end_date)} — ${cycle.status}`;
 
   document.getElementById('meritRecForm').classList.add('hidden');
   document.getElementById('meritRecForm').reset();
@@ -531,7 +531,7 @@ function renderBonusPlansTable() {
       </td>
       <td class="px-4 py-3"><span class="badge bg-purple-100 text-purple-700">${esc(plan.plan_type)}</span></td>
       <td class="px-4 py-3">
-        <p class="text-sm">${plan.period_start && plan.period_end ? `${plan.period_start} to ${plan.period_end}` : '—'}</p>
+        <p class="text-sm">${plan.period_start && plan.period_end ? `${fmtDate(plan.period_start)} to ${fmtDate(plan.period_end)}` : '—'}</p>
       </td>
       <td class="px-4 py-3">
         ${plan.budget_pool_amount ? `<p>Budget: RM ${Number(plan.budget_pool_amount).toLocaleString('en-MY', {maximumFractionDigits: 0})}</p>` : '<p>—</p>'}
@@ -587,7 +587,7 @@ async function openBonusPlanDetail(planId) {
 
   document.getElementById('bonusDetailTitle').textContent = plan.plan_name;
   document.getElementById('bonusDetailSubtitle').textContent =
-    `${plan.plan_type}${plan.plan_year ? ' · ' + plan.plan_year : ''}${plan.period_start && plan.period_end ? ' · ' + plan.period_start + ' to ' + plan.period_end : ''}`;
+    `${plan.plan_type}${plan.plan_year ? ' · ' + plan.plan_year : ''}${plan.period_start && plan.period_end ? ' · ' + fmtDate(plan.period_start) + ' to ' + fmtDate(plan.period_end) : ''}`;
   document.getElementById('bonusPlanStatusSelect').value = plan.status;
 
   document.getElementById('bonusPayoutForm').classList.add('hidden');
@@ -659,7 +659,7 @@ function renderBonusPayoutTable() {
       <td class="px-4 py-3">
         <span class="badge ${statusBadge(payout.status)}">${esc(payout.status)}</span>
         ${payout.reason ? `<p class="text-xs text-slate-500 mt-1">${esc(payout.reason)}</p>` : ''}
-        ${payout.payout_date ? `<p class="text-xs text-slate-400 mt-1">Paid ${payout.payout_date}</p>` : ''}
+        ${payout.payout_date ? `<p class="text-xs text-slate-400 mt-1">Paid ${fmtDate(payout.payout_date)}</p>` : ''}
       </td>
       <td class="px-4 py-3 text-right">
         ${payout.status === 'Pending' ? `
@@ -755,7 +755,7 @@ function renderCommissionPlansTable() {
       <td class="px-4 py-3"><span class="badge bg-purple-100 text-purple-700">${esc(plan.plan_type)}</span></td>
       <td class="px-4 py-3">${plan.default_rate_percent != null ? Number(plan.default_rate_percent) + '%' : '—'}</td>
       <td class="px-4 py-3">
-        <p class="text-sm">${plan.period_start && plan.period_end ? `${plan.period_start} to ${plan.period_end}` : '—'}</p>
+        <p class="text-sm">${plan.period_start && plan.period_end ? `${fmtDate(plan.period_start)} to ${fmtDate(plan.period_end)}` : '—'}</p>
       </td>
       <td class="px-4 py-3 text-center">
         <span class="badge ${statusBadge(plan.status)}">${esc(plan.status)}</span>
@@ -808,7 +808,7 @@ async function openCommissionPlanDetail(planId) {
 
   document.getElementById('commissionDetailTitle').textContent = plan.plan_name;
   document.getElementById('commissionDetailSubtitle').textContent =
-    `${plan.plan_type}${plan.default_rate_percent != null ? ' · ' + plan.default_rate_percent + '% default' : ''}${plan.plan_year ? ' · ' + plan.plan_year : ''}${plan.period_start && plan.period_end ? ' · ' + plan.period_start + ' to ' + plan.period_end : ''}`;
+    `${plan.plan_type}${plan.default_rate_percent != null ? ' · ' + plan.default_rate_percent + '% default' : ''}${plan.plan_year ? ' · ' + plan.plan_year : ''}${plan.period_start && plan.period_end ? ' · ' + fmtDate(plan.period_start) + ' to ' + fmtDate(plan.period_end) : ''}`;
   document.getElementById('commissionPlanStatusSelect').value = plan.status;
 
   document.getElementById('commissionEntryForm').classList.add('hidden');
@@ -894,7 +894,7 @@ function renderCommissionEntryTable() {
       <td class="px-4 py-3">
         <span class="badge ${statusBadge(entry.status)}">${esc(entry.status)}</span>
         ${entry.notes ? `<p class="text-xs text-slate-500 mt-1">${esc(entry.notes)}</p>` : ''}
-        ${entry.payout_date ? `<p class="text-xs text-slate-400 mt-1">Paid ${entry.payout_date}</p>` : ''}
+        ${entry.payout_date ? `<p class="text-xs text-slate-400 mt-1">Paid ${fmtDate(entry.payout_date)}</p>` : ''}
       </td>
       <td class="px-4 py-3 text-right">
         ${entry.status === 'Pending' ? `
@@ -997,7 +997,7 @@ function renderEquityGrantsTable() {
       <td class="px-4 py-3 text-right">${Number(g.quantity).toLocaleString('en-MY')}</td>
       <td class="px-4 py-3">
         <p class="text-sm">${g.vesting_years}y · ${g.cliff_months}mo cliff</p>
-        <p class="text-xs text-slate-400">From ${esc(g.vesting_start_date)}</p>
+        <p class="text-xs text-slate-400">From ${fmtDate(g.vesting_start_date)}</p>
       </td>
       <td class="px-4 py-3 text-center">
         <span class="badge ${statusBadge(g.status)}">${esc(g.status)}</span>
@@ -1076,7 +1076,7 @@ function renderEquityGrantDetail(g) {
   currentEquityVestingEvents = g.vesting_events;
   document.getElementById('equityDetailTitle').textContent = `${esc(g.employee_name || g.employee_id)} — ${esc(g.grant_type)}`;
   document.getElementById('equityDetailSubtitle').textContent =
-    `${Number(g.quantity).toLocaleString('en-MY')} units · granted ${g.grant_date} · ${g.vesting_years}y vesting, ${g.cliff_months}mo cliff · ${g.status}`;
+    `${Number(g.quantity).toLocaleString('en-MY')} units · granted ${fmtDate(g.grant_date)} · ${g.vesting_years}y vesting, ${g.cliff_months}mo cliff · ${g.status}`;
 
   document.getElementById('equityTotalUnits').textContent = Number(g.quantity).toLocaleString('en-MY');
   document.getElementById('equityVestedUnits').textContent = Number(g.quantity_vested).toLocaleString('en-MY');
@@ -1111,12 +1111,12 @@ function renderEquityGrantDetail(g) {
   const isPhantom = g.grant_type === 'Phantom';
   tbody.innerHTML = g.vesting_events.map(ev => `
     <tr>
-      <td class="px-4 py-3">${esc(ev.vest_date)}</td>
+      <td class="px-4 py-3">${fmtDate(ev.vest_date)}</td>
       <td class="px-4 py-3 text-right">${Number(ev.quantity_vested).toLocaleString('en-MY')}</td>
       <td class="px-4 py-3">
         <span class="badge ${statusBadge(ev.status)}">${esc(ev.status)}</span>
-        ${ev.vested_at ? `<p class="text-xs text-slate-400 mt-1">Vested ${ev.vested_at.slice(0, 10)}</p>` : ''}
-        ${ev.status === 'Paid' ? `<p class="text-xs text-slate-500 mt-1">RM ${Number(ev.cash_payout).toLocaleString('en-MY', {minimumFractionDigits: 2})} @ RM ${Number(ev.settlement_price).toLocaleString('en-MY', {minimumFractionDigits: 4})}/unit</p><p class="text-xs text-slate-400">Paid ${ev.payout_date}</p>` : ''}
+        ${ev.vested_at ? `<p class="text-xs text-slate-400 mt-1">Vested ${fmtDate(ev.vested_at)}</p>` : ''}
+        ${ev.status === 'Paid' ? `<p class="text-xs text-slate-500 mt-1">RM ${Number(ev.cash_payout).toLocaleString('en-MY', {minimumFractionDigits: 2})} @ RM ${Number(ev.settlement_price).toLocaleString('en-MY', {minimumFractionDigits: 4})}/unit</p><p class="text-xs text-slate-400">Paid ${fmtDate(ev.payout_date)}</p>` : ''}
       </td>
       <td class="px-4 py-3 text-right">
         ${ev.status === 'Scheduled' ? `<button onclick="markVestingEventVested(${ev.id})" class="text-xs text-blue-700 hover:underline">Mark Vested</button>`
@@ -1264,7 +1264,7 @@ function renderTotalRewardsStatement(s) {
         <tbody class="divide-y divide-slate-100">
           ${historyRows.map(h => `
             <tr>
-              <td class="px-4 py-3">${esc(h.date || '—')}</td>
+              <td class="px-4 py-3">${fmtDate(h.date)}</td>
               <td class="px-4 py-3">${esc(h.kind)}</td>
               <td class="px-4 py-3">${esc(h.detail)}</td>
               <td class="px-4 py-3"><span class="badge ${statusBadge(h.status)}">${esc(h.status)}</span></td>
@@ -1465,7 +1465,7 @@ async function loadEmployeeCompensationTab(employeeId) {
     ['Job Role', comp.job_role ? `${comp.job_role.role_name} (${comp.job_role.role_code})` : '—'],
     ['Job Level', comp.job_level ? `${comp.job_level.level_name} (${comp.job_level.level_code})` : '—'],
     ['Pay Grade', comp.pay_grade ? `${comp.pay_grade.grade_name} (${comp.pay_grade.grade_code})` : '—'],
-    ['Effective Date', comp.effective_date],
+    ['Effective Date', fmtDate(comp.effective_date)],
   ]) + '<p class="text-xs text-slate-400 mt-3">Salary is set on the employee\'s own record (Edit Employee → Statutory tab → Basic Salary) — the figure payroll uses — not duplicated here.</p>' + actionBtn;
 }
 

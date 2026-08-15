@@ -46,6 +46,40 @@ function parseUTC(value) {
 }
 
 // ---------------------------------------------------------------------------
+// Date display: dd-mmm-yy everywhere (e.g. "15-Aug-26")
+// ---------------------------------------------------------------------------
+const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function fmtDate(value) {
+  // Accepts a "YYYY-MM-DD..." string (parsed via regex, not `new Date()` —
+  // same UTC-midnight/local-timezone trap parseUTC exists to avoid) or a
+  // Date object (uses local getters, for datetime values already resolved
+  // by parseUTC).
+  if (!value) return '—';
+  let y, mo, d;
+  if (value instanceof Date) {
+    if (isNaN(value)) return '—';
+    y = value.getFullYear(); mo = value.getMonth() + 1; d = value.getDate();
+  } else {
+    const m = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return String(value); // not a recognizable date — pass through, don't mangle
+    [y, mo, d] = m.slice(1).map(Number);
+  }
+  return `${String(d).padStart(2,'0')}-${MONTH_ABBR[mo-1]}-${String(y).slice(-2)}`;
+}
+
+function fmtDateTime(value, withSeconds) {
+  // For naive-UTC *_at/timestamp fields — reuses parseUTC for correct
+  // local-time conversion.
+  const d = parseUTC(value);
+  if (!d) return '—';
+  const timeOpts = withSeconds
+    ? {hour:'2-digit',minute:'2-digit',second:'2-digit'}
+    : {hour:'2-digit',minute:'2-digit'};
+  return `${fmtDate(d)}, ${d.toLocaleTimeString([], timeOpts)}`;
+}
+
+// ---------------------------------------------------------------------------
 // API helper
 // ---------------------------------------------------------------------------
 async function api(path, opts = {}) {
@@ -146,7 +180,7 @@ async function bootApp() {
   updateSidebarUser();
   initAssistant();
   document.getElementById('headerDate').textContent =
-    new Date().toLocaleDateString('en-MY',{weekday:'short',year:'numeric',month:'short',day:'numeric'});
+    `${new Date().toLocaleDateString('en-MY',{weekday:'short'})}, ${fmtDate(new Date())}`;
   if (currentUser.role === 'superadmin' && !currentInstitution) {
     await loadInstitutions();
     showPage('institutions');

@@ -297,7 +297,7 @@ function loadCompensationDash() {
         <div class="flex items-center justify-between py-1.5 border-b border-slate-100 last:border-0">
           <div>
             <p class="text-sm text-slate-700">${esc(c.plan_name)}</p>
-            <p class="text-xs text-slate-400">${esc(c.claim_date)} · ${fmtRM(c.amount_claimed)}</p>
+            <p class="text-xs text-slate-400">${fmtDate(c.claim_date)} · ${fmtRM(c.amount_claimed)}</p>
           </div>
           <span class="badge ${claimBadge(c.status)}">${esc(c.status)}</span>
         </div>`).join('');
@@ -537,10 +537,10 @@ function loadMyLeaveDash() {
     listEl.innerHTML = apps.map(a => `
       <tr class="border-t border-slate-100">
         <td class="py-1.5 text-sm text-slate-700">${esc(a.leave_type_name)}</td>
-        <td class="py-1.5 text-sm text-slate-600">${esc(a.start_date)} – ${esc(a.end_date)}</td>
+        <td class="py-1.5 text-sm text-slate-600">${fmtDate(a.start_date)} – ${fmtDate(a.end_date)}</td>
         <td class="py-1.5 text-sm text-right">${a.days_count}</td>
-        <td class="py-1.5 text-xs text-slate-500">${esc((a.created_at || '').slice(0, 10))}</td>
-        <td class="py-1.5 text-xs text-slate-500">${esc(a.approved_at ? a.approved_at.slice(0, 10) : '—')}</td>
+        <td class="py-1.5 text-xs text-slate-500">${fmtDate(a.created_at)}</td>
+        <td class="py-1.5 text-xs text-slate-500">${fmtDate(a.approved_at)}</td>
         <td class="py-1.5"><span class="badge ${statusBadge(a.status)}">${esc(a.status)}</span></td>
       </tr>`).join('');
   });

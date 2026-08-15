@@ -191,7 +191,7 @@ async function loadProjectTasksForManage(projectId) {
         </div>
       </div>
       <p class="text-xs text-slate-500 mt-0.5">
-        ${t.start_date?`${t.start_date} → ${t.end_date||'?'}`:'No dates set'}
+        ${t.start_date?`${fmtDate(t.start_date)} → ${t.end_date?fmtDate(t.end_date):'?'}`:'No dates set'}
         ${t.estimated_hours?` · ${t.logged_hours}/${t.estimated_hours} hrs logged`:` · ${t.logged_hours} hrs logged`}
       </p>
       <div class="flex gap-2 mt-1">
@@ -289,7 +289,7 @@ async function loadTaskAssignments(taskId) {
   document.getElementById('taskAssignList').innerHTML=(!openToAll && assignments.length)?assignments.map(a=>`
     <div class="flex items-center gap-2 py-1 border-b border-slate-100 text-xs">
       <span class="flex-1">${esc(a.full_name)}</span>
-      <span class="text-slate-400">${a.start_datetime.replace('T',' ')} · ${a.duration_hours}h</span>
+      <span class="text-slate-400">${fmtDate(a.start_datetime)}${a.start_datetime.includes('T')?', '+a.start_datetime.split('T')[1]:''} · ${a.duration_hours}h</span>
       <button onclick="removeTaskAssignment(${taskId},'${a.employee_id}')" class="text-slate-300 hover:text-red-500"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>`).join(''):(openToAll?'':'<p class="text-xs text-slate-400 text-center py-1">No one assigned yet.</p>');
 
@@ -428,7 +428,7 @@ function renderTimesheetEntries() {
     emptyEl.classList.add('hidden');
     tbody.innerHTML=ts.entries.map(e=>`
       <tr class="border-t border-slate-100">
-        <td class="px-4 py-2">${e.date}</td>
+        <td class="px-4 py-2">${fmtDate(e.date)}</td>
         <td class="px-4 py-2">${esc(e.project_name)}</td>
         <td class="px-4 py-2">${esc(e.task_name||'—')}</td>
         <td class="px-4 py-2">${e.hours}</td>
@@ -500,7 +500,7 @@ async function loadTimesheetApprovals() {
       <div class="flex items-center justify-between gap-2">
         <div>
           <p class="font-medium text-slate-800">${esc(t.employee_name)}</p>
-          <p class="text-xs text-slate-500">${esc(t.department||'')}${t.designation?' · '+esc(t.designation):''} · ${t.period_start} → ${t.period_end}</p>
+          <p class="text-xs text-slate-500">${esc(t.department||'')}${t.designation?' · '+esc(t.designation):''} · ${fmtDate(t.period_start)} → ${fmtDate(t.period_end)}</p>
         </div>
         <div class="text-right">
           <span class="badge ${TS_STATUS_COLORS[t.status]||'bg-slate-100 text-slate-600'} text-xs">${t.status}</span>
@@ -521,11 +521,11 @@ async function openTimesheetDetail(tsId) {
   const res=await api(`/api/timesheets/${tsId}`);
   if(!res?.ok) return;
   const ts=await res.json();
-  document.getElementById('timesheetDetailTitle').textContent=`Timesheet — ${ts.period_start} to ${ts.period_end}`;
-  document.getElementById('timesheetDetailMeta').textContent=`Status: ${ts.status}${ts.submitted_at?' · Submitted '+ts.submitted_at.slice(0,10):''}`;
+  document.getElementById('timesheetDetailTitle').textContent=`Timesheet — ${fmtDate(ts.period_start)} to ${fmtDate(ts.period_end)}`;
+  document.getElementById('timesheetDetailMeta').textContent=`Status: ${ts.status}${ts.submitted_at?' · Submitted '+fmtDate(ts.submitted_at):''}`;
   document.getElementById('timesheetDetailBody').innerHTML=ts.entries.map(e=>`
     <tr class="border-t border-slate-100">
-      <td class="py-2">${e.date}</td><td class="py-2">${esc(e.project_name)}</td>
+      <td class="py-2">${fmtDate(e.date)}</td><td class="py-2">${esc(e.project_name)}</td>
       <td class="py-2">${esc(e.task_name||'—')}</td>
       <td class="py-2">${e.hours}</td><td class="py-2 text-slate-500">${esc(e.description||'')}</td>
     </tr>`).join('');
@@ -550,7 +550,7 @@ async function loadTimesheetDetailOvertime(tsId) {
   wrap.classList.remove('hidden');
   list.innerHTML=records.map(o=>`
     <div class="flex items-center gap-3 bg-slate-50 rounded-lg px-3 py-2">
-      <span class="text-sm text-slate-700 flex-shrink-0">${o.work_date}</span>
+      <span class="text-sm text-slate-700 flex-shrink-0">${fmtDate(o.work_date)}</span>
       <span class="text-xs text-slate-500 flex-shrink-0">${o.logged_hours}h logged, ${o.threshold_hours}h normal</span>
       <span class="text-sm font-medium text-amber-700 flex-shrink-0">+${o.overtime_hours}h OT</span>
       <span class="badge ${OT_STATUS_COLORS[o.status]||'bg-slate-100 text-slate-600'} text-xs flex-shrink-0">${o.status}</span>
@@ -582,7 +582,7 @@ async function loadMyOvertimePage() {
   listEl.innerHTML=records.map(o=>`
     <div class="bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-3">
       <div class="flex-1">
-        <p class="font-medium text-slate-800">${o.work_date}</p>
+        <p class="font-medium text-slate-800">${fmtDate(o.work_date)}</p>
         <p class="text-xs text-slate-500">${o.logged_hours}h logged vs ${o.threshold_hours}h normal — <span class="font-medium text-amber-700">${o.overtime_hours}h overtime</span></p>
         ${o.status==='Approved'?`<p class="text-xs text-green-700 mt-1">${o.conversion_mode==='leave'?`+${o.leave_days_credited} day(s) credited`:`RM ${Number(o.pay_amount).toFixed(2)} tracked`}</p>`:''}
       </div>

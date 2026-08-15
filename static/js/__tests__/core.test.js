@@ -214,3 +214,87 @@ describe('parseUTC', () => {
     expect(fixedNew - buggyOld).toBe(-localOffsetMs);
   });
 });
+
+describe('fmtDate / fmtDateTime', () => {
+  // Matches core.js's fmtDate/fmtDateTime — system-wide dd-mmm-yy date display.
+  const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  function parseUTC(value) {
+    if (!value) return null;
+    return new Date(value.endsWith('Z') ? value : value + 'Z');
+  }
+
+  function fmtDate(value) {
+    if (!value) return '—';
+    let y, mo, d;
+    if (value instanceof Date) {
+      if (isNaN(value)) return '—';
+      y = value.getFullYear(); mo = value.getMonth() + 1; d = value.getDate();
+    } else {
+      const m = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (!m) return String(value);
+      [y, mo, d] = m.slice(1).map(Number);
+    }
+    return `${String(d).padStart(2,'0')}-${MONTH_ABBR[mo-1]}-${String(y).slice(-2)}`;
+  }
+
+  function fmtDateTime(value, withSeconds) {
+    const d = parseUTC(value);
+    if (!d) return '—';
+    const timeOpts = withSeconds
+      ? {hour:'2-digit',minute:'2-digit',second:'2-digit'}
+      : {hour:'2-digit',minute:'2-digit'};
+    return `${fmtDate(d)}, ${d.toLocaleTimeString([], timeOpts)}`;
+  }
+
+  it('formats a date-only string as dd-mmm-yy', () => {
+    expect(fmtDate('2026-08-15')).toBe('15-Aug-26');
+  });
+
+  it('formats the date portion of a full ISO datetime string the same way', () => {
+    expect(fmtDate('2026-08-15T11:37:04.123456')).toBe('15-Aug-26');
+  });
+
+  it('pads single-digit days', () => {
+    expect(fmtDate('2026-01-05')).toBe('05-Jan-26');
+  });
+
+  it('formats a Date object using local getters, not UTC', () => {
+    // A UTC instant that falls on a different local calendar date near
+    // midnight — must use the LOCAL date, matching parseUTC's contract.
+    const d = new Date('2026-08-15T00:30:00Z');
+    const expected = `${String(d.getDate()).padStart(2,'0')}-${MONTH_ABBR[d.getMonth()]}-${String(d.getFullYear()).slice(-2)}`;
+    expect(fmtDate(d)).toBe(expected);
+  });
+
+  it('returns an em dash for null, undefined, or empty input', () => {
+    expect(fmtDate(null)).toBe('—');
+    expect(fmtDate(undefined)).toBe('—');
+    expect(fmtDate('')).toBe('—');
+  });
+
+  it('returns an em dash for an Invalid Date object', () => {
+    expect(fmtDate(new Date('not-a-date'))).toBe('—');
+  });
+
+  it('passes through an unrecognizable string unchanged rather than mangling it', () => {
+    expect(fmtDate('TBD')).toBe('TBD');
+  });
+
+  it('fmtDateTime combines the dd-mmm-yy date with a local time', () => {
+    const result = fmtDateTime('2026-08-15T11:37:04');
+    expect(result.startsWith(fmtDate('2026-08-15T11:37:04Z'))).toBe(true);
+    expect(result).toContain(',');
+  });
+
+  it('fmtDateTime omits seconds by default and includes them when asked', () => {
+    const withoutSeconds = fmtDateTime('2026-08-15T11:37:04');
+    const withSeconds = fmtDateTime('2026-08-15T11:37:04', true);
+    expect(withoutSeconds).not.toMatch(/:\d{2}:\d{2}/); // no HH:MM:SS pattern
+    expect(withSeconds).toMatch(/:\d{2}:\d{2}/);
+  });
+
+  it('fmtDateTime returns an em dash for a missing value', () => {
+    expect(fmtDateTime(null)).toBe('—');
+  });
+});

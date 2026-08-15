@@ -13,7 +13,7 @@ async function loadAuditLog() {
   const colors={CREATE:'bg-blue-100 text-blue-700',UPDATE:'bg-amber-100 text-amber-700',ACTIVATE:'bg-emerald-100 text-emerald-700',DEACTIVATE:'bg-slate-100 text-slate-600'};
   tbody.innerHTML=logs.map(l=>`
     <tr class="hover:bg-slate-50 transition">
-      <td class="px-4 py-3 text-xs text-slate-500">${l.timestamp.replace('T',' ')}</td>
+      <td class="px-4 py-3 text-xs text-slate-500">${fmtDateTime(l.timestamp, true)}</td>
       <td class="px-4 py-3"><p class="text-sm font-medium">${esc(l.actor_username)}</p><p class="text-xs text-slate-400">${esc(l.actor_role)}</p></td>
       <td class="px-4 py-3"><p class="text-sm">${esc(l.target_employee_name)}</p><p class="text-xs text-slate-400">${esc(l.target_employee_id)}</p></td>
       <td class="px-4 py-3"><span class="badge ${colors[l.action]||''}">${l.action}</span></td>

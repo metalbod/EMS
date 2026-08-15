@@ -179,7 +179,7 @@ async function loadLdEnrollments() {
         ${en.status==='In Progress'&&hasQuiz&&!isOwnEmployeeAccount?`<span class="text-xs text-slate-400 italic">Awaiting employee to take quiz</span>`:''}
         ${canAct&&!hasQuiz?`<button onclick="updateLdEnrollStatus(${en.id},'Completed')" class="btn-primary text-xs px-3 py-1.5">Mark Complete</button>`:''}
       </div>
-      <p class="text-xs text-slate-400 mt-2">Requested ${en.created_at?.slice(0,10)} by ${esc(en.requested_by)}${en.completed_at?' · Completed '+en.completed_at.slice(0,10):''}</p>
+      <p class="text-xs text-slate-400 mt-2">Requested ${fmtDate(en.created_at)} by ${esc(en.requested_by)}${en.completed_at?' · Completed '+fmtDate(en.completed_at):''}</p>
     </div>`;
   }).join('');
 }

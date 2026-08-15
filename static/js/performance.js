@@ -63,7 +63,7 @@ async function loadPerformanceCycles() {
     else if(c.status==='Calibration') actions=`<button onclick="closeCycle(${c.id})" class="text-xs text-blue-600 hover:underline">Close Cycle</button>`;
     return `<tr class="border-t border-slate-100">
       <td class="px-4 py-3 font-medium text-slate-800">${esc(c.name)}</td>
-      <td class="px-4 py-3 text-slate-500">${c.period_start} → ${c.period_end}</td>
+      <td class="px-4 py-3 text-slate-500">${fmtDate(c.period_start)} → ${fmtDate(c.period_end)}</td>
       <td class="px-4 py-3"><span class="badge text-xs ${PERF_STATUS_COLORS[c.status]||''}">${c.status}</span></td>
       <td class="px-4 py-3 text-right">${actions}</td>
     </tr>`;

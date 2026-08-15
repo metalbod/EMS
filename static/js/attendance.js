@@ -55,7 +55,7 @@ function renderAttClockStatus() {
 
   if (open) {
     statusEl.textContent = 'Clocked In';
-    detailEl.textContent = `Since ${parseUTC(open.clock_in_at).toLocaleString()} (${esc(open.shift_name || 'no shift')})`;
+    detailEl.textContent = `Since ${fmtDateTime(open.clock_in_at)} (${esc(open.shift_name || 'no shift')})`;
     inBtn.classList.add('hidden');
     outBtn.classList.remove('hidden');
   } else {
@@ -77,7 +77,7 @@ function renderAttHistory() {
   document.getElementById('attHistoryEmpty')?.classList.toggle('hidden', attHistoryCache.length > 0);
   el.innerHTML = attHistoryCache.map(r => `
     <tr class="border-t border-slate-100">
-      <td class="px-4 py-2 text-sm">${esc(r.work_date)}</td>
+      <td class="px-4 py-2 text-sm">${fmtDate(r.work_date)}</td>
       <td class="px-4 py-2 text-sm text-slate-500">${esc(r.shift_name || '—')}</td>
       <td class="px-4 py-2 text-sm">${r.clock_in_at ? parseUTC(r.clock_in_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '—'}</td>
       <td class="px-4 py-2 text-sm">${r.clock_out_at ? parseUTC(r.clock_out_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '—'}</td>
@@ -119,7 +119,7 @@ async function loadAttendanceReview() {
         <div class="font-medium">${esc(r.employee_name || r.employee_id)}</div>
         <div class="text-xs text-slate-400">${esc(r.department || '')}</div>
       </td>
-      <td class="px-4 py-2 text-sm">${esc(r.work_date)}</td>
+      <td class="px-4 py-2 text-sm">${fmtDate(r.work_date)}</td>
       <td class="px-4 py-2">${attStatusBadge(r.status)}</td>
       <td class="px-4 py-2 text-sm text-slate-500">${esc(r.suggested_action || '—')}</td>
       <td class="px-4 py-2 text-right"><button onclick="openAttResolveModal(${r.id})" class="text-xs text-blue-600 hover:underline">Resolve</button></td>
@@ -133,7 +133,7 @@ async function openAttResolveModal(id) {
   if (!rec) return;
   currentAttResolveId = id;
   document.getElementById('attResolveInfo').textContent =
-    `${rec.employee_name || rec.employee_id} — ${rec.work_date} — currently ${rec.status}${rec.suggested_action ? ' (suggested: ' + rec.suggested_action + ')' : ''}`;
+    `${rec.employee_name || rec.employee_id} — ${fmtDate(rec.work_date)} — currently ${rec.status}${rec.suggested_action ? ' (suggested: ' + rec.suggested_action + ')' : ''}`;
   document.getElementById('attResolveAction').value = rec.suggested_action === 'Half-Day Leave' ? 'ReclassifyAsLeave' : (rec.status === 'Late' ? 'Excuse' : 'ReclassifyAsLeave');
   document.getElementById('attResolveHalfDay').checked = rec.suggested_action === 'Half-Day Leave';
   document.getElementById('attResolveNotes').value = '';
@@ -368,7 +368,7 @@ async function loadAttDevices() {
       <td class="px-4 py-2 text-sm">${esc(d.name)}</td>
       <td class="px-4 py-2 text-sm text-slate-500">${esc(d.location_name || '—')}</td>
       <td class="px-4 py-2 text-sm font-mono text-xs">adk_${esc(d.key_prefix)}_…</td>
-      <td class="px-4 py-2 text-sm text-slate-500">${d.last_used_at ? parseUTC(d.last_used_at).toLocaleString() : 'Never'}</td>
+      <td class="px-4 py-2 text-sm text-slate-500">${d.last_used_at ? fmtDateTime(d.last_used_at) : 'Never'}</td>
       <td class="px-4 py-2 text-right"><button onclick="deleteDevice(${d.id})" class="text-xs text-red-600 hover:underline">Revoke</button></td>
     </tr>`).join('');
 }
