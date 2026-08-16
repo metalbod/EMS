@@ -53,16 +53,23 @@ function onAwOtModeChange() {
   document.getElementById('awOtMultiplierWrap').classList.toggle('hidden', isLeave);
 }
 
+let _savingOvertimeSettings = false;
 async function saveOvertimeSettings() {
-  const mode = document.getElementById('awOtMode').value;
-  const body = {
-    overtime_conversion_mode: mode,
-    overtime_leave_type_id: mode === 'leave' ? parseInt(document.getElementById('awOtLeaveType').value) : null,
-    overtime_pay_multiplier: parseFloat(document.getElementById('awOtMultiplier').value) || 1.5,
-  };
-  const res = await api('/api/overtime/settings', {method: 'PUT', body: JSON.stringify(body)});
-  if (!res?.ok) { const d = await res?.json().catch(()=>({})); alert(d?.detail || 'Failed to save'); return; }
-  alert('Overtime settings saved.');
+  if (_savingOvertimeSettings) return;
+  _savingOvertimeSettings = true;
+  try {
+    const mode = document.getElementById('awOtMode').value;
+    const body = {
+      overtime_conversion_mode: mode,
+      overtime_leave_type_id: mode === 'leave' ? parseInt(document.getElementById('awOtLeaveType').value) : null,
+      overtime_pay_multiplier: parseFloat(document.getElementById('awOtMultiplier').value) || 1.5,
+    };
+    const res = await api('/api/overtime/settings', {method: 'PUT', body: JSON.stringify(body)});
+    if (!res?.ok) { const d = await res?.json().catch(()=>({})); alert(d?.detail || 'Failed to save'); return; }
+    alert('Overtime settings saved.');
+  } finally {
+    _savingOvertimeSettings = false;
+  }
 }
 
 // Used by Leave/Claims submission forms to decide whether to show a
@@ -122,17 +129,24 @@ function showAwWorkflowForm() {
 }
 function hideAwWorkflowForm() { document.getElementById('awWorkflowForm')?.classList.add('hidden'); }
 
+let _savingAwWorkflow = false;
 async function saveAwWorkflow() {
-  const name = document.getElementById('awWorkflowName').value.trim();
-  if (!name) { alert('Workflow name is required'); return; }
-  const res = await api('/api/approval-workflows', {method:'POST', body: JSON.stringify({module: awCurrentModule, name})});
-  if (!res?.ok) return;
-  const created = await res.json();
-  if (document.getElementById('awWorkflowIsDefault').checked) {
-    await api(`/api/approval-workflows/${created.id}`, {method:'PUT', body: JSON.stringify({name, is_default:true})});
+  if (_savingAwWorkflow) return;
+  _savingAwWorkflow = true;
+  try {
+    const name = document.getElementById('awWorkflowName').value.trim();
+    if (!name) { alert('Workflow name is required'); return; }
+    const res = await api('/api/approval-workflows', {method:'POST', body: JSON.stringify({module: awCurrentModule, name})});
+    if (!res?.ok) return;
+    const created = await res.json();
+    if (document.getElementById('awWorkflowIsDefault').checked) {
+      await api(`/api/approval-workflows/${created.id}`, {method:'PUT', body: JSON.stringify({name, is_default:true})});
+    }
+    hideAwWorkflowForm();
+    await loadAwWorkflows(created.id);
+  } finally {
+    _savingAwWorkflow = false;
   }
-  hideAwWorkflowForm();
-  await loadAwWorkflows(created.id);
 }
 
 async function renameAwWorkflow() {
@@ -221,7 +235,9 @@ function onAwNewStepAltTypeChange() {
   if (isSpecific) _awPopulateEmployeeSelect(empSel);
 }
 
+let _addingAwStep = false;
 async function addAwStep() {
+  if (_addingAwStep) return;
   if (!awCurrentWorkflowId) { alert('Create a workflow first'); return; }
   const approver_type = document.getElementById('awNewStepType').value;
   const specific_employee_id = approver_type === 'specific_employee' ? document.getElementById('awNewStepEmployee').value : null;
@@ -235,11 +251,16 @@ async function addAwStep() {
     if (alt_approver_type === 'specific_employee' && !alt_specific_employee_id) { alert('Choose an alternative employee'); return; }
   }
 
-  const res = await api(`/api/approval-workflows/${awCurrentWorkflowId}/steps`, {method:'POST', body: JSON.stringify({approver_type, specific_employee_id, alt_approver_type, alt_specific_employee_id})});
-  if (!res?.ok) { const d = await res?.json().catch(()=>({})); alert(d?.detail || 'Failed to add step'); return; }
-  document.getElementById('awNewStepHasAlt').checked = false;
-  onAwNewStepAltToggle();
-  await loadAwWorkflows(awCurrentWorkflowId);
+  _addingAwStep = true;
+  try {
+    const res = await api(`/api/approval-workflows/${awCurrentWorkflowId}/steps`, {method:'POST', body: JSON.stringify({approver_type, specific_employee_id, alt_approver_type, alt_specific_employee_id})});
+    if (!res?.ok) { const d = await res?.json().catch(()=>({})); alert(d?.detail || 'Failed to add step'); return; }
+    document.getElementById('awNewStepHasAlt').checked = false;
+    onAwNewStepAltToggle();
+    await loadAwWorkflows(awCurrentWorkflowId);
+  } finally {
+    _addingAwStep = false;
+  }
 }
 
 async function moveAwStep(stepId, direction) {

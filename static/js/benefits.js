@@ -141,27 +141,34 @@ function renderEligibilityRules(rules) {
   `).join('');
 }
 
+let _addingEligibilityRule = false;
 async function addEligibilityRule() {
-  const jobLevelId = document.getElementById('benEligJobLevel').value;
-  const payGradeId = document.getElementById('benEligPayGrade').value;
-  if (!jobLevelId && !payGradeId) {
-    alert('Select a job level or pay grade to add.');
-    return;
+  if (_addingEligibilityRule) return;
+  _addingEligibilityRule = true;
+  try {
+    const jobLevelId = document.getElementById('benEligJobLevel').value;
+    const payGradeId = document.getElementById('benEligPayGrade').value;
+    if (!jobLevelId && !payGradeId) {
+      alert('Select a job level or pay grade to add.');
+      return;
+    }
+    const res = await api(`/api/benefits/plans/${currentBenefitPlanId}/eligibility-rules`, {
+      method: 'POST',
+      body: JSON.stringify({
+        job_level_id: jobLevelId ? parseInt(jobLevelId) : null,
+        pay_grade_id: payGradeId ? parseInt(payGradeId) : null,
+      }),
+    });
+    if (!res || !res.ok) {
+      alert('Error: ' + (await res.json()).detail);
+      return;
+    }
+    document.getElementById('benEligJobLevel').value = '';
+    document.getElementById('benEligPayGrade').value = '';
+    loadEligibilityRules(currentBenefitPlanId);
+  } finally {
+    _addingEligibilityRule = false;
   }
-  const res = await api(`/api/benefits/plans/${currentBenefitPlanId}/eligibility-rules`, {
-    method: 'POST',
-    body: JSON.stringify({
-      job_level_id: jobLevelId ? parseInt(jobLevelId) : null,
-      pay_grade_id: payGradeId ? parseInt(payGradeId) : null,
-    }),
-  });
-  if (!res || !res.ok) {
-    alert('Error: ' + (await res.json()).detail);
-    return;
-  }
-  document.getElementById('benEligJobLevel').value = '';
-  document.getElementById('benEligPayGrade').value = '';
-  loadEligibilityRules(currentBenefitPlanId);
 }
 
 async function removeEligibilityRule(ruleId) {

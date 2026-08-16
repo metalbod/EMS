@@ -349,14 +349,21 @@ async function loadNotes() {
   document.getElementById('notesList').innerHTML=notesHtml+obHtml;
 }
 
+let _savingNote = false;
 async function submitNote() {
-  const body=document.getElementById('noteBody').value.trim();
-  const type=document.getElementById('noteType').value;
-  const err=document.getElementById('noteError');
-  if(!body){err.textContent='Note cannot be empty';err.classList.remove('hidden');return;}
-  err.classList.add('hidden');
-  const res=await api(`/api/employees/${viewingId}/notes`,{method:'POST',body:JSON.stringify({note_type:type,body})});
-  if(res?.ok){document.getElementById('noteBody').value='';loadNotes();}
+  if (_savingNote) return;
+  _savingNote = true;
+  try {
+    const body=document.getElementById('noteBody').value.trim();
+    const type=document.getElementById('noteType').value;
+    const err=document.getElementById('noteError');
+    if(!body){err.textContent='Note cannot be empty';err.classList.remove('hidden');return;}
+    err.classList.add('hidden');
+    const res=await api(`/api/employees/${viewingId}/notes`,{method:'POST',body:JSON.stringify({note_type:type,body})});
+    if(res?.ok){document.getElementById('noteBody').value='';loadNotes();}
+  } finally {
+    _savingNote = false;
+  }
 }
 
 async function deleteNote(empId,noteId) {

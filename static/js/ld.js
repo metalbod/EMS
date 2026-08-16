@@ -290,7 +290,11 @@ function addLdQuizOption(idx) {
   optsEl.appendChild(div);
 }
 
+let _savingLdQuiz = false;
 async function submitLdQuiz() {
+  if (_savingLdQuiz) return;
+  _savingLdQuiz = true;
+  try {
   const courseId=document.getElementById('ldQuizCourseId').value;
   const title=document.getElementById('ldQuizTitle').value.trim();
   if(!title){alert('Quiz title is required');return;}
@@ -322,6 +326,9 @@ async function submitLdQuiz() {
   const res=await api(`/api/ld/courses/${courseId}/quiz`,{method:'PUT',body:JSON.stringify(body)});
   if(res?.ok){closeLdQuizModal();loadLdCourses();}
   else{const d=await res.json();alert(d.detail||'Failed to save quiz');}
+  } finally {
+    _savingLdQuiz = false;
+  }
 }
 
 async function deleteLdQuiz() {
@@ -365,7 +372,11 @@ function closeLdTakeQuizModal() {
   document.getElementById('ldTakeQuizModal').classList.add('hidden');
 }
 
+let _savingLdQuizAttempt = false;
 async function submitLdQuizAttempt() {
+  if (_savingLdQuizAttempt) return;
+  _savingLdQuizAttempt = true;
+  try {
   const quizId=document.getElementById('ldTakeQuizId').value;
   const questionEls=document.querySelectorAll('#ldTakeQuizQuestions > div');
   const answers={};
@@ -398,6 +409,9 @@ async function submitLdQuizAttempt() {
     if(remaining<=0) document.getElementById('ldTakeQuizSubmitBtn').classList.add('hidden');
   }
   loadLdEnrollments();
+  } finally {
+    _savingLdQuizAttempt = false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -452,16 +466,23 @@ function ldMoveModule(idx, dir) {
   if(dir>0 && el.nextElementSibling) el.parentElement.insertBefore(el.nextElementSibling, el);
 }
 
+let _savingLdModules = false;
 async function submitLdModules() {
-  const courseId=document.getElementById('ldModulesCourseId').value;
-  const modules=[...document.querySelectorAll('#ldModulesList > div')].map(el=>({
-    title: el.querySelector('.ldm-title').value.trim(),
-    content_type: el.dataset.contentType,
-    content: el.querySelector('.ldm-content').value.trim()||null
-  })).filter(m=>m.title);
-  const res=await api(`/api/ld/courses/${courseId}/modules`,{method:'PUT',body:JSON.stringify({modules})});
-  if(res?.ok){closeLdModulesModal();loadLdCourses();}
-  else{const d=await res.json();alert(d.detail||'Failed to save content');}
+  if (_savingLdModules) return;
+  _savingLdModules = true;
+  try {
+    const courseId=document.getElementById('ldModulesCourseId').value;
+    const modules=[...document.querySelectorAll('#ldModulesList > div')].map(el=>({
+      title: el.querySelector('.ldm-title').value.trim(),
+      content_type: el.dataset.contentType,
+      content: el.querySelector('.ldm-content').value.trim()||null
+    })).filter(m=>m.title);
+    const res=await api(`/api/ld/courses/${courseId}/modules`,{method:'PUT',body:JSON.stringify({modules})});
+    if(res?.ok){closeLdModulesModal();loadLdCourses();}
+    else{const d=await res.json();alert(d.detail||'Failed to save content');}
+  } finally {
+    _savingLdModules = false;
+  }
 }
 
 // ---------------------------------------------------------------------------

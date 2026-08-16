@@ -154,11 +154,18 @@ async function editReqFromDetail(){
   openReqModal(r);
 }
 
+let _submittingReqForApproval = false;
 async function submitReqForApproval() {
+  if (_submittingReqForApproval) return;
   if(!viewingReqId) return;
-  const res=await api(`/api/recruitment/requisitions/${viewingReqId}/submit`,{method:'PATCH',body:JSON.stringify({})});
-  if(!res||!res.ok) return;
-  closeReqDetailModal(); loadRequisitions();
+  _submittingReqForApproval = true;
+  try {
+    const res=await api(`/api/recruitment/requisitions/${viewingReqId}/submit`,{method:'PATCH',body:JSON.stringify({})});
+    if(!res||!res.ok) return;
+    closeReqDetailModal(); loadRequisitions();
+  } finally {
+    _submittingReqForApproval = false;
+  }
 }
 async function approveReq(action) {
   if(!viewingReqId) return;

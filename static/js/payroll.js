@@ -39,18 +39,25 @@ function openPayrollRunModal() {
 }
 function closePayrollRunModal() { document.getElementById('payrollRunModal').classList.add('hidden'); }
 
+let _submittingPayrollRun = false;
 async function submitPayrollRun() {
-  const period_start=document.getElementById('prStart').value;
-  const period_end=document.getElementById('prEnd').value;
-  if(!period_start||!period_end){ alert('Both dates are required'); return; }
-  const res=await api('/api/payroll/runs',{method:'POST',body:JSON.stringify({period_start,period_end})});
-  if(res?.ok){
-    closePayrollRunModal();
-    const run=await res.json();
-    loadPayrollRuns();
-    openPayrollRunDetail(run.id);
-  } else {
-    const d=await res.json(); alert(d.detail||'Failed to create payroll run');
+  if (_submittingPayrollRun) return;
+  _submittingPayrollRun = true;
+  try {
+    const period_start=document.getElementById('prStart').value;
+    const period_end=document.getElementById('prEnd').value;
+    if(!period_start||!period_end){ alert('Both dates are required'); return; }
+    const res=await api('/api/payroll/runs',{method:'POST',body:JSON.stringify({period_start,period_end})});
+    if(res?.ok){
+      closePayrollRunModal();
+      const run=await res.json();
+      loadPayrollRuns();
+      openPayrollRunDetail(run.id);
+    } else {
+      const d=await res.json(); alert(d.detail||'Failed to create payroll run');
+    }
+  } finally {
+    _submittingPayrollRun = false;
   }
 }
 
@@ -110,12 +117,19 @@ async function openPayrollRunDetail(runId) {
 }
 function closePayrollRunDetailModal() { document.getElementById('payrollRunDetailModal').classList.add('hidden'); }
 
+let _savingAdjustedPayslip = false;
 async function saveAdjustedPayslip(payslipId) {
-  const basic_salary=parseFloat(document.getElementById(`ps-basic-${payslipId}`).value);
-  const unpaid_leave_days=parseFloat(document.getElementById(`ps-unpaid-${payslipId}`).value);
-  const res=await api(`/api/payroll/payslips/${payslipId}`,{method:'PUT',body:JSON.stringify({basic_salary,unpaid_leave_days})});
-  if(res?.ok){ openPayrollRunDetail(currentPayrollRunId); loadPayrollRuns(); }
-  else { const d=await res.json(); alert(d.detail||'Failed to save'); }
+  if (_savingAdjustedPayslip) return;
+  _savingAdjustedPayslip = true;
+  try {
+    const basic_salary=parseFloat(document.getElementById(`ps-basic-${payslipId}`).value);
+    const unpaid_leave_days=parseFloat(document.getElementById(`ps-unpaid-${payslipId}`).value);
+    const res=await api(`/api/payroll/payslips/${payslipId}`,{method:'PUT',body:JSON.stringify({basic_salary,unpaid_leave_days})});
+    if(res?.ok){ openPayrollRunDetail(currentPayrollRunId); loadPayrollRuns(); }
+    else { const d=await res.json(); alert(d.detail||'Failed to save'); }
+  } finally {
+    _savingAdjustedPayslip = false;
+  }
 }
 
 async function recomputePayslip(payslipId) {

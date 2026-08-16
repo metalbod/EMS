@@ -84,22 +84,29 @@ function openNotificationModal(notificationId) {
 }
 function closeNotificationModal() { document.getElementById('notificationModal').classList.add('hidden'); }
 
+let _savingNotification = false;
 async function submitNotification() {
-  const id=document.getElementById('notificationId').value;
-  const message=document.getElementById('notificationMessage').value.trim();
-  const startTime=document.getElementById('notificationStart').value;
-  const endTime=document.getElementById('notificationEnd').value;
-  if(!message){ alert('Message is required'); return; }
-  if(message.trim().split(/\s+/).filter(Boolean).length>500){ alert('Message must be 500 words or fewer'); return; }
-  if(!startTime||!endTime){ alert('Start and end time are required'); return; }
-  const body={ message, start_time:localInputToUTC(startTime), end_time:localInputToUTC(endTime) };
-  const url=id?`/api/notifications/${id}`:'/api/notifications';
-  const res=await api(url,{method:id?'PUT':'POST',body:JSON.stringify(body)});
-  if(res?.ok){
-    closeNotificationModal();
-    loadNotificationSettings();
-  } else {
-    const d=await res.json(); alert(d.detail||'Failed to save notification');
+  if (_savingNotification) return;
+  _savingNotification = true;
+  try {
+    const id=document.getElementById('notificationId').value;
+    const message=document.getElementById('notificationMessage').value.trim();
+    const startTime=document.getElementById('notificationStart').value;
+    const endTime=document.getElementById('notificationEnd').value;
+    if(!message){ alert('Message is required'); return; }
+    if(message.trim().split(/\s+/).filter(Boolean).length>500){ alert('Message must be 500 words or fewer'); return; }
+    if(!startTime||!endTime){ alert('Start and end time are required'); return; }
+    const body={ message, start_time:localInputToUTC(startTime), end_time:localInputToUTC(endTime) };
+    const url=id?`/api/notifications/${id}`:'/api/notifications';
+    const res=await api(url,{method:id?'PUT':'POST',body:JSON.stringify(body)});
+    if(res?.ok){
+      closeNotificationModal();
+      loadNotificationSettings();
+    } else {
+      const d=await res.json(); alert(d.detail||'Failed to save notification');
+    }
+  } finally {
+    _savingNotification = false;
   }
 }
 
@@ -198,22 +205,29 @@ function openSystemNotificationModal(notificationId) {
 }
 function closeSystemNotificationModal() { document.getElementById('systemNotificationModal').classList.add('hidden'); }
 
+let _savingSystemNotification = false;
 async function submitSystemNotification() {
-  const id=document.getElementById('systemNotificationId').value;
-  const message=document.getElementById('systemNotificationMessage').value.trim();
-  const startTime=document.getElementById('systemNotificationStart').value;
-  const endTime=document.getElementById('systemNotificationEnd').value;
-  if(!message){ alert('Message is required'); return; }
-  if(message.trim().split(/\s+/).filter(Boolean).length>500){ alert('Message must be 500 words or fewer'); return; }
-  if(!startTime||!endTime){ alert('Start and end time are required'); return; }
-  const body={ message, start_time:localInputToUTC(startTime), end_time:localInputToUTC(endTime) };
-  const url=id?`/api/system-notifications/${id}`:'/api/system-notifications';
-  const res=await api(url,{method:id?'PUT':'POST',body:JSON.stringify(body)});
-  if(res?.ok){
-    closeSystemNotificationModal();
-    loadSystemNotificationSettings();
-  } else {
-    const d=await res.json(); alert(d.detail||'Failed to save system notification');
+  if (_savingSystemNotification) return;
+  _savingSystemNotification = true;
+  try {
+    const id=document.getElementById('systemNotificationId').value;
+    const message=document.getElementById('systemNotificationMessage').value.trim();
+    const startTime=document.getElementById('systemNotificationStart').value;
+    const endTime=document.getElementById('systemNotificationEnd').value;
+    if(!message){ alert('Message is required'); return; }
+    if(message.trim().split(/\s+/).filter(Boolean).length>500){ alert('Message must be 500 words or fewer'); return; }
+    if(!startTime||!endTime){ alert('Start and end time are required'); return; }
+    const body={ message, start_time:localInputToUTC(startTime), end_time:localInputToUTC(endTime) };
+    const url=id?`/api/system-notifications/${id}`:'/api/system-notifications';
+    const res=await api(url,{method:id?'PUT':'POST',body:JSON.stringify(body)});
+    if(res?.ok){
+      closeSystemNotificationModal();
+      loadSystemNotificationSettings();
+    } else {
+      const d=await res.json(); alert(d.detail||'Failed to save system notification');
+    }
+  } finally {
+    _savingSystemNotification = false;
   }
 }
 

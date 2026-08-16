@@ -139,7 +139,11 @@ async function openProjectModal(projectId) {
 }
 function closeProjectModal() { document.getElementById('projectModal').classList.add('hidden'); }
 
+let _savingProject = false;
 async function submitProject() {
+  if (_savingProject) return;
+  _savingProject = true;
+  try {
   const id=document.getElementById('projectId').value;
   const body={
     name: document.getElementById('projectName').value.trim(),
@@ -162,6 +166,9 @@ async function submitProject() {
     }
   } else {
     const d=await res.json(); alert(d.detail||'Failed to save project');
+  }
+  } finally {
+    _savingProject = false;
   }
 }
 
@@ -226,7 +233,11 @@ function editProjectTask(taskId) {
   showTaskAssignSection(t.id);
 }
 
+let _savingProjectTask = false;
 async function submitProjectTask() {
+  if (_savingProjectTask) return;
+  _savingProjectTask = true;
+  try {
   const projectId=document.getElementById('projectId').value;
   const taskId=document.getElementById('projectTaskId').value;
   const name=document.getElementById('projectTaskName').value.trim();
@@ -249,6 +260,9 @@ async function submitProjectTask() {
     showTaskAssignSection(saved.id);
   } else {
     const d=await res.json(); alert(d.detail||'Failed to save task');
+  }
+  } finally {
+    _savingProjectTask = false;
   }
 }
 
@@ -308,7 +322,11 @@ async function loadTaskAssignments(taskId) {
   toggleTaskAssignAllMode();
 }
 
+let _addingTaskAssignment = false;
 async function addTaskAssignment() {
+  if (_addingTaskAssignment) return;
+  _addingTaskAssignment = true;
+  try {
   const projectId=document.getElementById('projectId').value;
   const taskId=document.getElementById('projectTaskId').value;
   const employeeId=document.getElementById('taskAssignEmpId').value;
@@ -333,6 +351,9 @@ async function addTaskAssignment() {
     loadTaskAssignments(parseInt(taskId));
   } else {
     const d=await res.json(); alert(d.detail||'Failed to assign team member');
+  }
+  } finally {
+    _addingTaskAssignment = false;
   }
 }
 
@@ -448,22 +469,29 @@ function renderTimesheetEntries() {
   document.getElementById('tsEntryDesc').value='';
 }
 
+let _addingTimesheetEntry = false;
 async function addTimesheetEntry() {
-  const projectId=document.getElementById('tsEntryProject').value;
-  if(!projectId){ alert('You have no assigned projects to log time against. Ask HR to add you to a project.'); return; }
-  const taskId=document.getElementById('tsEntryTask').value;
-  if(!taskId){ alert('This project has no tasks defined yet. Ask HR to add a task before logging time.'); return; }
-  const date=document.getElementById('tsEntryDate').value;
-  const hours=parseFloat(document.getElementById('tsEntryHours').value);
-  if(!date||!hours){ alert('Date and hours are required.'); return; }
-  const body={ project_id:parseInt(projectId), task_id:parseInt(taskId), date, hours, description:document.getElementById('tsEntryDesc').value.trim()||null };
-  const res=await api(`/api/timesheets/${tsCurrentTimesheet.id}/entries`,{method:'POST',body:JSON.stringify(body)});
-  if(res?.ok){
-    const detailRes=await api(`/api/timesheets/${tsCurrentTimesheet.id}`);
-    tsCurrentTimesheet=await detailRes.json();
-    renderTimesheetEntries();
-  } else {
-    const d=await res.json(); alert(d.detail||'Failed to add entry');
+  if (_addingTimesheetEntry) return;
+  _addingTimesheetEntry = true;
+  try {
+    const projectId=document.getElementById('tsEntryProject').value;
+    if(!projectId){ alert('You have no assigned projects to log time against. Ask HR to add you to a project.'); return; }
+    const taskId=document.getElementById('tsEntryTask').value;
+    if(!taskId){ alert('This project has no tasks defined yet. Ask HR to add a task before logging time.'); return; }
+    const date=document.getElementById('tsEntryDate').value;
+    const hours=parseFloat(document.getElementById('tsEntryHours').value);
+    if(!date||!hours){ alert('Date and hours are required.'); return; }
+    const body={ project_id:parseInt(projectId), task_id:parseInt(taskId), date, hours, description:document.getElementById('tsEntryDesc').value.trim()||null };
+    const res=await api(`/api/timesheets/${tsCurrentTimesheet.id}/entries`,{method:'POST',body:JSON.stringify(body)});
+    if(res?.ok){
+      const detailRes=await api(`/api/timesheets/${tsCurrentTimesheet.id}`);
+      tsCurrentTimesheet=await detailRes.json();
+      renderTimesheetEntries();
+    } else {
+      const d=await res.json(); alert(d.detail||'Failed to add entry');
+    }
+  } finally {
+    _addingTimesheetEntry = false;
   }
 }
 
@@ -474,11 +502,18 @@ async function deleteTimesheetEntry(entryId) {
   renderTimesheetEntries();
 }
 
+let _submittingTimesheet = false;
 async function submitTimesheet() {
+  if (_submittingTimesheet) return;
   if(!confirm('Submit this timesheet for approval? You will not be able to edit it afterwards.')) return;
-  const res=await api(`/api/timesheets/${tsCurrentTimesheet.id}/status`,{method:'PATCH',body:JSON.stringify({status:'Submitted'})});
-  if(res?.ok){ loadCurrentTimesheet(); }
-  else { const d=await res.json(); alert(d.detail||'Failed to submit'); }
+  _submittingTimesheet = true;
+  try {
+    const res=await api(`/api/timesheets/${tsCurrentTimesheet.id}/status`,{method:'PATCH',body:JSON.stringify({status:'Submitted'})});
+    if(res?.ok){ loadCurrentTimesheet(); }
+    else { const d=await res.json(); alert(d.detail||'Failed to submit'); }
+  } finally {
+    _submittingTimesheet = false;
+  }
 }
 
 // ---------------------------------------------------------------------------

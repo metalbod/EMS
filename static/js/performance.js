@@ -78,14 +78,21 @@ function openCycleModal() {
 }
 function closeCycleModal(){ document.getElementById('cycleModal').classList.add('hidden'); }
 
+let _savingCycle = false;
 async function submitCycle() {
-  const name=document.getElementById('cycleName').value.trim();
-  const period_start=document.getElementById('cycleStart').value;
-  const period_end=document.getElementById('cycleEnd').value;
-  if(!name||!period_start||!period_end){ alert('All fields are required'); return; }
-  const res=await api('/api/performance/cycles',{method:'POST',body:JSON.stringify({name,period_start,period_end})});
-  if(res?.ok){ closeCycleModal(); loadPerformanceCycles(); }
-  else { const d=await res.json(); alert(d.detail||'Failed to create cycle'); }
+  if (_savingCycle) return;
+  _savingCycle = true;
+  try {
+    const name=document.getElementById('cycleName').value.trim();
+    const period_start=document.getElementById('cycleStart').value;
+    const period_end=document.getElementById('cycleEnd').value;
+    if(!name||!period_start||!period_end){ alert('All fields are required'); return; }
+    const res=await api('/api/performance/cycles',{method:'POST',body:JSON.stringify({name,period_start,period_end})});
+    if(res?.ok){ closeCycleModal(); loadPerformanceCycles(); }
+    else { const d=await res.json(); alert(d.detail||'Failed to create cycle'); }
+  } finally {
+    _savingCycle = false;
+  }
 }
 
 async function activateCycle(id) {
@@ -221,18 +228,25 @@ function renderKeyResultsInForm() {
     </div>`).join(''):'<p class="text-xs text-slate-400">No key results yet.</p>';
 }
 
+let _addingKeyResult = false;
 async function addKeyResultToForm() {
-  if(!currentGoalForForm){ alert('Save the goal first, then add key results.'); return; }
-  const description=document.getElementById('newKrDescription').value.trim();
-  const target_value=parseFloat(document.getElementById('newKrTarget').value)||100;
-  if(!description){ alert('Key result description is required'); return; }
-  const res=await api(`/api/performance/goals/${currentGoalForForm.id}/key-results`,{method:'POST',body:JSON.stringify({description,target_value,actual_value:0})});
-  if(res?.ok){
-    const kr=await res.json();
-    currentGoalForForm.key_results=[...(currentGoalForForm.key_results||[]), kr];
-    document.getElementById('newKrDescription').value='';
-    document.getElementById('newKrTarget').value=100;
-    renderKeyResultsInForm();
+  if (_addingKeyResult) return;
+  _addingKeyResult = true;
+  try {
+    if(!currentGoalForForm){ alert('Save the goal first, then add key results.'); return; }
+    const description=document.getElementById('newKrDescription').value.trim();
+    const target_value=parseFloat(document.getElementById('newKrTarget').value)||100;
+    if(!description){ alert('Key result description is required'); return; }
+    const res=await api(`/api/performance/goals/${currentGoalForForm.id}/key-results`,{method:'POST',body:JSON.stringify({description,target_value,actual_value:0})});
+    if(res?.ok){
+      const kr=await res.json();
+      currentGoalForForm.key_results=[...(currentGoalForForm.key_results||[]), kr];
+      document.getElementById('newKrDescription').value='';
+      document.getElementById('newKrTarget').value=100;
+      renderKeyResultsInForm();
+    }
+  } finally {
+    _addingKeyResult = false;
   }
 }
 async function updateKeyResultActual(krId, value) {
@@ -245,7 +259,11 @@ async function removeKeyResult(krId) {
   renderKeyResultsInForm();
 }
 
+let _savingGoal = false;
 async function submitGoal() {
+  if (_savingGoal) return;
+  _savingGoal = true;
+  try {
   const id=document.getElementById('goalId').value;
   const cycle_id=parseInt(document.getElementById('goalCycleId').value);
   const employee_id=document.getElementById('goalEmployeeId').value;
@@ -276,6 +294,9 @@ async function submitGoal() {
   }
   closeGoalModal();
   loadMyPerformancePage();
+  } finally {
+    _savingGoal = false;
+  }
 }
 
 async function deleteGoal(id) {
@@ -285,11 +306,18 @@ async function deleteGoal(id) {
   else { const d=await res.json(); alert(d.detail||'Failed to delete goal'); }
 }
 
+let _submittingSelfReview = false;
 async function submitSelfReview(appraisalId) {
+  if (_submittingSelfReview) return;
   const self_comments=document.getElementById('selfReviewComments').value.trim();
   if(!confirm('Submit self-review? This moves the appraisal to your manager for review.')) return;
-  const res=await api(`/api/performance/appraisals/${appraisalId}/self-review`,{method:'POST',body:JSON.stringify({self_comments})});
-  if(res?.ok){ loadMyPerformancePage(); } else { const d=await res.json(); alert(d.detail||'Failed to submit'); }
+  _submittingSelfReview = true;
+  try {
+    const res=await api(`/api/performance/appraisals/${appraisalId}/self-review`,{method:'POST',body:JSON.stringify({self_comments})});
+    if(res?.ok){ loadMyPerformancePage(); } else { const d=await res.json(); alert(d.detail||'Failed to submit'); }
+  } finally {
+    _submittingSelfReview = false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -336,13 +364,20 @@ async function openManagerReview(appraisalId) {
 }
 function closeManagerReviewModal(){ document.getElementById('managerReviewModal').classList.add('hidden'); }
 
+let _submittingManagerReview = false;
 async function submitManagerReview() {
-  const id=document.getElementById('mrAppraisalId').value;
-  const manager_rating=document.getElementById('mrRating').value?parseFloat(document.getElementById('mrRating').value):null;
-  const manager_comments=document.getElementById('mrComments').value.trim()||null;
-  const res=await api(`/api/performance/appraisals/${id}/manager-review`,{method:'POST',body:JSON.stringify({manager_rating,manager_comments})});
-  if(res?.ok){ closeManagerReviewModal(); loadTeamAppraisalsPage(); }
-  else { const d=await res.json(); alert(d.detail||'Failed to submit'); }
+  if (_submittingManagerReview) return;
+  _submittingManagerReview = true;
+  try {
+    const id=document.getElementById('mrAppraisalId').value;
+    const manager_rating=document.getElementById('mrRating').value?parseFloat(document.getElementById('mrRating').value):null;
+    const manager_comments=document.getElementById('mrComments').value.trim()||null;
+    const res=await api(`/api/performance/appraisals/${id}/manager-review`,{method:'POST',body:JSON.stringify({manager_rating,manager_comments})});
+    if(res?.ok){ closeManagerReviewModal(); loadTeamAppraisalsPage(); }
+    else { const d=await res.json(); alert(d.detail||'Failed to submit'); }
+  } finally {
+    _submittingManagerReview = false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -427,10 +462,14 @@ function openPayoutModal(appraisalId, type, employeeName) {
 }
 function closePayoutModal(){ document.getElementById('payoutModal').classList.add('hidden'); }
 
+let _submittingPayout = false;
 async function submitPayout() {
+  if (_submittingPayout) return;
   const appraisalId=document.getElementById('payoutAppraisalId').value;
   const type=document.getElementById('payoutAppraisalId').dataset.type;
   let res;
+  _submittingPayout = true;
+  try {
   if(type==='increment'){
     const increment_pct=parseFloat(document.getElementById('payoutIncrementPct').value);
     if(!increment_pct || increment_pct<=0){ alert('Enter a valid increment percentage'); return; }
@@ -443,13 +482,23 @@ async function submitPayout() {
   }
   if(res?.ok){ closePayoutModal(); loadCalibrationPage(); }
   else { const d=await res.json(); alert(d.detail||'Failed to apply payout'); }
+  } finally {
+    _submittingPayout = false;
+  }
 }
 
+let _savingCalibration = false;
 async function saveCalibration(appraisalId) {
-  const ratingInput=document.getElementById(`calib-rating-${appraisalId}`);
-  const notesInput=document.getElementById(`calib-notes-${appraisalId}`);
-  const calibrated_rating=ratingInput.value?parseFloat(ratingInput.value):null;
-  const calibration_notes=notesInput.value.trim()||null;
-  const res=await api(`/api/performance/appraisals/${appraisalId}/calibrate`,{method:'POST',body:JSON.stringify({calibrated_rating,calibration_notes})});
-  if(res?.ok){ loadCalibrationPage(); } else { const d=await res.json(); alert(d.detail||'Failed to save'); }
+  if (_savingCalibration) return;
+  _savingCalibration = true;
+  try {
+    const ratingInput=document.getElementById(`calib-rating-${appraisalId}`);
+    const notesInput=document.getElementById(`calib-notes-${appraisalId}`);
+    const calibrated_rating=ratingInput.value?parseFloat(ratingInput.value):null;
+    const calibration_notes=notesInput.value.trim()||null;
+    const res=await api(`/api/performance/appraisals/${appraisalId}/calibrate`,{method:'POST',body:JSON.stringify({calibrated_rating,calibration_notes})});
+    if(res?.ok){ loadCalibrationPage(); } else { const d=await res.json(); alert(d.detail||'Failed to save'); }
+  } finally {
+    _savingCalibration = false;
+  }
 }

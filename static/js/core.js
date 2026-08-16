@@ -80,6 +80,41 @@ function fmtDateTime(value, withSeconds) {
 }
 
 // ---------------------------------------------------------------------------
+// Double-submit guard
+// ---------------------------------------------------------------------------
+// Every `<form onsubmit="submitXForm(event)">` in this app calls a bespoke
+// per-form async handler with no protection against a rapid double-click or
+// double-Enter re-invoking it before the first request finishes — each
+// re-invocation is a real second POST, not a no-op, so it silently creates
+// a duplicate row (reported for Add Candidate / Add Dependent, but the same
+// shape everywhere a form posts to the API). Runs once at boot: rewrites
+// every `onsubmit="fn(event)"` form to disable its own submit button for
+// the duration of the async call, so a second click while one is in flight
+// is a no-op instead of a second network request. New forms get this for
+// free, matching the existing `onsubmit="fn(event)"` convention — no
+// per-form wiring needed.
+function installSubmitGuards() {
+  document.querySelectorAll('form[onsubmit]').forEach(form => {
+    const attr = form.getAttribute('onsubmit');
+    const m = attr && attr.match(/^(\w+)\(event\)$/);
+    if (!m) return;
+    const fn = window[m[1]];
+    if (typeof fn !== 'function') return;
+    form.removeAttribute('onsubmit');
+    form.addEventListener('submit', async (e) => {
+      const btn = form.querySelector('button[type="submit"]');
+      if (btn?.disabled) return;
+      if (btn) btn.disabled = true;
+      try {
+        await fn(e);
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
 // API helper
 // ---------------------------------------------------------------------------
 async function api(path, opts = {}) {
