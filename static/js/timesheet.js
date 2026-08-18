@@ -1,7 +1,9 @@
 // Timesheet / Projects
 // ---------------------------------------------------------------------------
 let projectsCache=[], myProjectsCache=[], projectFilter='';
-let projectSortKey='name', projectSortDir=1; // 1=asc, -1=desc
+// pageSize is set well above any realistic project count — this list has no
+// pagination UI, only sorting, so createListState is used sort-only here.
+const projectList = createListState({ sortKey: 'name', pageSize: 10000 });
 let tsCurrentWeekStart=null, tsCurrentTimesheet=null;
 let tsApprovalFilter='Submitted';
 const TS_STATUS_COLORS={'Draft':'bg-slate-100 text-slate-600','Submitted':'bg-amber-100 text-amber-700','Approved':'bg-green-100 text-green-700','Rejected':'bg-red-100 text-red-700'};
@@ -40,14 +42,14 @@ async function loadProjects() {
 
 function renderProjectTableHead() {
   document.getElementById('projectTableHead').innerHTML=PROJECT_TABLE_COLUMNS.map(c=>{
-    const active=projectSortKey===c.key;
-    const arrow=active?(projectSortDir===1?'▲':'▼'):'';
+    const active=projectList.sortKey===c.key;
+    const arrow=active?(projectList.sortDir==='asc'?'▲':'▼'):'';
     return `<th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide cursor-pointer select-none hover:text-slate-700" onclick="setProjectSort('${c.key}')">${c.label} <span class="text-blue-600">${arrow}</span></th>`;
   }).join('');
 }
 
 function setProjectSort(key) {
-  if(projectSortKey===key){ projectSortDir*=-1; } else { projectSortKey=key; projectSortDir=1; }
+  projectList.setSort(key);
   renderProjectTableHead();
   renderProjectTable();
 }
@@ -55,14 +57,7 @@ function setProjectSort(key) {
 function renderProjectTable() {
   const listEl=document.getElementById('projectList');
   const STATUS_COLORS={'Active':'bg-green-100 text-green-700','On Hold':'bg-amber-100 text-amber-700','Completed':'bg-slate-100 text-slate-600'};
-  const sorted=[...projectsCache].sort((a,b)=>{
-    let av=a[projectSortKey], bv=b[projectSortKey];
-    if(typeof av==='string') av=av.toLowerCase();
-    if(typeof bv==='string') bv=bv.toLowerCase();
-    if(av<bv) return -1*projectSortDir;
-    if(av>bv) return 1*projectSortDir;
-    return 0;
-  });
+  const { pageItems: sorted } = projectList.view(projectsCache);
   listEl.innerHTML=sorted.map(p=>`
     <tr class="border-t border-slate-100 cursor-pointer hover:bg-slate-50 transition" onclick="openProjectModal(${p.id})">
       <td class="px-4 py-3">
