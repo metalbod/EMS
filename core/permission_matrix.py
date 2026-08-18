@@ -543,11 +543,62 @@ ENFORCED_ACTION_KEYS = frozenset({
     # Retrofitting would silently hand superadmin banner-management access
     # it doesn't have today. Confirmed with the project owner to leave this
     # permanently out of scope, same as Payroll, Institutions, and
-    # system-wide (platform) Notifications. This closes out the permission-
-    # override retrofit rollout — every remaining module has either been
-    # retrofitted or has a documented reason (here or above) for staying on
-    # its own hardcoded gate.
+    # system-wide (platform) Notifications.
 })
+
+
+# Every module named in MATRIX with zero keys in ENFORCED_ACTION_KEYS, and
+# why — kept as data, not prose, so test_permission_matrix_consistency can
+# actually verify the claim "every module has either been retrofitted or
+# has a documented reason for staying on its own hardcoded gate" instead of
+# it just being an assertion in a comment nobody re-checks. That's exactly
+# how this went stale before: an earlier version of this file claimed
+# retrofit-or-documented coverage was complete while Performance, Overtime,
+# and Timesheets were silently neither — caught 2026-08-18 by an
+# architecture review, not by anything that would have failed a test.
+#
+# The reasons below are NOT interchangeable — some are permanent
+# (retrofitting would change who has access), others are just "not reached
+# yet" (retrofitting is behavior-neutral whenever it happens). Keep that
+# distinction when adding an entry here.
+NOT_YET_ENFORCED_MODULES: Dict[str, str] = {
+    "Payroll": (
+        "PAYROLL_MANAGE_ROLES/PAYROLL_VIEW_ROLES deliberately exclude "
+        "superadmin; has_permission()/require_permission() always grant "
+        "superadmin first, so retrofitting would silently escalate "
+        "superadmin's access. Confirmed with the project owner to leave "
+        "permanently out of scope."
+    ),
+    "Institutions (platform)": (
+        "Cross-tenant, superadmin-only by design — not part of the "
+        "per-institution override system at all."
+    ),
+    "Notifications": (
+        "Institution-level notification management (NOTIFICATION_MANAGE_ROLES "
+        "= (\"hr_manager\", \"hr_admin\")) excludes superadmin, same "
+        "escalation risk as Payroll; platform-wide notifications are "
+        "superadmin-only like Institutions. Confirmed with the project "
+        "owner to leave permanently out of scope."
+    ),
+    "Performance": (
+        "PERFORMANCE_MANAGE_ROLES = (\"hr_manager\",) excludes superadmin — "
+        "same escalation risk as Payroll (retrofitting would silently grant "
+        "superadmin merit-increment/bonus-payout access it doesn't have "
+        "today). Flagged and confirmed with the project owner (2026-08-18) "
+        "to leave out of scope for now — unlike Payroll this isn't "
+        "necessarily permanent, revisit if there's a reason to reconsider."
+    ),
+    "Overtime": (
+        "Not yet retrofitted — no escalation risk if/when it is: "
+        "OVERTIME_SETTINGS_ROLES already includes superadmin, so this one "
+        "just hasn't been reached yet, unlike Payroll/Performance above."
+    ),
+    "Timesheets": (
+        "Not yet retrofitted — no escalation risk if/when it is: its "
+        "inline role checks already include superadmin, so this one just "
+        "hasn't been reached yet, unlike Payroll/Performance above."
+    ),
+}
 
 
 def is_override_eligible(action: Dict[str, Any], role: str) -> bool:
