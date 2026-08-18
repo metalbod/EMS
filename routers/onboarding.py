@@ -415,33 +415,27 @@ def start_ob_checklist(conn, body: OBChecklistStartIn, user: dict = Depends(get_
     if template_set_id:
         _get_owning_template_set(conn, inst_id, template_set_id, body.type)
     else:
-        default_set = conn.execute(
-            "SELECT id FROM ob_template_sets WHERE institution_id=? AND type=? AND is_default=1 AND is_active=1",
-            (inst_id, body.type)
-        ).fetchone()
-        template_set_id = default_set["id"] if default_set else None
+        # Resolve through the same function create_ob_template uses, rather
+        # than a separate lookup here — the two used to disagree (this one
+        # never created a set, so it never adopted orphaned legacy templates
+        # either), which is what caused zero-item checklists and orphaned
+        # legacy checklists for institutions without an ob_template_sets row.
+        template_set_id = _resolve_or_create_default_set(conn, inst_id, body.type)
     conn.execute(
         "INSERT INTO ob_checklists (institution_id,employee_id,type,triggered_by,notes) VALUES (?,?,?,?,?)",
         (inst_id, body.employee_id, body.type, user["username"], body.notes)
     )
     cl_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-    # Snapshot active templates from the chosen (or default) template set as
-    # items. template_set_id is NULL for an institution that's never had an
-    # ob_template_sets row created (only ever used the legacy templates from
-    # seed_ob_templates, which leaves template_set_id unset) — `= ?` with a
-    # bound None never matches even a genuinely-NULL column (SQL NULL = NULL
-    # is unknown, not true), which silently produced zero checklist items
-    # for every such institution until this IS NULL branch was added.
-    if template_set_id is not None:
-        templates = conn.execute(
-            "SELECT * FROM ob_templates WHERE institution_id=? AND type=? AND template_set_id=? AND is_active=1 ORDER BY order_index",
-            (inst_id, body.type, template_set_id)
-        ).fetchall()
-    else:
-        templates = conn.execute(
-            "SELECT * FROM ob_templates WHERE institution_id=? AND type=? AND template_set_id IS NULL AND is_active=1 ORDER BY order_index",
-            (inst_id, body.type)
-        ).fetchall()
+    # Snapshot active templates from the chosen (or resolved-default)
+    # template set as items. template_set_id is always a real id by this
+    # point now — _resolve_or_create_default_set never returns None, it
+    # creates a set (and adopts any orphaned legacy templates into it) the
+    # first time one's needed — so there's no IS-NULL / legacy-templates
+    # branch to handle here any more.
+    templates = conn.execute(
+        "SELECT * FROM ob_templates WHERE institution_id=? AND type=? AND template_set_id=? AND is_active=1 ORDER BY order_index",
+        (inst_id, body.type, template_set_id)
+    ).fetchall()
     for t in templates:
         enrollment_id = None
         if t["linked_ld_course_id"]:
