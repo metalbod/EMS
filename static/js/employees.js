@@ -127,7 +127,7 @@ function viewEmployee(id) {
   document.getElementById('vt-statutory').innerHTML = vgrid([
     ['EPF Number',e.epf_number||'—',true],['SOCSO Number',e.socso_number||'—',true],
     ['Income Tax No.',e.income_tax_number||'—',true],
-    ['Basic Salary',e.basic_salary?`RM ${Number(e.basic_salary).toLocaleString('en-MY',{minimumFractionDigits:2})}`:' —'],
+    ['Basic Salary',e.basic_salary?fmtCurrency(e.basic_salary):'—'],
     ['Bank Name',e.bank_name||'—'],['Bank Account',e.bank_account||'—',true],
   ]);
   loadEmployeeLocations(id);
@@ -349,22 +349,15 @@ async function loadNotes() {
   document.getElementById('notesList').innerHTML=notesHtml+obHtml;
 }
 
-let _savingNote = false;
-async function submitNote() {
-  if (_savingNote) return;
-  _savingNote = true;
-  try {
-    const body=document.getElementById('noteBody').value.trim();
-    const type=document.getElementById('noteType').value;
-    const err=document.getElementById('noteError');
-    if(!body){err.textContent='Note cannot be empty';err.classList.remove('hidden');return;}
-    err.classList.add('hidden');
-    const res=await api(`/api/employees/${viewingId}/notes`,{method:'POST',body:JSON.stringify({note_type:type,body})});
-    if(res?.ok){document.getElementById('noteBody').value='';loadNotes();}
-  } finally {
-    _savingNote = false;
-  }
-}
+const submitNote = guardAsync(async function() {
+  const body=document.getElementById('noteBody').value.trim();
+  const type=document.getElementById('noteType').value;
+  const err=document.getElementById('noteError');
+  if(!body){err.textContent='Note cannot be empty';err.classList.remove('hidden');return;}
+  err.classList.add('hidden');
+  const res=await api(`/api/employees/${viewingId}/notes`,{method:'POST',body:JSON.stringify({note_type:type,body})});
+  if(res?.ok){document.getElementById('noteBody').value='';loadNotes();}
+});
 
 async function deleteNote(empId,noteId) {
   if(!confirm('Delete this note?')) return;

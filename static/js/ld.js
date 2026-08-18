@@ -32,7 +32,7 @@ async function loadLdCourses() {
       <p class="font-medium text-slate-800 mb-1">${esc(c.title)}</p>
       <p class="text-xs text-slate-500 mb-3 line-clamp-2">${esc(c.description||'')}</p>
       <div class="flex items-center justify-between">
-        <span class="text-sm font-medium ${c.cost>0?'text-amber-600':'text-green-600'}">${c.cost>0?'RM '+Number(c.cost).toLocaleString('en-MY',{minimumFractionDigits:2}):'Free'}</span>
+        <span class="text-sm font-medium ${c.cost>0?'text-amber-600':'text-green-600'}">${c.cost>0?fmtCurrency(c.cost):'Free'}</span>
         <div class="flex items-center gap-2">
           ${canManage?`<button onclick="openLdPreviewQuizModal(${c.id})" class="btn-ghost text-xs px-3 py-1.5 border border-slate-200">Preview</button>`:''}
           <button onclick="openLdEnrollModal(${c.id})" class="btn-primary text-xs px-3 py-1.5">Enroll</button>
@@ -95,7 +95,7 @@ function openLdEnrollModal(courseId) {
   const course=ldCoursesCache.find(c=>c.id===courseId);
   const costNote=document.getElementById('ldEnrollCostNote');
   if(course && course.cost>0){
-    costNote.textContent=`This course costs RM ${Number(course.cost).toLocaleString('en-MY',{minimumFractionDigits:2})} — enrollment will require manager/HR approval before starting.`;
+    costNote.textContent=`This course costs ${fmtCurrency(course.cost)} — enrollment will require manager/HR approval before starting.`;
     costNote.classList.remove('hidden');
   } else {
     costNote.classList.add('hidden');
@@ -290,11 +290,7 @@ function addLdQuizOption(idx) {
   optsEl.appendChild(div);
 }
 
-let _savingLdQuiz = false;
-async function submitLdQuiz() {
-  if (_savingLdQuiz) return;
-  _savingLdQuiz = true;
-  try {
+const submitLdQuiz = guardAsync(async function() {
   const courseId=document.getElementById('ldQuizCourseId').value;
   const title=document.getElementById('ldQuizTitle').value.trim();
   if(!title){alert('Quiz title is required');return;}
@@ -326,10 +322,7 @@ async function submitLdQuiz() {
   const res=await api(`/api/ld/courses/${courseId}/quiz`,{method:'PUT',body:JSON.stringify(body)});
   if(res?.ok){closeLdQuizModal();loadLdCourses();}
   else{const d=await res.json();alert(d.detail||'Failed to save quiz');}
-  } finally {
-    _savingLdQuiz = false;
-  }
-}
+});
 
 async function deleteLdQuiz() {
   if(!confirm('Remove this quiz? Employees will be able to mark the course complete manually instead.')) return;
@@ -372,11 +365,7 @@ function closeLdTakeQuizModal() {
   document.getElementById('ldTakeQuizModal').classList.add('hidden');
 }
 
-let _savingLdQuizAttempt = false;
-async function submitLdQuizAttempt() {
-  if (_savingLdQuizAttempt) return;
-  _savingLdQuizAttempt = true;
-  try {
+const submitLdQuizAttempt = guardAsync(async function() {
   const quizId=document.getElementById('ldTakeQuizId').value;
   const questionEls=document.querySelectorAll('#ldTakeQuizQuestions > div');
   const answers={};
@@ -409,10 +398,7 @@ async function submitLdQuizAttempt() {
     if(remaining<=0) document.getElementById('ldTakeQuizSubmitBtn').classList.add('hidden');
   }
   loadLdEnrollments();
-  } finally {
-    _savingLdQuizAttempt = false;
-  }
-}
+});
 
 // ---------------------------------------------------------------------------
 // Course Modules — Editor (HR)
@@ -466,24 +452,17 @@ function ldMoveModule(idx, dir) {
   if(dir>0 && el.nextElementSibling) el.parentElement.insertBefore(el.nextElementSibling, el);
 }
 
-let _savingLdModules = false;
-async function submitLdModules() {
-  if (_savingLdModules) return;
-  _savingLdModules = true;
-  try {
-    const courseId=document.getElementById('ldModulesCourseId').value;
-    const modules=[...document.querySelectorAll('#ldModulesList > div')].map(el=>({
-      title: el.querySelector('.ldm-title').value.trim(),
-      content_type: el.dataset.contentType,
-      content: el.querySelector('.ldm-content').value.trim()||null
-    })).filter(m=>m.title);
-    const res=await api(`/api/ld/courses/${courseId}/modules`,{method:'PUT',body:JSON.stringify({modules})});
-    if(res?.ok){closeLdModulesModal();loadLdCourses();}
-    else{const d=await res.json();alert(d.detail||'Failed to save content');}
-  } finally {
-    _savingLdModules = false;
-  }
-}
+const submitLdModules = guardAsync(async function() {
+  const courseId=document.getElementById('ldModulesCourseId').value;
+  const modules=[...document.querySelectorAll('#ldModulesList > div')].map(el=>({
+    title: el.querySelector('.ldm-title').value.trim(),
+    content_type: el.dataset.contentType,
+    content: el.querySelector('.ldm-content').value.trim()||null
+  })).filter(m=>m.title);
+  const res=await api(`/api/ld/courses/${courseId}/modules`,{method:'PUT',body:JSON.stringify({modules})});
+  if(res?.ok){closeLdModulesModal();loadLdCourses();}
+  else{const d=await res.json();alert(d.detail||'Failed to save content');}
+});
 
 // ---------------------------------------------------------------------------
 // Course Modules — Viewer (Employee)

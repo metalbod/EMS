@@ -123,7 +123,7 @@ async function openReqDetail(reqId) {
   document.getElementById('rdMeta').textContent=`${r.department} · ${r.employment_type} · HC: ${r.headcount} · By ${r.created_by}`;
   const badge=document.getElementById('rdBadge');
   badge.textContent=r.status; badge.className=`badge ${reqStatusBadge(r.status)}`;
-  const sal=r.salary_min||r.salary_max?`RM ${(r.salary_min||0).toLocaleString()} – RM ${(r.salary_max||0).toLocaleString()}`:'Not specified';
+  const sal=r.salary_min||r.salary_max?`${fmtCurrency(r.salary_min||0)} – ${fmtCurrency(r.salary_max||0)}`:'Not specified';
   document.getElementById('rdBody').innerHTML=`
     <div class="grid grid-cols-2 gap-4">
       <div><p class="text-xs text-slate-400 mb-1">Priority</p><span class="badge ${priorityBadge(r.priority)}">${esc(r.priority)}</span></div>
@@ -154,19 +154,12 @@ async function editReqFromDetail(){
   openReqModal(r);
 }
 
-let _submittingReqForApproval = false;
-async function submitReqForApproval() {
-  if (_submittingReqForApproval) return;
+const submitReqForApproval = guardAsync(async function() {
   if(!viewingReqId) return;
-  _submittingReqForApproval = true;
-  try {
-    const res=await api(`/api/recruitment/requisitions/${viewingReqId}/submit`,{method:'PATCH',body:JSON.stringify({})});
-    if(!res||!res.ok) return;
-    closeReqDetailModal(); loadRequisitions();
-  } finally {
-    _submittingReqForApproval = false;
-  }
-}
+  const res=await api(`/api/recruitment/requisitions/${viewingReqId}/submit`,{method:'PATCH',body:JSON.stringify({})});
+  if(!res||!res.ok) return;
+  closeReqDetailModal(); loadRequisitions();
+});
 async function approveReq(action) {
   if(!viewingReqId) return;
   const comments=document.getElementById('rdComments').value;
@@ -704,7 +697,7 @@ async function loadOffers() {
       <td class="px-4 py-3 font-medium text-slate-800">${esc(o.candidate_name)}</td>
       <td class="px-4 py-3 text-slate-600 hidden md:table-cell">${esc(o.requisition_title||'—')}</td>
       <td class="px-4 py-3"><span class="badge ${o.offer_type==='Offer'?'bg-green-100 text-green-700':'bg-red-100 text-red-600'}">${esc(o.offer_type)}</span></td>
-      <td class="px-4 py-3 text-slate-700 hidden lg:table-cell">${o.salary_offered?'RM '+parseFloat(o.salary_offered).toLocaleString():'—'}</td>
+      <td class="px-4 py-3 text-slate-700 hidden lg:table-cell">${fmtCurrency(o.salary_offered)}</td>
       <td class="px-4 py-3"><span class="badge ${offerStatusBadge(o.status)}">${esc(o.status)}</span></td>
       <td class="px-4 py-3 text-right"><button class="btn-ghost text-xs" onclick="event.stopPropagation();openOfferView(${o.id})">View</button></td>
     </tr>`).join('');

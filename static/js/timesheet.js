@@ -139,11 +139,7 @@ async function openProjectModal(projectId) {
 }
 function closeProjectModal() { document.getElementById('projectModal').classList.add('hidden'); }
 
-let _savingProject = false;
-async function submitProject() {
-  if (_savingProject) return;
-  _savingProject = true;
-  try {
+const submitProject = guardAsync(async function() {
   const id=document.getElementById('projectId').value;
   const body={
     name: document.getElementById('projectName').value.trim(),
@@ -167,10 +163,7 @@ async function submitProject() {
   } else {
     const d=await res.json(); alert(d.detail||'Failed to save project');
   }
-  } finally {
-    _savingProject = false;
-  }
-}
+});
 
 async function deleteProject(projectId) {
   if(!confirm('Delete this project?')) return;
@@ -233,11 +226,7 @@ function editProjectTask(taskId) {
   showTaskAssignSection(t.id);
 }
 
-let _savingProjectTask = false;
-async function submitProjectTask() {
-  if (_savingProjectTask) return;
-  _savingProjectTask = true;
-  try {
+const submitProjectTask = guardAsync(async function() {
   const projectId=document.getElementById('projectId').value;
   const taskId=document.getElementById('projectTaskId').value;
   const name=document.getElementById('projectTaskName').value.trim();
@@ -261,10 +250,7 @@ async function submitProjectTask() {
   } else {
     const d=await res.json(); alert(d.detail||'Failed to save task');
   }
-  } finally {
-    _savingProjectTask = false;
-  }
-}
+});
 
 async function deleteProjectTask(projectId, taskId) {
   if(!confirm('Delete this task?')) return;
@@ -322,11 +308,7 @@ async function loadTaskAssignments(taskId) {
   toggleTaskAssignAllMode();
 }
 
-let _addingTaskAssignment = false;
-async function addTaskAssignment() {
-  if (_addingTaskAssignment) return;
-  _addingTaskAssignment = true;
-  try {
+const addTaskAssignment = guardAsync(async function() {
   const projectId=document.getElementById('projectId').value;
   const taskId=document.getElementById('projectTaskId').value;
   const employeeId=document.getElementById('taskAssignEmpId').value;
@@ -352,10 +334,7 @@ async function addTaskAssignment() {
   } else {
     const d=await res.json(); alert(d.detail||'Failed to assign team member');
   }
-  } finally {
-    _addingTaskAssignment = false;
-  }
-}
+});
 
 async function removeTaskAssignment(taskId, employeeId) {
   const projectId=document.getElementById('projectId').value;
@@ -469,31 +448,24 @@ function renderTimesheetEntries() {
   document.getElementById('tsEntryDesc').value='';
 }
 
-let _addingTimesheetEntry = false;
-async function addTimesheetEntry() {
-  if (_addingTimesheetEntry) return;
-  _addingTimesheetEntry = true;
-  try {
-    const projectId=document.getElementById('tsEntryProject').value;
-    if(!projectId){ alert('You have no assigned projects to log time against. Ask HR to add you to a project.'); return; }
-    const taskId=document.getElementById('tsEntryTask').value;
-    if(!taskId){ alert('This project has no tasks defined yet. Ask HR to add a task before logging time.'); return; }
-    const date=document.getElementById('tsEntryDate').value;
-    const hours=parseFloat(document.getElementById('tsEntryHours').value);
-    if(!date||!hours){ alert('Date and hours are required.'); return; }
-    const body={ project_id:parseInt(projectId), task_id:parseInt(taskId), date, hours, description:document.getElementById('tsEntryDesc').value.trim()||null };
-    const res=await api(`/api/timesheets/${tsCurrentTimesheet.id}/entries`,{method:'POST',body:JSON.stringify(body)});
-    if(res?.ok){
-      const detailRes=await api(`/api/timesheets/${tsCurrentTimesheet.id}`);
-      tsCurrentTimesheet=await detailRes.json();
-      renderTimesheetEntries();
-    } else {
-      const d=await res.json(); alert(d.detail||'Failed to add entry');
-    }
-  } finally {
-    _addingTimesheetEntry = false;
+const addTimesheetEntry = guardAsync(async function() {
+  const projectId=document.getElementById('tsEntryProject').value;
+  if(!projectId){ alert('You have no assigned projects to log time against. Ask HR to add you to a project.'); return; }
+  const taskId=document.getElementById('tsEntryTask').value;
+  if(!taskId){ alert('This project has no tasks defined yet. Ask HR to add a task before logging time.'); return; }
+  const date=document.getElementById('tsEntryDate').value;
+  const hours=parseFloat(document.getElementById('tsEntryHours').value);
+  if(!date||!hours){ alert('Date and hours are required.'); return; }
+  const body={ project_id:parseInt(projectId), task_id:parseInt(taskId), date, hours, description:document.getElementById('tsEntryDesc').value.trim()||null };
+  const res=await api(`/api/timesheets/${tsCurrentTimesheet.id}/entries`,{method:'POST',body:JSON.stringify(body)});
+  if(res?.ok){
+    const detailRes=await api(`/api/timesheets/${tsCurrentTimesheet.id}`);
+    tsCurrentTimesheet=await detailRes.json();
+    renderTimesheetEntries();
+  } else {
+    const d=await res.json(); alert(d.detail||'Failed to add entry');
   }
-}
+});
 
 async function deleteTimesheetEntry(entryId) {
   await api(`/api/timesheets/${tsCurrentTimesheet.id}/entries/${entryId}`,{method:'DELETE'});
@@ -502,19 +474,12 @@ async function deleteTimesheetEntry(entryId) {
   renderTimesheetEntries();
 }
 
-let _submittingTimesheet = false;
-async function submitTimesheet() {
-  if (_submittingTimesheet) return;
+const submitTimesheet = guardAsync(async function() {
   if(!confirm('Submit this timesheet for approval? You will not be able to edit it afterwards.')) return;
-  _submittingTimesheet = true;
-  try {
-    const res=await api(`/api/timesheets/${tsCurrentTimesheet.id}/status`,{method:'PATCH',body:JSON.stringify({status:'Submitted'})});
-    if(res?.ok){ loadCurrentTimesheet(); }
-    else { const d=await res.json(); alert(d.detail||'Failed to submit'); }
-  } finally {
-    _submittingTimesheet = false;
-  }
-}
+  const res=await api(`/api/timesheets/${tsCurrentTimesheet.id}/status`,{method:'PATCH',body:JSON.stringify({status:'Submitted'})});
+  if(res?.ok){ loadCurrentTimesheet(); }
+  else { const d=await res.json(); alert(d.detail||'Failed to submit'); }
+});
 
 // ---------------------------------------------------------------------------
 // Timesheet Approvals (manager / HR)
@@ -619,7 +584,7 @@ async function loadMyOvertimePage() {
       <div class="flex-1">
         <p class="font-medium text-slate-800">${fmtDate(o.work_date)}</p>
         <p class="text-xs text-slate-500">${o.logged_hours}h logged vs ${o.threshold_hours}h normal — <span class="font-medium text-amber-700">${o.overtime_hours}h overtime</span></p>
-        ${o.status==='Approved'?`<p class="text-xs text-green-700 mt-1">${o.conversion_mode==='leave'?`+${o.leave_days_credited} day(s) credited`:`RM ${Number(o.pay_amount).toFixed(2)} tracked`}</p>`:''}
+        ${o.status==='Approved'?`<p class="text-xs text-green-700 mt-1">${o.conversion_mode==='leave'?`+${o.leave_days_credited} day(s) credited`:`${fmtCurrency(o.pay_amount)} tracked`}</p>`:''}
       </div>
       <span class="badge ${OT_STATUS_COLORS[o.status]||'bg-slate-100 text-slate-600'} text-xs">${o.status}</span>
     </div>`).join('');

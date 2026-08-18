@@ -80,6 +80,19 @@ function fmtDateTime(value, withSeconds) {
 }
 
 // ---------------------------------------------------------------------------
+// Currency display: "RM 1,234.56" everywhere (was 3 implementations —
+// fmtRM in benefits.js, fmtMoney in payroll.js, ~40 inline
+// Number(x).toLocaleString('en-MY', {...}) calls — each with slightly
+// different null handling, locale, and decimal-count behavior).
+// ---------------------------------------------------------------------------
+function fmtCurrency(v, decimals = 2) {
+  if (v == null || v === '') return '—';
+  const n = Number(v);
+  if (isNaN(n)) return '—';
+  return `RM ${n.toLocaleString('en-MY', {minimumFractionDigits: decimals, maximumFractionDigits: decimals})}`;
+}
+
+// ---------------------------------------------------------------------------
 // Double-submit guard
 // ---------------------------------------------------------------------------
 // Every `<form onsubmit="submitXForm(event)">` in this app calls a bespoke
@@ -112,6 +125,29 @@ function installSubmitGuards() {
       }
     });
   });
+}
+
+// The onclick-wired counterpart to installSubmitGuards above: a Save/Add/
+// Create button wired via onclick="fn()" instead of a form submit doesn't
+// go through a <form>, so the boot-time DOM rewrite above can't reach it.
+// Wrap the handler at its definition instead — replaces 31 hand-written
+// `let _savingX = false; if (_savingX) return; ... try {...} finally {
+// _savingX = false; }` copies (one per such button) with one shared
+// wrapper. Same re-entrancy semantics as those copies: a call while one is
+// already in flight is a silent no-op, keyed per wrapped function (not per
+// argument), matching how e.g. saveObTemplateSet('onboarding') and
+// saveObTemplateSet('offboarding') already shared one guard.
+function guardAsync(fn) {
+  let inFlight = false;
+  return async function guarded(...args) {
+    if (inFlight) return;
+    inFlight = true;
+    try {
+      return await fn.apply(this, args);
+    } finally {
+      inFlight = false;
+    }
+  };
 }
 
 // ---------------------------------------------------------------------------

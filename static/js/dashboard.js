@@ -251,8 +251,8 @@ function loadCompensationDash() {
       _lastBenefitsDashboard = s;
       document.getElementById('bdActivePlans').textContent = s.total_active_plans;
       document.getElementById('bdEnrolledEmployees').textContent = s.total_enrolled_employees;
-      document.getElementById('bdEmployerCost').textContent = fmtRM(s.total_monthly_employer_cost);
-      document.getElementById('bdClaimsPaid').textContent = fmtRM(s.total_claims_paid_ytd);
+      document.getElementById('bdEmployerCost').textContent = fmtCurrency(s.total_monthly_employer_cost);
+      document.getElementById('bdClaimsPaid').textContent = fmtCurrency(s.total_claims_paid_ytd);
 
       const deptEl = document.getElementById('bdDeptCostList');
       document.getElementById('bdDeptCostEmpty')?.classList.toggle('hidden', s.department_costs.length > 0);
@@ -263,7 +263,7 @@ function loadCompensationDash() {
           <div class="flex-1 bg-slate-100 rounded-full h-2">
             <div class="bg-blue-500 h-2 rounded-full" style="width:${Math.round(d.monthly_employer_cost_total/maxDeptCost*100)}%"></div>
           </div>
-          <div class="text-xs text-slate-500 w-20 text-right">${fmtRM(d.monthly_employer_cost_total)}</div>
+          <div class="text-xs text-slate-500 w-20 text-right">${fmtCurrency(d.monthly_employer_cost_total)}</div>
         </div>`).join('');
 
       const planEl = document.getElementById('bdPlanUtilList');
@@ -271,8 +271,8 @@ function loadCompensationDash() {
       planEl.innerHTML = s.plan_utilization.map(p => `
         <tr class="border-t border-slate-100">
           <td class="py-1.5 text-xs text-slate-600 truncate max-w-[9rem]" title="${esc(p.plan_name)}">${esc(p.plan_name)}</td>
-          <td class="py-1.5 text-xs text-slate-700 text-right">${fmtRM(p.claims_claimed_ytd)}</td>
-          <td class="py-1.5 text-xs text-slate-700 text-right">${fmtRM(p.claims_paid_ytd)}</td>
+          <td class="py-1.5 text-xs text-slate-700 text-right">${fmtCurrency(p.claims_claimed_ytd)}</td>
+          <td class="py-1.5 text-xs text-slate-700 text-right">${fmtCurrency(p.claims_paid_ytd)}</td>
         </tr>`).join('');
     });
   }
@@ -297,7 +297,7 @@ function loadCompensationDash() {
         <div class="flex items-center justify-between py-1.5 border-b border-slate-100 last:border-0">
           <div>
             <p class="text-sm text-slate-700">${esc(c.plan_name)}</p>
-            <p class="text-xs text-slate-400">${fmtDate(c.claim_date)} · ${fmtRM(c.amount_claimed)}</p>
+            <p class="text-xs text-slate-400">${fmtDate(c.claim_date)} · ${fmtCurrency(c.amount_claimed)}</p>
           </div>
           <span class="badge ${claimBadge(c.status)}">${esc(c.status)}</span>
         </div>`).join('');
@@ -310,7 +310,7 @@ function loadCompensationDash() {
         <div>
           <div class="flex items-center justify-between mb-1">
             <span class="text-sm text-slate-700">${esc(b.plan_name)}</span>
-            <span class="text-xs text-slate-500">${fmtRM(b.remaining_amount)} left of ${fmtRM(b.annual_cap)}</span>
+            <span class="text-xs text-slate-500">${fmtCurrency(b.remaining_amount)} left of ${fmtCurrency(b.annual_cap)}</span>
           </div>
           <div class="bg-slate-100 rounded-full h-2">
             <div class="bg-emerald-500 h-2 rounded-full" style="width:${pctUsed}%"></div>

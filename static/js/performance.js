@@ -78,22 +78,15 @@ function openCycleModal() {
 }
 function closeCycleModal(){ document.getElementById('cycleModal').classList.add('hidden'); }
 
-let _savingCycle = false;
-async function submitCycle() {
-  if (_savingCycle) return;
-  _savingCycle = true;
-  try {
-    const name=document.getElementById('cycleName').value.trim();
-    const period_start=document.getElementById('cycleStart').value;
-    const period_end=document.getElementById('cycleEnd').value;
-    if(!name||!period_start||!period_end){ alert('All fields are required'); return; }
-    const res=await api('/api/performance/cycles',{method:'POST',body:JSON.stringify({name,period_start,period_end})});
-    if(res?.ok){ closeCycleModal(); loadPerformanceCycles(); }
-    else { const d=await res.json(); alert(d.detail||'Failed to create cycle'); }
-  } finally {
-    _savingCycle = false;
-  }
-}
+const submitCycle = guardAsync(async function() {
+  const name=document.getElementById('cycleName').value.trim();
+  const period_start=document.getElementById('cycleStart').value;
+  const period_end=document.getElementById('cycleEnd').value;
+  if(!name||!period_start||!period_end){ alert('All fields are required'); return; }
+  const res=await api('/api/performance/cycles',{method:'POST',body:JSON.stringify({name,period_start,period_end})});
+  if(res?.ok){ closeCycleModal(); loadPerformanceCycles(); }
+  else { const d=await res.json(); alert(d.detail||'Failed to create cycle'); }
+});
 
 async function activateCycle(id) {
   if(!confirm('Activate this cycle? This opens goal-setting and creates a self-review appraisal for every active employee.')) return;
@@ -228,27 +221,20 @@ function renderKeyResultsInForm() {
     </div>`).join(''):'<p class="text-xs text-slate-400">No key results yet.</p>';
 }
 
-let _addingKeyResult = false;
-async function addKeyResultToForm() {
-  if (_addingKeyResult) return;
-  _addingKeyResult = true;
-  try {
-    if(!currentGoalForForm){ alert('Save the goal first, then add key results.'); return; }
-    const description=document.getElementById('newKrDescription').value.trim();
-    const target_value=parseFloat(document.getElementById('newKrTarget').value)||100;
-    if(!description){ alert('Key result description is required'); return; }
-    const res=await api(`/api/performance/goals/${currentGoalForForm.id}/key-results`,{method:'POST',body:JSON.stringify({description,target_value,actual_value:0})});
-    if(res?.ok){
-      const kr=await res.json();
-      currentGoalForForm.key_results=[...(currentGoalForForm.key_results||[]), kr];
-      document.getElementById('newKrDescription').value='';
-      document.getElementById('newKrTarget').value=100;
-      renderKeyResultsInForm();
-    }
-  } finally {
-    _addingKeyResult = false;
+const addKeyResultToForm = guardAsync(async function() {
+  if(!currentGoalForForm){ alert('Save the goal first, then add key results.'); return; }
+  const description=document.getElementById('newKrDescription').value.trim();
+  const target_value=parseFloat(document.getElementById('newKrTarget').value)||100;
+  if(!description){ alert('Key result description is required'); return; }
+  const res=await api(`/api/performance/goals/${currentGoalForForm.id}/key-results`,{method:'POST',body:JSON.stringify({description,target_value,actual_value:0})});
+  if(res?.ok){
+    const kr=await res.json();
+    currentGoalForForm.key_results=[...(currentGoalForForm.key_results||[]), kr];
+    document.getElementById('newKrDescription').value='';
+    document.getElementById('newKrTarget').value=100;
+    renderKeyResultsInForm();
   }
-}
+});
 async function updateKeyResultActual(krId, value) {
   const kr=currentGoalForForm.key_results.find(k=>k.id===krId);
   await api(`/api/performance/key-results/${krId}`,{method:'PUT',body:JSON.stringify({description:kr.description,target_value:kr.target_value,actual_value:parseFloat(value)||0})});
@@ -259,11 +245,7 @@ async function removeKeyResult(krId) {
   renderKeyResultsInForm();
 }
 
-let _savingGoal = false;
-async function submitGoal() {
-  if (_savingGoal) return;
-  _savingGoal = true;
-  try {
+const submitGoal = guardAsync(async function() {
   const id=document.getElementById('goalId').value;
   const cycle_id=parseInt(document.getElementById('goalCycleId').value);
   const employee_id=document.getElementById('goalEmployeeId').value;
@@ -294,10 +276,7 @@ async function submitGoal() {
   }
   closeGoalModal();
   loadMyPerformancePage();
-  } finally {
-    _savingGoal = false;
-  }
-}
+});
 
 async function deleteGoal(id) {
   if(!confirm('Delete this goal?')) return;
@@ -306,19 +285,12 @@ async function deleteGoal(id) {
   else { const d=await res.json(); alert(d.detail||'Failed to delete goal'); }
 }
 
-let _submittingSelfReview = false;
-async function submitSelfReview(appraisalId) {
-  if (_submittingSelfReview) return;
+const submitSelfReview = guardAsync(async function(appraisalId) {
   const self_comments=document.getElementById('selfReviewComments').value.trim();
   if(!confirm('Submit self-review? This moves the appraisal to your manager for review.')) return;
-  _submittingSelfReview = true;
-  try {
-    const res=await api(`/api/performance/appraisals/${appraisalId}/self-review`,{method:'POST',body:JSON.stringify({self_comments})});
-    if(res?.ok){ loadMyPerformancePage(); } else { const d=await res.json(); alert(d.detail||'Failed to submit'); }
-  } finally {
-    _submittingSelfReview = false;
-  }
-}
+  const res=await api(`/api/performance/appraisals/${appraisalId}/self-review`,{method:'POST',body:JSON.stringify({self_comments})});
+  if(res?.ok){ loadMyPerformancePage(); } else { const d=await res.json(); alert(d.detail||'Failed to submit'); }
+});
 
 // ---------------------------------------------------------------------------
 // Team Appraisals (manager / hr_manager)
@@ -364,21 +336,14 @@ async function openManagerReview(appraisalId) {
 }
 function closeManagerReviewModal(){ document.getElementById('managerReviewModal').classList.add('hidden'); }
 
-let _submittingManagerReview = false;
-async function submitManagerReview() {
-  if (_submittingManagerReview) return;
-  _submittingManagerReview = true;
-  try {
-    const id=document.getElementById('mrAppraisalId').value;
-    const manager_rating=document.getElementById('mrRating').value?parseFloat(document.getElementById('mrRating').value):null;
-    const manager_comments=document.getElementById('mrComments').value.trim()||null;
-    const res=await api(`/api/performance/appraisals/${id}/manager-review`,{method:'POST',body:JSON.stringify({manager_rating,manager_comments})});
-    if(res?.ok){ closeManagerReviewModal(); loadTeamAppraisalsPage(); }
-    else { const d=await res.json(); alert(d.detail||'Failed to submit'); }
-  } finally {
-    _submittingManagerReview = false;
-  }
-}
+const submitManagerReview = guardAsync(async function() {
+  const id=document.getElementById('mrAppraisalId').value;
+  const manager_rating=document.getElementById('mrRating').value?parseFloat(document.getElementById('mrRating').value):null;
+  const manager_comments=document.getElementById('mrComments').value.trim()||null;
+  const res=await api(`/api/performance/appraisals/${id}/manager-review`,{method:'POST',body:JSON.stringify({manager_rating,manager_comments})});
+  if(res?.ok){ closeManagerReviewModal(); loadTeamAppraisalsPage(); }
+  else { const d=await res.json(); alert(d.detail||'Failed to submit'); }
+});
 
 // ---------------------------------------------------------------------------
 // Calibration (hr_manager)
@@ -444,7 +409,7 @@ function renderPayoutCell(a, payouts) {
     ? `<span class="text-xs text-green-600">+${increment.increment_pct}% applied</span>`
     : `<button onclick='openPayoutModal(${a.id},"increment","${esc(a.full_name)}")' class="text-xs text-blue-600 hover:underline">Apply Increment</button>`;
   const bonusHtml=bonuses.length
-    ? `<span class="text-xs ${bonuses.some(p=>p.status==='Pending')?'text-amber-600':'text-green-600'}">RM ${bonusTotal.toFixed(2)} ${bonuses.some(p=>p.status==='Pending')?'queued':'paid'}</span> <button onclick='openPayoutModal(${a.id},"bonus","${esc(a.full_name)}")' class="text-xs text-blue-600 hover:underline">+Add</button>`
+    ? `<span class="text-xs ${bonuses.some(p=>p.status==='Pending')?'text-amber-600':'text-green-600'}">${fmtCurrency(bonusTotal)} ${bonuses.some(p=>p.status==='Pending')?'queued':'paid'}</span> <button onclick='openPayoutModal(${a.id},"bonus","${esc(a.full_name)}")' class="text-xs text-blue-600 hover:underline">+Add</button>`
     : `<button onclick='openPayoutModal(${a.id},"bonus","${esc(a.full_name)}")' class="text-xs text-blue-600 hover:underline">Add Bonus</button>`;
   return `<div class="flex flex-col gap-1">${incrementHtml}${bonusHtml}</div>`;
 }
@@ -462,14 +427,10 @@ function openPayoutModal(appraisalId, type, employeeName) {
 }
 function closePayoutModal(){ document.getElementById('payoutModal').classList.add('hidden'); }
 
-let _submittingPayout = false;
-async function submitPayout() {
-  if (_submittingPayout) return;
+const submitPayout = guardAsync(async function() {
   const appraisalId=document.getElementById('payoutAppraisalId').value;
   const type=document.getElementById('payoutAppraisalId').dataset.type;
   let res;
-  _submittingPayout = true;
-  try {
   if(type==='increment'){
     const increment_pct=parseFloat(document.getElementById('payoutIncrementPct').value);
     if(!increment_pct || increment_pct<=0){ alert('Enter a valid increment percentage'); return; }
@@ -482,23 +443,13 @@ async function submitPayout() {
   }
   if(res?.ok){ closePayoutModal(); loadCalibrationPage(); }
   else { const d=await res.json(); alert(d.detail||'Failed to apply payout'); }
-  } finally {
-    _submittingPayout = false;
-  }
-}
+});
 
-let _savingCalibration = false;
-async function saveCalibration(appraisalId) {
-  if (_savingCalibration) return;
-  _savingCalibration = true;
-  try {
-    const ratingInput=document.getElementById(`calib-rating-${appraisalId}`);
-    const notesInput=document.getElementById(`calib-notes-${appraisalId}`);
-    const calibrated_rating=ratingInput.value?parseFloat(ratingInput.value):null;
-    const calibration_notes=notesInput.value.trim()||null;
-    const res=await api(`/api/performance/appraisals/${appraisalId}/calibrate`,{method:'POST',body:JSON.stringify({calibrated_rating,calibration_notes})});
-    if(res?.ok){ loadCalibrationPage(); } else { const d=await res.json(); alert(d.detail||'Failed to save'); }
-  } finally {
-    _savingCalibration = false;
-  }
-}
+const saveCalibration = guardAsync(async function(appraisalId) {
+  const ratingInput=document.getElementById(`calib-rating-${appraisalId}`);
+  const notesInput=document.getElementById(`calib-notes-${appraisalId}`);
+  const calibrated_rating=ratingInput.value?parseFloat(ratingInput.value):null;
+  const calibration_notes=notesInput.value.trim()||null;
+  const res=await api(`/api/performance/appraisals/${appraisalId}/calibrate`,{method:'POST',body:JSON.stringify({calibrated_rating,calibration_notes})});
+  if(res?.ok){ loadCalibrationPage(); } else { const d=await res.json(); alert(d.detail||'Failed to save'); }
+});

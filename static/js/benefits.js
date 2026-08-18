@@ -26,7 +26,7 @@ function renderBenefitPlansTable() {
   const fmtCost = (v, type) => {
     if (v == null) return '—';
     if (type === 'Percent of Salary') return `${Number(v)}%`;
-    return `RM ${Number(v).toLocaleString('en-MY', {minimumFractionDigits: 2})}`;
+    return fmtCurrency(v);
   };
 
   tbody.innerHTML = benefitPlans.map(p => `
@@ -141,35 +141,28 @@ function renderEligibilityRules(rules) {
   `).join('');
 }
 
-let _addingEligibilityRule = false;
-async function addEligibilityRule() {
-  if (_addingEligibilityRule) return;
-  _addingEligibilityRule = true;
-  try {
-    const jobLevelId = document.getElementById('benEligJobLevel').value;
-    const payGradeId = document.getElementById('benEligPayGrade').value;
-    if (!jobLevelId && !payGradeId) {
-      alert('Select a job level or pay grade to add.');
-      return;
-    }
-    const res = await api(`/api/benefits/plans/${currentBenefitPlanId}/eligibility-rules`, {
-      method: 'POST',
-      body: JSON.stringify({
-        job_level_id: jobLevelId ? parseInt(jobLevelId) : null,
-        pay_grade_id: payGradeId ? parseInt(payGradeId) : null,
-      }),
-    });
-    if (!res || !res.ok) {
-      alert('Error: ' + (await res.json()).detail);
-      return;
-    }
-    document.getElementById('benEligJobLevel').value = '';
-    document.getElementById('benEligPayGrade').value = '';
-    loadEligibilityRules(currentBenefitPlanId);
-  } finally {
-    _addingEligibilityRule = false;
+const addEligibilityRule = guardAsync(async function() {
+  const jobLevelId = document.getElementById('benEligJobLevel').value;
+  const payGradeId = document.getElementById('benEligPayGrade').value;
+  if (!jobLevelId && !payGradeId) {
+    alert('Select a job level or pay grade to add.');
+    return;
   }
-}
+  const res = await api(`/api/benefits/plans/${currentBenefitPlanId}/eligibility-rules`, {
+    method: 'POST',
+    body: JSON.stringify({
+      job_level_id: jobLevelId ? parseInt(jobLevelId) : null,
+      pay_grade_id: payGradeId ? parseInt(payGradeId) : null,
+    }),
+  });
+  if (!res || !res.ok) {
+    alert('Error: ' + (await res.json()).detail);
+    return;
+  }
+  document.getElementById('benEligJobLevel').value = '';
+  document.getElementById('benEligPayGrade').value = '';
+  loadEligibilityRules(currentBenefitPlanId);
+});
 
 async function removeEligibilityRule(ruleId) {
   const res = await api(`/api/benefits/plans/${currentBenefitPlanId}/eligibility-rules/${ruleId}`, { method: 'DELETE' });
@@ -404,7 +397,7 @@ function renderMyBenefitsPlansTable() {
   const fmtCost = (v, type) => {
     if (v == null) return '—';
     if (type === 'Percent of Salary') return `${Number(v)}%`;
-    return `RM ${Number(v).toLocaleString('en-MY', {minimumFractionDigits: 2})}`;
+    return fmtCurrency(v);
   };
 
   tbody.innerHTML = myEligiblePlans.map(p => {
@@ -587,10 +580,6 @@ function claimStatusBadge(status) {
   return 'bg-amber-100 text-amber-700';
 }
 
-function fmtRM(v) {
-  return v == null ? '—' : `RM ${Number(v).toLocaleString('en-MY', {minimumFractionDigits: 2})}`;
-}
-
 let currentClaims = [];
 
 async function loadClaims() {
@@ -616,8 +605,8 @@ function renderClaimsTable(claims) {
         <p class="text-xs text-slate-500">${esc(c.plan_category)}</p>
       </td>
       <td class="px-4 py-3">${fmtDate(c.claim_date)}</td>
-      <td class="px-4 py-3 text-right">${fmtRM(c.amount_claimed)}</td>
-      <td class="px-4 py-3 text-right">${fmtRM(c.amount_approved)}</td>
+      <td class="px-4 py-3 text-right">${fmtCurrency(c.amount_claimed)}</td>
+      <td class="px-4 py-3 text-right">${fmtCurrency(c.amount_approved)}</td>
       <td class="px-4 py-3">
         <span class="badge ${claimStatusBadge(c.status)}">${esc(c.status)}</span>
         ${c.payout_date ? `<p class="text-xs text-slate-400 mt-1">Paid ${fmtDate(c.payout_date)}</p>` : ''}
@@ -647,7 +636,7 @@ function openClaimDecideModal(claimId) {
   if (!claim) return;
   currentDecideClaimId = claimId;
   document.getElementById('claimDecideInfo').textContent =
-    `${claim.employee_name || claim.employee_id} claimed ${fmtRM(claim.amount_claimed)} under '${claim.plan_name}' (${fmtDate(claim.claim_date)}). Reimbursement Cap plans are capped by the employee's remaining annual balance — an over-cap amount will be rejected by the server with the remaining balance shown.`;
+    `${claim.employee_name || claim.employee_id} claimed ${fmtCurrency(claim.amount_claimed)} under '${claim.plan_name}' (${fmtDate(claim.claim_date)}). Reimbursement Cap plans are capped by the employee's remaining annual balance — an over-cap amount will be rejected by the server with the remaining balance shown.`;
   document.getElementById('claimDecideAmount').value = claim.amount_claimed;
   document.getElementById('claimDecideModal').classList.remove('hidden');
 }
@@ -682,8 +671,8 @@ function renderMyClaimsTable(claims) {
     <tr>
       <td class="px-4 py-3">${esc(c.plan_name)}</td>
       <td class="px-4 py-3">${fmtDate(c.claim_date)}</td>
-      <td class="px-4 py-3 text-right">${fmtRM(c.amount_claimed)}</td>
-      <td class="px-4 py-3 text-right">${fmtRM(c.amount_approved)}</td>
+      <td class="px-4 py-3 text-right">${fmtCurrency(c.amount_claimed)}</td>
+      <td class="px-4 py-3 text-right">${fmtCurrency(c.amount_approved)}</td>
       <td class="px-4 py-3"><span class="badge ${claimStatusBadge(c.status)}">${esc(c.status)}</span></td>
     </tr>
   `).join('');
@@ -745,8 +734,8 @@ async function loadComplianceReport() {
 function renderComplianceReport(r) {
   document.getElementById('crActivePlans').textContent = r.total_active_plans;
   document.getElementById('crEnrolledEmployees').textContent = r.total_enrolled_employees;
-  document.getElementById('crEmployerCost').textContent = fmtRM(r.total_monthly_employer_cost);
-  document.getElementById('crClaimsPaid').textContent = fmtRM(r.total_claims_paid_ytd);
+  document.getElementById('crEmployerCost').textContent = fmtCurrency(r.total_monthly_employer_cost);
+  document.getElementById('crClaimsPaid').textContent = fmtCurrency(r.total_claims_paid_ytd);
 
   const flagsEl = document.getElementById('crComplianceFlags');
   if (r.compliance_flags.length === 0) {
@@ -773,8 +762,8 @@ function renderComplianceReport(r) {
       <td class="px-4 py-3 text-right">${p.enrolled_count}</td>
       <td class="px-4 py-3 text-right">${p.waived_count}</td>
       <td class="px-4 py-3 text-right">${p.participation_rate != null ? p.participation_rate + '%' : '—'}</td>
-      <td class="px-4 py-3 text-right">${p.contribution_type === 'Fixed Premium' ? fmtRM(p.monthly_employer_cost_total) : '—'}</td>
-      <td class="px-4 py-3 text-right">${fmtRM(p.claims_paid_total)}</td>
+      <td class="px-4 py-3 text-right">${p.contribution_type === 'Fixed Premium' ? fmtCurrency(p.monthly_employer_cost_total) : '—'}</td>
+      <td class="px-4 py-3 text-right">${fmtCurrency(p.claims_paid_total)}</td>
     </tr>
   `).join('');
 }

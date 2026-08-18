@@ -33,19 +33,19 @@ function renderPayGradesTable() {
       <td class="px-4 py-3">Level ${grade.grade_level}</td>
       <td class="px-4 py-3 text-right">
         <div class="text-sm">
-          <p class="text-slate-600">RM ${Number(grade.min_salary).toLocaleString('en-MY', {minimumFractionDigits: 2})}</p>
+          <p class="text-slate-600">${fmtCurrency(grade.min_salary)}</p>
           <p class="text-slate-500 text-xs">min</p>
         </div>
       </td>
       <td class="px-4 py-3 text-right">
         <div class="text-sm">
-          <p class="text-slate-600">RM ${Number(grade.midpoint_salary).toLocaleString('en-MY', {minimumFractionDigits: 2})}</p>
+          <p class="text-slate-600">${fmtCurrency(grade.midpoint_salary)}</p>
           <p class="text-slate-500 text-xs">mid</p>
         </div>
       </td>
       <td class="px-4 py-3 text-right">
         <div class="text-sm">
-          <p class="text-slate-600">RM ${Number(grade.max_salary).toLocaleString('en-MY', {minimumFractionDigits: 2})}</p>
+          <p class="text-slate-600">${fmtCurrency(grade.max_salary)}</p>
           <p class="text-slate-500 text-xs">max</p>
         </div>
       </td>
@@ -311,7 +311,7 @@ async function loadMeritCycles() {
           <p class="text-xs text-slate-500">Submit by: ${fmtDate(cycle.submission_deadline)}</p>
         </td>
         <td class="px-4 py-3">
-          ${cycle.budget_pool_amount ? `<p>Budget: RM ${Number(cycle.budget_pool_amount).toLocaleString('en-MY', {maximumFractionDigits: 0})}</p>` : '<p>—</p>'}
+          ${cycle.budget_pool_amount ? `<p>Budget: ${fmtCurrency(cycle.budget_pool_amount, 0)}</p>` : '<p>—</p>'}
         </td>
         <td class="px-4 py-3">
           <span class="badge ${cycle.status === 'Active' ? 'bg-blue-100 text-blue-700' : cycle.status === 'Draft' ? 'bg-slate-100 text-slate-600' : 'bg-emerald-100 text-emerald-700'}">
@@ -402,9 +402,9 @@ function renderMeritRecTable() {
         <p class="font-medium">${esc(rec.employee_name || rec.employee_id)}</p>
         <p class="text-xs text-slate-500">${esc(rec.employee_id)}</p>
       </td>
-      <td class="px-4 py-3 text-right">RM ${Number(rec.current_salary).toLocaleString('en-MY', {minimumFractionDigits: 2})}</td>
+      <td class="px-4 py-3 text-right">${fmtCurrency(rec.current_salary)}</td>
       <td class="px-4 py-3 text-center">${Number(rec.recommended_increase_percent).toFixed(2)}%</td>
-      <td class="px-4 py-3 text-right">RM ${Number(rec.recommended_new_salary).toLocaleString('en-MY', {minimumFractionDigits: 2})}</td>
+      <td class="px-4 py-3 text-right">${fmtCurrency(rec.recommended_new_salary)}</td>
       <td class="px-4 py-3">
         <span class="badge ${statusBadge(rec.approval_status)}">${esc(rec.approval_status)}</span>
         ${rec.reason ? `<p class="text-xs text-slate-500 mt-1">${esc(rec.reason)}</p>` : ''}
@@ -534,7 +534,7 @@ function renderBonusPlansTable() {
         <p class="text-sm">${plan.period_start && plan.period_end ? `${fmtDate(plan.period_start)} to ${fmtDate(plan.period_end)}` : '—'}</p>
       </td>
       <td class="px-4 py-3">
-        ${plan.budget_pool_amount ? `<p>Budget: RM ${Number(plan.budget_pool_amount).toLocaleString('en-MY', {maximumFractionDigits: 0})}</p>` : '<p>—</p>'}
+        ${plan.budget_pool_amount ? `<p>Budget: ${fmtCurrency(plan.budget_pool_amount, 0)}</p>` : '<p>—</p>'}
       </td>
       <td class="px-4 py-3 text-center">
         <span class="badge ${statusBadge(plan.status)}">${esc(plan.status)}</span>
@@ -654,8 +654,8 @@ function renderBonusPayoutTable() {
         <p class="font-medium">${esc(payout.employee_name || payout.employee_id)}</p>
         <p class="text-xs text-slate-500">${esc(payout.employee_id)}</p>
       </td>
-      <td class="px-4 py-3 text-right">${payout.target_amount ? 'RM ' + Number(payout.target_amount).toLocaleString('en-MY', {minimumFractionDigits: 2}) : '—'}</td>
-      <td class="px-4 py-3 text-right">RM ${Number(payout.awarded_amount).toLocaleString('en-MY', {minimumFractionDigits: 2})}</td>
+      <td class="px-4 py-3 text-right">${payout.target_amount ? fmtCurrency(payout.target_amount) : '—'}</td>
+      <td class="px-4 py-3 text-right">${fmtCurrency(payout.awarded_amount)}</td>
       <td class="px-4 py-3">
         <span class="badge ${statusBadge(payout.status)}">${esc(payout.status)}</span>
         ${payout.reason ? `<p class="text-xs text-slate-500 mt-1">${esc(payout.reason)}</p>` : ''}
@@ -841,7 +841,7 @@ function updateCommissionPreview() {
   const rate = parseFloat(document.getElementById('ceRate').value) || 0;
   const commission = sales * rate / 100;
   document.getElementById('cePreview').textContent =
-    sales && rate ? `Calculated commission: RM ${commission.toLocaleString('en-MY', {minimumFractionDigits: 2})}` : '';
+    sales && rate ? `Calculated commission: ${fmtCurrency(commission)}` : '';
 }
 
 async function changeCommissionPlanStatus() {
@@ -886,11 +886,11 @@ function renderCommissionEntryTable() {
         <p class="text-xs text-slate-500">${esc(entry.employee_id)}</p>
       </td>
       <td class="px-4 py-3 text-right">
-        RM ${Number(entry.sales_amount).toLocaleString('en-MY', {minimumFractionDigits: 2})}
-        ${entry.quota_target ? `<p class="text-xs text-slate-400">Quota: RM ${Number(entry.quota_target).toLocaleString('en-MY', {maximumFractionDigits: 0})}</p>` : ''}
+        ${fmtCurrency(entry.sales_amount)}
+        ${entry.quota_target ? `<p class="text-xs text-slate-400">Quota: ${fmtCurrency(entry.quota_target, 0)}</p>` : ''}
       </td>
       <td class="px-4 py-3 text-right">${Number(entry.commission_rate_percent)}%</td>
-      <td class="px-4 py-3 text-right">RM ${Number(entry.calculated_commission).toLocaleString('en-MY', {minimumFractionDigits: 2})}</td>
+      <td class="px-4 py-3 text-right">${fmtCurrency(entry.calculated_commission)}</td>
       <td class="px-4 py-3">
         <span class="badge ${statusBadge(entry.status)}">${esc(entry.status)}</span>
         ${entry.notes ? `<p class="text-xs text-slate-500 mt-1">${esc(entry.notes)}</p>` : ''}
@@ -1116,7 +1116,7 @@ function renderEquityGrantDetail(g) {
       <td class="px-4 py-3">
         <span class="badge ${statusBadge(ev.status)}">${esc(ev.status)}</span>
         ${ev.vested_at ? `<p class="text-xs text-slate-400 mt-1">Vested ${fmtDate(ev.vested_at)}</p>` : ''}
-        ${ev.status === 'Paid' ? `<p class="text-xs text-slate-500 mt-1">RM ${Number(ev.cash_payout).toLocaleString('en-MY', {minimumFractionDigits: 2})} @ RM ${Number(ev.settlement_price).toLocaleString('en-MY', {minimumFractionDigits: 4})}/unit</p><p class="text-xs text-slate-400">Paid ${fmtDate(ev.payout_date)}</p>` : ''}
+        ${ev.status === 'Paid' ? `<p class="text-xs text-slate-500 mt-1">${fmtCurrency(ev.cash_payout)} @ ${fmtCurrency(ev.settlement_price, 4)}/unit</p><p class="text-xs text-slate-400">Paid ${fmtDate(ev.payout_date)}</p>` : ''}
       </td>
       <td class="px-4 py-3 text-right">
         ${ev.status === 'Scheduled' ? `<button onclick="markVestingEventVested(${ev.id})" class="text-xs text-blue-700 hover:underline">Mark Vested</button>`
@@ -1165,7 +1165,7 @@ function promptSettleVestingEvent(eventId) {
   const fmv = currentEquityGrantFmv;
   document.getElementById('equitySettleInfo').textContent =
     `${Number(ev.quantity_vested).toLocaleString('en-MY')} vested units` +
-    (fmv != null ? ` · FMV at grant RM ${Number(fmv).toLocaleString('en-MY', {minimumFractionDigits: 4})}/unit` : '') +
+    (fmv != null ? ` · FMV at grant ${fmtCurrency(fmv, 4)}/unit` : '') +
     ` · payout = max(0, settlement − FMV) × units.`;
   document.getElementById('equitySettleForm').reset();
   document.getElementById('esPreview').textContent = '';
@@ -1183,7 +1183,7 @@ function updateEquitySettlePreview() {
   const fmv = currentEquityGrantFmv != null ? Number(currentEquityGrantFmv) : 0;
   if (!ev || isNaN(price)) { document.getElementById('esPreview').textContent = ''; return; }
   const payout = Math.max(0, price - fmv) * ev.quantity_vested;
-  document.getElementById('esPreview').textContent = `Cash payout: RM ${payout.toLocaleString('en-MY', {minimumFractionDigits: 2})}`;
+  document.getElementById('esPreview').textContent = `Cash payout: ${fmtCurrency(payout)}`;
 }
 
 async function submitEquitySettleForm(e) {
@@ -1221,12 +1221,12 @@ function renderTotalRewardsStatement(s) {
   const historyRows = [
     ...s.salary_changes.map(c => ({
       date: c.effective_date, kind: formatChangeType(c.change_type),
-      detail: `RM ${Number(c.from_salary).toLocaleString('en-MY', {minimumFractionDigits: 2})} → RM ${Number(c.to_salary).toLocaleString('en-MY', {minimumFractionDigits: 2})}`,
+      detail: `${fmtCurrency(c.from_salary)} → ${fmtCurrency(c.to_salary)}`,
       status: c.status,
     })),
     ...s.merit_history.map(m => ({
       date: m.approval_date || m.created_at?.slice(0, 10), kind: 'Merit Increase',
-      detail: `+${m.recommended_increase_percent}% · RM ${Number(m.current_salary).toLocaleString('en-MY', {minimumFractionDigits: 2})} → RM ${Number(m.recommended_new_salary).toLocaleString('en-MY', {minimumFractionDigits: 2})}`,
+      detail: `+${m.recommended_increase_percent}% · ${fmtCurrency(m.current_salary)} → ${fmtCurrency(m.recommended_new_salary)}`,
       status: m.approval_status,
     })),
   ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
@@ -1235,17 +1235,17 @@ function renderTotalRewardsStatement(s) {
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
       <div class="bg-white rounded-xl border border-slate-200 p-5">
         <p class="text-xs text-slate-500 uppercase font-semibold">Annualized Base Salary</p>
-        <p class="text-2xl font-bold mt-1">${s.base_salary_annualized != null ? 'RM ' + Number(s.base_salary_annualized).toLocaleString('en-MY', {minimumFractionDigits: 2}) : '—'}</p>
-        <p class="text-xs text-slate-400 mt-1">${s.base_salary_monthly != null ? 'RM ' + Number(s.base_salary_monthly).toLocaleString('en-MY', {minimumFractionDigits: 2}) + ' / month' : 'No current compensation record'}</p>
+        <p class="text-2xl font-bold mt-1">${fmtCurrency(s.base_salary_annualized)}</p>
+        <p class="text-xs text-slate-400 mt-1">${s.base_salary_monthly != null ? fmtCurrency(s.base_salary_monthly) + ' / month' : 'No current compensation record'}</p>
       </div>
       <div class="bg-white rounded-xl border border-slate-200 p-5">
         <p class="text-xs text-slate-500 uppercase font-semibold">Variable Pay (${s.year} YTD)</p>
-        <p class="text-2xl font-bold mt-1">RM ${(s.bonus_ytd + s.commission_ytd).toLocaleString('en-MY', {minimumFractionDigits: 2})}</p>
-        <p class="text-xs text-slate-400 mt-1">Bonus RM ${s.bonus_ytd.toLocaleString('en-MY', {minimumFractionDigits: 2})} · Commission RM ${s.commission_ytd.toLocaleString('en-MY', {minimumFractionDigits: 2})}</p>
+        <p class="text-2xl font-bold mt-1">${fmtCurrency(s.bonus_ytd + s.commission_ytd)}</p>
+        <p class="text-xs text-slate-400 mt-1">Bonus ${fmtCurrency(s.bonus_ytd)} · Commission ${fmtCurrency(s.commission_ytd)}</p>
       </div>
       <div class="bg-white rounded-xl border border-blue-200 bg-blue-50 p-5">
         <p class="text-xs text-blue-700 uppercase font-semibold">Total Cash Compensation</p>
-        <p class="text-2xl font-bold mt-1 text-blue-900">RM ${s.total_cash_compensation.toLocaleString('en-MY', {minimumFractionDigits: 2})}</p>
+        <p class="text-2xl font-bold mt-1 text-blue-900">${fmtCurrency(s.total_cash_compensation)}</p>
         <p class="text-xs text-blue-600 mt-1">Annualized base + ${s.year} bonus &amp; commission</p>
       </div>
     </div>
@@ -1359,12 +1359,12 @@ async function loadPayEquityReport() {
         <div class="grid md:grid-cols-2 gap-6">
           <div>
             <p class="text-xs text-slate-500 uppercase mb-1">${esc(gap.category_1)}</p>
-            <p class="text-2xl font-bold text-slate-800">RM ${Number(gap.avg_salary_1).toLocaleString('en-MY', {maximumFractionDigits: 0})}</p>
+            <p class="text-2xl font-bold text-slate-800">${fmtCurrency(gap.avg_salary_1, 0)}</p>
             <p class="text-xs text-slate-600">Employees: ${gap.count_1}</p>
           </div>
           <div>
             <p class="text-xs text-slate-500 uppercase mb-1">${esc(gap.category_2)}</p>
-            <p class="text-2xl font-bold text-slate-800">RM ${Number(gap.avg_salary_2).toLocaleString('en-MY', {maximumFractionDigits: 0})}</p>
+            <p class="text-2xl font-bold text-slate-800">${fmtCurrency(gap.avg_salary_2, 0)}</p>
             <p class="text-xs text-slate-600">Employees: ${gap.count_2}</p>
           </div>
         </div>
@@ -1392,7 +1392,7 @@ async function loadPayEquityReport() {
                 <p class="text-sm font-medium">${esc(dept.category_1)}</p>
                 <p class="text-xs text-slate-500">${dept.count_1} employees</p>
               </div>
-              <p class="font-medium">RM ${Number(dept.avg_salary_1).toLocaleString('en-MY', {maximumFractionDigits: 0})}</p>
+              <p class="font-medium">${fmtCurrency(dept.avg_salary_1, 0)}</p>
             </div>
           `).join('')}
         </div>
@@ -1521,8 +1521,7 @@ function onAssignCompGradeChange() {
   const grade = gradeId ? payGrades.find(g => g.id === gradeId) : null;
   const rangeEl = document.getElementById('acGradeRange');
   if (!grade) { rangeEl.textContent = ''; return; }
-  const fmt = n => Number(n).toLocaleString('en-MY', {minimumFractionDigits: 2});
-  rangeEl.textContent = `Range: RM ${fmt(grade.min_salary)} – RM ${fmt(grade.max_salary)} (midpoint RM ${fmt(grade.midpoint_salary)})`;
+  rangeEl.textContent = `Range: ${fmtCurrency(grade.min_salary)} – ${fmtCurrency(grade.max_salary)} (midpoint ${fmtCurrency(grade.midpoint_salary)})`;
 }
 
 async function submitAssignCompForm(e) {

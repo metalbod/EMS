@@ -298,3 +298,101 @@ describe('fmtDate / fmtDateTime', () => {
     expect(fmtDateTime(null)).toBe('—');
   });
 });
+
+describe('fmtCurrency', () => {
+  // Matches core.js's fmtCurrency — system-wide "RM 1,234.56" display,
+  // replacing benefits.js's fmtRM, payroll.js's fmtMoney, and ~40 inline
+  // Number(x).toLocaleString('en-MY', {...}) call sites.
+  function fmtCurrency(v, decimals = 2) {
+    if (v == null || v === '') return '—';
+    const n = Number(v);
+    if (isNaN(n)) return '—';
+    return `RM ${n.toLocaleString('en-MY', {minimumFractionDigits: decimals, maximumFractionDigits: decimals})}`;
+  }
+
+  it('formats a number with 2 decimals and thousands separators by default', () => {
+    expect(fmtCurrency(1234.5)).toBe('RM 1,234.50');
+    expect(fmtCurrency(0)).toBe('RM 0.00');
+  });
+
+  it('supports a custom decimal count', () => {
+    expect(fmtCurrency(1234.5, 0)).toBe('RM 1,235');
+    expect(fmtCurrency(12.3456, 4)).toBe('RM 12.3456');
+  });
+
+  it('returns an em dash for null, undefined, or empty string', () => {
+    expect(fmtCurrency(null)).toBe('—');
+    expect(fmtCurrency(undefined)).toBe('—');
+    expect(fmtCurrency('')).toBe('—');
+  });
+
+  it('returns an em dash for a non-numeric value', () => {
+    expect(fmtCurrency('not-a-number')).toBe('—');
+  });
+
+  it('coerces numeric strings', () => {
+    expect(fmtCurrency('99.9')).toBe('RM 99.90');
+  });
+});
+
+describe('guardAsync', () => {
+  // Matches core.js's guardAsync — the onclick-wired counterpart to
+  // installSubmitGuards, replacing 31 hand-written re-entrancy-flag copies
+  // (one per Save/Add/Create button wired via onclick instead of a form
+  // submit) with one shared wrapper.
+  function guardAsync(fn) {
+    let inFlight = false;
+    return async function guarded(...args) {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        return await fn.apply(this, args);
+      } finally {
+        inFlight = false;
+      }
+    };
+  }
+
+  it('lets a call through when nothing is in flight', async () => {
+    const inner = vi.fn(async () => 'done');
+    const guarded = guardAsync(inner);
+    const result = await guarded();
+    expect(inner).toHaveBeenCalledTimes(1);
+    expect(result).toBe('done');
+  });
+
+  it('drops a second call that arrives while the first is still in flight', async () => {
+    let resolveFirst;
+    const inner = vi.fn(() => new Promise(r => { resolveFirst = r; }));
+    const guarded = guardAsync(inner);
+    const first = guarded();
+    const second = guarded(); // fired before `first` resolves — should no-op
+    resolveFirst('first-result');
+    await Promise.all([first, second]);
+    expect(inner).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows a later call once the in-flight one has finished', async () => {
+    const inner = vi.fn(async () => 'ok');
+    const guarded = guardAsync(inner);
+    await guarded();
+    await guarded();
+    expect(inner).toHaveBeenCalledTimes(2);
+  });
+
+  it('resets the guard even when the wrapped function throws', async () => {
+    const inner = vi.fn().mockRejectedValueOnce(new Error('boom')).mockResolvedValueOnce('recovered');
+    const guarded = guardAsync(inner);
+    await expect(guarded()).rejects.toThrow('boom');
+    await expect(guarded()).resolves.toBe('recovered');
+    expect(inner).toHaveBeenCalledTimes(2);
+  });
+
+  it('forwards arguments to the wrapped function', async () => {
+    const inner = vi.fn(async (a, b) => a + b);
+    const guarded = guardAsync(inner);
+    const result = await guarded(2, 3);
+    expect(inner).toHaveBeenCalledWith(2, 3);
+    expect(result).toBe(5);
+  });
+});

@@ -269,21 +269,14 @@ async function showObItemEdit(clId,itemId,title,description,assignedRole) {
     </div>`;
 }
 
-let _savingObItemEdit = false;
-async function saveObItemEdit(clId,itemId) {
-  if (_savingObItemEdit) return;
-  _savingObItemEdit = true;
-  try {
-    const title=document.getElementById('obedit-title-'+itemId)?.value.trim();
-    const desc=document.getElementById('obedit-desc-'+itemId)?.value.trim();
-    const role=document.getElementById('obedit-role-'+itemId)?.value;
-    if(!title){alert('Title is required');return;}
-    await api(`/api/ob/checklists/${clId}/items/${itemId}`,{method:'PUT',body:JSON.stringify({title,description:desc||null,assigned_role:role})});
-    openObDetail(clId);
-  } finally {
-    _savingObItemEdit = false;
-  }
-}
+const saveObItemEdit = guardAsync(async function(clId,itemId) {
+  const title=document.getElementById('obedit-title-'+itemId)?.value.trim();
+  const desc=document.getElementById('obedit-desc-'+itemId)?.value.trim();
+  const role=document.getElementById('obedit-role-'+itemId)?.value;
+  if(!title){alert('Title is required');return;}
+  await api(`/api/ob/checklists/${clId}/items/${itemId}`,{method:'PUT',body:JSON.stringify({title,description:desc||null,assigned_role:role})});
+  openObDetail(clId);
+});
 
 async function deleteObItem(clId,itemId) {
   if(!confirm('Remove this item from the checklist?')) return;
@@ -291,20 +284,13 @@ async function deleteObItem(clId,itemId) {
   openObDetail(clId);
 }
 
-let _addingObItem = false;
-async function addObItem(clId) {
-  if (_addingObItem) return;
-  _addingObItem = true;
-  try {
-    const title=document.getElementById('obAddTitle')?.value.trim();
-    const role=document.getElementById('obAddRole')?.value;
-    if(!title){alert('Title is required');return;}
-    await api(`/api/ob/checklists/${clId}/items`,{method:'POST',body:JSON.stringify({title,assigned_role:role})});
-    openObDetail(clId);
-  } finally {
-    _addingObItem = false;
-  }
-}
+const addObItem = guardAsync(async function(clId) {
+  const title=document.getElementById('obAddTitle')?.value.trim();
+  const role=document.getElementById('obAddRole')?.value;
+  if(!title){alert('Title is required');return;}
+  await api(`/api/ob/checklists/${clId}/items`,{method:'POST',body:JSON.stringify({title,assigned_role:role})});
+  openObDetail(clId);
+});
 
 async function deleteObChecklist(clId,type) {
   if(!confirm('Delete this checklist? This cannot be undone.')) return;
@@ -390,25 +376,18 @@ function showObSetForm(type){
 }
 function hideObSetForm(type){oel(type,'obSetForm')?.classList.add('hidden');}
 
-let _savingObTemplateSet = false;
-async function saveObTemplateSet(type) {
-  if (_savingObTemplateSet) return;
-  _savingObTemplateSet = true;
-  try {
-    const name=oel(type,'obSetName').value.trim();
-    if(!name){alert('Template name is required');return;}
-    const res=await api('/api/ob/template-sets',{method:'POST',body:JSON.stringify({type,name})});
-    if(!res||!res.ok) return;
-    const created=await res.json();
-    if(oel(type,'obSetIsDefault').checked){
-      await api(`/api/ob/template-sets/${created.id}`,{method:'PUT',body:JSON.stringify({name,is_default:true})});
-    }
-    hideObSetForm(type);
-    await loadObTemplateSets(type, created.id);
-  } finally {
-    _savingObTemplateSet = false;
+const saveObTemplateSet = guardAsync(async function(type) {
+  const name=oel(type,'obSetName').value.trim();
+  if(!name){alert('Template name is required');return;}
+  const res=await api('/api/ob/template-sets',{method:'POST',body:JSON.stringify({type,name})});
+  if(!res||!res.ok) return;
+  const created=await res.json();
+  if(oel(type,'obSetIsDefault').checked){
+    await api(`/api/ob/template-sets/${created.id}`,{method:'PUT',body:JSON.stringify({name,is_default:true})});
   }
-}
+  hideObSetForm(type);
+  await loadObTemplateSets(type, created.id);
+});
 
 async function renameObTemplateSet(type) {
   const setId=obCurrentSetId[type];
@@ -452,31 +431,24 @@ async function moveObTemplate(type,id,direction) {
   refreshObTemplatesList(type);
 }
 
-let _addingObTemplate = false;
-async function addObTemplate(type) {
-  if (_addingObTemplate) return;
-  _addingObTemplate = true;
-  try {
-    const title=oel(type,'obTmplTitle').value.trim();
-    if(!title) return;
-    const setId=obCurrentSetId[type];
-    if(!setId){alert('Create a template first');return;}
-    const courseVal=oel(type,'obTmplLdCourse').value;
-    const body={
-      type,template_set_id:setId,title,description:oel(type,'obTmplDesc').value.trim()||null,
-      assigned_role:oel(type,'obTmplRole').value,
-      linked_ld_course_id:courseVal?parseInt(courseVal):null
-    };
-    const res=await api('/api/ob/templates',{method:'POST',body:JSON.stringify(body)});
-    if(!res||!res.ok) return;
-    oel(type,'obTmplTitle').value='';
-    oel(type,'obTmplDesc').value='';
-    oel(type,'obTmplLdCourse').value='';
-    await loadObTemplateSets(type, setId);
-  } finally {
-    _addingObTemplate = false;
-  }
-}
+const addObTemplate = guardAsync(async function(type) {
+  const title=oel(type,'obTmplTitle').value.trim();
+  if(!title) return;
+  const setId=obCurrentSetId[type];
+  if(!setId){alert('Create a template first');return;}
+  const courseVal=oel(type,'obTmplLdCourse').value;
+  const body={
+    type,template_set_id:setId,title,description:oel(type,'obTmplDesc').value.trim()||null,
+    assigned_role:oel(type,'obTmplRole').value,
+    linked_ld_course_id:courseVal?parseInt(courseVal):null
+  };
+  const res=await api('/api/ob/templates',{method:'POST',body:JSON.stringify(body)});
+  if(!res||!res.ok) return;
+  oel(type,'obTmplTitle').value='';
+  oel(type,'obTmplDesc').value='';
+  oel(type,'obTmplLdCourse').value='';
+  await loadObTemplateSets(type, setId);
+});
 
 async function deleteObTemplate(type,id) {
   await api(`/api/ob/templates/${id}`,{method:'DELETE'});
@@ -499,29 +471,22 @@ function openObTmplItemModal(type,id) {
 }
 function closeObTmplItemModal(){document.getElementById('obTmplItemModal').classList.add('hidden');}
 
-let _savingObTmplItemDetail = false;
-async function saveObTmplItemDetail() {
-  if (_savingObTmplItemDetail) return;
-  _savingObTmplItemDetail = true;
-  try {
-    const type=obActiveTmplType;
-    const id=document.getElementById('obTmplItemId').value;
-    const title=document.getElementById('obTmplItemTitle').value.trim();
-    if(!title){alert('Title is required');return;}
-    const courseVal=document.getElementById('obTmplItemCourse').value;
-    const body={
-      type,title,description:document.getElementById('obTmplItemDesc').value.trim()||null,
-      assigned_role:document.getElementById('obTmplItemRole').value,
-      linked_ld_course_id:courseVal?parseInt(courseVal):null
-    };
-    const res=await api(`/api/ob/templates/${id}`,{method:'PUT',body:JSON.stringify(body)});
-    if(!res||!res.ok) return;
-    closeObTmplItemModal();
-    await refreshObTemplatesList(type);
-  } finally {
-    _savingObTmplItemDetail = false;
-  }
-}
+const saveObTmplItemDetail = guardAsync(async function() {
+  const type=obActiveTmplType;
+  const id=document.getElementById('obTmplItemId').value;
+  const title=document.getElementById('obTmplItemTitle').value.trim();
+  if(!title){alert('Title is required');return;}
+  const courseVal=document.getElementById('obTmplItemCourse').value;
+  const body={
+    type,title,description:document.getElementById('obTmplItemDesc').value.trim()||null,
+    assigned_role:document.getElementById('obTmplItemRole').value,
+    linked_ld_course_id:courseVal?parseInt(courseVal):null
+  };
+  const res=await api(`/api/ob/templates/${id}`,{method:'PUT',body:JSON.stringify(body)});
+  if(!res||!res.ok) return;
+  closeObTmplItemModal();
+  await refreshObTemplatesList(type);
+});
 
 // ---------------------------------------------------------------------------
 // Swimlane visualization — 4 role rows, steps placed left-to-right in

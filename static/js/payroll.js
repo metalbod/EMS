@@ -7,8 +7,6 @@ function isPayrollManager() { return currentUser?.role==='payroll_manager'; }
 
 const PAYROLL_STATUS_COLORS={'Draft':'bg-amber-100 text-amber-700','Finalized':'bg-green-100 text-green-700'};
 
-function fmtMoney(n) { return 'RM ' + Number(n||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
-
 // ---------------------------------------------------------------------------
 // Payroll Runs (list)
 // ---------------------------------------------------------------------------
@@ -27,7 +25,7 @@ async function loadPayrollRuns() {
       <td class="px-4 py-3 font-medium text-slate-800">${fmtDate(r.period_start)} → ${fmtDate(r.period_end)}</td>
       <td class="px-4 py-3"><span class="badge text-xs ${PAYROLL_STATUS_COLORS[r.status]||'bg-slate-100 text-slate-600'}">${r.status}</span></td>
       <td class="px-4 py-3 text-slate-600">${r.employee_count}</td>
-      <td class="px-4 py-3 text-slate-600">${fmtMoney(r.total_net_pay)}</td>
+      <td class="px-4 py-3 text-slate-600">${fmtCurrency(r.total_net_pay)}</td>
       <td class="px-4 py-3 text-right text-slate-300"><svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg></td>
     </tr>`).join('');
 }
@@ -39,27 +37,20 @@ function openPayrollRunModal() {
 }
 function closePayrollRunModal() { document.getElementById('payrollRunModal').classList.add('hidden'); }
 
-let _submittingPayrollRun = false;
-async function submitPayrollRun() {
-  if (_submittingPayrollRun) return;
-  _submittingPayrollRun = true;
-  try {
-    const period_start=document.getElementById('prStart').value;
-    const period_end=document.getElementById('prEnd').value;
-    if(!period_start||!period_end){ alert('Both dates are required'); return; }
-    const res=await api('/api/payroll/runs',{method:'POST',body:JSON.stringify({period_start,period_end})});
-    if(res?.ok){
-      closePayrollRunModal();
-      const run=await res.json();
-      loadPayrollRuns();
-      openPayrollRunDetail(run.id);
-    } else {
-      const d=await res.json(); alert(d.detail||'Failed to create payroll run');
-    }
-  } finally {
-    _submittingPayrollRun = false;
+const submitPayrollRun = guardAsync(async function() {
+  const period_start=document.getElementById('prStart').value;
+  const period_end=document.getElementById('prEnd').value;
+  if(!period_start||!period_end){ alert('Both dates are required'); return; }
+  const res=await api('/api/payroll/runs',{method:'POST',body:JSON.stringify({period_start,period_end})});
+  if(res?.ok){
+    closePayrollRunModal();
+    const run=await res.json();
+    loadPayrollRuns();
+    openPayrollRunDetail(run.id);
+  } else {
+    const d=await res.json(); alert(d.detail||'Failed to create payroll run');
   }
-}
+});
 
 // ---------------------------------------------------------------------------
 // Payroll Run Detail (editable payslip table)
@@ -76,7 +67,7 @@ async function openPayrollRunDetail(runId) {
     const hourly=p.salary_type==='Hourly';
     const basicCell=hourly
       ? `<span class="text-xs text-slate-500" title="Regular hours × hourly rate">${p.regular_hours}h reg.</span>`
-      : (canEdit?`<input type="number" step="0.01" class="inp text-right text-xs" style="width:90px" value="${p.basic_salary}" id="ps-basic-${p.id}"/>`:fmtMoney(p.basic_salary));
+      : (canEdit?`<input type="number" step="0.01" class="inp text-right text-xs" style="width:90px" value="${p.basic_salary}" id="ps-basic-${p.id}"/>`:fmtCurrency(p.basic_salary));
     const unpaidCell=hourly
       ? `<span class="text-xs text-slate-500" title="Overtime hours × 1.5x rate">${p.overtime_hours}h OT</span>`
       : (canEdit?`<input type="number" step="0.5" min="0" class="inp text-right text-xs" style="width:70px" value="${p.unpaid_leave_days}" id="ps-unpaid-${p.id}"/>`:p.unpaid_leave_days);
@@ -91,12 +82,12 @@ async function openPayrollRunDetail(runId) {
       </td>
       <td class="px-3 py-2 text-right">${basicCell}</td>
       <td class="px-3 py-2 text-right">${unpaidCell}</td>
-      <td class="px-3 py-2 text-right text-slate-600">${fmtMoney(p.gross_pay)}</td>
-      <td class="px-3 py-2 text-right text-slate-500">${fmtMoney(p.epf_employee)}</td>
-      <td class="px-3 py-2 text-right text-slate-500">${fmtMoney(p.socso_employee)}</td>
-      <td class="px-3 py-2 text-right text-slate-500">${fmtMoney(p.eis_employee)}</td>
-      <td class="px-3 py-2 text-right text-slate-500">${fmtMoney(p.pcb)}</td>
-      <td class="px-3 py-2 text-right font-semibold text-slate-800">${fmtMoney(p.net_pay)}</td>
+      <td class="px-3 py-2 text-right text-slate-600">${fmtCurrency(p.gross_pay)}</td>
+      <td class="px-3 py-2 text-right text-slate-500">${fmtCurrency(p.epf_employee)}</td>
+      <td class="px-3 py-2 text-right text-slate-500">${fmtCurrency(p.socso_employee)}</td>
+      <td class="px-3 py-2 text-right text-slate-500">${fmtCurrency(p.eis_employee)}</td>
+      <td class="px-3 py-2 text-right text-slate-500">${fmtCurrency(p.pcb)}</td>
+      <td class="px-3 py-2 text-right font-semibold text-slate-800">${fmtCurrency(p.net_pay)}</td>
       <td class="px-3 py-2 text-right">${actionCell}</td>
     </tr>`;
   }).join(''):'<tr><td colspan="10" class="text-center text-slate-400 text-sm py-8">No payslips in this run.</td></tr>';
@@ -117,20 +108,13 @@ async function openPayrollRunDetail(runId) {
 }
 function closePayrollRunDetailModal() { document.getElementById('payrollRunDetailModal').classList.add('hidden'); }
 
-let _savingAdjustedPayslip = false;
-async function saveAdjustedPayslip(payslipId) {
-  if (_savingAdjustedPayslip) return;
-  _savingAdjustedPayslip = true;
-  try {
-    const basic_salary=parseFloat(document.getElementById(`ps-basic-${payslipId}`).value);
-    const unpaid_leave_days=parseFloat(document.getElementById(`ps-unpaid-${payslipId}`).value);
-    const res=await api(`/api/payroll/payslips/${payslipId}`,{method:'PUT',body:JSON.stringify({basic_salary,unpaid_leave_days})});
-    if(res?.ok){ openPayrollRunDetail(currentPayrollRunId); loadPayrollRuns(); }
-    else { const d=await res.json(); alert(d.detail||'Failed to save'); }
-  } finally {
-    _savingAdjustedPayslip = false;
-  }
-}
+const saveAdjustedPayslip = guardAsync(async function(payslipId) {
+  const basic_salary=parseFloat(document.getElementById(`ps-basic-${payslipId}`).value);
+  const unpaid_leave_days=parseFloat(document.getElementById(`ps-unpaid-${payslipId}`).value);
+  const res=await api(`/api/payroll/payslips/${payslipId}`,{method:'PUT',body:JSON.stringify({basic_salary,unpaid_leave_days})});
+  if(res?.ok){ openPayrollRunDetail(currentPayrollRunId); loadPayrollRuns(); }
+  else { const d=await res.json(); alert(d.detail||'Failed to save'); }
+});
 
 async function recomputePayslip(payslipId) {
   const res=await api(`/api/payroll/payslips/${payslipId}/recompute`,{method:'PATCH'});
@@ -178,7 +162,7 @@ async function loadMyPayslips() {
     <div class="bg-white border border-slate-200 rounded-xl p-4 cursor-pointer hover:shadow-sm transition flex items-center justify-between" onclick="viewPayslip(${p.id})">
       <div>
         <p class="font-medium text-slate-800">${fmtDate(p.period_start)} → ${fmtDate(p.period_end)}</p>
-        <p class="text-xs text-slate-400">Net Pay: ${fmtMoney(p.net_pay)}</p>
+        <p class="text-xs text-slate-400">Net Pay: ${fmtCurrency(p.net_pay)}</p>
       </div>
       <svg class="w-4 h-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
     </div>`).join('');
@@ -200,23 +184,23 @@ async function viewPayslip(payslipId) {
     </div>
     <table class="w-full text-sm mb-4">
       ${p.salary_type==='Hourly' ? `
-      <tr class="border-t border-slate-100"><td class="py-1.5 text-slate-500">Regular Pay (${p.regular_hours}h)</td><td class="py-1.5 text-right">${fmtMoney(p.basic_salary)}</td></tr>
-      <tr class="border-t border-slate-100"><td class="py-1.5 text-slate-500">Overtime Pay (${p.overtime_hours}h @ 1.5x)</td><td class="py-1.5 text-right">${fmtMoney(p.overtime_pay)}</td></tr>
+      <tr class="border-t border-slate-100"><td class="py-1.5 text-slate-500">Regular Pay (${p.regular_hours}h)</td><td class="py-1.5 text-right">${fmtCurrency(p.basic_salary)}</td></tr>
+      <tr class="border-t border-slate-100"><td class="py-1.5 text-slate-500">Overtime Pay (${p.overtime_hours}h @ 1.5x)</td><td class="py-1.5 text-right">${fmtCurrency(p.overtime_pay)}</td></tr>
       ` : `
-      <tr class="border-t border-slate-100"><td class="py-1.5 text-slate-500">Basic Salary</td><td class="py-1.5 text-right">${fmtMoney(p.basic_salary)}</td></tr>
-      <tr class="border-t border-slate-100"><td class="py-1.5 text-slate-500">Unpaid Leave (${p.unpaid_leave_days} day${p.unpaid_leave_days==1?'':'s'})</td><td class="py-1.5 text-right text-red-600">-${fmtMoney(p.unpaid_leave_deduction)}</td></tr>
+      <tr class="border-t border-slate-100"><td class="py-1.5 text-slate-500">Basic Salary</td><td class="py-1.5 text-right">${fmtCurrency(p.basic_salary)}</td></tr>
+      <tr class="border-t border-slate-100"><td class="py-1.5 text-slate-500">Unpaid Leave (${p.unpaid_leave_days} day${p.unpaid_leave_days==1?'':'s'})</td><td class="py-1.5 text-right text-red-600">-${fmtCurrency(p.unpaid_leave_deduction)}</td></tr>
       `}
-      <tr class="border-t border-slate-200 font-medium"><td class="py-1.5">Gross Pay</td><td class="py-1.5 text-right">${fmtMoney(p.gross_pay)}</td></tr>
-      <tr class="border-t border-slate-100"><td class="py-1.5 text-slate-500">EPF (Employee 11%)</td><td class="py-1.5 text-right text-red-600">-${fmtMoney(p.epf_employee)}</td></tr>
-      <tr class="border-t border-slate-100"><td class="py-1.5 text-slate-500">SOCSO (Employee)</td><td class="py-1.5 text-right text-red-600">-${fmtMoney(p.socso_employee)}</td></tr>
-      <tr class="border-t border-slate-100"><td class="py-1.5 text-slate-500">EIS (Employee)</td><td class="py-1.5 text-right text-red-600">-${fmtMoney(p.eis_employee)}</td></tr>
-      <tr class="border-t border-slate-100"><td class="py-1.5 text-slate-500">PCB (Income Tax)</td><td class="py-1.5 text-right text-red-600">-${fmtMoney(p.pcb)}</td></tr>
-      <tr class="border-t-2 border-slate-300 font-semibold text-base"><td class="py-2">Net Pay</td><td class="py-2 text-right">${fmtMoney(p.net_pay)}</td></tr>
+      <tr class="border-t border-slate-200 font-medium"><td class="py-1.5">Gross Pay</td><td class="py-1.5 text-right">${fmtCurrency(p.gross_pay)}</td></tr>
+      <tr class="border-t border-slate-100"><td class="py-1.5 text-slate-500">EPF (Employee 11%)</td><td class="py-1.5 text-right text-red-600">-${fmtCurrency(p.epf_employee)}</td></tr>
+      <tr class="border-t border-slate-100"><td class="py-1.5 text-slate-500">SOCSO (Employee)</td><td class="py-1.5 text-right text-red-600">-${fmtCurrency(p.socso_employee)}</td></tr>
+      <tr class="border-t border-slate-100"><td class="py-1.5 text-slate-500">EIS (Employee)</td><td class="py-1.5 text-right text-red-600">-${fmtCurrency(p.eis_employee)}</td></tr>
+      <tr class="border-t border-slate-100"><td class="py-1.5 text-slate-500">PCB (Income Tax)</td><td class="py-1.5 text-right text-red-600">-${fmtCurrency(p.pcb)}</td></tr>
+      <tr class="border-t-2 border-slate-300 font-semibold text-base"><td class="py-2">Net Pay</td><td class="py-2 text-right">${fmtCurrency(p.net_pay)}</td></tr>
     </table>
     <table class="w-full text-xs text-slate-400 border-t border-slate-100 pt-2">
-      <tr><td class="py-1">Employer EPF</td><td class="py-1 text-right">${fmtMoney(p.epf_employer)}</td></tr>
-      <tr><td class="py-1">Employer SOCSO</td><td class="py-1 text-right">${fmtMoney(p.socso_employer)}</td></tr>
-      <tr><td class="py-1">Employer EIS</td><td class="py-1 text-right">${fmtMoney(p.eis_employer)}</td></tr>
+      <tr><td class="py-1">Employer EPF</td><td class="py-1 text-right">${fmtCurrency(p.epf_employer)}</td></tr>
+      <tr><td class="py-1">Employer SOCSO</td><td class="py-1 text-right">${fmtCurrency(p.socso_employer)}</td></tr>
+      <tr><td class="py-1">Employer EIS</td><td class="py-1 text-right">${fmtCurrency(p.eis_employer)}</td></tr>
     </table>
     <p class="text-xs text-slate-400 mt-4">Bank: ${esc(p.bank_name||'—')} · ${esc(p.bank_account||'—')}</p>
   `;

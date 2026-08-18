@@ -23,30 +23,23 @@ function renderRolesTable() {
     </tr>`).join('');
 }
 
-let _creatingRole = false;
-async function createRole() {
-  if (_creatingRole) return;
-  _creatingRole = true;
-  try {
-    const err = document.getElementById('roleFormErr');
-    err.classList.add('hidden');
-    const input = document.getElementById('roleNewName');
-    const display_name = input.value.trim();
-    if (!display_name) { err.textContent = 'Role name is required'; err.classList.remove('hidden'); return; }
-    const res = await api('/api/roles', {method: 'POST', body: JSON.stringify({display_name})});
-    if (!res?.ok) {
-      const d = await res?.json().catch(()=>({}));
-      err.textContent = d?.detail || 'Failed to add role';
-      err.classList.remove('hidden');
-      return;
-    }
-    input.value = '';
-    await loadRolesCache();
-    renderRolesTable();
-  } finally {
-    _creatingRole = false;
+const createRole = guardAsync(async function() {
+  const err = document.getElementById('roleFormErr');
+  err.classList.add('hidden');
+  const input = document.getElementById('roleNewName');
+  const display_name = input.value.trim();
+  if (!display_name) { err.textContent = 'Role name is required'; err.classList.remove('hidden'); return; }
+  const res = await api('/api/roles', {method: 'POST', body: JSON.stringify({display_name})});
+  if (!res?.ok) {
+    const d = await res?.json().catch(()=>({}));
+    err.textContent = d?.detail || 'Failed to add role';
+    err.classList.remove('hidden');
+    return;
   }
-}
+  input.value = '';
+  await loadRolesCache();
+  renderRolesTable();
+});
 
 async function deleteRole(roleId) {
   if (!confirm('Delete this role?')) return;
