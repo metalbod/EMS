@@ -361,7 +361,7 @@ function openHolidayModal() {
   document.getElementById('holidayDate').value='';
   document.getElementById('holidayModal').classList.remove('hidden');
 }
-function closeHolidayModal() { document.getElementById('holidayModal').classList.add('hidden'); }
+function closeHolidayModal() { closeModal('holidayModal'); }
 
 async function submitHoliday(e) {
   e.preventDefault();
@@ -458,7 +458,7 @@ function openLeaveTypeModal(typeId) {
   onLeaveTypeCarryForwardChange();
   document.getElementById('leaveTypeModal').classList.remove('hidden');
 }
-function closeLeaveTypeModal() { document.getElementById('leaveTypeModal').classList.add('hidden'); }
+function closeLeaveTypeModal() { closeModal('leaveTypeModal'); }
 
 function onLeaveTypeSharesChange() {
   const sharing=!!document.getElementById('leaveTypeSharesWith').value;

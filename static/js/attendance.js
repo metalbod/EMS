@@ -232,7 +232,7 @@ function openAttRuleModal() {
   toggleAttRuleScopeInput();
   document.getElementById('attRuleModal').classList.remove('hidden');
 }
-function closeAttRuleModal() { document.getElementById('attRuleModal').classList.add('hidden'); }
+function closeAttRuleModal() { closeModal('attRuleModal'); }
 function toggleAttRuleScopeInput() {
   const isEmp = document.getElementById('attRuleScopeType').value === 'employee';
   document.getElementById('attRuleDeptWrap').classList.toggle('hidden', isEmp);
@@ -285,7 +285,7 @@ function openShiftModal() {
   document.getElementById('shiftModalTitle').textContent = 'Add Shift';
   document.getElementById('shiftModal').classList.remove('hidden');
 }
-function closeShiftModal() { document.getElementById('shiftModal').classList.add('hidden'); }
+function closeShiftModal() { closeModal('shiftModal'); }
 
 async function submitShiftForm(e) {
   e.preventDefault();
@@ -333,7 +333,7 @@ function openAssignmentModal() {
     '<option value="">— Select —</option>' + activeEmps.map(e => `<option value="${esc(e.employee_id)}">${esc(e.full_name)} (${esc(e.employee_id)})</option>`).join('');
   document.getElementById('assignmentModal').classList.remove('hidden');
 }
-function closeAssignmentModal() { document.getElementById('assignmentModal').classList.add('hidden'); }
+function closeAssignmentModal() { closeModal('assignmentModal'); }
 
 async function submitAssignmentForm(e) {
   e.preventDefault();

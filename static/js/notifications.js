@@ -82,7 +82,7 @@ function openNotificationModal(notificationId) {
   updateNotificationWordCount();
   document.getElementById('notificationModal').classList.remove('hidden');
 }
-function closeNotificationModal() { document.getElementById('notificationModal').classList.add('hidden'); }
+function closeNotificationModal() { closeModal('notificationModal'); }
 
 const submitNotification = guardAsync(async function() {
   const id=document.getElementById('notificationId').value;
@@ -196,7 +196,7 @@ function openSystemNotificationModal(notificationId) {
   updateSystemNotificationWordCount();
   document.getElementById('systemNotificationModal').classList.remove('hidden');
 }
-function closeSystemNotificationModal() { document.getElementById('systemNotificationModal').classList.add('hidden'); }
+function closeSystemNotificationModal() { closeModal('systemNotificationModal'); }
 
 const submitSystemNotification = guardAsync(async function() {
   const id=document.getElementById('systemNotificationId').value;

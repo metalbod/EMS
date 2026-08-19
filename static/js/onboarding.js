@@ -146,7 +146,7 @@ async function toggleObItem(clId,itemId,done) {
   loadObChecklists(obCurrentType);
 }
 
-function closeObDetail(){document.getElementById('obDetailModal').classList.add('hidden');viewingObId=null;}
+function closeObDetail(){closeModal('obDetailModal', () => viewingObId=null);}
 
 // ---------------------------------------------------------------------------
 // Checklist item attachments (optional proof-of-completion, e.g. a photo of
@@ -234,7 +234,7 @@ async function openStartObModal(type) {
   setSel.innerHTML=sets.length?sets.map(s=>`<option value="${s.id}" ${s.is_default?'selected':''}>${esc(s.name)}${s.is_default?' (Default)':''} — ${s.item_count} item${s.item_count===1?'':'s'}</option>`).join(''):'<option value="">No templates configured</option>';
   document.getElementById('startObModal').classList.remove('hidden');
 }
-function closeStartObModal(){document.getElementById('startObModal').classList.add('hidden');}
+function closeStartObModal(){closeModal('startObModal');}
 
 async function submitStartOb(e) {
   e.preventDefault();
@@ -469,7 +469,7 @@ function openObTmplItemModal(type,id) {
   courseSel.value=item.linked_ld_course_id||'';
   document.getElementById('obTmplItemModal').classList.remove('hidden');
 }
-function closeObTmplItemModal(){document.getElementById('obTmplItemModal').classList.add('hidden');}
+function closeObTmplItemModal(){closeModal('obTmplItemModal');}
 
 const saveObTmplItemDetail = guardAsync(async function() {
   const type=obActiveTmplType;

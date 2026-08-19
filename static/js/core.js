@@ -150,6 +150,18 @@ function guardAsync(fn) {
   };
 }
 
+// Replaces 31 hand-written `function closeXModal() { document.getElementById
+// ('xModal').classList.add('hidden'); [someTrackingVar = null;] }` copies —
+// unlike the matching openXModal() functions (which genuinely vary per
+// modal: populating dropdowns, formatting detail views — see
+// docs/adr/0001-no-generic-table-row-renderer.md for why that variation
+// isn't worth abstracting), the close side is always just "hide the
+// element" plus an optional single reset. resetFn covers that reset case.
+function closeModal(id, resetFn) {
+  document.getElementById(id)?.classList.add('hidden');
+  resetFn?.();
+}
+
 // ---------------------------------------------------------------------------
 // API helper
 // ---------------------------------------------------------------------------

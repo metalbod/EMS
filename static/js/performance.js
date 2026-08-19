@@ -76,7 +76,7 @@ function openCycleModal() {
   document.getElementById('cycleEnd').value='';
   document.getElementById('cycleModal').classList.remove('hidden');
 }
-function closeCycleModal(){ document.getElementById('cycleModal').classList.add('hidden'); }
+function closeCycleModal(){ closeModal('cycleModal'); }
 
 const submitCycle = guardAsync(async function() {
   const name=document.getElementById('cycleName').value.trim();
@@ -197,7 +197,7 @@ function openGoalModal(goal) {
   renderKeyResultsInForm();
   document.getElementById('goalModal').classList.remove('hidden');
 }
-function closeGoalModal(){ document.getElementById('goalModal').classList.add('hidden'); currentGoalForForm=null; }
+function closeGoalModal(){ closeModal('goalModal', () => currentGoalForForm=null); }
 
 function renderKeyResultsInForm() {
   const wrap=document.getElementById('goalKeyResultsList');
@@ -334,7 +334,7 @@ async function openManagerReview(appraisalId) {
   document.getElementById('mrComments').value='';
   document.getElementById('managerReviewModal').classList.remove('hidden');
 }
-function closeManagerReviewModal(){ document.getElementById('managerReviewModal').classList.add('hidden'); }
+function closeManagerReviewModal(){ closeModal('managerReviewModal'); }
 
 const submitManagerReview = guardAsync(async function() {
   const id=document.getElementById('mrAppraisalId').value;
@@ -425,7 +425,7 @@ function openPayoutModal(appraisalId, type, employeeName) {
   document.getElementById('payoutBonusAmount').value='';
   document.getElementById('payoutModal').classList.remove('hidden');
 }
-function closePayoutModal(){ document.getElementById('payoutModal').classList.add('hidden'); }
+function closePayoutModal(){ closeModal('payoutModal'); }
 
 const submitPayout = guardAsync(async function() {
   const appraisalId=document.getElementById('payoutAppraisalId').value;

@@ -35,7 +35,7 @@ function openPayrollRunModal() {
   document.getElementById('prEnd').value='';
   document.getElementById('payrollRunModal').classList.remove('hidden');
 }
-function closePayrollRunModal() { document.getElementById('payrollRunModal').classList.add('hidden'); }
+function closePayrollRunModal() { closeModal('payrollRunModal'); }
 
 const submitPayrollRun = guardAsync(async function() {
   const period_start=document.getElementById('prStart').value;
@@ -106,7 +106,7 @@ async function openPayrollRunDetail(runId) {
 
   document.getElementById('payrollRunDetailModal').classList.remove('hidden');
 }
-function closePayrollRunDetailModal() { document.getElementById('payrollRunDetailModal').classList.add('hidden'); }
+function closePayrollRunDetailModal() { closeModal('payrollRunDetailModal'); }
 
 const saveAdjustedPayslip = guardAsync(async function(payslipId) {
   const basic_salary=parseFloat(document.getElementById(`ps-basic-${payslipId}`).value);
@@ -206,4 +206,4 @@ async function viewPayslip(payslipId) {
   `;
   document.getElementById('payslipViewModal').classList.remove('hidden');
 }
-function closePayslipViewModal() { document.getElementById('payslipViewModal').classList.add('hidden'); }
+function closePayslipViewModal() { closeModal('payslipViewModal'); }

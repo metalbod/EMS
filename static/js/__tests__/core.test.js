@@ -396,3 +396,36 @@ describe('guardAsync', () => {
     expect(result).toBe(5);
   });
 });
+
+describe('closeModal', () => {
+  // Matches core.js's closeModal — replaces 31 hand-written
+  // `function closeXModal() { document.getElementById('xModal')
+  // .classList.add('hidden'); [someVar = null;] }` copies.
+  function closeModal(id, resetFn) {
+    document.getElementById(id)?.classList.add('hidden');
+    resetFn?.();
+  }
+
+  beforeEach(() => {
+    document.body.innerHTML = '<div id="testModal" class="foo"></div>';
+  });
+
+  it('hides the element by id', () => {
+    closeModal('testModal');
+    expect(document.getElementById('testModal').classList.contains('hidden')).toBe(true);
+  });
+
+  it('calls the optional reset function', () => {
+    const resetFn = vi.fn();
+    closeModal('testModal', resetFn);
+    expect(resetFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not throw when no reset function is given', () => {
+    expect(() => closeModal('testModal')).not.toThrow();
+  });
+
+  it('does not throw when the element does not exist', () => {
+    expect(() => closeModal('missingModal')).not.toThrow();
+  });
+});

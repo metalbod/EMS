@@ -71,7 +71,7 @@ function openUserModal(uData=null) {
   document.getElementById('userModal').classList.remove('hidden');
 }
 
-function closeUserModal() { document.getElementById('userModal').classList.add('hidden'); editingUserId=null; }
+function closeUserModal() { closeModal('userModal', () => editingUserId=null); }
 
 async function submitUserForm(e) {
   e.preventDefault();

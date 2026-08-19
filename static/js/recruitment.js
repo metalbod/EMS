@@ -90,7 +90,7 @@ function openReqModal(reqData=null) {
   document.getElementById('reqFormErr').classList.add('hidden');
   document.getElementById('reqModal').classList.remove('hidden');
 }
-function closeReqModal(){document.getElementById('reqModal').classList.add('hidden');}
+function closeReqModal(){closeModal('reqModal');}
 
 async function submitReqForm(e) {
   e.preventDefault();
@@ -143,7 +143,7 @@ async function openReqDetail(reqId) {
   document.getElementById('rdCloseBtn').classList.toggle('hidden',!['Approved'].includes(r.status));
   document.getElementById('reqDetailModal').classList.remove('hidden');
 }
-function closeReqDetailModal(){document.getElementById('reqDetailModal').classList.add('hidden');viewingReqId=null;}
+function closeReqDetailModal(){closeModal('reqDetailModal', () => viewingReqId=null);}
 function closeBothReq(){closeReqDetailModal();}
 async function editReqFromDetail(){
   if(!viewingReqId) return;
@@ -305,7 +305,7 @@ function openCandModal(candData=null, presetReqId=null) {
   switchCandFormTab('cm-personal');
   document.getElementById('candModal').classList.remove('hidden');
 }
-function closeCandModal(){document.getElementById('candModal').classList.add('hidden');}
+function closeCandModal(){closeModal('candModal');}
 
 function renderCandFileList() {
   const el=document.getElementById('candFileList');
@@ -476,7 +476,7 @@ async function openCandDetail(candId) {
   switchCandTab('cdt-profile');
   document.getElementById('candDetailModal').classList.remove('hidden');
 }
-function closeCandDetailModal(){document.getElementById('candDetailModal').classList.add('hidden');viewingCandId=null;}
+function closeCandDetailModal(){closeModal('candDetailModal', () => viewingCandId=null);}
 async function loadCandHistory() {
   if(!viewingCandId) return;
   const el=document.getElementById('cdt-history');
@@ -604,7 +604,7 @@ async function openIntModal(candId=null) {
   document.getElementById('intFormErr').classList.add('hidden');
   document.getElementById('intModal').classList.remove('hidden');
 }
-function closeIntModal(){document.getElementById('intModal').classList.add('hidden');}
+function closeIntModal(){closeModal('intModal');}
 
 async function submitIntForm(e) {
   e.preventDefault();
@@ -657,7 +657,7 @@ async function openScoreModal(intId,meta) {
     }
   }
 }
-function closeScoreModal(){document.getElementById('scoreModal').classList.add('hidden');viewingIntId=null;}
+function closeScoreModal(){closeModal('scoreModal', () => viewingIntId=null);}
 async function submitScore(e) {
   e.preventDefault();
   const err=document.getElementById('scoreFormErr');
@@ -725,7 +725,7 @@ async function openOfferModal(offerId=null, preCandId=null) {
   document.getElementById('offerFormErr').classList.add('hidden');
   document.getElementById('offerModal').classList.remove('hidden');
 }
-function closeOfferModal(){document.getElementById('offerModal').classList.add('hidden');}
+function closeOfferModal(){closeModal('offerModal');}
 function toggleOfferFields() {
   const isOffer=document.getElementById('offerType').value==='Offer';
   ['offerSalaryWrap','offerStartWrap','offerExpiryWrap'].forEach(id=>document.getElementById(id).classList.toggle('hidden',!isOffer));
@@ -783,7 +783,7 @@ async function openOfferView(offerId) {
   document.getElementById('ovStatusSelect').value=o.status;
   document.getElementById('offerViewModal').classList.remove('hidden');
 }
-function closeOfferViewModal(){document.getElementById('offerViewModal').classList.add('hidden');viewingOfferId=null;}
+function closeOfferViewModal(){closeModal('offerViewModal', () => viewingOfferId=null);}
 async function updateOfferStatus() {
   if(!viewingOfferId) return;
   const status=document.getElementById('ovStatusSelect').value;

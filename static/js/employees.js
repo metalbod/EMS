@@ -155,7 +155,7 @@ function switchViewTab(name) {
   if(name==='vt-notes') loadNotes();
 }
 
-function closeViewModal() { document.getElementById('viewModal').classList.add('hidden'); viewingId=null; }
+function closeViewModal() { closeModal('viewModal', () => viewingId=null); }
 
 async function loadEmployeeLocations(empId) {
   const el = document.getElementById('vt-locations');
@@ -471,7 +471,7 @@ async function openEditModal(e) {
   document.getElementById('empModal').classList.remove('hidden');
 }
 
-function closeEmpModal() { document.getElementById('empModal').classList.add('hidden'); currentEmpId=null; }
+function closeEmpModal() { closeModal('empModal', () => currentEmpId=null); }
 
 function activeTabs(){ return currentEmpId ? TABS : TABS.filter(t=>t!=='dependents'); }
 

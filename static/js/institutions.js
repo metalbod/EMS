@@ -163,7 +163,7 @@ function openInstModal(instData = null) {
   document.getElementById('instModal').classList.remove('hidden');
 }
 
-function closeInstModal() { document.getElementById('instModal').classList.add('hidden'); }
+function closeInstModal() { closeModal('instModal'); }
 
 async function submitInstForm(e) {
   e.preventDefault();

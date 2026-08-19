@@ -132,7 +132,7 @@ async function openProjectModal(projectId) {
   }
   document.getElementById('projectModal').classList.remove('hidden');
 }
-function closeProjectModal() { document.getElementById('projectModal').classList.add('hidden'); }
+function closeProjectModal() { closeModal('projectModal'); }
 
 const submitProject = guardAsync(async function() {
   const id=document.getElementById('projectId').value;
@@ -584,7 +584,7 @@ async function loadMyOvertimePage() {
       <span class="badge ${OT_STATUS_COLORS[o.status]||'bg-slate-100 text-slate-600'} text-xs">${o.status}</span>
     </div>`).join('');
 }
-function closeTimesheetDetailModal() { document.getElementById('timesheetDetailModal').classList.add('hidden'); }
+function closeTimesheetDetailModal() { closeModal('timesheetDetailModal'); }
 
 async function reviewTimesheet(tsId, status) {
   const res=await api(`/api/timesheets/${tsId}/status`,{method:'PATCH',body:JSON.stringify({status})});
