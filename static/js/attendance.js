@@ -15,7 +15,7 @@ const ATT_STATUS_COLORS = {
 };
 
 function attStatusBadge(status) {
-  const cls = ATT_STATUS_COLORS[status] || 'bg-slate-100 text-slate-600';
+  const cls = statusColor(ATT_STATUS_COLORS, status);
   return `<span class="px-2 py-0.5 rounded text-xs font-medium ${cls}">${esc(status)}</span>`;
 }
 

@@ -162,6 +162,23 @@ function closeModal(id, resetFn) {
   resetFn?.();
 }
 
+// Replaces the `X_STATUS_COLORS[value] || fallback` idiom hand-copied at 23
+// call sites across 10 files (16 separate *_COLORS map objects — kept
+// decentralized per-module since each domain's statuses are genuinely
+// different data, not duplicated logic; see
+// docs/adr/0001-no-generic-table-row-renderer.md for the same reasoning
+// applied to row markup). This closes the actual bug the duplication
+// caused: 6 of those 23 sites had a dropped or hollowed-out fallback —
+// notifications.js had 2 with no `||fallback` at all, so an unrecognized
+// status rendered the literal string "undefined" as a CSS class;
+// performance.js/payroll.js had 4 more using `||''`, silently rendering an
+// unstyled badge — because re-typing the same fallback string by hand at
+// every call site is exactly the kind of thing that's easy to skip once
+// and never notice.
+function statusColor(map, value, fallback = 'bg-slate-100 text-slate-600') {
+  return map[value] || fallback;
+}
+
 // ---------------------------------------------------------------------------
 // API helper
 // ---------------------------------------------------------------------------

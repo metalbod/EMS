@@ -429,3 +429,32 @@ describe('closeModal', () => {
     expect(() => closeModal('missingModal')).not.toThrow();
   });
 });
+
+describe('statusColor', () => {
+  // Matches core.js's statusColor — replaces the `X_STATUS_COLORS[value] ||
+  // fallback` idiom hand-copied at 23 call sites, closing a real bug: some
+  // sites had no fallback at all (rendering the literal string "undefined"
+  // as a CSS class) or an empty-string fallback (silently unstyled badge).
+  function statusColor(map, value, fallback = 'bg-slate-100 text-slate-600') {
+    return map[value] || fallback;
+  }
+
+  const COLORS = { Active: 'bg-green-100 text-green-700', Draft: 'bg-amber-100 text-amber-700' };
+
+  it('returns the mapped color for a known value', () => {
+    expect(statusColor(COLORS, 'Active')).toBe('bg-green-100 text-green-700');
+  });
+
+  it('returns the default fallback for an unrecognized value', () => {
+    expect(statusColor(COLORS, 'SomeNewStatus')).toBe('bg-slate-100 text-slate-600');
+  });
+
+  it('returns the default fallback for undefined/null', () => {
+    expect(statusColor(COLORS, undefined)).toBe('bg-slate-100 text-slate-600');
+    expect(statusColor(COLORS, null)).toBe('bg-slate-100 text-slate-600');
+  });
+
+  it('supports a custom fallback for non-badge use (e.g. progress-bar fill color)', () => {
+    expect(statusColor(COLORS, 'SomeNewStatus', 'bg-slate-400')).toBe('bg-slate-400');
+  });
+});

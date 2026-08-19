@@ -332,7 +332,7 @@ async function loadNotes() {
           <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
             <div class="flex items-center justify-between flex-wrap gap-1 mb-1">
               <div class="flex items-center gap-2">
-                <span class="badge text-xs ${OB_TYPE_COLORS[e.ob_type]||'bg-slate-100 text-slate-600'}">${e.ob_type.charAt(0).toUpperCase()+e.ob_type.slice(1)}</span>
+                <span class="badge text-xs ${statusColor(OB_TYPE_COLORS, e.ob_type)}">${e.ob_type.charAt(0).toUpperCase()+e.ob_type.slice(1)}</span>
                 <span class="text-sm font-medium text-slate-700">${esc(e.action)}</span>
               </div>
               <span class="text-xs text-slate-400">${fmtDateTime(e.created_at)}</span>

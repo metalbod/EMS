@@ -5,7 +5,7 @@ const OB_ROLE_COLORS={employee:'bg-purple-100 text-purple-700',manager:'bg-amber
 const OB_ROLE_LABELS={employee:'Employee',manager:'Manager',hr_admin:'HR Admin',hr_manager:'HR Manager',payroll_manager:'Payroll Manager',compensation_manager:'Compensation Manager'};
 // Custom roles (Settings > Roles) have no fixed color/label above — fall
 // back to a neutral badge and the role's own display_name from rolesCache.
-function obRoleColor(role){ return OB_ROLE_COLORS[role]||'bg-slate-100 text-slate-600'; }
+function obRoleColor(role){ return statusColor(OB_ROLE_COLORS, role); }
 function obRoleLabel(role){ return OB_ROLE_LABELS[role]||rolesCache.find(r=>r.role_key===role)?.display_name||role; }
 
 async function loadObChecklists(type, statusFilter) {

@@ -48,7 +48,7 @@ async function loadNotificationSettings() {
       <td class="px-4 py-3 text-slate-700 max-w-md"><p class="line-clamp-2">${esc(n.message)}</p></td>
       <td class="px-4 py-3 text-slate-500 whitespace-nowrap">${utcToLocalDisplay(n.start_time)}</td>
       <td class="px-4 py-3 text-slate-500 whitespace-nowrap">${utcToLocalDisplay(n.end_time)}</td>
-      <td class="px-4 py-3"><span class="badge text-xs ${NOTIF_STATUS_COLORS[status]}">${status}</span></td>
+      <td class="px-4 py-3"><span class="badge text-xs ${statusColor(NOTIF_STATUS_COLORS, status)}">${status}</span></td>
       <td class="px-4 py-3 text-right whitespace-nowrap">
         <button onclick="openNotificationModal(${n.id})" class="text-xs text-blue-600 hover:underline mr-3">Edit</button>
         <button onclick="deleteNotification(${n.id})" class="text-xs text-red-600 hover:underline">Delete</button>
@@ -162,7 +162,7 @@ async function loadSystemNotificationSettings() {
       <td class="px-4 py-3 text-slate-700 max-w-md"><p class="line-clamp-2">${esc(n.message)}</p></td>
       <td class="px-4 py-3 text-slate-500 whitespace-nowrap">${utcToLocalDisplay(n.start_time)}</td>
       <td class="px-4 py-3 text-slate-500 whitespace-nowrap">${utcToLocalDisplay(n.end_time)}</td>
-      <td class="px-4 py-3"><span class="badge text-xs ${NOTIF_STATUS_COLORS[status]}">${status}</span></td>
+      <td class="px-4 py-3"><span class="badge text-xs ${statusColor(NOTIF_STATUS_COLORS, status)}">${status}</span></td>
       <td class="px-4 py-3 text-right whitespace-nowrap">
         <button onclick="openSystemNotificationModal(${n.id})" class="text-xs text-blue-600 hover:underline mr-3">Edit</button>
         <button onclick="deleteSystemNotification(${n.id})" class="text-xs text-red-600 hover:underline">Delete</button>

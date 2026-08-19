@@ -188,7 +188,7 @@ function loadRecruitmentDash() {
       return `<div class="flex items-center gap-2">
         <div class="w-20 text-xs text-slate-600">${stage}</div>
         <div class="flex-1 bg-slate-100 rounded-full h-2">
-          <div class="${PIPELINE_COLORS[stage]||'bg-slate-400'} h-2 rounded-full" style="width:${Math.round(cnt/totalCands*100)}%"></div>
+          <div class="${statusColor(PIPELINE_COLORS, stage, 'bg-slate-400')} h-2 rounded-full" style="width:${Math.round(cnt/totalCands*100)}%"></div>
         </div>
         <div class="text-xs text-slate-500 w-5 text-right">${cnt}</div>
       </div>`;
@@ -202,7 +202,7 @@ function loadRecruitmentDash() {
         <div class="flex items-center gap-2">
           <div class="w-28 text-xs text-slate-600 truncate">${status}</div>
           <div class="flex-1 bg-slate-100 rounded-full h-2">
-            <div class="${REQ_COLORS[status]||'bg-slate-400'} h-2 rounded-full" style="width:${Math.round(cnt/totalReqs*100)}%"></div>
+            <div class="${statusColor(REQ_COLORS, status, 'bg-slate-400')} h-2 rounded-full" style="width:${Math.round(cnt/totalReqs*100)}%"></div>
           </div>
           <div class="text-xs text-slate-500 w-5 text-right">${cnt}</div>
         </div>`).join('') || '<p class="text-slate-400 text-sm">No requisitions yet.</p>';

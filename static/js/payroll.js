@@ -23,7 +23,7 @@ async function loadPayrollRuns() {
   listEl.innerHTML=rows.map(r=>`
     <tr class="border-t border-slate-100 cursor-pointer hover:bg-slate-50 transition" onclick="openPayrollRunDetail(${r.id})">
       <td class="px-4 py-3 font-medium text-slate-800">${fmtDate(r.period_start)} → ${fmtDate(r.period_end)}</td>
-      <td class="px-4 py-3"><span class="badge text-xs ${PAYROLL_STATUS_COLORS[r.status]||'bg-slate-100 text-slate-600'}">${r.status}</span></td>
+      <td class="px-4 py-3"><span class="badge text-xs ${statusColor(PAYROLL_STATUS_COLORS, r.status)}">${r.status}</span></td>
       <td class="px-4 py-3 text-slate-600">${r.employee_count}</td>
       <td class="px-4 py-3 text-slate-600">${fmtCurrency(r.total_net_pay)}</td>
       <td class="px-4 py-3 text-right text-slate-300"><svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg></td>
@@ -61,7 +61,7 @@ async function openPayrollRunDetail(runId) {
   if(!res?.ok) return;
   const run=await res.json();
   document.getElementById('prDetailTitle').textContent=`Payroll Run — ${fmtDate(run.period_start)} → ${fmtDate(run.period_end)}`;
-  document.getElementById('prDetailMeta').innerHTML=`<span class="badge text-xs ${PAYROLL_STATUS_COLORS[run.status]||''}">${run.status}</span>`;
+  document.getElementById('prDetailMeta').innerHTML=`<span class="badge text-xs ${statusColor(PAYROLL_STATUS_COLORS, run.status)}">${run.status}</span>`;
   const canEdit=isPayrollManager() && run.status==='Draft';
   document.getElementById('payrollRunDetailList').innerHTML=run.payslips.length?run.payslips.map(p=>{
     const hourly=p.salary_type==='Hourly';

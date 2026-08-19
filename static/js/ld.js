@@ -21,7 +21,7 @@ async function loadLdCourses() {
   listEl.innerHTML=rows.map(c=>`
     <div class="bg-white border border-slate-200 rounded-xl p-4">
       <div class="flex items-start justify-between gap-2 mb-2">
-        <span class="badge text-xs ${LD_CATEGORY_COLORS[c.category]||'bg-slate-100 text-slate-600'}">${LD_CATEGORY_LABELS[c.category]||c.category}</span>
+        <span class="badge text-xs ${statusColor(LD_CATEGORY_COLORS, c.category)}">${LD_CATEGORY_LABELS[c.category]||c.category}</span>
         ${canManage?`<div class="flex items-center gap-1">
           <button onclick="openLdModulesModal(${c.id})" class="text-slate-300 hover:text-green-600" title="Course Content"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s4.832.477 6 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg></button>
           <button onclick="openLdQuizModal(${c.id})" class="text-slate-300 hover:text-purple-500" title="Manage Quiz"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></button>
@@ -158,7 +158,7 @@ async function loadLdEnrollments() {
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2 mb-0.5 flex-wrap">
             <p class="font-medium text-slate-800">${esc(en.course_title)}</p>
-            <span class="badge text-xs ${LD_CATEGORY_COLORS[en.course_category]||'bg-slate-100 text-slate-600'}">${LD_CATEGORY_LABELS[en.course_category]||en.course_category}</span>
+            <span class="badge text-xs ${statusColor(LD_CATEGORY_COLORS, en.course_category)}">${LD_CATEGORY_LABELS[en.course_category]||en.course_category}</span>
             ${hasQuiz?`<span class="badge text-xs bg-purple-100 text-purple-700">Quiz Required</span>`:''}
             ${en.module_count>0?`<span class="badge text-xs bg-slate-100 text-slate-600">${en.modules_viewed}/${en.module_count} lessons</span>`:''}
           </div>
@@ -166,7 +166,7 @@ async function loadLdEnrollments() {
           ${en.notes?`<p class="text-xs text-slate-400 italic mt-1">${esc(en.notes)}</p>`:''}
         </div>
         <div class="flex items-center gap-2 flex-shrink-0">
-          <span class="badge ${LD_STATUS_COLORS[en.status]||'bg-slate-100 text-slate-600'}">${en.status}</span>
+          <span class="badge ${statusColor(LD_STATUS_COLORS, en.status)}">${en.status}</span>
         </div>
       </div>
       <div class="mt-3 flex items-center gap-2">

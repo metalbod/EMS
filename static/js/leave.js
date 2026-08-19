@@ -60,7 +60,7 @@ async function loadLeaveApplications() {
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2 mb-0.5 flex-wrap">
             <p class="font-medium text-slate-800">${esc(a.leave_type_name)}</p>
-            <span class="badge ${LEAVE_STATUS_COLORS[a.status]||'bg-slate-100 text-slate-600'} text-xs">${a.status}</span>
+            <span class="badge ${statusColor(LEAVE_STATUS_COLORS, a.status)} text-xs">${a.status}</span>
           </div>
           <p class="text-xs text-slate-500">${fmtDate(a.start_date)} → ${fmtDate(a.end_date)} · ${a.days_count} working day(s)</p>
           ${a.reason?`<p class="text-xs text-slate-400 italic mt-1">${esc(a.reason)}</p>`:''}
@@ -271,7 +271,7 @@ async function loadLeaveApprovals() {
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2 mb-0.5 flex-wrap">
             <p class="font-medium text-slate-800">${esc(a.employee_name)}</p>
-            <span class="badge ${LEAVE_STATUS_COLORS[a.status]||'bg-slate-100 text-slate-600'} text-xs">${a.status}</span>
+            <span class="badge ${statusColor(LEAVE_STATUS_COLORS, a.status)} text-xs">${a.status}</span>
           </div>
           <p class="text-xs text-slate-500">${esc(a.leave_type_name)} · ${fmtDate(a.start_date)} → ${fmtDate(a.end_date)} · ${a.days_count} day(s)</p>
           <p class="text-xs text-slate-400">${esc(a.department||'')}${a.designation?' · '+esc(a.designation):''}</p>

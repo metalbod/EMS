@@ -64,7 +64,7 @@ async function loadPerformanceCycles() {
     return `<tr class="border-t border-slate-100">
       <td class="px-4 py-3 font-medium text-slate-800">${esc(c.name)}</td>
       <td class="px-4 py-3 text-slate-500">${fmtDate(c.period_start)} → ${fmtDate(c.period_end)}</td>
-      <td class="px-4 py-3"><span class="badge text-xs ${PERF_STATUS_COLORS[c.status]||''}">${c.status}</span></td>
+      <td class="px-4 py-3"><span class="badge text-xs ${statusColor(PERF_STATUS_COLORS, c.status)}">${c.status}</span></td>
       <td class="px-4 py-3 text-right">${actions}</td>
     </tr>`;
   }).join('');
@@ -134,7 +134,7 @@ async function loadMyPerformancePage() {
   let html=`<div class="bg-white rounded-xl border border-slate-200 p-5 mb-5">
     <div class="flex items-center justify-between mb-3">
       <h3 class="text-sm font-semibold text-slate-700">Goals <span class="text-xs font-normal ${totalWeight===100?'text-green-500':'text-amber-500'}">(${totalWeight}% weighted${totalWeight!==100?' — should total 100%':''})</span></h3>
-      ${myAppraisal?`<span class="badge text-xs ${APPR_STATUS_COLORS[myAppraisal.status]||''}">${myAppraisal.status}</span>`:''}
+      ${myAppraisal?`<span class="badge text-xs ${statusColor(APPR_STATUS_COLORS, myAppraisal.status)}">${myAppraisal.status}</span>`:''}
     </div>
     <div class="space-y-2">${goals.length?goals.map(g=>renderGoalRow(g, canEditGoals)).join(''):'<p class="text-sm text-slate-400">No goals added yet.</p>'}</div>
   </div>`;
@@ -314,7 +314,7 @@ async function loadTeamAppraisalsPage() {
         <p class="font-medium text-slate-800">${esc(a.full_name)}</p>
         <p class="text-xs text-slate-400">${esc(a.department||'')}${a.designation?' · '+esc(a.designation):''}</p>
       </td>
-      <td class="px-4 py-3"><span class="badge text-xs ${APPR_STATUS_COLORS[a.status]||''}">${a.status}</span></td>
+      <td class="px-4 py-3"><span class="badge text-xs ${statusColor(APPR_STATUS_COLORS, a.status)}">${a.status}</span></td>
       <td class="px-4 py-3 text-slate-600">${a.self_rating??'—'}</td>
       <td class="px-4 py-3 text-slate-600">${a.manager_rating??'—'}</td>
       <td class="px-4 py-3 text-right">${a.status==='ManagerReview'?'<span class="text-xs text-blue-600">Review →</span>':''}</td>

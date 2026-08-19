@@ -64,7 +64,7 @@ function renderProjectTable() {
         <p class="font-medium text-slate-800">${esc(p.name)}</p>
         <p class="text-xs text-slate-400 line-clamp-1">${esc(p.description||'')}</p>
       </td>
-      <td class="px-4 py-3"><span class="badge text-xs ${STATUS_COLORS[p.status]||'bg-slate-100 text-slate-600'}">${p.status}</span></td>
+      <td class="px-4 py-3"><span class="badge text-xs ${statusColor(STATUS_COLORS, p.status)}">${p.status}</span></td>
       <td class="px-4 py-3 text-slate-600">${p.task_count}</td>
       <td class="px-4 py-3 text-slate-600">${p.member_count}</td>
       <td class="px-4 py-3 text-slate-600">${p.total_allocated_hours}h</td>
@@ -182,7 +182,7 @@ async function loadProjectTasksForManage(projectId) {
         <span class="font-medium text-slate-700">${esc(t.name)}</span>
         <div class="flex items-center gap-1">
           ${t.open_to_all?'<span class="badge text-xs bg-blue-100 text-blue-700">ALL</span>':''}
-          <span class="badge text-xs ${TASK_STATUS_COLORS[t.status]||'bg-slate-100 text-slate-600'}">${t.status}</span>
+          <span class="badge text-xs ${statusColor(TASK_STATUS_COLORS, t.status)}">${t.status}</span>
         </div>
       </div>
       <p class="text-xs text-slate-500 mt-0.5">
@@ -434,7 +434,7 @@ function renderTimesheetEntries() {
   document.getElementById('timesheetTotalHours').textContent=ts.total_hours;
 
   const badgeWrap=document.getElementById('timesheetStatusBadgeWrap');
-  badgeWrap.innerHTML=`<span class="badge ${TS_STATUS_COLORS[ts.status]||'bg-slate-100 text-slate-600'}">${ts.status}</span>${ts.notes?` <span class="text-xs text-slate-400 ml-1">${esc(ts.notes)}</span>`:''}`;
+  badgeWrap.innerHTML=`<span class="badge ${statusColor(TS_STATUS_COLORS, ts.status)}">${ts.status}</span>${ts.notes?` <span class="text-xs text-slate-400 ml-1">${esc(ts.notes)}</span>`:''}`;
 
   document.getElementById('timesheetAddForm').classList.toggle('hidden', !isDraft);
   document.getElementById('timesheetSubmitBtn').classList.toggle('hidden', !isDraft);
@@ -498,7 +498,7 @@ async function loadTimesheetApprovals() {
           <p class="text-xs text-slate-500">${esc(t.department||'')}${t.designation?' · '+esc(t.designation):''} · ${fmtDate(t.period_start)} → ${fmtDate(t.period_end)}</p>
         </div>
         <div class="text-right">
-          <span class="badge ${TS_STATUS_COLORS[t.status]||'bg-slate-100 text-slate-600'} text-xs">${t.status}</span>
+          <span class="badge ${statusColor(TS_STATUS_COLORS, t.status)} text-xs">${t.status}</span>
           <p class="text-xs text-slate-400 mt-1">${t.total_hours} hrs</p>
         </div>
       </div>
@@ -548,7 +548,7 @@ async function loadTimesheetDetailOvertime(tsId) {
       <span class="text-sm text-slate-700 flex-shrink-0">${fmtDate(o.work_date)}</span>
       <span class="text-xs text-slate-500 flex-shrink-0">${o.logged_hours}h logged, ${o.threshold_hours}h normal</span>
       <span class="text-sm font-medium text-amber-700 flex-shrink-0">+${o.overtime_hours}h OT</span>
-      <span class="badge ${OT_STATUS_COLORS[o.status]||'bg-slate-100 text-slate-600'} text-xs flex-shrink-0">${o.status}</span>
+      <span class="badge ${statusColor(OT_STATUS_COLORS, o.status)} text-xs flex-shrink-0">${o.status}</span>
       <span class="flex-1"></span>
       ${o.status==='Pending'?`
         <button onclick="reviewOvertime(${o.id},${tsId},'Approved')" class="btn-primary text-xs px-2 py-1">Approve</button>
@@ -581,7 +581,7 @@ async function loadMyOvertimePage() {
         <p class="text-xs text-slate-500">${o.logged_hours}h logged vs ${o.threshold_hours}h normal — <span class="font-medium text-amber-700">${o.overtime_hours}h overtime</span></p>
         ${o.status==='Approved'?`<p class="text-xs text-green-700 mt-1">${o.conversion_mode==='leave'?`+${o.leave_days_credited} day(s) credited`:`${fmtCurrency(o.pay_amount)} tracked`}</p>`:''}
       </div>
-      <span class="badge ${OT_STATUS_COLORS[o.status]||'bg-slate-100 text-slate-600'} text-xs">${o.status}</span>
+      <span class="badge ${statusColor(OT_STATUS_COLORS, o.status)} text-xs">${o.status}</span>
     </div>`).join('');
 }
 function closeTimesheetDetailModal() { closeModal('timesheetDetailModal'); }
