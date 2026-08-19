@@ -117,16 +117,19 @@ wrapper everywhere.
   translation (`IndexError: tuple index out of range`). Fetch rows and
   filter in Python instead, or pass the wildcard pre-built into the bind
   parameter, not the SQL string.
-- **Every router file uses a dual-import try/except** so the same code
-  works whether run as `main.py` directly or as a package (`ems.` prefix
-  in some deployment contexts):
-  ```python
-  try:
-      from core.deps import get_current_user
-  except ImportError:
-      from ems.core.deps import get_current_user
-  ```
-  Match this exactly in new files — it's not optional boilerplate.
+- **Imports are flat (`from core.deps import ...`), not `ems.`-prefixed.**
+  Every router used to carry a `try: from core.X import Y / except
+  ImportError: from ems.X import Y` fallback, for a second invocation mode
+  (running from the *parent* of this repo, so `ems/` resolves as a
+  package) that turned out to be unused by anything real — production
+  (`Dockerfile`/`deploy.sh`), local preview (`.claude/launch.json`, via
+  `--app-dir`), and `celery_worker.py`'s own documented usage all already
+  ran the flat path. Removed in full across 34 files (139 blocks) after
+  confirming this; the root `__init__.py` that made the `ems.` package
+  mode possible was removed too. Don't reintroduce the dual-import
+  pattern in new files — if a second invocation mode is ever genuinely
+  needed again, resolve it once at process start (e.g. `sys.path`/
+  `sys.modules` aliasing in `main.py`), not per-file.
 - **No cron/scheduled jobs anywhere in this stack.** Anything that looks
   like it needs one (leave carry-forward expiry, attendance absence
   detection, overtime detection) is instead computed **lazily on

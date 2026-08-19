@@ -10,35 +10,17 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 
-try:
-    from core.deps import get_current_user, need_inst, require_roles
-except ImportError:
-    from ems.core.deps import get_current_user, need_inst, require_roles
+from core.deps import get_current_user, need_inst, require_roles
 
-try:
-    from core.roles import BUILTIN_ROLES, LEAVE_MANAGE_ROLES
-except ImportError:
-    from ems.core.roles import BUILTIN_ROLES, LEAVE_MANAGE_ROLES
+from core.roles import BUILTIN_ROLES, LEAVE_MANAGE_ROLES
 
-try:
-    from core.constants import ROLE_LABELS
-except ImportError:
-    from ems.core.constants import ROLE_LABELS
+from core.constants import ROLE_LABELS
 
-try:
-    from core.permission_matrix import ALL_ROLES, MATRIX, LOCKED_ROLES, ENFORCED_ACTION_KEYS, ACTION_BY_KEY, is_override_eligible, require_permission
-except ImportError:
-    from ems.core.permission_matrix import ALL_ROLES, MATRIX, LOCKED_ROLES, ENFORCED_ACTION_KEYS, ACTION_BY_KEY, is_override_eligible, require_permission
+from core.permission_matrix import ALL_ROLES, MATRIX, LOCKED_ROLES, ENFORCED_ACTION_KEYS, ACTION_BY_KEY, is_override_eligible, require_permission
 
-try:
-    from core.db_session import db_session
-except ImportError:
-    from ems.core.db_session import db_session
+from core.db_session import db_session
 
-try:
-    from db import get_db
-except ImportError:
-    from ems.db import get_db
+from db import get_db
 
 router = APIRouter()
 

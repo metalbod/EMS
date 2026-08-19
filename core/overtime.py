@@ -20,20 +20,11 @@ payroll.
 from datetime import datetime
 from typing import Any, Dict, List
 
-try:
-    from core.attendance_helpers import resolve_shift, shift_duration_hours
-except ImportError:
-    from ems.core.attendance_helpers import resolve_shift, shift_duration_hours
+from core.attendance_helpers import resolve_shift, shift_duration_hours
 
-try:
-    from core.approval_workflow import start_workflow, project_ids_for_row
-except ImportError:
-    from ems.core.approval_workflow import start_workflow, project_ids_for_row
+from core.approval_workflow import start_workflow, project_ids_for_row
 
-try:
-    from core.leave_balance_ops import _get_or_create_leave_balance, _credit_balance
-except ImportError:
-    from ems.core.leave_balance_ops import _get_or_create_leave_balance, _credit_balance
+from core.leave_balance_ops import _get_or_create_leave_balance, _credit_balance
 
 # Approximates a Monthly-salary employee's hourly rate the same way
 # routers/payroll.py's own overtime approximation already does — see that

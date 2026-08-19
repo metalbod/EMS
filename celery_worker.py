@@ -17,10 +17,7 @@ env_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
 load_dotenv(env_file)
 
 if __name__ == "__main__":
-    try:
-        from core.tasks import app as celery_app
-    except ImportError:
-        from ems.core.tasks import app as celery_app
+    from core.tasks import app as celery_app
 
     # Start worker: -l info = log level, -c 4 = 4 concurrent processes
     celery_app.worker_main(

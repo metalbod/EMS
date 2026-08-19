@@ -18,10 +18,7 @@ import jwt
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-try:
-    from db import get_db, set_rls_context
-except ImportError:
-    from ems.db import get_db, set_rls_context
+from db import get_db, set_rls_context
 
 JWT_SECRET = os.environ.get("JWT_SECRET")
 if not JWT_SECRET:
@@ -123,10 +120,7 @@ def build_current_user_out(conn, user: dict, role_override: str = None):
     `role_override` is used by /switch-role, where the active role for this
     response is the newly-switched-to one, not user["role"].
     """
-    try:
-        from core.schemas import CurrentUserOut
-    except ImportError:
-        from ems.core.schemas import CurrentUserOut
+    from core.schemas import CurrentUserOut
 
     roles = [r.strip() for r in (user.get("roles") or user["role"]).split(",") if r.strip()]
     inst = None

@@ -17,22 +17,12 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-try:
-    from core.deps import build_current_user_out, get_current_user, hash_password, make_token, verify_password
-    from core.schemas import CurrentUserOut, TokenResponse
-except ImportError:
-    from ems.core.deps import build_current_user_out, get_current_user, hash_password, make_token, verify_password
-    from ems.core.schemas import CurrentUserOut, TokenResponse
+from core.deps import build_current_user_out, get_current_user, hash_password, make_token, verify_password
+from core.schemas import CurrentUserOut, TokenResponse
 
-try:
-    from db import get_db
-except ImportError:
-    from ems.db import get_db
+from db import get_db
 
-try:
-    from core.db_session import db_session
-except ImportError:
-    from ems.core.db_session import db_session
+from core.db_session import db_session
 
 router = APIRouter()
 logger = logging.getLogger("ems")

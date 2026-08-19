@@ -8,55 +8,25 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ValidationError, field_validator
 
-try:
-    from core.deps import get_current_user, need_inst
-except ImportError:
-    from ems.core.deps import get_current_user, need_inst
+from core.deps import get_current_user, need_inst
 
-try:
-    from core.org_queries import is_self_or_subordinate
-except ImportError:
-    from ems.core.org_queries import is_self_or_subordinate
+from core.org_queries import is_self_or_subordinate
 
-try:
-    from core.audit import write_audit
-except ImportError:
-    from ems.core.audit import write_audit
+from core.audit import write_audit
 
-try:
-    from core.validators import validate_logo_url
-except ImportError:
-    from ems.core.validators import validate_logo_url
+from core.validators import validate_logo_url
 
-try:
-    from core.constants import RACES, RELIGIONS, GENDERS, MARITAL_STATUSES, EMPLOYMENT_TYPES, STATUSES
-except ImportError:
-    from ems.core.constants import RACES, RELIGIONS, GENDERS, MARITAL_STATUSES, EMPLOYMENT_TYPES, STATUSES
+from core.constants import RACES, RELIGIONS, GENDERS, MARITAL_STATUSES, EMPLOYMENT_TYPES, STATUSES
 
-try:
-    from core.tasks import bulk_upload_employees_task
-except ImportError:
-    from ems.core.tasks import bulk_upload_employees_task
+from core.tasks import bulk_upload_employees_task
 
-try:
-    from db import get_db, IntegrityError
-except ImportError:
-    from ems.db import get_db, IntegrityError
+from db import get_db, IntegrityError
 
-try:
-    from core.db_session import db_session
-except ImportError:
-    from ems.core.db_session import db_session
+from core.db_session import db_session
 
-try:
-    from core.location_assignments import get_primary_location, get_primary_locations, set_primary_location
-except ImportError:
-    from ems.core.location_assignments import get_primary_location, get_primary_locations, set_primary_location
+from core.location_assignments import get_primary_location, get_primary_locations, set_primary_location
 
-try:
-    from core.permission_matrix import require_permission as _require_permission
-except ImportError:
-    from ems.core.permission_matrix import require_permission as _require_permission
+from core.permission_matrix import require_permission as _require_permission
 
 router = APIRouter()
 

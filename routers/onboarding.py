@@ -5,45 +5,21 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 
-try:
-    from core.deps import get_current_user, need_inst
-except ImportError:
-    from ems.core.deps import get_current_user, need_inst
+from core.deps import get_current_user, need_inst
 
-try:
-    from core.org_queries import subordinates_in_clause, is_self_or_subordinate
-except ImportError:
-    from ems.core.org_queries import subordinates_in_clause, is_self_or_subordinate
+from core.org_queries import subordinates_in_clause, is_self_or_subordinate
 
-try:
-    from core.ob_ld_shared import log_ob, auto_enroll_ld_course
-except ImportError:
-    from ems.core.ob_ld_shared import log_ob, auto_enroll_ld_course
+from core.ob_ld_shared import log_ob, auto_enroll_ld_course
 
-try:
-    from core.roles import get_valid_roles
-except ImportError:
-    from ems.core.roles import get_valid_roles
+from core.roles import get_valid_roles
 
-try:
-    from core.validators import validate_document_data_url
-except ImportError:
-    from ems.core.validators import validate_document_data_url
+from core.validators import validate_document_data_url
 
-try:
-    from core.permission_matrix import require_permission
-except ImportError:
-    from ems.core.permission_matrix import require_permission
+from core.permission_matrix import require_permission
 
-try:
-    from db import get_db
-except ImportError:
-    from ems.db import get_db
+from db import get_db
 
-try:
-    from core.db_session import db_session
-except ImportError:
-    from ems.core.db_session import db_session
+from core.db_session import db_session
 
 router = APIRouter()
 

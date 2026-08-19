@@ -14,20 +14,11 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 
-try:
-    from core.deps import get_current_user, need_inst, require_roles
-except ImportError:
-    from ems.core.deps import get_current_user, need_inst, require_roles
+from core.deps import get_current_user, need_inst, require_roles
 
-try:
-    from db import get_db
-except ImportError:
-    from ems.db import get_db
+from db import get_db
 
-try:
-    from core.db_session import db_session
-except ImportError:
-    from ems.core.db_session import db_session
+from core.db_session import db_session
 
 router = APIRouter()
 

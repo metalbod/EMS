@@ -21,10 +21,7 @@ import inspect
 from functools import wraps
 from typing import Callable, Any
 
-try:
-    from db import get_db
-except ImportError:
-    from ems.db import get_db
+from db import get_db
 
 
 def db_session(func: Callable) -> Callable:

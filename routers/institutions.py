@@ -4,27 +4,14 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 
-try:
-    from core.deps import hash_password, require_roles
-except ImportError:
-    from ems.core.deps import hash_password, require_roles
+from core.deps import hash_password, require_roles
 
-try:
-    from db import get_db, IntegrityError
-except ImportError:
-    from ems.db import get_db, IntegrityError
+from db import get_db, IntegrityError
 
-try:
-    from core.db_session import db_session
-except ImportError:
-    from ems.core.db_session import db_session
+from core.db_session import db_session
 
-try:
-    from core.onboarding_seed import seed_ob_templates
-    from core.validators import validate_logo_url
-except ImportError:
-    from ems.core.onboarding_seed import seed_ob_templates
-    from ems.core.validators import validate_logo_url
+from core.onboarding_seed import seed_ob_templates
+from core.validators import validate_logo_url
 
 router = APIRouter()
 

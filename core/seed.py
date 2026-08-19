@@ -4,17 +4,10 @@ Extracted out of main.py (a composition root — see its docstring) so that
 "what data does this app need to boot" lives in its own module instead of
 mixed into router wiring, middleware, and the health check.
 """
-try:
-    from db import get_admin_db
-except ImportError:
-    from ems.db import get_admin_db
+from db import get_admin_db
 
-try:
-    from core.deps import hash_password, verify_password
-    from core.onboarding_seed import seed_ob_templates_bulk
-except ImportError:
-    from ems.core.deps import hash_password, verify_password
-    from ems.core.onboarding_seed import seed_ob_templates_bulk
+from core.deps import hash_password, verify_password
+from core.onboarding_seed import seed_ob_templates_bulk
 
 
 def init_db_seed():

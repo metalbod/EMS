@@ -1,16 +1,10 @@
 """Task tracking and status endpoints for async operations."""
 from fastapi import APIRouter, HTTPException, Depends
 
-try:
-    from core.deps import require_roles
-    from core.schemas import ErrorResponse
-    from core.tasks import get_task_status
-    from db import get_db
-except ImportError:
-    from ems.core.deps import require_roles
-    from ems.core.schemas import ErrorResponse
-    from ems.core.tasks import get_task_status
-    from ems.db import get_db
+from core.deps import require_roles
+from core.schemas import ErrorResponse
+from core.tasks import get_task_status
+from db import get_db
 
 router = APIRouter()
 

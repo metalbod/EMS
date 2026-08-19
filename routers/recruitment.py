@@ -5,35 +5,17 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
 
-try:
-    from core.deps import get_current_user, need_inst
-except ImportError:
-    from ems.core.deps import get_current_user, need_inst
+from core.deps import get_current_user, need_inst
 
-try:
-    from core.validators import validate_document_data_url
-except ImportError:
-    from ems.core.validators import validate_document_data_url
+from core.validators import validate_document_data_url
 
-try:
-    from core.approval_workflow import start_workflow, advance_or_finalize
-except ImportError:
-    from ems.core.approval_workflow import start_workflow, advance_or_finalize
+from core.approval_workflow import start_workflow, advance_or_finalize
 
-try:
-    from db import get_db, IntegrityError
-except ImportError:
-    from ems.db import get_db, IntegrityError
+from db import get_db, IntegrityError
 
-try:
-    from core.db_session import db_session
-except ImportError:
-    from ems.core.db_session import db_session
+from core.db_session import db_session
 
-try:
-    from core.permission_matrix import require_permission
-except ImportError:
-    from ems.core.permission_matrix import require_permission
+from core.permission_matrix import require_permission
 
 router = APIRouter()
 

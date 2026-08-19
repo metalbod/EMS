@@ -13,35 +13,17 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-try:
-    import payroll_calc
-except ImportError:
-    from ems import payroll_calc
+import payroll_calc
 
-try:
-    from core.deps import get_current_user, need_inst, require_roles
-except ImportError:
-    from ems.core.deps import get_current_user, need_inst, require_roles
+from core.deps import get_current_user, need_inst, require_roles
 
-try:
-    from core.roles import PAYROLL_VIEW_ROLES
-except ImportError:
-    from ems.core.roles import PAYROLL_VIEW_ROLES
+from core.roles import PAYROLL_VIEW_ROLES
 
-try:
-    from core.tasks import generate_payroll_run
-except ImportError:
-    from ems.core.tasks import generate_payroll_run
+from core.tasks import generate_payroll_run
 
-try:
-    from core.db_session import db_session
-except ImportError:
-    from ems.core.db_session import db_session
+from core.db_session import db_session
 
-try:
-    from db import get_db, IntegrityError
-except ImportError:
-    from ems.db import get_db, IntegrityError
+from db import get_db, IntegrityError
 
 router = APIRouter()
 

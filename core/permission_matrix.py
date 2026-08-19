@@ -647,10 +647,7 @@ def require_permission(conn, user: dict, action_key: str) -> None:
     if user["role"] == "superadmin":
         return
     from fastapi import HTTPException
-    try:
-        from core.deps import need_inst
-    except ImportError:
-        from ems.core.deps import need_inst
+    from core.deps import need_inst
     inst_id = need_inst(user)
     if not has_permission(conn, inst_id, user, action_key):
         raise HTTPException(403, "Insufficient permissions")

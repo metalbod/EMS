@@ -10,88 +10,46 @@ from fastapi.staticfiles import StaticFiles
 
 # payroll_calc import moved to routers/payroll.py (only used there now).
 
-try:
-    from core.seed import init_db_seed
-    from core.middleware import cors_middleware, request_logging_middleware
-    from core.tasks import app as celery_app
-    from routers.audit import router as audit_router
-    from routers.tasks import router as tasks_router
-    from routers.notifications import router as notifications_router
-    from routers.institutions import router as institutions_router
-    from routers.orgchart import router as orgchart_router
-    from routers.holidays import router as holidays_router
-    from routers.hr_notes import router as hr_notes_router
-    from routers.users import router as users_router
-    from routers.roles import router as roles_router
-    from routers.leave import router as leave_router
-    from routers.approval_workflow_settings import router as approval_workflow_router
-    from routers.projects import router as projects_router
-    from routers.timesheets import router as timesheets_router
-    from routers.overtime import router as overtime_router
-    from routers.recruitment import router as recruitment_router
-    from routers.onboarding import router as onboarding_router
-    from routers.ld import router as ld_router
-    from routers.dashboard import router as dashboard_router
-    from routers.payroll import router as payroll_router
-    from routers.performance import router as performance_router
-    from routers.employees import router as employees_router
-    from routers.locations import router as locations_router
-    from routers.location_features import router as location_features_router
-    from routers.location_phase2 import router as location_phase2_router
-    from routers.compensation_pay_structure import router as compensation_pay_structure_router
-    from routers.compensation_merit import router as compensation_merit_router
-    from routers.compensation_bonus import router as compensation_bonus_router
-    from routers.compensation_commission import router as compensation_commission_router
-    from routers.compensation_equity import router as compensation_equity_router
-    from routers.compensation_rewards import router as compensation_rewards_router
-    from routers.benefits import router as benefits_router
-    from routers.attendance import router as attendance_router
-    from routers.assistant import router as assistant_router
-    from routers.auth import router as auth_router
-    from routers.meta import router as meta_router
-    from routers.health import router as health_router
-    from routers.frontend import router as frontend_router, STATIC_DIR
-except ImportError:
-    from ems.core.seed import init_db_seed
-    from ems.core.middleware import cors_middleware, request_logging_middleware
-    from ems.core.tasks import app as celery_app
-    from ems.routers.audit import router as audit_router
-    from ems.routers.tasks import router as tasks_router
-    from ems.routers.notifications import router as notifications_router
-    from ems.routers.institutions import router as institutions_router
-    from ems.routers.orgchart import router as orgchart_router
-    from ems.routers.holidays import router as holidays_router
-    from ems.routers.hr_notes import router as hr_notes_router
-    from ems.routers.users import router as users_router
-    from ems.routers.roles import router as roles_router
-    from ems.routers.leave import router as leave_router
-    from ems.routers.approval_workflow_settings import router as approval_workflow_router
-    from ems.routers.projects import router as projects_router
-    from ems.routers.timesheets import router as timesheets_router
-    from ems.routers.overtime import router as overtime_router
-    from ems.routers.recruitment import router as recruitment_router
-    from ems.routers.onboarding import router as onboarding_router
-    from ems.routers.ld import router as ld_router
-    from ems.routers.dashboard import router as dashboard_router
-    from ems.routers.payroll import router as payroll_router
-    from ems.routers.performance import router as performance_router
-    from ems.routers.employees import router as employees_router
-    from ems.routers.locations import router as locations_router
-    from ems.routers.location_features import router as location_features_router
-    from ems.routers.location_phase2 import router as location_phase2_router
-    from ems.routers.compensation_pay_structure import router as compensation_pay_structure_router
-    from ems.routers.compensation_merit import router as compensation_merit_router
-    from ems.routers.compensation_bonus import router as compensation_bonus_router
-    from ems.routers.compensation_commission import router as compensation_commission_router
-    from ems.routers.compensation_equity import router as compensation_equity_router
-    from ems.routers.compensation_rewards import router as compensation_rewards_router
-    from ems.routers.benefits import router as benefits_router
-    from ems.routers.attendance import router as attendance_router
-    from ems.routers.assistant import router as assistant_router
-    from ems.routers.auth import router as auth_router
-    from ems.routers.meta import router as meta_router
-    from ems.routers.health import router as health_router
-    from ems.routers.frontend import router as frontend_router, STATIC_DIR
+from core.seed import init_db_seed
+from core.middleware import cors_middleware, request_logging_middleware
+from core.tasks import app as celery_app
+from routers.audit import router as audit_router
+from routers.tasks import router as tasks_router
+from routers.notifications import router as notifications_router
+from routers.institutions import router as institutions_router
+from routers.orgchart import router as orgchart_router
+from routers.holidays import router as holidays_router
+from routers.hr_notes import router as hr_notes_router
+from routers.users import router as users_router
+from routers.roles import router as roles_router
+from routers.leave import router as leave_router
+from routers.approval_workflow_settings import router as approval_workflow_router
+from routers.projects import router as projects_router
+from routers.timesheets import router as timesheets_router
+from routers.overtime import router as overtime_router
+from routers.recruitment import router as recruitment_router
+from routers.onboarding import router as onboarding_router
+from routers.ld import router as ld_router
+from routers.dashboard import router as dashboard_router
+from routers.payroll import router as payroll_router
+from routers.performance import router as performance_router
+from routers.employees import router as employees_router
+from routers.locations import router as locations_router
+from routers.location_features import router as location_features_router
+from routers.location_phase2 import router as location_phase2_router
+from routers.compensation_pay_structure import router as compensation_pay_structure_router
+from routers.compensation_merit import router as compensation_merit_router
+from routers.compensation_bonus import router as compensation_bonus_router
+from routers.compensation_commission import router as compensation_commission_router
+from routers.compensation_equity import router as compensation_equity_router
+from routers.compensation_rewards import router as compensation_rewards_router
+from routers.benefits import router as benefits_router
+from routers.attendance import router as attendance_router
+from routers.assistant import router as assistant_router
+from routers.auth import router as auth_router
+from routers.meta import router as meta_router
+from routers.health import router as health_router
+from routers.frontend import router as frontend_router, STATIC_DIR
 
 # ---------------------------------------------------------------------------
 # Logging — plain stdout logging so `fly logs` / any container log collector

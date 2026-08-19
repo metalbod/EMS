@@ -13,30 +13,15 @@ from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends
 
-try:
-    from core.deps import get_current_user, need_inst
-except ImportError:
-    from ems.core.deps import get_current_user, need_inst
+from core.deps import get_current_user, need_inst
 
-try:
-    from core.org_queries import subordinates_in_clause
-except ImportError:
-    from ems.core.org_queries import subordinates_in_clause
+from core.org_queries import subordinates_in_clause
 
-try:
-    from core.approval_workflow import count_pending_for_approver
-except ImportError:
-    from ems.core.approval_workflow import count_pending_for_approver
+from core.approval_workflow import count_pending_for_approver
 
-try:
-    from db import get_db
-except ImportError:
-    from ems.db import get_db
+from db import get_db
 
-try:
-    from core.db_session import db_session
-except ImportError:
-    from ems.core.db_session import db_session
+from core.db_session import db_session
 
 router = APIRouter()
 

@@ -21,20 +21,11 @@ import redis
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-try:
-    from core.deps import get_current_user
-except ImportError:
-    from ems.core.deps import get_current_user
+from core.deps import get_current_user
 
-try:
-    from core.anthropic_client import client
-except ImportError:
-    from ems.core.anthropic_client import client
+from core.anthropic_client import client
 
-try:
-    from core import assistant_tools
-except ImportError:
-    from ems.core import assistant_tools
+from core import assistant_tools
 
 logger = logging.getLogger("ems")
 

@@ -6,51 +6,24 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 
-try:
-    from core.deps import get_current_user, need_inst, require_roles
-except ImportError:
-    from ems.core.deps import get_current_user, need_inst, require_roles
+from core.deps import get_current_user, need_inst, require_roles
 
-try:
-    from core.permission_matrix import require_permission
-except ImportError:
-    from ems.core.permission_matrix import require_permission
+from core.permission_matrix import require_permission
 
-try:
-    from core.org_queries import subordinates_in_clause
-except ImportError:
-    from ems.core.org_queries import subordinates_in_clause
+from core.org_queries import subordinates_in_clause
 
-try:
-    from core.validators import validate_logo_url
-except ImportError:
-    from ems.core.validators import validate_logo_url
+from core.validators import validate_logo_url
 
-try:
-    from core.leave_balance_ops import (
-        _get_or_create_leave_balance, _consume_balance, _release_balance,
-        _sweep_expired_carry_forward,
-    )
-except ImportError:
-    from ems.core.leave_balance_ops import (
-        _get_or_create_leave_balance, _consume_balance, _release_balance,
-        _sweep_expired_carry_forward,
-    )
+from core.leave_balance_ops import (
+    _get_or_create_leave_balance, _consume_balance, _release_balance,
+    _sweep_expired_carry_forward,
+)
 
-try:
-    from core.approval_workflow import start_workflow, advance_or_finalize
-except ImportError:
-    from ems.core.approval_workflow import start_workflow, advance_or_finalize
+from core.approval_workflow import start_workflow, advance_or_finalize
 
-try:
-    from db import get_db
-except ImportError:
-    from ems.db import get_db
+from db import get_db
 
-try:
-    from core.db_session import db_session
-except ImportError:
-    from ems.core.db_session import db_session
+from core.db_session import db_session
 
 router = APIRouter()
 

@@ -17,35 +17,17 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 
-try:
-    from core.deps import get_current_user, need_inst, require_roles
-except ImportError:
-    from ems.core.deps import get_current_user, need_inst, require_roles
+from core.deps import get_current_user, need_inst, require_roles
 
-try:
-    from core.org_queries import subordinates_in_clause, is_self_or_subordinate
-except ImportError:
-    from ems.core.org_queries import subordinates_in_clause, is_self_or_subordinate
+from core.org_queries import subordinates_in_clause, is_self_or_subordinate
 
-try:
-    from core.roles import PAYROLL_VIEW_ROLES
-except ImportError:
-    from ems.core.roles import PAYROLL_VIEW_ROLES
+from core.roles import PAYROLL_VIEW_ROLES
 
-try:
-    from core.audit import write_audit
-except ImportError:
-    from ems.core.audit import write_audit
+from core.audit import write_audit
 
-try:
-    from db import get_db
-except ImportError:
-    from ems.db import get_db
+from db import get_db
 
-try:
-    from core.db_session import db_session
-except ImportError:
-    from ems.core.db_session import db_session
+from core.db_session import db_session
 
 router = APIRouter()
 

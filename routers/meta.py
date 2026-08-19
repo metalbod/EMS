@@ -1,26 +1,14 @@
 """Static reference-data endpoint for frontend dropdowns/labels."""
 from fastapi import APIRouter, Depends
 
-try:
-    from core.deps import get_current_user
-except ImportError:
-    from ems.core.deps import get_current_user
+from core.deps import get_current_user
 
-try:
-    from core.roles import ROLES
-except ImportError:
-    from ems.core.roles import ROLES
+from core.roles import ROLES
 
-try:
-    from core.constants import (
-        RACES, RELIGIONS, GENDERS, MARITAL_STATUSES, EMPLOYMENT_TYPES, STATUSES, BANKS,
-        INSTITUTION_ROLES, ROLE_LABELS, PLANS, PLAN_LABELS,
-    )
-except ImportError:
-    from ems.core.constants import (
-        RACES, RELIGIONS, GENDERS, MARITAL_STATUSES, EMPLOYMENT_TYPES, STATUSES, BANKS,
-        INSTITUTION_ROLES, ROLE_LABELS, PLANS, PLAN_LABELS,
-    )
+from core.constants import (
+    RACES, RELIGIONS, GENDERS, MARITAL_STATUSES, EMPLOYMENT_TYPES, STATUSES, BANKS,
+    INSTITUTION_ROLES, ROLE_LABELS, PLANS, PLAN_LABELS,
+)
 
 router = APIRouter()
 

@@ -4,24 +4,12 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-try:
-    from core.deps import get_current_user, need_inst
-except ImportError:
-    from ems.core.deps import get_current_user, need_inst
+from core.deps import get_current_user, need_inst
 
-try:
-    from core.permission_matrix import require_permission
-except ImportError:
-    from ems.core.permission_matrix import require_permission
+from core.permission_matrix import require_permission
 
-try:
-    from db import get_db, IntegrityError
-except ImportError:
-    from ems.db import get_db, IntegrityError
-try:
-    from core.db_session import db_session
-except ImportError:
-    from ems.core.db_session import db_session
+from db import get_db, IntegrityError
+from core.db_session import db_session
 
 router = APIRouter()
 

@@ -3,15 +3,9 @@ composition root) so the health check lives alongside every other route
 instead of being the one endpoint still defined inline."""
 from fastapi import APIRouter, HTTPException
 
-try:
-    from db import get_db
-except ImportError:
-    from ems.db import get_db
+from db import get_db
 
-try:
-    from core.schemas import HealthResponse
-except ImportError:
-    from ems.core.schemas import HealthResponse
+from core.schemas import HealthResponse
 
 router = APIRouter()
 

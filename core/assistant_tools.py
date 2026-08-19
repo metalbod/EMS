@@ -28,18 +28,11 @@ import asyncio
 
 from fastapi import HTTPException
 
-try:
-    from routers.leave import list_leave_balances
-    from routers.payroll import my_payslips
-    from routers.benefits import list_my_enrollments, list_my_claims, list_claims
-    from routers.timesheets import list_timesheets
-    from routers.overtime import list_overtime
-except ImportError:
-    from ems.routers.leave import list_leave_balances
-    from ems.routers.payroll import my_payslips
-    from ems.routers.benefits import list_my_enrollments, list_my_claims, list_claims
-    from ems.routers.timesheets import list_timesheets
-    from ems.routers.overtime import list_overtime
+from routers.leave import list_leave_balances
+from routers.payroll import my_payslips
+from routers.benefits import list_my_enrollments, list_my_claims, list_claims
+from routers.timesheets import list_timesheets
+from routers.overtime import list_overtime
 
 
 def _self_scoped_user(user: dict) -> dict:

@@ -9,35 +9,17 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 
-try:
-    from core.deps import get_current_user, need_inst, require_roles
-except ImportError:
-    from ems.core.deps import get_current_user, need_inst, require_roles
+from core.deps import get_current_user, need_inst, require_roles
 
-try:
-    from core.roles import LEAVE_MANAGE_ROLES
-except ImportError:
-    from ems.core.roles import LEAVE_MANAGE_ROLES
+from core.roles import LEAVE_MANAGE_ROLES
 
-try:
-    from core.approval_workflow import advance_or_finalize, project_ids_for_row
-except ImportError:
-    from ems.core.approval_workflow import advance_or_finalize, project_ids_for_row
+from core.approval_workflow import advance_or_finalize, project_ids_for_row
 
-try:
-    from core.overtime import apply_overtime_outcome
-except ImportError:
-    from ems.core.overtime import apply_overtime_outcome
+from core.overtime import apply_overtime_outcome
 
-try:
-    from core.db_session import db_session
-except ImportError:
-    from ems.core.db_session import db_session
+from core.db_session import db_session
 
-try:
-    from db import get_db
-except ImportError:
-    from ems.db import get_db
+from db import get_db
 
 router = APIRouter()
 

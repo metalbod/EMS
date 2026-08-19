@@ -116,20 +116,11 @@ app.conf.update(
 def generate_payroll_run(self, inst_id: int, run_id: int, period_start: str, period_end: str):
     """Generate payslips for all active employees in a payroll run (async)."""
     try:
-        try:
-            from db import get_db, IntegrityError
-        except ImportError:
-            from ems.db import get_db, IntegrityError
+        from db import get_db, IntegrityError
 
-        try:
-            import payroll_calc
-        except ImportError:
-            from ems import payroll_calc
+        import payroll_calc
 
-        try:
-            from routers.payroll import _generate_payslip
-        except ImportError:
-            from ems.routers.payroll import _generate_payslip
+        from routers.payroll import _generate_payslip
 
         logger.info(f"Task {self.request.id}: generating payslips for run {run_id}, period {period_start} to {period_end}")
 
@@ -172,19 +163,11 @@ def bulk_upload_employees_task(self, inst_id: int, csv_content: str, user_id: in
         from pydantic import ValidationError
         from fastapi import HTTPException
 
-        try:
-            from db import get_db, IntegrityError
-        except ImportError:
-            from ems.db import get_db, IntegrityError
+        from db import get_db, IntegrityError
 
-        try:
-            from routers.employees import (
-                _insert_new_employee, _update_bulk_employee, BULK_UPLOAD_REQUIRED, BULK_UPLOAD_COLUMNS, EmployeeIn
-            )
-        except ImportError:
-            from ems.routers.employees import (
-                _insert_new_employee, _update_bulk_employee, BULK_UPLOAD_REQUIRED, BULK_UPLOAD_COLUMNS, EmployeeIn
-            )
+        from routers.employees import (
+            _insert_new_employee, _update_bulk_employee, BULK_UPLOAD_REQUIRED, BULK_UPLOAD_COLUMNS, EmployeeIn
+        )
 
         logger.info(f"Task {self.request.id}: bulk uploading employees for institution {inst_id}")
 
