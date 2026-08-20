@@ -183,9 +183,8 @@ function loadRecruitmentDash() {
     const PIPELINE_STAGES = ['New','Screening','Interview','Offer','Hired','Rejected','Withdrawn'];
     const PIPELINE_COLORS = {New:'bg-slate-400',Screening:'bg-blue-400',Interview:'bg-purple-400',Offer:'bg-yellow-400',Hired:'bg-emerald-500',Rejected:'bg-red-400',Withdrawn:'bg-slate-300'};
     const totalCands = s.total_candidates || 1;
-    document.getElementById('rCandPipeline').innerHTML = PIPELINE_STAGES.map(stage => {
+    document.getElementById('rCandPipeline').innerHTML = s.total_candidates ? PIPELINE_STAGES.map(stage => {
       const cnt = s.cand_by_stage[stage] || 0;
-      if (!cnt && !['New','Screening','Interview','Offer'].includes(stage)) return '';
       return `<div class="flex items-center gap-2">
         <div class="w-20 text-xs text-slate-600">${stage}</div>
         <div class="flex-1 bg-slate-100 rounded-full h-2">
@@ -193,7 +192,7 @@ function loadRecruitmentDash() {
         </div>
         <div class="text-xs text-slate-500 w-5 text-right">${cnt}</div>
       </div>`;
-    }).join('') || '<p class="text-slate-400 text-sm">No candidates yet.</p>';
+    }).join('') : '<p class="text-slate-400 text-sm">No candidates yet.</p>';
 
     // Requisitions by status
     const REQ_COLORS = {Draft:'bg-slate-300','Pending Approval':'bg-amber-400',Approved:'bg-emerald-400',Rejected:'bg-red-400',Filled:'bg-blue-400',Closed:'bg-slate-200'};
