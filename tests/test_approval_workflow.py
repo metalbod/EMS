@@ -306,6 +306,55 @@ def test_employee_with_no_manager_auto_skips_to_hr(client, hr_manager_auth, make
     assert res.json()["status"] == "Approved"
 
 
+def test_hr_manager_list_excludes_their_own_pending_request(client, hr_manager_auth, make_test_employee,
+                                                              make_test_user, test_institution, make_test_leave_type):
+    """An hr_manager whose OWN linked employee record applies for leave
+    (auto-skipped straight to the hr_manager step, no direct manager on
+    file) must not see their own request in their own leave-applications
+    list — is_eligible_approver already blocks self-approval regardless
+    of role match (a self-approving hr_manager would still 403 if they
+    tried), but before filter_actionable the list endpoint never
+    re-checked eligibility at all, so their own pending request showed up
+    there anyway with live Approve/Reject buttons. A second, unrelated
+    hr_manager must still see it as normal."""
+    self_emp = make_test_employee(full_name="ZZ Self-Approving HR Manager")
+    username = f"zzselfhr_{self_emp['employee_id'].lower()}"
+    password = "ZzPytest@123"
+    res = client.post("/api/users", headers=hr_manager_auth, json={
+        "username": username, "full_name": "ZZ Self HR", "password": password,
+        "role": "hr_manager", "employee_id": self_emp["employee_id"],
+    })
+    assert res.status_code == 201, f"failed to create self-linked hr_manager user: {res.text}"
+    user_id = res.json()["id"]
+    login = client.post("/api/auth/login", json={
+        "username": username, "password": password, "institution_code": test_institution["code"],
+    })
+    assert login.status_code == 200
+    self_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    lt = make_test_leave_type(requires_approval=True)
+    start = "2027-04-26"  # Monday
+    app = client.post("/api/leave/applications", headers=hr_manager_auth, json={
+        "employee_id": self_emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": start, "end_date": start,
+    }).json()
+    assert app["approval_step"] == 2  # direct_manager step auto-skipped, no manager on file
+
+    denied = client.patch(f"/api/leave/applications/{app['id']}/status", headers=self_headers,
+                           json={"status": "Approved"})
+    assert denied.status_code == 403, denied.text
+
+    own_list = client.get("/api/leave/applications", headers=self_headers).json()
+    assert not any(a["id"] == app["id"] for a in own_list), \
+        "hr_manager must not see their own pending request in their own list"
+
+    other_hr_list = client.get("/api/leave/applications", headers=hr_manager_auth).json()
+    assert any(a["id"] == app["id"] and a["status"] == "Pending Approval" for a in other_hr_list), \
+        "a different hr_manager (who IS eligible) should still see it as Pending Approval"
+
+    client.delete(f"/api/users/{user_id}", headers=hr_manager_auth)
+
+
 # ---------------------------------------------------------------------------
 # Workflow settings CRUD
 # ---------------------------------------------------------------------------
