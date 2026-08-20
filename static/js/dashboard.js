@@ -425,14 +425,17 @@ const LEAVE_CAL_MONTH_NAMES = ['January','February','March','April','May','June'
 
 function loadLeaveCalendar() {
   document.getElementById('leaveCalMonthLabel').textContent = `${LEAVE_CAL_MONTH_NAMES[leaveCalMonth-1]} ${leaveCalYear}`;
-  api(`/api/leave/calendar?year=${leaveCalYear}&month=${leaveCalMonth}`).then(async res => {
-    if (!res || !res.ok) return;
-    const entries = await res.json();
-    renderLeaveCalendarGrid(entries);
+  Promise.all([
+    api(`/api/leave/calendar?year=${leaveCalYear}&month=${leaveCalMonth}`),
+    api(`/api/holidays?year=${leaveCalYear}`),
+  ]).then(async ([leaveRes, holidayRes]) => {
+    const entries = (leaveRes && leaveRes.ok) ? await leaveRes.json() : [];
+    const holidays = (holidayRes && holidayRes.ok) ? await holidayRes.json() : [];
+    renderLeaveCalendarGrid(entries, holidays);
   });
 }
 
-function renderLeaveCalendarGrid(entries) {
+function renderLeaveCalendarGrid(entries, holidays) {
   const grid = document.getElementById('leaveCalGrid');
   const firstDay = new Date(leaveCalYear, leaveCalMonth - 1, 1);
   const daysInMonth = new Date(leaveCalYear, leaveCalMonth, 0).getDate();
@@ -448,6 +451,15 @@ function renderLeaveCalendarGrid(entries) {
       (byDay[day] = byDay[day] || []).push(e);
     }
   }
+  // Public holidays fall on exactly one day each (unlike leave, which can
+  // span a range) — bucket by that day's date string directly, no range walk.
+  const holidaysByDay = {};
+  for (const h of (holidays || [])) {
+    const d = new Date(h.date + 'T00:00:00');
+    if (d.getFullYear() === leaveCalYear && d.getMonth() === leaveCalMonth - 1) {
+      (holidaysByDay[d.getDate()] = holidaysByDay[d.getDate()] || []).push(h);
+    }
+  }
 
   const todayStr = new Date().toISOString().slice(0, 10);
   let cells = '';
@@ -455,9 +467,15 @@ function renderLeaveCalendarGrid(entries) {
   for (let day = 1; day <= daysInMonth; day++) {
     const dateStr = `${leaveCalYear}-${String(leaveCalMonth).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
     const isToday = dateStr === todayStr;
+    const dayHolidays = holidaysByDay[day] || [];
+    const isHoliday = dayHolidays.length > 0;
     const dayEntries = byDay[day] || [];
     const shown = dayEntries.slice(0, 3);
     const rest = dayEntries.slice(3);
+    const holidayChips = dayHolidays.map(h => `
+      <div class="text-xs bg-rose-50 text-rose-700 rounded px-1 py-0.5 truncate font-medium" title="${esc(h.name)}">
+        ${esc(h.name)}
+      </div>`).join('');
     const chips = shown.map(e => `
       <div class="text-xs bg-amber-50 text-amber-700 rounded px-1 py-0.5 truncate" title="${esc(e.full_name)}${e.leave_type_name ? ' — ' + esc(e.leave_type_name) : ''}">
         ${esc(e.full_name)}${e.leave_type_name ? ` (${esc(e.leave_type_name)})` : ''}
@@ -470,9 +488,9 @@ function renderLeaveCalendarGrid(entries) {
         </div>
       </div>` : '';
     cells += `
-      <div class="min-h-[70px] border border-slate-100 rounded-lg p-1 ${isToday ? 'ring-1 ring-blue-400' : ''}">
-        <div class="text-xs ${isToday ? 'font-bold text-blue-600' : 'text-slate-400'} mb-0.5">${day}</div>
-        <div class="space-y-0.5">${chips}${extraLabel}</div>
+      <div class="min-h-[70px] border rounded-lg p-1 ${isToday ? 'ring-1 ring-blue-400' : ''} ${isHoliday ? 'bg-rose-50/50 border-rose-100' : 'border-slate-100'}">
+        <div class="text-xs ${isToday ? 'font-bold text-blue-600' : (isHoliday ? 'font-semibold text-rose-500' : 'text-slate-400')} mb-0.5">${day}</div>
+        <div class="space-y-0.5">${holidayChips}${chips}${extraLabel}</div>
       </div>`;
   }
   grid.innerHTML = cells;
