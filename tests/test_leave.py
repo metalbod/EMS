@@ -10,6 +10,7 @@ days, no weekend in between) for application date ranges, verified via
 Python's own date.weekday() rather than assumed.
 """
 import pytest
+from concurrent.futures import ThreadPoolExecutor
 
 WORK_WEEK_START = "2027-03-01"  # Monday
 WORK_WEEK_END = "2027-03-05"    # Friday (5 working days)
@@ -749,3 +750,30 @@ def test_max_days_per_month_splits_across_month_boundary(client, make_test_leave
     })
     assert res2.status_code == 400
     assert "January 2027" in res2.json()["detail"]
+
+
+def test_concurrent_first_time_balance_lookups_do_not_500(client, make_test_leave_type, employee_with_user):
+    """_get_or_create_leave_balance (core/leave_balance_ops.py) used to
+    SELECT-then-INSERT with no protection against two concurrent callers
+    both seeing no row and both attempting the INSERT — the loser hit
+    leave_balances' UNIQUE(employee_id,leave_type_id,year) constraint as
+    an unhandled 500. Reproduced live via two near-simultaneous
+    GET /api/leave/balances calls for a brand-new employee (zero
+    pre-existing rows, so every call takes the auto-create path). Firing
+    several concurrent requests here raises the odds of a real interleave
+    within the test run; the fix (INSERT ... ON CONFLICT DO NOTHING) makes
+    every outcome safe regardless of whether they actually race this time."""
+    emp, headers = employee_with_user
+    # A fresh leave type + a year no other test in this file touches, so
+    # this is guaranteed to be this employee's very first balance row for
+    # it — the only circumstance where the race window exists at all.
+    make_test_leave_type(name="ZZ Concurrent Balance Type", annual_entitlement=10)
+
+    def _fetch():
+        return client.get("/api/leave/balances", headers=headers, params={"year": 2029})
+
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        results = list(pool.map(lambda _: _fetch(), range(5)))
+
+    statuses = [r.status_code for r in results]
+    assert all(s == 200 for s in statuses), f"expected all 200, got {statuses}"

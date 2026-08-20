@@ -75,8 +75,18 @@ def _get_or_create_leave_balance(conn, inst_id: int, employee_id: str, leave_typ
     if carried > 0 and lt and lt["carry_forward_expiry_days"]:
         expires_on = (date(year, 1, 1) + timedelta(days=lt["carry_forward_expiry_days"])).isoformat()
 
+    # ON CONFLICT DO NOTHING — two concurrent first-time callers for the
+    # same employee+leave_type+year (e.g. a Dashboard widget and a page's
+    # own load firing near-simultaneously) can both pass the SELECT above
+    # seeing no row, then both attempt this INSERT; without this, the
+    # loser hits leave_balances_employee_id_leave_type_id_year_key's
+    # UniqueViolation as an unhandled 500. The re-SELECT below already
+    # re-fetches by natural key rather than trusting this INSERT actually
+    # inserted anything, so it transparently returns the winner's row
+    # either way.
     conn.execute(
-        "INSERT INTO leave_balances (institution_id,employee_id,leave_type_id,year,entitled_days,carried_forward_days,used_days,carried_forward_expires_on) VALUES (?,?,?,?,?,?,0,?)",
+        "INSERT INTO leave_balances (institution_id,employee_id,leave_type_id,year,entitled_days,carried_forward_days,used_days,carried_forward_expires_on) VALUES (?,?,?,?,?,?,0,?) "
+        "ON CONFLICT (employee_id,leave_type_id,year) DO NOTHING",
         (inst_id, employee_id, leave_type_id, year, entitled, carried, expires_on)
     )
     return conn.execute(
