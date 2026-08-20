@@ -5,7 +5,7 @@ from datetime import datetime, date, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from db import get_db
 from core.deps import get_current_user
-from core.approval_workflow import start_workflow, advance_or_finalize
+from core.approval_workflow import start_workflow, advance_or_finalize, filter_actionable
 from core.org_queries import subordinates_in_clause
 from core.permission_matrix import require_permission
 from core.benefits_schemas import (
@@ -1295,7 +1295,8 @@ async def list_claims(
             params.append(status)
         query += " ORDER BY c.created_at DESC"
         rows = conn.execute(query, tuple(params)).fetchall()
-        return [ClaimWithDetails(**dict(r)) for r in rows]
+        result = filter_actionable(conn, inst_id, "claims", [dict(r) for r in rows], current_user)
+        return [ClaimWithDetails(**r) for r in result]
     finally:
         conn.close()
 

@@ -337,3 +337,45 @@ def count_pending_for_approver(conn, inst_id: int, user: dict, module: str) -> i
         if is_eligible_approver(conn, inst_id, module, employee_id, current, user, project_ids):
             count += 1
     return count
+
+
+def filter_actionable(conn, inst_id: int, module: str, rows: List[Dict[str, Any]], user: dict) -> List[Dict[str, Any]]:
+    """For a list endpoint's already role-scoped rows (e.g. a manager sees
+    only their subordinates' requests), additionally drop any row sitting
+    at a pending status whose *current step* this user isn't eligible to
+    act on right now.
+
+    Without this, a request that's already cleared a manager's step and
+    moved on (e.g. to HR) still showed up in that manager's "pending
+    approval" list — still their subordinate, still Pending Approval — with
+    live Approve/Reject buttons that 403 on click. The list query only
+    ever checked "is this my subordinate," never re-checked eligibility
+    against the request's current step, unlike the approve/reject action
+    itself (advance_or_finalize) or the Dashboard's
+    count_pending_for_approver above, whose loop this mirrors.
+
+    A row is always kept (never hidden) if it's not at a pending status
+    for this module, or has no workflow/step recorded — those carry no
+    action buttons, or (a legacy pre-engine row) are gated by that
+    module's own blanket role-based fallback instead of this engine, so
+    hiding them here would be wrong.
+    """
+    pending = set(MODULE_PENDING_STATUSES[module])
+    result = []
+    for row in rows:
+        if row["status"] not in pending or row["approval_workflow_id"] is None or row["approval_step"] is None:
+            result.append(row)
+            continue
+        steps = get_steps(conn, row["approval_workflow_id"])
+        current = next((s for s in steps if s["step_order"] == row["approval_step"]), None)
+        if not current:
+            result.append(row)
+            continue
+        employee_id = _requester_employee_id(conn, inst_id, module, row)
+        if not employee_id:
+            result.append(row)
+            continue
+        project_ids = project_ids_for_row(conn, module, row)
+        if is_eligible_approver(conn, inst_id, module, employee_id, current, user, project_ids):
+            result.append(row)
+    return result

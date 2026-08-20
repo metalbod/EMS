@@ -81,6 +81,41 @@ def test_hr_cannot_skip_direct_manager_step(client, hr_manager_auth, manager_wit
     assert final.json()["approval_step"] is None
 
 
+def test_manager_list_excludes_request_once_advanced_past_their_step(client, hr_manager_auth, manager_with_report,
+                                                                       make_test_leave_type):
+    """A request the manager's already cleared (now sitting at the next
+    step, e.g. HR) must not appear in their leave-applications list once
+    it's no longer theirs to act on — GET /api/leave/applications only
+    ever checked "is this my subordinate," never re-checked the request's
+    *current* step, so it kept showing up there with live Approve/Reject
+    buttons that 403'd on click (core/approval_workflow.py's
+    filter_actionable closes this; see its docstring)."""
+    report_emp, mgr_headers = manager_with_report
+    lt = make_test_leave_type(requires_approval=True)
+    start = "2027-04-19"  # Monday
+    app = client.post("/api/leave/applications", headers=hr_manager_auth, json={
+        "employee_id": report_emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": start, "end_date": start,
+    }).json()
+    assert app["approval_step"] == 1
+
+    before = client.get("/api/leave/applications", headers=mgr_headers).json()
+    assert any(a["id"] == app["id"] for a in before), "manager should see it while it's actionable at their step"
+
+    advanced = client.patch(f"/api/leave/applications/{app['id']}/status", headers=mgr_headers,
+                             json={"status": "Approved"})
+    assert advanced.status_code == 200, advanced.text
+    assert advanced.json()["approval_step"] == 2
+
+    after = client.get("/api/leave/applications", headers=mgr_headers).json()
+    assert not any(a["id"] == app["id"] for a in after), \
+        "manager must not see it anymore once it's advanced past their step"
+
+    still_pending = client.get("/api/leave/applications", headers=hr_manager_auth).json()
+    assert any(a["id"] == app["id"] and a["status"] == "Pending Approval" for a in still_pending), \
+        "HR (who IS eligible at step 2) should still see it as Pending Approval"
+
+
 def test_manager_cannot_approve_unrelated_employees_leave(client, hr_manager_auth, manager_with_report,
                                                             make_test_employee, make_test_leave_type):
     """The manager from manager_with_report is NOT this other employee's

@@ -8,7 +8,7 @@ from core.deps import get_current_user, need_inst
 
 from core.org_queries import subordinates_in_clause
 
-from core.approval_workflow import start_workflow, advance_or_finalize, project_ids_for_row
+from core.approval_workflow import start_workflow, advance_or_finalize, project_ids_for_row, filter_actionable
 
 from core.overtime import generate_overtime_records
 
@@ -69,7 +69,10 @@ def list_timesheets(conn, status: Optional[str] = None, user: dict = Depends(get
         q += " AND t.employee_id=?"; params.append(user.get("employee_id", ""))
     q += " GROUP BY t.id, e.full_name, e.department, e.designation ORDER BY t.period_start DESC"
     rows = conn.execute(q, params).fetchall()
-    return [dict(r) for r in rows]
+    result = [dict(r) for r in rows]
+    if user["role"] != "employee":
+        result = filter_actionable(conn, inst_id, "timesheet", result, user)
+    return result
 
 
 @router.post("/api/timesheets", status_code=201)
