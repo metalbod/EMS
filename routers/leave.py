@@ -355,8 +355,13 @@ def list_leave_balances(conn, employee_id: Optional[str] = None, year: Optional[
     if user["role"] == "employee":
         q += " AND b.employee_id=?"; p.append(user.get("employee_id", ""))
     elif user["role"] == "manager":
-        frag, fp = subordinates_in_clause(inst_id, user.get("employee_id", ""))
-        q += f" AND e.employee_id IN {frag}"; p.extend(fp)
+        # Default to the manager's own balances — this is what "My Leave"
+        # wants, not blended-in rows from every subordinate. An explicit
+        # employee_id (e.g. previewing balance before applying leave on
+        # someone's behalf) is honored as given, unrestricted — matching
+        # create_leave_application below, which already lets a manager
+        # submit for any active employee, not just their own reports.
+        q += " AND b.employee_id=?"; p.append(employee_id or user.get("employee_id", ""))
     elif employee_id:
         q += " AND b.employee_id=?"; p.append(employee_id)
     q += " ORDER BY e.full_name, lt.name"

@@ -116,6 +116,42 @@ def test_manager_list_excludes_request_once_advanced_past_their_step(client, hr_
         "HR (who IS eligible at step 2) should still see it as Pending Approval"
 
 
+def test_manager_own_balance_view_excludes_subordinates_balances(client, hr_manager_auth, manager_with_report,
+                                                                   make_test_leave_type):
+    """GET /api/leave/balances with no employee_id (what the "My Leave"
+    page's balance cards call) must return only the manager's own rows —
+    not blended together with every subordinate's, which the manager
+    branch used to do unconditionally via subordinates_in_clause (a
+    "manager sees subordinates" scoping meant for the approvals list,
+    not the personal balance view). An explicit employee_id for one of
+    their reports (e.g. previewing balance before applying leave on
+    someone's behalf) should still return just that one person's row."""
+    report_emp, mgr_headers = manager_with_report
+    mgr_emp_id = client.get("/api/auth/me", headers=mgr_headers).json()["employee_id"]
+    lt = make_test_leave_type(annual_entitlement=14, requires_approval=False)
+
+    # Seed a real balance row for both the manager and their report — the
+    # role-agnostic way to do that is via an actual application, since
+    # the balances endpoint's auto-create-missing-row convenience only
+    # applies to role=="employee", not manager.
+    for emp_id in (mgr_emp_id, report_emp["employee_id"]):
+        res = client.post("/api/leave/applications", headers=hr_manager_auth, json={
+            "employee_id": emp_id, "leave_type_id": lt["id"],
+            "start_date": "2027-05-03", "end_date": "2027-05-03",
+        })
+        assert res.status_code == 201, res.text
+
+    own = client.get("/api/leave/balances", headers=mgr_headers, params={"year": 2027}).json()
+    assert own, "manager's own balance list should include the row just seeded for them"
+    assert all(b["employee_id"] == mgr_emp_id for b in own), \
+        "manager's own balance list must not include a subordinate's rows"
+
+    for_report = client.get("/api/leave/balances", headers=mgr_headers,
+                             params={"year": 2027, "employee_id": report_emp["employee_id"]}).json()
+    assert for_report and all(b["employee_id"] == report_emp["employee_id"] for b in for_report), \
+        "an explicit employee_id for a subordinate should return just that subordinate's rows"
+
+
 def test_manager_cannot_approve_unrelated_employees_leave(client, hr_manager_auth, manager_with_report,
                                                             make_test_employee, make_test_leave_type):
     """The manager from manager_with_report is NOT this other employee's

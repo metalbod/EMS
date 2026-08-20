@@ -491,15 +491,11 @@ function loadMyLeaveDash() {
   const year = new Date().getFullYear();
   const empId = currentUser.employee_id;
 
-  // These endpoints scope by role (manager sees subordinates too, hr_manager/
-  // hr_admin see the whole institution) — filter down to this employee's own
-  // rows client-side rather than relying on server-side scoping meant for
-  // other screens.
   api(`/api/leave/balances?year=${year}&employee_id=${empId}`).then(async res => {
     const listEl = document.getElementById('myLeaveBalancesList');
     const emptyEl = document.getElementById('myLeaveBalancesEmpty');
     if (!res || !res.ok) { listEl.innerHTML = ''; emptyEl.classList.remove('hidden'); return; }
-    const balances = (await res.json()).filter(b => b.employee_id === empId);
+    const balances = await res.json();
     if (!balances.length) { listEl.innerHTML = ''; emptyEl.classList.remove('hidden'); return; }
     emptyEl.classList.add('hidden');
     listEl.innerHTML = balances.map(b => {
