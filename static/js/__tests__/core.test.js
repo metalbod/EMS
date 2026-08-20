@@ -458,3 +458,61 @@ describe('statusColor', () => {
     expect(statusColor(COLORS, 'SomeNewStatus', 'bg-slate-400')).toBe('bg-slate-400');
   });
 });
+
+describe('linkify', () => {
+  // Matches app-init.js's esc/linkify — linkify always escapes first, so
+  // it never trusts the source string as markup; it only wraps a
+  // recognized http(s) URL pattern (found in the now-safe, escaped text)
+  // in a clickable anchor. Used for notification messages, so an embedded
+  // link is clickable from the dashboard banner.
+  function esc(s) {
+    return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function linkify(s) {
+    return esc(s).replace(/(https?:\/\/[^\s<]+)/g, (url) => {
+      const trailing = url.match(/[.,!?;:)\]]+$/);
+      const href = trailing ? url.slice(0, -trailing[0].length) : url;
+      const suffix = trailing ? trailing[0] : '';
+      return `<a href="${href}" target="_blank" rel="noopener noreferrer" class="underline hover:no-underline">${href}</a>${suffix}`;
+    });
+  }
+
+  it('wraps a bare URL in a clickable anchor', () => {
+    expect(linkify('See https://example.com for details')).toBe(
+      'See <a href="https://example.com" target="_blank" rel="noopener noreferrer" class="underline hover:no-underline">https://example.com</a> for details'
+    );
+  });
+
+  it('leaves plain text with no URL unchanged (aside from escaping)', () => {
+    expect(linkify('No links here')).toBe('No links here');
+  });
+
+  it('trims trailing sentence punctuation off the link', () => {
+    expect(linkify('Read the policy at https://example.com/policy.pdf.')).toBe(
+      'Read the policy at <a href="https://example.com/policy.pdf" target="_blank" rel="noopener noreferrer" class="underline hover:no-underline">https://example.com/policy.pdf</a>.'
+    );
+  });
+
+  it('handles a URL wrapped in parentheses', () => {
+    expect(linkify('(https://example.com)')).toBe(
+      '(<a href="https://example.com" target="_blank" rel="noopener noreferrer" class="underline hover:no-underline">https://example.com</a>)'
+    );
+  });
+
+  it('linkifies multiple URLs in the same message', () => {
+    const result = linkify('First https://a.com then https://b.com');
+    expect(result).toContain('href="https://a.com"');
+    expect(result).toContain('href="https://b.com"');
+  });
+
+  it('still escapes any HTML in the surrounding text — never trusts the source as markup', () => {
+    expect(linkify('<script>alert(1)</script> https://example.com')).toBe(
+      '&lt;script&gt;alert(1)&lt;/script&gt; <a href="https://example.com" target="_blank" rel="noopener noreferrer" class="underline hover:no-underline">https://example.com</a>'
+    );
+  });
+
+  it('returns an empty string for null/undefined, matching esc', () => {
+    expect(linkify(null)).toBe('');
+    expect(linkify(undefined)).toBe('');
+  });
+});

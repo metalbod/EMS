@@ -45,7 +45,7 @@ async function loadNotificationSettings() {
   listEl.innerHTML=rows.map(n=>{
     const status=notifStatus(n);
     return `<tr class="border-t border-slate-100">
-      <td class="px-4 py-3 text-slate-700 max-w-md"><p class="line-clamp-2">${esc(n.message)}</p></td>
+      <td class="px-4 py-3 text-slate-700 max-w-md"><p class="line-clamp-2">${linkify(n.message)}</p></td>
       <td class="px-4 py-3 text-slate-500 whitespace-nowrap">${utcToLocalDisplay(n.start_time)}</td>
       <td class="px-4 py-3 text-slate-500 whitespace-nowrap">${utcToLocalDisplay(n.end_time)}</td>
       <td class="px-4 py-3"><span class="badge text-xs ${statusColor(NOTIF_STATUS_COLORS, status)}">${status}</span></td>
@@ -121,7 +121,7 @@ async function checkDashboardNotification() {
   const n=res?.ok?await res.json():null;
   if(!n){ bar.classList.add('hidden'); return; }
   if(sessionStorage.getItem(notifDismissKey(n.id))){ bar.classList.add('hidden'); return; }
-  document.getElementById('dashboardNotifMsg').textContent=n.message;
+  document.getElementById('dashboardNotifMsg').innerHTML=linkify(n.message);
   bar.dataset.notifId=n.id;
   bar.classList.remove('hidden');
   bar.classList.add('flex');
@@ -159,7 +159,7 @@ async function loadSystemNotificationSettings() {
   listEl.innerHTML=rows.map(n=>{
     const status=notifStatus(n);
     return `<tr class="border-t border-slate-100">
-      <td class="px-4 py-3 text-slate-700 max-w-md"><p class="line-clamp-2">${esc(n.message)}</p></td>
+      <td class="px-4 py-3 text-slate-700 max-w-md"><p class="line-clamp-2">${linkify(n.message)}</p></td>
       <td class="px-4 py-3 text-slate-500 whitespace-nowrap">${utcToLocalDisplay(n.start_time)}</td>
       <td class="px-4 py-3 text-slate-500 whitespace-nowrap">${utcToLocalDisplay(n.end_time)}</td>
       <td class="px-4 py-3"><span class="badge text-xs ${statusColor(NOTIF_STATUS_COLORS, status)}">${status}</span></td>
@@ -232,7 +232,7 @@ async function checkDashboardSystemNotification() {
   const n=res?.ok?await res.json():null;
   if(!n){ bar.classList.add('hidden'); bar.classList.remove('flex'); return; }
   if(sessionStorage.getItem(sysNotifDismissKey(n.id))){ bar.classList.add('hidden'); bar.classList.remove('flex'); return; }
-  document.getElementById('dashboardSystemNotifMsg').textContent=n.message;
+  document.getElementById('dashboardSystemNotifMsg').innerHTML=linkify(n.message);
   bar.dataset.notifId=n.id;
   bar.classList.remove('hidden');
   bar.classList.add('flex');
