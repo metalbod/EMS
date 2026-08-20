@@ -1,12 +1,14 @@
 // Dashboard
 // ---------------------------------------------------------------------------
-// Tabs load lazily (dash-tabs.js loaded flag) — everything past the General
-// tab used to fire its own API call in parallel on every single dashboard
-// visit regardless of which section (if any) the user actually looked at.
-// For an HR manager that's 4+ concurrent DB round-trips just to land on the
-// page. Now only General's own section (which includes Locations Overview)
-// fetches up front; Recruitment/Timesheet/Compensation & Benefits fetch once,
-// on first click, and are cached for the rest of the session.
+// Tabs load lazily (dash-tabs.js loaded flag) — everything past General/
+// Workforce used to fire its own API call in parallel on every single
+// dashboard visit regardless of which section (if any) the user actually
+// looked at. For an HR manager that's 4+ concurrent DB round-trips just to
+// land on the page. Now only General (notifications/To-Do) and Workforce
+// (which includes Locations Overview) fetch up front, since both are
+// reachable with a single click from landing; Recruitment/Timesheet/
+// Compensation & Benefits fetch once, on first click, and are cached for
+// the rest of the session.
 const _dashTabLoaded = { recruitment: false, timesheet: false, compensation: false, leave: false };
 let _lastBenefitsDashboard = null;
 window.getLastBenefitsDashboard = () => _lastBenefitsDashboard;
@@ -52,11 +54,20 @@ function renderDashboard() {
   document.getElementById('superadminGlobalDash').classList.add('hidden');
   document.getElementById('instDash').classList.remove('hidden');
   const active = employees.filter(e=>e.status==='Active');
+  const inactive = employees.filter(e=>e.status!=='Active');
   const depts = [...new Set(employees.map(e=>e.department))];
+  const total = employees.length || 1;
   document.getElementById('statTotal').textContent = employees.length;
   document.getElementById('statActive').textContent = active.length;
-  document.getElementById('statInactive').textContent = employees.length - active.length;
+  document.getElementById('statInactive').textContent = inactive.length;
   document.getElementById('statDepts').textContent = depts.length;
+  const genderLabel = arr => arr.length
+    ? `${arr.filter(e=>e.gender==='Male').length} Male · ${arr.filter(e=>e.gender==='Female').length} Female` : '—';
+  document.getElementById('statTotalGender').textContent = genderLabel(employees);
+  document.getElementById('statActiveGender').textContent = genderLabel(active);
+  document.getElementById('statInactiveGender').textContent = genderLabel(inactive);
+  document.getElementById('statActivePct').textContent = `${Math.round(active.length/total*100)}%`;
+  document.getElementById('statInactivePct').textContent = `${Math.round(inactive.length/total*100)}%`;
   const deptCounts = {};
   employees.forEach(e=>{ deptCounts[e.department]=(deptCounts[e.department]||0)+1; });
   document.getElementById('deptBreakdown').innerHTML = Object.entries(deptCounts)
@@ -80,9 +91,42 @@ function renderDashboard() {
         <div class="text-xs text-slate-500 w-5 text-right">${c}</div>
       </div>`).join('') || '<p class="text-slate-400 text-sm">No data.</p>';
 
-  // Locations overview (General tab, HR Manager / HR Admin only) — the one
-  // section besides base stats that still fetches immediately, since it was
-  // grouped into the always-visible General tab rather than a lazy tab.
+  // Workforce Composition — Nationality (Local/Foreigner) and Race, as
+  // proportional segmented bars. Nationality is free text in this app (see
+  // core/constants.py — there's no NATIONALITIES enum), so "Local" is a
+  // nationality==='Malaysian' heuristic, not a validated field; anything
+  // else (including typos/inconsistent entries) counts as "Foreigner".
+  // Race IS a validated, required 7-value enum (core/constants.py's
+  // RACES) — every employee always has one, so there's no "Undefined"
+  // bucket to design for, unlike a generic HR system might need.
+  const segmentedBar = (containerId, legendId, segments) => {
+    const shown = segments.filter(s => s.count > 0);
+    document.getElementById(containerId).innerHTML = shown.map(s =>
+      `<div class="${s.color}" style="width:${Math.round(s.count/total*100)}%" title="${esc(s.label)}: ${s.count}"></div>`
+    ).join('');
+    document.getElementById(legendId).innerHTML = shown.map(s =>
+      `<span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full ${s.color} inline-block"></span>${esc(s.label)} ${s.count}</span>`
+    ).join('') || '<span class="text-slate-400">No data.</span>';
+  };
+  const localCount = employees.filter(e=>e.nationality==='Malaysian').length;
+  segmentedBar('nationalityBar', 'nationalityLegend', [
+    { label:'Local', count:localCount, color:'bg-blue-700' },
+    { label:'Foreigner', count:employees.length-localCount, color:'bg-blue-300' },
+  ]);
+  const RACE_COLORS = {
+    'Malay':'bg-blue-600', 'Chinese':'bg-emerald-500', 'Indian':'bg-amber-500',
+    'Bumiputera Sabah':'bg-rose-500', 'Bumiputera Sarawak':'bg-violet-500',
+    'Orang Asli':'bg-cyan-500', 'Others':'bg-slate-400',
+  };
+  const raceCounts = {};
+  employees.forEach(e=>{ raceCounts[e.race]=(raceCounts[e.race]||0)+1; });
+  segmentedBar('raceBar', 'raceLegend',
+    Object.entries(raceCounts).sort((a,b)=>b[1]-a[1])
+      .map(([race,count])=>({ label:race, count, color:RACE_COLORS[race]||'bg-slate-400' })));
+
+  // Locations overview (Workforce tab, HR Manager / HR Admin only) — the one
+  // section besides base stats that still fetches immediately, since it's
+  // grouped into the always-visible Workforce tab rather than a lazy tab.
   const canViewLoc = ['hr_manager','hr_admin'].includes(currentUser?.role);
   document.getElementById('locDashSection').classList.toggle('hidden', !canViewLoc);
   if (canViewLoc) loadLocationsOverviewDash();

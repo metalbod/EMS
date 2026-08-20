@@ -56,3 +56,68 @@ describe('Recruitment dashboard candidate pipeline', () => {
     expect(document.getElementById('rCandPipeline').innerHTML).toContain('No candidates yet.');
   });
 });
+
+// Matches dashboard.js's renderDashboard() Workforce tab additions —
+// gender breakdown on the Total/Active/Inactive stat cards, and the
+// Nationality/Race segmented bars under "Workforce Composition". Race is
+// a validated required 7-value enum (core/constants.py's RACES) so every
+// employee always has one — no "Undefined" bucket. Nationality is free
+// text with no enum, so "Local" is a nationality==='Malaysian' heuristic.
+describe('Workforce tab composition stats', () => {
+  function genderLabel(arr) {
+    return arr.length
+      ? `${arr.filter(e=>e.gender==='Male').length} Male · ${arr.filter(e=>e.gender==='Female').length} Female` : '—';
+  }
+
+  function segments(employeesArr, total) {
+    const localCount = employeesArr.filter(e=>e.nationality==='Malaysian').length;
+    const nationality = [
+      { label:'Local', count:localCount },
+      { label:'Foreigner', count:employeesArr.length-localCount },
+    ].filter(s=>s.count>0);
+    const raceCounts = {};
+    employeesArr.forEach(e=>{ raceCounts[e.race]=(raceCounts[e.race]||0)+1; });
+    const race = Object.entries(raceCounts).sort((a,b)=>b[1]-a[1]).map(([label,count])=>({label,count}));
+    return { nationality, race, nationalityPct: nationality.map(s=>Math.round(s.count/total*100)) };
+  }
+
+  const emps = [
+    { gender:'Male', nationality:'Malaysian', race:'Malay', status:'Active' },
+    { gender:'Female', nationality:'Malaysian', race:'Chinese', status:'Active' },
+    { gender:'Male', nationality:'Indonesian', race:'Others', status:'Inactive' },
+  ];
+
+  it('formats gender counts as "N Male · N Female"', () => {
+    expect(genderLabel(emps)).toBe('2 Male · 1 Female');
+    expect(genderLabel(emps.filter(e=>e.status==='Active'))).toBe('1 Male · 1 Female');
+  });
+
+  it('shows an em dash for an empty group instead of "0 Male · 0 Female"', () => {
+    expect(genderLabel([])).toBe('—');
+  });
+
+  it('splits nationality into Local/Foreigner via the Malaysian heuristic', () => {
+    const { nationality } = segments(emps, emps.length);
+    expect(nationality).toEqual([{ label:'Local', count:2 }, { label:'Foreigner', count:1 }]);
+  });
+
+  it('omits a zero-count nationality segment rather than rendering an empty bar slice', () => {
+    const allLocal = [{ nationality:'Malaysian', race:'Malay' }, { nationality:'Malaysian', race:'Chinese' }];
+    const { nationality } = segments(allLocal, allLocal.length);
+    expect(nationality).toEqual([{ label:'Local', count:2 }]);
+  });
+
+  it('groups race counts using the real enum labels, one segment per race present', () => {
+    const { race } = segments(emps, emps.length);
+    expect(race).toHaveLength(3);
+    expect(race.find(r=>r.label==='Malay').count).toBe(1);
+    expect(race.find(r=>r.label==='Chinese').count).toBe(1);
+    expect(race.find(r=>r.label==='Others').count).toBe(1);
+    expect(race.find(r=>r.label==='Indian')).toBeUndefined();
+  });
+
+  it('never produces an "Undefined" race segment, since race is a required field', () => {
+    const { race } = segments(emps, emps.length);
+    expect(race.some(r=>r.label==='Undefined')).toBe(false);
+  });
+});

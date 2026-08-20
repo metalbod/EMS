@@ -474,42 +474,6 @@
 
       <!-- DASHBOARD -->
       <div id="page-dashboard" class="hidden">
-        <!-- System-wide notification banner (ALL roles, incl. superadmin) — red, highest priority -->
-        <div id="dashboardSystemNotifBar" class="hidden items-start gap-3 bg-red-50 border border-red-300 rounded-xl px-4 py-3 mb-5">
-          <svg class="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/></svg>
-          <p id="dashboardSystemNotifMsg" class="flex-1 text-sm text-red-800 font-medium whitespace-pre-line"></p>
-          <button onclick="dismissDashboardSystemNotification()" class="text-red-400 hover:text-red-600 flex-shrink-0"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
-        </div>
-
-        <!-- Institution notification banner (all roles except superadmin) -->
-        <div id="dashboardNotifBar" class="hidden items-start gap-3 bg-purple-50 border border-purple-200 rounded-xl px-4 py-3 mb-5">
-          <svg class="w-5 h-5 text-purple-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
-          <p id="dashboardNotifMsg" class="flex-1 text-sm text-purple-800 whitespace-pre-line"></p>
-          <button onclick="dismissDashboardNotification()" class="text-purple-400 hover:text-purple-600 flex-shrink-0"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
-        </div>
-
-        <!-- Quick Actions (employee role only) -->
-        <div id="dashboardQuickActions" class="hidden flex flex-wrap gap-3 mb-6">
-          <button onclick="dashShortcutApplyLeave()" class="btn-primary text-sm flex items-center gap-2">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-            Apply Leave
-          </button>
-          <button onclick="dashShortcutSubmitClaim()" class="btn-primary text-sm flex items-center gap-2">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-            Submit Claims
-          </button>
-        </div>
-
-        <!-- To-Do list (all roles except superadmin) — always visible, even when empty -->
-        <div id="dashboardTodoCard" class="hidden bg-white rounded-xl border border-slate-200 p-5 mb-6">
-          <div class="flex items-center gap-2 mb-3">
-            <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-            <h3 class="text-sm font-semibold text-slate-700">To-Do</h3>
-          </div>
-          <div id="dashboardTodoList" class="space-y-1"></div>
-          <p id="dashboardTodoEmpty" class="hidden text-sm text-slate-400 py-2">You're all caught up — nothing pending right now.</p>
-        </div>
-
         <!-- Global (superadmin no context) -->
         <div id="superadminGlobalDash" class="hidden">
           <div class="grid grid-cols-3 gap-4 mb-6">
@@ -535,19 +499,93 @@
         <div id="instDash" class="hidden">
           <div class="flex border-b border-slate-200 gap-1 mb-6">
             <button class="view-tab-btn view-tab-active px-4 py-3 text-sm" data-dashtab="dash-general" onclick="switchDashTab('dash-general')">General</button>
+            <button class="view-tab-btn px-4 py-3 text-sm text-slate-500" data-dashtab="dash-workforce" onclick="switchDashTab('dash-workforce')">Workforce</button>
             <button id="dash-tab-recruitment-btn" class="view-tab-btn hidden px-4 py-3 text-sm text-slate-500" data-dashtab="dash-recruitment" onclick="switchDashTab('dash-recruitment')">Recruitment</button>
             <button id="dash-tab-timesheet-btn" class="view-tab-btn hidden px-4 py-3 text-sm text-slate-500" data-dashtab="dash-timesheet" onclick="switchDashTab('dash-timesheet')">Timesheet</button>
             <button id="dash-tab-compensation-btn" class="view-tab-btn hidden px-4 py-3 text-sm text-slate-500" data-dashtab="dash-compensation" onclick="switchDashTab('dash-compensation')">Compensation &amp; Benefits</button>
             <button id="dash-tab-leave-btn" class="view-tab-btn hidden px-4 py-3 text-sm text-slate-500" data-dashtab="dash-leave" onclick="switchDashTab('dash-leave')">Leave</button>
           </div>
 
-          <!-- General tab: overview stats + locations (always visible, loads immediately) -->
+          <!-- General tab: notifications + quick actions + to-do (default landing tab, always visible, loads immediately) -->
           <div id="dash-general" class="dash-tab-panel">
+            <!-- System-wide notification banner (ALL roles, incl. superadmin) — red, highest priority -->
+            <div id="dashboardSystemNotifBar" class="hidden items-start gap-3 bg-red-50 border border-red-300 rounded-xl px-4 py-3 mb-5">
+              <svg class="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/></svg>
+              <p id="dashboardSystemNotifMsg" class="flex-1 text-sm text-red-800 font-medium whitespace-pre-line"></p>
+              <button onclick="dismissDashboardSystemNotification()" class="text-red-400 hover:text-red-600 flex-shrink-0"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+            </div>
+
+            <!-- Institution notification banner (all roles except superadmin) -->
+            <div id="dashboardNotifBar" class="hidden items-start gap-3 bg-purple-50 border border-purple-200 rounded-xl px-4 py-3 mb-5">
+              <svg class="w-5 h-5 text-purple-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+              <p id="dashboardNotifMsg" class="flex-1 text-sm text-purple-800 whitespace-pre-line"></p>
+              <button onclick="dismissDashboardNotification()" class="text-purple-400 hover:text-purple-600 flex-shrink-0"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+            </div>
+
+            <!-- Quick Actions (employee role only) -->
+            <div id="dashboardQuickActions" class="hidden flex flex-wrap gap-3 mb-6">
+              <button onclick="dashShortcutApplyLeave()" class="btn-primary text-sm flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                Apply Leave
+              </button>
+              <button onclick="dashShortcutSubmitClaim()" class="btn-primary text-sm flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                Submit Claims
+              </button>
+            </div>
+
+            <!-- To-Do list (all roles except superadmin) — always visible, even when empty -->
+            <div id="dashboardTodoCard" class="hidden bg-white rounded-xl border border-slate-200 p-5 mb-6">
+              <div class="flex items-center gap-2 mb-3">
+                <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                <h3 class="text-sm font-semibold text-slate-700">To-Do</h3>
+              </div>
+              <div id="dashboardTodoList" class="space-y-1"></div>
+              <p id="dashboardTodoEmpty" class="hidden text-sm text-slate-400 py-2">You're all caught up — nothing pending right now.</p>
+            </div>
+          </div>
+
+          <!-- Workforce tab: overview stats + composition + locations (always visible, loads immediately) -->
+          <div id="dash-workforce" class="dash-tab-panel hidden">
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-              <div class="bg-indigo-50 rounded-xl border border-indigo-100 p-5"><p class="text-xs text-indigo-500 uppercase tracking-wider mb-1">Total</p><p id="statTotal" class="text-3xl font-bold text-indigo-700">0</p></div>
-              <div class="bg-emerald-50 rounded-xl border border-emerald-100 p-5"><p class="text-xs text-emerald-600 uppercase tracking-wider mb-1">Active</p><p id="statActive" class="text-3xl font-bold text-emerald-700">0</p></div>
-              <div class="bg-slate-50 rounded-xl border border-slate-200 p-5"><p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Inactive</p><p id="statInactive" class="text-3xl font-bold text-slate-400">0</p></div>
+              <div class="bg-indigo-50 rounded-xl border border-indigo-100 p-5">
+                <p class="text-xs text-indigo-500 uppercase tracking-wider mb-1">Total</p>
+                <p id="statTotal" class="text-3xl font-bold text-indigo-700">0</p>
+                <p class="text-xs text-indigo-400">Employees</p>
+                <p id="statTotalGender" class="text-xs text-indigo-600 mt-1"></p>
+              </div>
+              <div class="bg-emerald-50 rounded-xl border border-emerald-100 p-5">
+                <div class="flex items-center justify-between mb-1">
+                  <p class="text-xs text-emerald-600 uppercase tracking-wider">Active</p>
+                  <span id="statActivePct" class="text-xs font-semibold bg-emerald-100 text-emerald-700 rounded-full px-2 py-0.5">0%</span>
+                </div>
+                <p id="statActive" class="text-3xl font-bold text-emerald-700">0</p>
+                <p class="text-xs text-emerald-500">Employees</p>
+                <p id="statActiveGender" class="text-xs text-emerald-600 mt-1"></p>
+              </div>
+              <div class="bg-slate-50 rounded-xl border border-slate-200 p-5">
+                <div class="flex items-center justify-between mb-1">
+                  <p class="text-xs text-slate-500 uppercase tracking-wider">Inactive</p>
+                  <span id="statInactivePct" class="text-xs font-semibold bg-slate-200 text-slate-600 rounded-full px-2 py-0.5">0%</span>
+                </div>
+                <p id="statInactive" class="text-3xl font-bold text-slate-400">0</p>
+                <p class="text-xs text-slate-400">Employees</p>
+                <p id="statInactiveGender" class="text-xs text-slate-500 mt-1"></p>
+              </div>
               <div class="bg-violet-50 rounded-xl border border-violet-100 p-5"><p class="text-xs text-violet-500 uppercase tracking-wider mb-1">Depts</p><p id="statDepts" class="text-3xl font-bold text-violet-700">0</p></div>
+            </div>
+            <div class="bg-white rounded-xl border border-slate-200 p-5 mb-4">
+              <h3 class="font-semibold mb-4">Workforce Composition</h3>
+              <div class="mb-5">
+                <p class="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Nationality</p>
+                <div id="nationalityBar" class="flex h-3 rounded-full overflow-hidden bg-slate-100"></div>
+                <div id="nationalityLegend" class="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-slate-600"></div>
+              </div>
+              <div>
+                <p class="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Race</p>
+                <div id="raceBar" class="flex h-3 rounded-full overflow-hidden bg-slate-100"></div>
+                <div id="raceLegend" class="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-slate-600"></div>
+              </div>
             </div>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               <div class="bg-white rounded-xl border border-slate-200 p-5"><h3 class="font-semibold mb-3">By Department</h3><div id="deptBreakdown" class="space-y-2"></div></div>
