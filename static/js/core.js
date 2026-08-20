@@ -363,6 +363,14 @@ function applyRoleUI() {
   const hideEmp = isSA && !currentInstitution;
 
   updateBrandHeader();
+  // Non-superadmin logins land on a personal landing page (their own
+  // to-dos, shortcuts), not an org-wide dashboard — "Home" reads more
+  // accurately for them than "Dashboard" (which stays as-is for
+  // superadmin, whose view is a genuine institution/platform overview).
+  const dashLabel = isSA ? 'Dashboard' : 'Home';
+  document.getElementById('navDashboardBtn')?.setAttribute('title', dashLabel);
+  const navDashboardLabelEl = document.getElementById('navDashboardLabel');
+  if (navDashboardLabelEl) navDashboardLabelEl.textContent = dashLabel;
   document.getElementById('nav-institutions-wrap').classList.toggle('hidden', !isSA);
   document.getElementById('nav-sysnotif-wrap')?.classList.toggle('hidden', !isSA);
   document.getElementById('nav-emp-group').classList.toggle('hidden', hideEmp);
@@ -498,7 +506,8 @@ function showPage(page) {
     el.classList.toggle('active', el.dataset.page === page);
   });
   const titles = {
-    dashboard:'Dashboard', institutions:'Institutions', employees:'Employee List',
+    dashboard: currentUser?.role === 'superadmin' ? 'Dashboard' : 'Home',
+    institutions:'Institutions', employees:'Employee List',
     orgchart:'Org Chart', audit:'Audit Log', users:'User Management', 'coming-soon':'Coming Soon',
     requisitions:'Job Requisitions', candidates:'Candidate Bank', interviews:'Interviews', offers:'Offers & Letters',
     onboarding:'Onboarding', offboarding:'Offboarding',

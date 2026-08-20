@@ -28,6 +28,7 @@ function renderDashboard() {
   checkDashboardSystemNotification();
   checkDashboardNotification();
   loadDashboardTodos();
+  document.getElementById('dashboardQuickActions')?.classList.toggle('hidden', currentUser?.role !== 'employee');
   if (currentUser.role === 'superadmin' && !currentInstitution) {
     document.getElementById('superadminGlobalDash').classList.remove('hidden');
     document.getElementById('instDash').classList.add('hidden');
@@ -374,6 +375,26 @@ async function loadDashboardTodos() {
       <span class="text-sm text-slate-700">${esc(t.label)}</span>
       <svg class="w-4 h-4 text-slate-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
     </div>`).join('');
+}
+
+// Dashboard quick-action shortcuts (employee role only — see
+// renderDashboard's dashboardQuickActions toggle). Each jumps to the
+// relevant page (for its own nav-active state and title) and pre-loads
+// just the one piece of cached state its modal actually reads, rather
+// than awaiting that page's whole load function (which showPage's own
+// dispatch already fires in the background) — avoids a duplicate
+// full-page fetch just to guarantee ordering.
+async function dashShortcutApplyLeave() {
+  showPage('leave-my');
+  await loadLeaveTypesCache();
+  openLeaveApplyModal();
+}
+
+async function dashShortcutSubmitClaim() {
+  showPage('payroll-mybenefits');
+  const res = await api('/api/benefits/eligible-plans/mine');
+  myEligiblePlans = (res && res.ok) ? await res.json() : [];
+  openClaimForm();
 }
 
 // ---------------------------------------------------------------------------
