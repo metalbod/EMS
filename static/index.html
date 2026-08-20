@@ -738,6 +738,12 @@
                 <h3 class="font-semibold mb-3 text-sm">Utilization by Leave Type</h3>
                 <div id="leaveDashByType" class="space-y-2"></div>
                 <p id="leaveDashByTypeEmpty" class="hidden text-slate-400 text-sm">No leave balances recorded yet this year.</p>
+                <p class="text-xs text-slate-400 mt-2">Click a leave type above to rank employees by that type instead of overall.</p>
+              </div>
+              <div class="flex items-center gap-2 mb-3 text-xs text-slate-500">
+                <span>Ranking by:</span>
+                <span id="leaveDashFilterLabel" class="font-medium text-slate-700">All Leave Types</span>
+                <button id="leaveDashClearFilter" onclick="clearLeaveDashTypeFilter()" class="hidden text-blue-600 hover:underline">Clear</button>
               </div>
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div class="bg-white rounded-xl border border-slate-200 p-5">

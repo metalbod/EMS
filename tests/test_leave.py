@@ -616,6 +616,52 @@ def test_leave_utilization_dashboard_reflects_usage_and_breakdown(
         assert type_breakdown["entitled_days"] == 10
 
 
+def test_leave_utilization_dashboard_leave_type_filter_narrows_ranking(
+    client, hr_manager_auth, employee_with_user, make_test_leave_type
+):
+    """Clicking a row in the dashboard's "Utilization by Leave Type" list
+    (static/js/dashboard.js's setLeaveDashTypeFilter) passes leave_type_id
+    through to narrow the Top/Bottom 10 ranking to just that type, instead
+    of each employee's total across every type. lt is a brand-new,
+    disposable leave type this test just created, so this employee is
+    provably the ONLY one who can have a balance row against it — the
+    filtered ranking must contain exactly them, scoped to just this type's
+    figures, not their unfiltered across-every-type total."""
+    emp, headers = employee_with_user
+    lt = make_test_leave_type(annual_entitlement=10, requires_approval=False)
+    res = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": WORK_WEEK_START, "end_date": WORK_WEEK_END,
+    })
+    assert res.status_code == 201, res.text
+
+    unfiltered = client.get("/api/leave/dashboard/utilization", headers=hr_manager_auth, params={"year": 2027}).json()
+    dash = client.get(
+        "/api/leave/dashboard/utilization", headers=hr_manager_auth,
+        params={"year": 2027, "leave_type_id": lt["id"]},
+    ).json()
+
+    assert dash["leave_type_id"] == lt["id"]
+    # by_type stays unfiltered — the clickable list of every type must be
+    # identical whether or not a ranking filter is applied, so it never
+    # collapses down to just the one selected type.
+    assert {t["leave_type_id"] for t in dash["by_type"]} == {t["leave_type_id"] for t in unfiltered["by_type"]}
+
+    for ranking in (dash["top_highest"], dash["top_lowest"]):
+        assert len(ranking) == 1
+        entry = ranking[0]
+        assert entry["employee_id"] == emp["employee_id"]
+        assert entry["total_entitled"] == 10
+        assert entry["total_used"] == 5
+
+
+def test_leave_utilization_dashboard_no_filter_still_returns_null_leave_type_id(
+    client, hr_manager_auth,
+):
+    dash = client.get("/api/leave/dashboard/utilization", headers=hr_manager_auth, params={"year": 2027}).json()
+    assert dash["leave_type_id"] is None
+
+
 # ---------------------------------------------------------------------------
 # Leave Types: monthly accrual + per-application/per-month caps
 # ---------------------------------------------------------------------------

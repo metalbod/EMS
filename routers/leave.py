@@ -640,7 +640,7 @@ def update_leave_status(conn, app_id: int, body: LeaveStatusIn, user: dict = Dep
 
 @router.get("/api/leave/dashboard/utilization")
 @db_session
-def get_leave_utilization_dashboard(conn, year: Optional[int] = None,
+def get_leave_utilization_dashboard(conn, year: Optional[int] = None, leave_type_id: Optional[int] = None,
                                     user: dict = Depends(require_roles("hr_manager", "hr_admin"))) -> Dict[str, Any]:
     # NOT retrofitted onto require_permission() — a dedicated test
     # (test_leave_utilization_dashboard_superadmin_denied) confirms
@@ -650,11 +650,16 @@ def get_leave_utilization_dashboard(conn, year: Optional[int] = None,
     # require_roles(...) gate instead of adding it to the pilot.
     """Institution-wide leave utilization for the HR dashboard's Leave tab:
     usage by leave type, and the 10 employees with the highest and lowest
-    overall utilization (their leave_balances rows summed across every
-    type they have a balance for). A leave type that shares entitlement
-    with another never has its own balance row (see _balance_leave_type_id),
-    so this naturally aggregates shared usage under the pool's own type —
-    there's no double-counting to guard against."""
+    utilization. By default that ranking sums each employee's leave_balances
+    rows across every type they have a balance for; passing leave_type_id
+    (from clicking a row in the "Utilization by Leave Type" list, see
+    static/js/dashboard.js's setLeaveDashTypeFilter) narrows the ranking to
+    just that one type instead, while by_type itself always stays
+    unfiltered so the clickable list of types doesn't disappear once one is
+    selected. A leave type that shares entitlement with another never has
+    its own balance row (see _balance_leave_type_id), so this naturally
+    aggregates shared usage under the pool's own type — there's no
+    double-counting to guard against, filtered or not."""
     inst_id = need_inst(user)
     year = year or datetime.now().year
 
@@ -674,16 +679,23 @@ def get_leave_utilization_dashboard(conn, year: Optional[int] = None,
         "utilization_percent": round(r["total_used"] / r["total_entitled"] * 100, 1) if r["total_entitled"] else 0.0,
     } for r in by_type]
 
-    emp_rows = conn.execute("""
+    emp_q = """
         SELECT b.employee_id, e.full_name, e.preferred_name, e.department,
                SUM(b.entitled_days + b.carried_forward_days) AS total_entitled,
                SUM(b.used_days) AS total_used
         FROM leave_balances b
         JOIN employees e ON e.employee_id = b.employee_id AND e.institution_id = b.institution_id
         WHERE b.institution_id=? AND b.year=? AND e.status='Active'
+    """
+    emp_p = [inst_id, year]
+    if leave_type_id is not None:
+        emp_q += " AND b.leave_type_id=?"
+        emp_p.append(leave_type_id)
+    emp_q += """
         GROUP BY b.employee_id, e.full_name, e.preferred_name, e.department
         HAVING SUM(b.entitled_days + b.carried_forward_days) > 0
-    """, (inst_id, year)).fetchall()
+    """
+    emp_rows = conn.execute(emp_q, emp_p).fetchall()
 
     def _breakdown(employee_id: str):
         rows = conn.execute("""
@@ -714,7 +726,7 @@ def get_leave_utilization_dashboard(conn, year: Optional[int] = None,
     for e in top_highest + top_lowest:
         e["breakdown"] = _breakdown(e["employee_id"])
 
-    return {"year": year, "by_type": by_type_out, "top_highest": top_highest, "top_lowest": top_lowest}
+    return {"year": year, "leave_type_id": leave_type_id, "by_type": by_type_out, "top_highest": top_highest, "top_lowest": top_lowest}
 
 
 @router.get("/api/employees/{employee_id}/leave-history")

@@ -495,34 +495,69 @@ function renderLeaveCalendarGrid(entries, holidays) {
   grid.innerHTML = cells;
 }
 
+// Cache of the last-fetched by-type breakdown (always institution-wide,
+// unfiltered) so clicking a row can look its id/name back up without a
+// round trip, and the currently selected type (if any) the Top/Bottom 10
+// rankings below are narrowed to — see loadLeaveUtilDash.
+let leaveDashByTypeCache = [];
+let leaveDashTypeFilter = null; // { id, name } | null — null means "all types"
+
 function loadLeaveDash() {
   loadLeaveCalendar();
   const canViewLeaveDash = ['hr_manager','hr_admin'].includes(currentUser?.role);
   document.getElementById('leaveUtilDashSection').classList.toggle('hidden', !canViewLeaveDash);
   if (canViewLeaveDash) {
-    api('/api/leave/dashboard/utilization').then(async res => {
-      if (!res || !res.ok) return;
-      const s = await res.json();
-
-      const byTypeEl = document.getElementById('leaveDashByType');
-      document.getElementById('leaveDashByTypeEmpty').classList.toggle('hidden', s.by_type.length > 0);
-      byTypeEl.innerHTML = s.by_type.map(t => `
-        <div class="flex items-center gap-2">
-          <div class="w-32 text-xs text-slate-600 truncate" title="${esc(t.leave_type_name)}">${esc(t.leave_type_name)}</div>
-          <div class="flex-1 bg-slate-100 rounded-full h-2">
-            <div class="bg-blue-500 h-2 rounded-full" style="width:${Math.min(100, t.utilization_percent)}%"></div>
-          </div>
-          <div class="text-xs text-slate-500 w-32 text-right">${t.total_used}/${t.total_entitled} days (${t.utilization_percent}%)</div>
-        </div>`).join('');
-
-      renderLeaveDashRanking('leaveDashTopHighest', s.top_highest, 'bg-red-500');
-      renderLeaveDashRanking('leaveDashTopLowest', s.top_lowest, 'bg-emerald-500');
-    });
+    leaveDashTypeFilter = null;
+    loadLeaveUtilDash();
   }
 
   const hasEmployeeRecord = !!currentUser?.employee_id;
   document.getElementById('myLeaveDashSection').classList.toggle('hidden', !hasEmployeeRecord);
   if (hasEmployeeRecord) loadMyLeaveDash();
+}
+
+function loadLeaveUtilDash() {
+  const url = '/api/leave/dashboard/utilization' + (leaveDashTypeFilter ? `?leave_type_id=${leaveDashTypeFilter.id}` : '');
+  api(url).then(async res => {
+    if (!res || !res.ok) return;
+    const s = await res.json();
+    leaveDashByTypeCache = s.by_type;
+
+    const byTypeEl = document.getElementById('leaveDashByType');
+    document.getElementById('leaveDashByTypeEmpty').classList.toggle('hidden', s.by_type.length > 0);
+    byTypeEl.innerHTML = s.by_type.map(t => {
+      const active = leaveDashTypeFilter?.id === t.leave_type_id;
+      return `
+      <div class="flex items-center gap-2 cursor-pointer rounded-lg px-1.5 -mx-1.5 py-0.5 transition ${active ? 'bg-blue-50 ring-1 ring-blue-200' : 'hover:bg-slate-50'}" onclick="setLeaveDashTypeFilter(${t.leave_type_id})" title="Click to rank employees by ${esc(t.leave_type_name)}">
+        <div class="w-32 text-xs text-slate-600 truncate" title="${esc(t.leave_type_name)}">${esc(t.leave_type_name)}</div>
+        <div class="flex-1 bg-slate-100 rounded-full h-2">
+          <div class="bg-blue-500 h-2 rounded-full" style="width:${Math.min(100, t.utilization_percent)}%"></div>
+        </div>
+        <div class="text-xs text-slate-500 w-32 text-right">${t.total_used}/${t.total_entitled} days (${t.utilization_percent}%)</div>
+      </div>`;
+    }).join('');
+
+    document.getElementById('leaveDashFilterLabel').textContent = leaveDashTypeFilter ? leaveDashTypeFilter.name : 'All Leave Types';
+    document.getElementById('leaveDashClearFilter').classList.toggle('hidden', !leaveDashTypeFilter);
+
+    renderLeaveDashRanking('leaveDashTopHighest', s.top_highest, 'bg-red-500');
+    renderLeaveDashRanking('leaveDashTopLowest', s.top_lowest, 'bg-emerald-500');
+  });
+}
+
+function setLeaveDashTypeFilter(leaveTypeId) {
+  if (leaveDashTypeFilter?.id === leaveTypeId) {
+    leaveDashTypeFilter = null; // clicking the already-active type toggles back to "all"
+  } else {
+    const t = leaveDashByTypeCache.find(x => x.leave_type_id === leaveTypeId);
+    leaveDashTypeFilter = t ? { id: t.leave_type_id, name: t.leave_type_name } : null;
+  }
+  loadLeaveUtilDash();
+}
+
+function clearLeaveDashTypeFilter() {
+  leaveDashTypeFilter = null;
+  loadLeaveUtilDash();
 }
 
 function loadMyLeaveDash() {
