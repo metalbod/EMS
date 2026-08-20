@@ -374,6 +374,7 @@ function applyRoleUI() {
   document.getElementById('nav-institutions-wrap').classList.toggle('hidden', !isSA);
   document.getElementById('nav-sysnotif-wrap')?.classList.toggle('hidden', !isSA);
   document.getElementById('nav-emp-group').classList.toggle('hidden', hideEmp);
+  document.getElementById('nav-workforce-group')?.classList.toggle('hidden', !['hr_manager','hr_admin'].includes(role));
   document.getElementById('nav-dashboard-wrap').classList.toggle('hidden', hideEmp);
   document.getElementById('nav-audit').classList.toggle('hidden', !canAudit);
   document.getElementById('nav-users').classList.toggle('hidden', !canUsers);

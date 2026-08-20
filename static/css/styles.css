@@ -129,6 +129,7 @@ main::before{
 --------------------------------------------------------------------- */
 .nav-icon-chip{border-radius:.44rem;padding:.25rem;box-sizing:content-box;width:1.0625rem;height:1.0625rem;flex-shrink:0}
 .nav-icon-emp{background:#e0e7ff;color:#4f46e5}
+.nav-icon-workforce{background:#ffedd5;color:#c2410c}
 .nav-icon-recruit{background:#ede9fe;color:#7c3aed}
 .nav-icon-ld{background:#ccfbf1;color:#0d9488}
 .nav-icon-leave{background:#e0f2fe;color:#0284c7}
@@ -140,6 +141,7 @@ main::before{
 .nav-icon-settings{background:#f1f5f9;color:#64748b}
 
 #nav-emp-group .nav-rail-btn.active,#nav-emp-group .nav-rail-btn.group-active,#nav-emp-group .nav-sub-item.active{background:#e0e7ff;color:#4338ca}
+#nav-workforce-group .nav-rail-btn.active,#nav-workforce-group .nav-rail-btn.group-active,#nav-workforce-group .nav-sub-item.active{background:#ffedd5;color:#c2410c}
 #nav-recruit-group .nav-rail-btn.active,#nav-recruit-group .nav-rail-btn.group-active,#nav-recruit-group .nav-sub-item.active{background:#ede9fe;color:#6d28d9}
 #nav-ld-group .nav-rail-btn.active,#nav-ld-group .nav-rail-btn.group-active,#nav-ld-group .nav-sub-item.active{background:#ccfbf1;color:#0f766e}
 #nav-leave-group .nav-rail-btn.active,#nav-leave-group .nav-rail-btn.group-active,#nav-leave-group .nav-sub-item.active{background:#e0f2fe;color:#0369a1}
@@ -151,6 +153,7 @@ main::before{
 #nav-settings-wrap .nav-rail-btn.active,#nav-settings-wrap .nav-rail-btn.group-active,#nav-settings-wrap .nav-sub-item.active{background:#f1f5f9;color:#475569}
 
 #submenu-empMgmt{border-left:2px solid #e0e7ff}
+#submenu-workforce{border-left:2px solid #ffedd5}
 #submenu-recruit{border-left:2px solid #ede9fe}
 #submenu-ld{border-left:2px solid #ccfbf1}
 #submenu-leave{border-left:2px solid #bae6fd}
