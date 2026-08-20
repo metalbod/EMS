@@ -10,7 +10,7 @@ wrong function — see commit 207a31f) and returned 422 for every request.
 """
 import pytest
 
-from conftest import _valid_employee_payload, _unique_ic
+from conftest import _valid_employee_payload, _unique_ic, _unique_code
 
 # ---------------------------------------------------------------------------
 # Auth / permissions
@@ -74,6 +74,49 @@ def test_list_employees_includes_created_employee(client, hr_manager_auth, make_
     res = client.get("/api/employees", headers=hr_manager_auth)
     assert res.status_code == 200
     assert emp["employee_id"] in [e["employee_id"] for e in res.json()]
+
+
+def test_list_employees_pay_grade_name_only_for_compensation_roles(
+    client, hr_manager_auth, make_test_employee, make_test_user, test_institution
+):
+    """pay_grade_name (surfaced as an optional Employee List column) is only
+    resolved for hr_manager/payroll_manager/compensation_manager — the same
+    roles the Compensation module itself is gated to elsewhere (see
+    dashboard.js's canCompensation). Every other role must get None
+    regardless of what pay grade is actually assigned, so a stale column
+    preference in someone's browser can never leak it."""
+    emp = make_test_employee()
+    grade_res = client.post(
+        "/api/compensation/pay-grades",
+        json={
+            "grade_code": _unique_code("ZZ"),
+            "grade_name": "ZZ Test Grade",
+            "grade_level": 1,
+            "min_salary": 1000.00,
+            "midpoint_salary": 1500.00,
+            "max_salary": 2000.00,
+        },
+        headers=hr_manager_auth,
+    )
+    assert grade_res.status_code == 201, grade_res.text
+    grade_id = grade_res.json()["id"]
+
+    comp_res = client.post(
+        f"/api/compensation/employees/{emp['employee_id']}/compensation",
+        json={"pay_grade_id": grade_id, "effective_date": "2026-07-19"},
+        headers=hr_manager_auth,
+    )
+    assert comp_res.status_code == 201, comp_res.text
+
+    res = client.get("/api/employees", headers=hr_manager_auth)
+    row = next(r for r in res.json() if r["employee_id"] == emp["employee_id"])
+    assert row["pay_grade_name"] == "ZZ Test Grade"
+
+    admin_token, _ = make_test_user(role="hr_admin")
+    admin_headers = {"Authorization": f"Bearer {admin_token}", "X-Institution-Id": str(test_institution["id"])}
+    res = client.get("/api/employees", headers=admin_headers)
+    row = next(r for r in res.json() if r["employee_id"] == emp["employee_id"])
+    assert row["pay_grade_name"] is None
 
 
 # ---------------------------------------------------------------------------

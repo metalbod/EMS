@@ -29,6 +29,90 @@ const empList = createListState({
 });
 let empFilteredData = [];
 
+// ---------------------------------------------------------------------------
+// Employee List — optional columns
+// ---------------------------------------------------------------------------
+// The Name column (avatar + name) and the trailing chevron are always
+// shown; every other column is opt-in via the Columns picker, remembered
+// per-browser in localStorage. "Pay Grade" only appears for roles that can
+// already see compensation data elsewhere (Compensation module's own
+// gate — see dashboard.js's canCompensation) — it's filtered out of the
+// picker AND never rendered for anyone else, even if a stale preference
+// from a different user/role is sitting in this browser's storage.
+const EMP_COLUMNS = [
+  { key:'employee_id', label:'ID', sortKey:'employee_id', default:false, render:e=>esc(e.employee_id) },
+  { key:'email', label:'Email', sortKey:'work_email', default:false, render:e=>esc(e.work_email||'—') },
+  { key:'phone', label:'Mobile No', sortKey:'phone', default:false, render:e=>esc(e.phone||'—') },
+  { key:'designation', label:'Job Title', sortKey:'designation', default:true, render:e=>esc(e.designation||'—') },
+  { key:'department', label:'Department', sortKey:'department', default:true, render:e=>esc(e.department||'—') },
+  { key:'manager', label:'Manager', sortKey:'manager_name', default:true, render:e=>e.manager_name?esc(displayName(e.manager_name,e.manager_preferred_name)):'—' },
+  { key:'location', label:'Location', sortKey:'location_name', default:true, render:e=>esc(e.location_name||'—') },
+  { key:'start_date', label:'Join Date', sortKey:'start_date', default:false, render:e=>fmtDate(e.start_date) },
+  { key:'probation_end_date', label:'Confirm Date', sortKey:'probation_end_date', default:false, render:e=>fmtDate(e.probation_end_date) },
+  { key:'date_of_birth', label:'Date of Birth', sortKey:'date_of_birth', default:false, render:e=>fmtDate(e.date_of_birth) },
+  { key:'gender', label:'Gender', sortKey:'gender', default:false, render:e=>esc(e.gender||'—') },
+  { key:'race', label:'Race', sortKey:'race', default:false, render:e=>esc(e.race||'—') },
+  { key:'employment_type', label:'Employee Type', sortKey:'employment_type', default:true, render:e=>esc(e.employment_type||'—') },
+  { key:'years_of_service', label:'Years of Service', sortKey:'years_of_service', default:true, render:e=>yearsOfServiceLabel(e) },
+  { key:'status', label:'Status', sortKey:'status', default:true, render:e=>`<span class="badge ${e.status==='Active'?'bg-emerald-100 text-emerald-700':'bg-slate-100 text-slate-500'}">${e.status}</span>` },
+  { key:'pay_grade', label:'Pay Grade', sortKey:'pay_grade_name', default:false, roles:['hr_manager','payroll_manager','compensation_manager'], render:e=>esc(e.pay_grade_name||'—') },
+];
+const EMP_COLUMNS_STORAGE_KEY = 'empListColumns';
+
+function empAvailableColumns() {
+  return EMP_COLUMNS.filter(c => !c.roles || c.roles.includes(currentUser?.role));
+}
+
+function loadEmpColumnPrefs() {
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(EMP_COLUMNS_STORAGE_KEY) || 'null'); } catch { /* ignore malformed value */ }
+  const available = new Set(empAvailableColumns().map(c => c.key));
+  if (Array.isArray(saved)) return new Set(saved.filter(k => available.has(k)));
+  return new Set(EMP_COLUMNS.filter(c => c.default).map(c => c.key));
+}
+// Loaded lazily (not at script-parse time) since it depends on
+// currentUser.role for the roles-gated columns, and currentUser isn't set
+// yet until login completes — see empAvailableColumns.
+let empVisibleColumns = null;
+function ensureEmpColumnPrefsLoaded() { if (empVisibleColumns === null) empVisibleColumns = loadEmpColumnPrefs(); }
+
+function saveEmpColumnPrefs() { localStorage.setItem(EMP_COLUMNS_STORAGE_KEY, JSON.stringify([...empVisibleColumns])); }
+
+function toggleEmpColumn(key) {
+  if (empVisibleColumns.has(key)) empVisibleColumns.delete(key); else empVisibleColumns.add(key);
+  saveEmpColumnPrefs();
+  renderEmpColumnsPicker();
+  renderEmpTable();
+}
+
+function resetEmpColumns() {
+  empVisibleColumns = new Set(EMP_COLUMNS.filter(c => c.default).map(c => c.key));
+  saveEmpColumnPrefs();
+  renderEmpColumnsPicker();
+  renderEmpTable();
+}
+
+function toggleEmpColumnPicker() {
+  const panel = document.getElementById('empColumnsPanel');
+  const opening = panel.classList.contains('hidden');
+  if (opening) renderEmpColumnsPicker();
+  panel.classList.toggle('hidden');
+}
+document.addEventListener('click', e => {
+  if (!document.getElementById('empColumnsBtn')?.contains(e.target) && !document.getElementById('empColumnsPanel')?.contains(e.target)) {
+    document.getElementById('empColumnsPanel')?.classList.add('hidden');
+  }
+});
+
+function renderEmpColumnsPicker() {
+  ensureEmpColumnPrefsLoaded();
+  document.getElementById('empColumnsList').innerHTML = empAvailableColumns().map(c => `
+    <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer py-0.5">
+      <input type="checkbox" class="rounded" ${empVisibleColumns.has(c.key)?'checked':''} onchange="toggleEmpColumn('${c.key}')"/>
+      ${esc(c.label)}
+    </label>`).join('');
+}
+
 function setEmpSort(key) { empList.setSort(key); renderEmpTable(); }
 function setEmpPageSize(size) { empList.setPageSize(size); renderEmpTable(); }
 function empPagePrev() { empList.prevPage(); renderEmpTable(); }
@@ -46,10 +130,21 @@ function filterEmployees() {
   renderEmpTable();
 }
 
+function renderEmpTableHead() {
+  ensureEmpColumnPrefsLoaded();
+  const cols = empAvailableColumns().filter(c => empVisibleColumns.has(c.key));
+  document.getElementById('empTableHeadRow').innerHTML = `
+    <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none whitespace-nowrap" onclick="setEmpSort('full_name')">Name<span class="emp-sort-arrow" data-sort-key="full_name"></span></th>
+    ${cols.map(c => `<th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none whitespace-nowrap" onclick="setEmpSort('${c.sortKey}')">${esc(c.label)}<span class="emp-sort-arrow" data-sort-key="${c.sortKey}"></span></th>`).join('')}
+    <th class="px-4 py-3"></th>
+  `;
+}
+
 function renderEmpTable() {
   const tbody = document.getElementById('empTableBody');
   const empty = document.getElementById('empEmpty');
   const pagination = document.getElementById('empPagination');
+  renderEmpTableHead();
   empList.updateSortArrows('.emp-sort-arrow');
   if (!empFilteredData.length) { tbody.innerHTML=''; empty.classList.remove('hidden'); pagination.classList.add('hidden'); return; }
   empty.classList.add('hidden');
@@ -60,23 +155,16 @@ function renderEmpTable() {
   document.getElementById('empPageInfo').textContent =
     `${start + 1}-${Math.min(start + empList.pageSize, total)} of ${total}`;
 
+  const cols = empAvailableColumns().filter(c => empVisibleColumns.has(c.key));
   tbody.innerHTML = pageItems.map(e=>`
     <tr class="hover:bg-slate-50 transition cursor-pointer" onclick="viewEmployee('${esc(e.employee_id)}')">
       <td class="px-4 py-3">
         <div class="flex items-center gap-3">
           <div class="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 text-xs font-bold flex-shrink-0">${e.full_name.split(' ').slice(0,2).map(w=>w[0]||'').join('').toUpperCase()}</div>
-          <div>
-            <p class="font-medium">${esc(combinedName(e.full_name, e.preferred_name))}</p>
-            <p class="text-xs text-slate-400">${esc(e.employee_id)} · ${esc(e.designation)}</p>
-          </div>
+          <p class="font-medium whitespace-nowrap">${esc(combinedName(e.full_name, e.preferred_name))}</p>
         </div>
       </td>
-      <td class="px-4 py-3 hidden md:table-cell text-sm text-slate-600">${esc(e.department)}</td>
-      <td class="px-4 py-3 hidden lg:table-cell text-sm text-slate-600">${esc(e.employment_type)}</td>
-      <td class="px-4 py-3 hidden lg:table-cell text-sm text-slate-600">${esc(e.location_name||'—')}</td>
-      <td class="px-4 py-3 hidden lg:table-cell text-sm text-slate-600">${e.manager_name?esc(displayName(e.manager_name,e.manager_preferred_name)):'—'}</td>
-      <td class="px-4 py-3 hidden md:table-cell text-sm text-slate-600">${yearsOfServiceLabel(e)}</td>
-      <td class="px-4 py-3"><span class="badge ${e.status==='Active'?'bg-emerald-100 text-emerald-700':'bg-slate-100 text-slate-500'}">${e.status}</span></td>
+      ${cols.map(c => `<td class="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">${c.render(e)}</td>`).join('')}
       <td class="px-4 py-3 text-right">
         <svg class="w-4 h-4 text-slate-300 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
       </td>

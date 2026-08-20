@@ -221,6 +221,9 @@ class EmployeeOut(BaseModel):
     location_name: Optional[str] = None
     manager_name: Optional[str] = None
     manager_preferred_name: Optional[str] = None
+    # Only populated for roles that can already see compensation data
+    # elsewhere (list_employees' own role gate) — None for everyone else.
+    pay_grade_name: Optional[str] = None
     # Non-blocking notice from update_employee when basic_salary was saved
     # outside the employee's current pay grade band — None everywhere else.
     pay_grade_warning: Optional[str] = None
@@ -334,6 +337,25 @@ def list_employees(
         for r in result:
             r["manager_name"] = None
             r["manager_preferred_name"] = None
+
+    # pay_grade_name is only resolved for roles that can already see
+    # compensation data elsewhere (the Compensation module's own gate —
+    # see dashboard.js's canCompensation) — every other role gets None
+    # regardless of what the Employee List column picker has saved in
+    # their browser, so a stale preference can never leak it.
+    if user["role"] in ("hr_manager", "payroll_manager", "compensation_manager"):
+        grade_rows = conn.execute("""
+            SELECT ec.employee_id, pg.grade_name
+            FROM employee_compensation ec
+            JOIN pay_grades pg ON pg.id = ec.pay_grade_id
+            WHERE ec.institution_id=? AND ec.is_current=1
+        """, (inst_id,)).fetchall()
+        grade_map = {g["employee_id"]: g["grade_name"] for g in grade_rows}
+        for r in result:
+            r["pay_grade_name"] = grade_map.get(r["employee_id"])
+    else:
+        for r in result:
+            r["pay_grade_name"] = None
 
     return result
 
