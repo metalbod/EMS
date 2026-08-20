@@ -131,6 +131,57 @@ def test_update_employee_success(client, hr_manager_auth, make_test_employee):
     assert res.json()["department"] == "Sales"
 
 
+def test_resign_date_defaults_to_none_and_hr_can_set_it_via_update(client, hr_manager_auth, make_test_employee):
+    """resign_date is a plain, manually-entered field — nothing auto-sets
+    it (e.g. from the status toggle) — and CAN_WRITE (hr_manager/hr_admin/
+    superadmin) can set it the same way as every other employee field."""
+    emp = make_test_employee()
+    assert emp["resign_date"] is None
+
+    updated = _valid_employee_payload(resign_date="2026-09-30")
+    res = client.put(f"/api/employees/{emp['employee_id']}", headers=hr_manager_auth, json=updated)
+    assert res.status_code == 200, res.text
+    assert res.json()["resign_date"] == "2026-09-30"
+
+    # Persisted, not just echoed back — a fresh GET confirms it stuck.
+    res = client.get(f"/api/employees/{emp['employee_id']}", headers=hr_manager_auth)
+    assert res.json()["resign_date"] == "2026-09-30"
+
+
+def test_resign_date_visible_to_the_employee_themself(client, hr_manager_auth, make_test_employee, test_institution):
+    """Resign Date can only be edited by HR (see the test above), but must
+    stay visible to the employee viewing their own record, and to their
+    manager — same read scope as every other employee field, no extra
+    view-side gate."""
+    emp = make_test_employee()
+    res = client.put(
+        f"/api/employees/{emp['employee_id']}", headers=hr_manager_auth,
+        json=_valid_employee_payload(resign_date="2026-12-15"),
+    )
+    assert res.status_code == 200, res.text
+
+    username = f"zzresigntest_{emp['employee_id'].lower()}"
+    res = client.post("/api/users", headers=hr_manager_auth, json={
+        "username": username, "full_name": "ZZ Resign Test Employee",
+        "password": "ZzPytest@123", "role": "employee", "employee_id": emp["employee_id"],
+    })
+    assert res.status_code == 201, res.text
+    user_id = res.json()["id"]
+    try:
+        login = client.post("/api/auth/login", json={
+            "username": username, "password": "ZzPytest@123", "institution_code": test_institution["code"],
+        })
+        assert login.status_code == 200, login.text
+        self_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+        res = client.get("/api/employees", headers=self_headers)
+        assert res.status_code == 200
+        row = next(r for r in res.json() if r["employee_id"] == emp["employee_id"])
+        assert row["resign_date"] == "2026-12-15"
+    finally:
+        client.delete(f"/api/users/{user_id}", headers=hr_manager_auth)
+
+
 def test_update_employee_not_found_returns_404(client, hr_manager_auth):
     res = client.put(
         "/api/employees/EMP_ZZ_NONEXISTENT", headers=hr_manager_auth, json=_valid_employee_payload()

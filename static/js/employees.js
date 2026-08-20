@@ -49,6 +49,7 @@ const EMP_COLUMNS = [
   { key:'location', label:'Location', sortKey:'location_name', default:true, render:e=>esc(e.location_name||'—') },
   { key:'start_date', label:'Join Date', sortKey:'start_date', default:false, render:e=>fmtDate(e.start_date) },
   { key:'probation_end_date', label:'Confirm Date', sortKey:'probation_end_date', default:false, render:e=>fmtDate(e.probation_end_date) },
+  { key:'resign_date', label:'Resign Date', sortKey:'resign_date', default:false, render:e=>fmtDate(e.resign_date) },
   { key:'date_of_birth', label:'Date of Birth', sortKey:'date_of_birth', default:false, render:e=>fmtDate(e.date_of_birth) },
   { key:'gender', label:'Gender', sortKey:'gender', default:false, render:e=>esc(e.gender||'—') },
   { key:'race', label:'Race', sortKey:'race', default:false, render:e=>esc(e.race||'—') },
@@ -209,6 +210,7 @@ function viewEmployee(id) {
     ['Department',e.department],['Designation',e.designation],
     ['Employment Type',e.employment_type],['Start Date',fmtDate(e.start_date)],
     ['Probation End',fmtDate(e.probation_end_date)],['Contract End',fmtDate(e.contract_end_date)],
+    ['Resign Date',fmtDate(e.resign_date)],
     ['Work Email',e.work_email||'—'],['Reports To',rt],
   ]) + `<div id="relatedContracts" class="mt-6"></div>`;
   loadRelatedContracts(e.employee_id);
@@ -541,7 +543,8 @@ async function openEditModal(e) {
   f('fAddress').value=e.address||''; f('fDepartment').value=e.department||'';
   f('fDesignation').value=e.designation||''; f('fEmploymentType').value=e.employment_type||'';
   f('fStartDate').value=e.start_date||''; f('fProbationEndDate').value=e.probation_end_date||'';
-  f('fContractEndDate').value=e.contract_end_date||''; f('fWorkEmail').value=e.work_email||'';
+  f('fContractEndDate').value=e.contract_end_date||''; f('fResignDate').value=e.resign_date||'';
+  f('fWorkEmail').value=e.work_email||'';
   f('fEpfNumber').value=e.epf_number||''; f('fSocsoNumber').value=e.socso_number||'';
   f('fIncomeTaxNumber').value=e.income_tax_number||''; f('fBankName').value=e.bank_name||'';
   f('fBankAccount').value=e.bank_account||''; f('fBasicSalary').value=e.basic_salary||0;
@@ -595,7 +598,8 @@ async function submitEmpForm(e) {
     address:g('fAddress').trim()||null,department:g('fDepartment').trim(),
     designation:g('fDesignation').trim(),employment_type:g('fEmploymentType'),
     start_date:g('fStartDate'),probation_end_date:g('fProbationEndDate')||null,
-    contract_end_date:g('fContractEndDate')||null,work_email:g('fWorkEmail').trim()||null,
+    contract_end_date:g('fContractEndDate')||null,resign_date:g('fResignDate')||null,
+    work_email:g('fWorkEmail').trim()||null,
     epf_number:g('fEpfNumber').trim()||null,socso_number:g('fSocsoNumber').trim()||null,
     income_tax_number:g('fIncomeTaxNumber').trim()||null,bank_name:g('fBankName')||null,
     bank_account:g('fBankAccount').trim()||null,
