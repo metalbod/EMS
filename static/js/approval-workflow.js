@@ -170,7 +170,7 @@ function renderAwSteps() {
   addForm.classList.remove('hidden');
   if (!steps.length) { wrap.innerHTML=''; emptyEl.classList.remove('hidden'); return; }
   emptyEl.classList.add('hidden');
-  const empName = id => { const e=(employees||[]).find(e=>e.employee_id===id); return e ? esc(e.full_name) : esc(id); };
+  const empName = id => { const e=(employees||[]).find(e=>e.employee_id===id); return e ? esc(displayName(e.full_name,e.preferred_name)) : esc(id); };
   wrap.innerHTML = steps.map((s, idx) => {
     const detail = s.approver_type==='specific_employee' ? empName(s.specific_employee_id) : '';
     const altDetail = s.alt_approver_type ?
@@ -195,7 +195,7 @@ function renderAwSteps() {
 function _awPopulateEmployeeSelect(sel) {
   if (!sel.options.length) {
     sel.innerHTML = (employees||[]).filter(e=>e.status==='Active')
-      .map(e=>`<option value="${e.employee_id}">${esc(e.full_name)} (${esc(e.employee_id)})</option>`).join('');
+      .map(e=>`<option value="${e.employee_id}">${esc(displayName(e.full_name,e.preferred_name))} (${esc(e.employee_id)})</option>`).join('');
   }
 }
 

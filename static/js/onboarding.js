@@ -28,7 +28,7 @@ async function loadObChecklists(type, statusFilter) {
       <div class="flex items-start justify-between gap-3">
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2 mb-0.5">
-            <p class="font-medium text-slate-800">${esc(c.employee_name)}</p>
+            <p class="font-medium text-slate-800">${esc(displayName(c.employee_name, c.employee_preferred_name))}</p>
             ${myPending?`<span class="badge bg-orange-100 text-orange-700 text-xs">Action Required</span>`:''}
           </div>
           <p class="text-xs text-slate-500">${esc(c.department||'')}${c.designation?' · '+esc(c.designation):''}</p>
@@ -59,7 +59,7 @@ async function openObDetail(clId) {
   if(!res||!res.ok) return;
   const cl=await res.json();
   const type=cl.type;
-  document.getElementById('obDetailTitle').textContent=`${type==='onboarding'?'Onboarding':'Offboarding'} — ${esc(cl.employee_name)}`;
+  document.getElementById('obDetailTitle').textContent=`${type==='onboarding'?'Onboarding':'Offboarding'} — ${esc(displayName(cl.employee_name, cl.employee_preferred_name))}`;
   document.getElementById('obDetailMeta').textContent=`${esc(cl.department||'')}${cl.designation?' · '+esc(cl.designation):''} · Started ${fmtDate(cl.created_at)}`;
   const total=cl.items.length;
   const done=cl.items.filter(i=>i.status==='Done'||i.status==='N/A').length;
@@ -226,7 +226,7 @@ async function openStartObModal(type) {
   document.getElementById('startObErr').classList.add('hidden');
   const sel=document.getElementById('startObEmpId');
   sel.innerHTML='<option value="">Select employee…</option>';
-  employees.filter(e=>e.status==='Active').forEach(e=>{const o=document.createElement('option');o.value=e.employee_id;o.textContent=`${e.employee_id} — ${esc(e.full_name)}`;sel.appendChild(o);});
+  employees.filter(e=>e.status==='Active').forEach(e=>{const o=document.createElement('option');o.value=e.employee_id;o.textContent=`${e.employee_id} — ${esc(displayName(e.full_name,e.preferred_name))}`;sel.appendChild(o);});
   const setSel=document.getElementById('startObTemplateSet');
   setSel.innerHTML='<option value="">Loading…</option>';
   const res=await api(`/api/ob/template-sets?type=${type}`);

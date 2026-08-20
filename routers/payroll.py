@@ -206,7 +206,7 @@ def get_payroll_run(conn, run_id: int, user: dict = Depends(require_roles(*PAYRO
     if not run:
         raise HTTPException(404, "Payroll run not found")
     payslips = conn.execute("""
-        SELECT p.*, e.full_name, e.department, e.designation, e.bank_name, e.bank_account
+        SELECT p.*, e.full_name, e.preferred_name, e.department, e.designation, e.bank_name, e.bank_account
         FROM payslips p JOIN employees e ON e.employee_id=p.employee_id AND e.institution_id=p.institution_id
         WHERE p.payroll_run_id=? ORDER BY e.full_name
     """, (run_id,)).fetchall()

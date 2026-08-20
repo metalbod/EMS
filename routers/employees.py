@@ -220,6 +220,7 @@ class EmployeeOut(BaseModel):
     default_location_id: Optional[int] = None
     location_name: Optional[str] = None
     manager_name: Optional[str] = None
+    manager_preferred_name: Optional[str] = None
     # Non-blocking notice from update_employee when basic_salary was saved
     # outside the employee's current pay grade band — None everywhere else.
     pay_grade_warning: Optional[str] = None
@@ -253,18 +254,20 @@ def gen_employee_id(conn, inst_id: int) -> str:
         n += 1
 
 
-def _resolve_manager_name(conn, inst_id: int, reports_to: Optional[str]) -> Optional[str]:
+def _resolve_manager_name(conn, inst_id: int, reports_to: Optional[str]) -> Dict[str, Optional[str]]:
     """Single-employee equivalent of list_employees' bulk manager_name
     lookup — used by create/get/update so their responses (which the
     frontend patches straight into its cached employee list, see
     submitEmpForm) don't silently blank out the Manager column until the
     next full list reload."""
     if not reports_to:
-        return None
+        return {"manager_name": None, "manager_preferred_name": None}
     row = conn.execute(
-        "SELECT full_name FROM employees WHERE institution_id=? AND employee_id=?", (inst_id, reports_to)
+        "SELECT full_name, preferred_name FROM employees WHERE institution_id=? AND employee_id=?", (inst_id, reports_to)
     ).fetchone()
-    return row["full_name"] if row else None
+    if not row:
+        return {"manager_name": None, "manager_preferred_name": None}
+    return {"manager_name": row["full_name"], "manager_preferred_name": row["preferred_name"]}
 
 
 @router.get("/api/employees", response_model=List[EmployeeOut])
@@ -298,8 +301,8 @@ def list_employees(
     if status: q += " AND status=?"; p.append(status)
     if search and user["role"] != "employee":
         like = f"%{search}%"
-        q += " AND (full_name LIKE ? OR employee_id LIKE ? OR ic_number LIKE ? OR designation LIKE ? OR department LIKE ?)"
-        p.extend([like,like,like,like,like])
+        q += " AND (full_name LIKE ? OR preferred_name LIKE ? OR employee_id LIKE ? OR ic_number LIKE ? OR designation LIKE ? OR department LIKE ?)"
+        p.extend([like,like,like,like,like,like])
     q += " ORDER BY created_at DESC"
     rows = conn.execute(q, p).fetchall()
     result = [dict(r) for r in rows]
@@ -319,13 +322,18 @@ def list_employees(
     manager_ids = {r["reports_to"] for r in result if r.get("reports_to")}
     if manager_ids:
         mgr_rows = conn.execute(
-            f"SELECT employee_id, full_name FROM employees WHERE institution_id=? AND employee_id IN ({','.join('?' * len(manager_ids))})",
+            f"SELECT employee_id, full_name, preferred_name FROM employees WHERE institution_id=? AND employee_id IN ({','.join('?' * len(manager_ids))})",
             [inst_id, *manager_ids]
         ).fetchall()
-        mgr_map = {m["employee_id"]: m["full_name"] for m in mgr_rows}
-        for r in result: r["manager_name"] = mgr_map.get(r.get("reports_to"))
+        mgr_map = {m["employee_id"]: (m["full_name"], m["preferred_name"]) for m in mgr_rows}
+        for r in result:
+            mgr = mgr_map.get(r.get("reports_to"))
+            r["manager_name"] = mgr[0] if mgr else None
+            r["manager_preferred_name"] = mgr[1] if mgr else None
     else:
-        for r in result: r["manager_name"] = None
+        for r in result:
+            r["manager_name"] = None
+            r["manager_preferred_name"] = None
 
     return result
 
@@ -380,9 +388,9 @@ def _insert_new_employee(conn, inst_id, emp: EmployeeIn, user: dict, ip: Optiona
 def _update_bulk_employee(conn, inst_id, employee_id: str, emp: EmployeeIn, user: dict, ip: Optional[str]):
     """Update an existing employee's record from a bulk-upload row whose
     employee_id matched one already on file. Only touches the fields the
-    bulk CSV can actually supply (BULK_UPLOAD_COLUMNS) — preferred_name and
-    default_location_id aren't part of that template, so they're left
-    untouched rather than being silently cleared to NULL."""
+    bulk CSV can actually supply (BULK_UPLOAD_COLUMNS) — default_location_id
+    isn't part of that template, so it's left untouched rather than being
+    silently cleared to NULL."""
     old_row = conn.execute(
         "SELECT * FROM employees WHERE institution_id=? AND employee_id=?", (inst_id, employee_id)
     ).fetchone()
@@ -395,14 +403,14 @@ def _update_bulk_employee(conn, inst_id, employee_id: str, emp: EmployeeIn, user
             raise HTTPException(400, f"Reporting manager '{reports_to}' not found")
     conn.execute("""
         UPDATE employees SET
-            full_name=?,ic_number=?,passport_number=?,
+            full_name=?,preferred_name=?,ic_number=?,passport_number=?,
             nationality=?,race=?,religion=?,gender=?,date_of_birth=?,marital_status=?,
             personal_email=?,phone=?,address=?,department=?,designation=?,employment_type=?,
             start_date=?,probation_end_date=?,contract_end_date=?,work_email=?,
             epf_number=?,socso_number=?,income_tax_number=?,bank_name=?,bank_account=?,
             basic_salary=?,num_children=?,salary_type=?,hourly_rate=?,reports_to=?
         WHERE institution_id=? AND employee_id=?
-    """, (emp.full_name, emp.ic_number, emp.passport_number,
+    """, (emp.full_name, emp.preferred_name, emp.ic_number, emp.passport_number,
           emp.nationality, emp.race or '', emp.religion or '', emp.gender or '', emp.date_of_birth or '', emp.marital_status or '',
           emp.personal_email, emp.phone, emp.address, emp.department, emp.designation,
           emp.employment_type, emp.start_date, emp.probation_end_date, emp.contract_end_date,
@@ -451,7 +459,7 @@ def create_employee(conn, emp: EmployeeIn, request: Request, user: dict = Depend
             loc = get_primary_locations(conn, inst_id, [emp_id]).get(emp_id)
             result["default_location_id"] = loc["location_id"] if loc else None
             result["location_name"] = loc["location_name"] if loc else None
-            result["manager_name"] = _resolve_manager_name(conn, inst_id, result.get("reports_to"))
+            result.update(_resolve_manager_name(conn, inst_id, result.get("reports_to")))
             return result
         except IntegrityError as e:
             conn.rollback()
@@ -468,7 +476,7 @@ BULK_UPLOAD_ROLES = ("hr_manager",)
 # Column order mirrors the single Add Employee form. Employee ID is optional —
 # leave blank to auto-generate, or supply a custom one (HR Manager privilege).
 BULK_UPLOAD_COLUMNS = [
-    "employee_id", "full_name", "ic_number", "passport_number", "nationality",
+    "employee_id", "full_name", "preferred_name", "ic_number", "passport_number", "nationality",
     "race", "religion", "gender", "date_of_birth", "marital_status",
     "personal_email", "phone", "address", "department", "designation",
     "employment_type", "start_date", "probation_end_date", "contract_end_date", "work_email",
@@ -489,7 +497,7 @@ def download_bulk_template(conn, user: dict = Depends(get_current_user)) -> Stre
     writer = csv.writer(buf)
     writer.writerow(BULK_UPLOAD_COLUMNS)
     example = {
-        "employee_id": "", "full_name": "Jane Tan", "ic_number": "900101-14-1234", "passport_number": "",
+        "employee_id": "", "full_name": "Jane Tan", "preferred_name": "", "ic_number": "900101-14-1234", "passport_number": "",
         "nationality": "Malaysian", "race": RACES[0], "religion": RELIGIONS[0], "gender": "Female",
         "date_of_birth": "1990-01-01", "marital_status": "Single", "personal_email": "jane@example.com",
         "phone": "+60123456789", "address": "", "department": "Sales", "designation": "Sales Executive",
@@ -549,7 +557,7 @@ def get_employee(conn, employee_id: str, user: dict = Depends(get_current_user))
     loc = get_primary_locations(conn, inst_id, [employee_id]).get(employee_id)
     result["default_location_id"] = loc["location_id"] if loc else None
     result["location_name"] = loc["location_name"] if loc else None
-    result["manager_name"] = _resolve_manager_name(conn, inst_id, result.get("reports_to"))
+    result.update(_resolve_manager_name(conn, inst_id, result.get("reports_to")))
     return result
 
 
@@ -669,7 +677,7 @@ def update_employee(conn, employee_id: str, emp: EmployeeIn, request: Request,
         loc = get_primary_locations(conn, inst_id, [new_id]).get(new_id)
         result["default_location_id"] = loc["location_id"] if loc else None
         result["location_name"] = loc["location_name"] if loc else None
-        result["manager_name"] = _resolve_manager_name(conn, inst_id, result.get("reports_to"))
+        result.update(_resolve_manager_name(conn, inst_id, result.get("reports_to")))
         result["pay_grade_warning"] = pay_grade_warning
         return result
     except IntegrityError as e:

@@ -116,7 +116,7 @@ async function loadAttendanceReview() {
   el.innerHTML = attReviewCache.map(r => `
     <tr class="border-t border-slate-100">
       <td class="px-4 py-2 text-sm">
-        <div class="font-medium">${esc(r.employee_name || r.employee_id)}</div>
+        <div class="font-medium">${esc(r.employee_name ? displayName(r.employee_name, r.employee_preferred_name) : r.employee_id)}</div>
         <div class="text-xs text-slate-400">${esc(r.department || '')}</div>
       </td>
       <td class="px-4 py-2 text-sm">${fmtDate(r.work_date)}</td>
@@ -133,7 +133,7 @@ async function openAttResolveModal(id) {
   if (!rec) return;
   currentAttResolveId = id;
   document.getElementById('attResolveInfo').textContent =
-    `${rec.employee_name || rec.employee_id} — ${fmtDate(rec.work_date)} — currently ${rec.status}${rec.suggested_action ? ' (suggested: ' + rec.suggested_action + ')' : ''}`;
+    `${rec.employee_name ? displayName(rec.employee_name, rec.employee_preferred_name) : rec.employee_id} — ${fmtDate(rec.work_date)} — currently ${rec.status}${rec.suggested_action ? ' (suggested: ' + rec.suggested_action + ')' : ''}`;
   document.getElementById('attResolveAction').value = rec.suggested_action === 'Half-Day Leave' ? 'ReclassifyAsLeave' : (rec.status === 'Late' ? 'Excuse' : 'ReclassifyAsLeave');
   document.getElementById('attResolveHalfDay').checked = rec.suggested_action === 'Half-Day Leave';
   document.getElementById('attResolveNotes').value = '';
@@ -227,7 +227,7 @@ function openAttRuleModal() {
 
   const activeEmps = (employees || []).filter(e => e.status === 'Active').sort((a, b) => a.full_name.localeCompare(b.full_name));
   document.getElementById('attRuleEmp').innerHTML =
-    '<option value="">— Select —</option>' + activeEmps.map(e => `<option value="${esc(e.employee_id)}">${esc(e.full_name)} (${esc(e.employee_id)})</option>`).join('');
+    '<option value="">— Select —</option>' + activeEmps.map(e => `<option value="${esc(e.employee_id)}">${esc(displayName(e.full_name,e.preferred_name))} (${esc(e.employee_id)})</option>`).join('');
 
   toggleAttRuleScopeInput();
   document.getElementById('attRuleModal').classList.remove('hidden');
@@ -330,7 +330,7 @@ function openAssignmentModal() {
   document.getElementById('assignmentForm').reset();
   const activeEmps = (employees || []).filter(e => e.status === 'Active').sort((a, b) => a.full_name.localeCompare(b.full_name));
   document.getElementById('assignEmp').innerHTML =
-    '<option value="">— Select —</option>' + activeEmps.map(e => `<option value="${esc(e.employee_id)}">${esc(e.full_name)} (${esc(e.employee_id)})</option>`).join('');
+    '<option value="">— Select —</option>' + activeEmps.map(e => `<option value="${esc(e.employee_id)}">${esc(displayName(e.full_name,e.preferred_name))} (${esc(e.employee_id)})</option>`).join('');
   document.getElementById('assignmentModal').classList.remove('hidden');
 }
 function closeAssignmentModal() { closeModal('assignmentModal'); }

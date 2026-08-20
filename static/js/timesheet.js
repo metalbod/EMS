@@ -93,7 +93,7 @@ function renderProjectManagersChecklist(selectedIds) {
   wrap.innerHTML=active.map(e=>`
     <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 cursor-pointer">
       <input type="checkbox" class="project-manager-checkbox" value="${e.employee_id}" ${selectedIds.includes(e.employee_id)?'checked':''} onchange="syncProjectManagersSelectAll()"/>
-      ${esc(e.full_name)} (${esc(e.employee_id)})
+      ${esc(displayName(e.full_name,e.preferred_name))} (${esc(e.employee_id)})
     </label>`).join('');
   syncProjectManagersSelectAll();
 }
@@ -283,7 +283,7 @@ async function loadTaskAssignments(taskId) {
   const assignments=res?.ok?await res.json():[];
   document.getElementById('taskAssignList').innerHTML=(!openToAll && assignments.length)?assignments.map(a=>`
     <div class="flex items-center gap-2 py-1 border-b border-slate-100 text-xs">
-      <span class="flex-1">${esc(a.full_name)}</span>
+      <span class="flex-1">${esc(displayName(a.full_name,a.preferred_name))}</span>
       <span class="text-slate-400">${fmtDate(a.start_datetime)}${a.start_datetime.includes('T')?', '+a.start_datetime.split('T')[1]:''} · ${a.duration_hours}h</span>
       <button onclick="removeTaskAssignment(${taskId},'${a.employee_id}')" class="text-slate-300 hover:text-red-500"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>`).join(''):(openToAll?'':'<p class="text-xs text-slate-400 text-center py-1">No one assigned yet.</p>');
@@ -298,7 +298,7 @@ async function loadTaskAssignments(taskId) {
   const available=allEmployees.filter(e=>e.status==='Active'&&!assignedIds.has(e.employee_id));
   const allOption=openToAll?'':'<option value="ALL">ALL — every employee</option>';
   sel.innerHTML=allOption+(available.length
-    ? available.map(e=>`<option value="${e.employee_id}">${esc(e.full_name)}</option>`).join('')
+    ? available.map(e=>`<option value="${e.employee_id}">${esc(displayName(e.full_name,e.preferred_name))}</option>`).join('')
     : (openToAll?'':'<option value="">All employees already assigned</option>'));
   toggleTaskAssignAllMode();
 }
@@ -494,7 +494,7 @@ async function loadTimesheetApprovals() {
     <div class="bg-white border border-slate-200 rounded-xl p-4 cursor-pointer hover:shadow-sm transition" onclick="openTimesheetDetail(${t.id})">
       <div class="flex items-center justify-between gap-2">
         <div>
-          <p class="font-medium text-slate-800">${esc(t.employee_name)}</p>
+          <p class="font-medium text-slate-800">${esc(displayName(t.employee_name,t.employee_preferred_name))}</p>
           <p class="text-xs text-slate-500">${esc(t.department||'')}${t.designation?' · '+esc(t.designation):''} · ${fmtDate(t.period_start)} → ${fmtDate(t.period_end)}</p>
         </div>
         <div class="text-right">

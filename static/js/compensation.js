@@ -343,7 +343,7 @@ async function openMeritCycleDetail(cycleId) {
   const empSelect = document.getElementById('mrEmployee');
   const activeEmployees = (employees || []).filter(e => e.status === 'Active');
   empSelect.innerHTML = activeEmployees.map(e =>
-    `<option value="${esc(e.employee_id)}">${esc(e.full_name)} (${esc(e.employee_id)})</option>`
+    `<option value="${esc(e.employee_id)}">${esc(displayName(e.full_name,e.preferred_name))} (${esc(e.employee_id)})</option>`
   ).join('');
 
   await loadMeritRecommendations(cycleId);
@@ -399,7 +399,7 @@ function renderMeritRecTable() {
   tbody.innerHTML = meritRecommendations.map(rec => `
     <tr class="hover:bg-slate-50 transition">
       <td class="px-4 py-3">
-        <p class="font-medium">${esc(rec.employee_name || rec.employee_id)}</p>
+        <p class="font-medium">${esc(rec.employee_name ? displayName(rec.employee_name, rec.employee_preferred_name) : rec.employee_id)}</p>
         <p class="text-xs text-slate-500">${esc(rec.employee_id)}</p>
       </td>
       <td class="px-4 py-3 text-right">${fmtCurrency(rec.current_salary)}</td>
@@ -597,7 +597,7 @@ async function openBonusPlanDetail(planId) {
   const empSelect = document.getElementById('bpoEmployee');
   const activeEmployees = (employees || []).filter(e => e.status === 'Active');
   empSelect.innerHTML = activeEmployees.map(e =>
-    `<option value="${esc(e.employee_id)}">${esc(e.full_name)} (${esc(e.employee_id)})</option>`
+    `<option value="${esc(e.employee_id)}">${esc(displayName(e.full_name,e.preferred_name))} (${esc(e.employee_id)})</option>`
   ).join('');
 
   await loadBonusPayouts(planId);
@@ -651,7 +651,7 @@ function renderBonusPayoutTable() {
   tbody.innerHTML = bonusPayouts.map(payout => `
     <tr class="hover:bg-slate-50 transition">
       <td class="px-4 py-3">
-        <p class="font-medium">${esc(payout.employee_name || payout.employee_id)}</p>
+        <p class="font-medium">${esc(payout.employee_name ? displayName(payout.employee_name, payout.employee_preferred_name) : payout.employee_id)}</p>
         <p class="text-xs text-slate-500">${esc(payout.employee_id)}</p>
       </td>
       <td class="px-4 py-3 text-right">${payout.target_amount ? fmtCurrency(payout.target_amount) : '—'}</td>
@@ -819,7 +819,7 @@ async function openCommissionPlanDetail(planId) {
   const empSelect = document.getElementById('ceEmployee');
   const activeEmployees = (employees || []).filter(e => e.status === 'Active');
   empSelect.innerHTML = activeEmployees.map(e =>
-    `<option value="${esc(e.employee_id)}">${esc(e.full_name)} (${esc(e.employee_id)})</option>`
+    `<option value="${esc(e.employee_id)}">${esc(displayName(e.full_name,e.preferred_name))} (${esc(e.employee_id)})</option>`
   ).join('');
   if (plan.default_rate_percent != null) document.getElementById('ceRate').value = plan.default_rate_percent;
 
@@ -882,7 +882,7 @@ function renderCommissionEntryTable() {
   tbody.innerHTML = commissionEntries.map(entry => `
     <tr class="hover:bg-slate-50 transition">
       <td class="px-4 py-3">
-        <p class="font-medium">${esc(entry.employee_name || entry.employee_id)}</p>
+        <p class="font-medium">${esc(entry.employee_name ? displayName(entry.employee_name, entry.employee_preferred_name) : entry.employee_id)}</p>
         <p class="text-xs text-slate-500">${esc(entry.employee_id)}</p>
       </td>
       <td class="px-4 py-3 text-right">
@@ -990,7 +990,7 @@ function renderEquityGrantsTable() {
   tbody.innerHTML = equityGrants.map(g => `
     <tr class="hover:bg-slate-50 transition cursor-pointer" onclick="openEquityGrantDetail(${g.id})">
       <td class="px-4 py-3">
-        <p class="font-medium">${esc(g.employee_name || g.employee_id)}</p>
+        <p class="font-medium">${esc(g.employee_name ? displayName(g.employee_name, g.employee_preferred_name) : g.employee_id)}</p>
         <p class="text-xs text-slate-500">${esc(g.employee_id)}</p>
       </td>
       <td class="px-4 py-3"><span class="badge bg-purple-100 text-purple-700">${esc(g.grant_type)}</span></td>
@@ -1015,7 +1015,7 @@ function openEquityGrantForm() {
     const empSelect = document.getElementById('egEmployee');
     const activeEmployees = (employees || []).filter(e => e.status === 'Active');
     empSelect.innerHTML = activeEmployees.map(e =>
-      `<option value="${esc(e.employee_id)}">${esc(e.full_name)} (${esc(e.employee_id)})</option>`
+      `<option value="${esc(e.employee_id)}">${esc(displayName(e.full_name,e.preferred_name))} (${esc(e.employee_id)})</option>`
     ).join('');
   })();
   document.getElementById('compensationEquityGrantModal').classList.remove('hidden');
@@ -1074,7 +1074,7 @@ function renderEquityGrantDetail(g) {
   currentEquityGrantType = g.grant_type;
   currentEquityGrantFmv = g.fair_market_value_at_grant;
   currentEquityVestingEvents = g.vesting_events;
-  document.getElementById('equityDetailTitle').textContent = `${esc(g.employee_name || g.employee_id)} — ${esc(g.grant_type)}`;
+  document.getElementById('equityDetailTitle').textContent = `${esc(g.employee_name ? displayName(g.employee_name, g.employee_preferred_name) : g.employee_id)} — ${esc(g.grant_type)}`;
   document.getElementById('equityDetailSubtitle').textContent =
     `${Number(g.quantity).toLocaleString('en-MY')} units · granted ${fmtDate(g.grant_date)} · ${g.vesting_years}y vesting, ${g.cliff_months}mo cliff · ${g.status}`;
 
@@ -1296,7 +1296,7 @@ async function loadHrTotalRewards() {
   if (empSelect.options.length === 0) {
     if (!employees || employees.length === 0) await loadEmployees();
     empSelect.innerHTML = (employees || []).map(e =>
-      `<option value="${esc(e.employee_id)}">${esc(e.full_name)} (${esc(e.employee_id)})</option>`
+      `<option value="${esc(e.employee_id)}">${esc(displayName(e.full_name,e.preferred_name))} (${esc(e.employee_id)})</option>`
     ).join('');
   }
 

@@ -131,6 +131,7 @@ class AttendanceRecordResponse(BaseModel):
 
 class AttendanceRecordWithEmployee(AttendanceRecordResponse):
     employee_name: Optional[str] = None
+    employee_preferred_name: Optional[str] = None
     department: Optional[str] = None
 
 

@@ -56,7 +56,7 @@ function openUserModal(uData=null) {
   // Employee links
   const empSel=document.getElementById('uEmployeeId');
   empSel.innerHTML='<option value="">Not linked</option>';
-  employees.forEach(e=>{const o=document.createElement('option');o.value=e.employee_id;o.textContent=`${e.employee_id} — ${e.full_name}`;empSel.appendChild(o);});
+  employees.forEach(e=>{const o=document.createElement('option');o.value=e.employee_id;o.textContent=`${e.employee_id} — ${displayName(e.full_name,e.preferred_name)}`;empSel.appendChild(o);});
   empSel.value=u?.employee_id||'';
   // Institution picker (superadmin no context)
   const instWrap=document.getElementById('uInstWrap');

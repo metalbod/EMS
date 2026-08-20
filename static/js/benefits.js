@@ -311,7 +311,7 @@ function renderLifeEventsTable(events) {
   tbody.innerHTML = events.map(ev => `
     <tr>
       <td class="px-4 py-3">
-        <p class="font-medium">${esc(ev.employee_name || ev.employee_id)}</p>
+        <p class="font-medium">${esc(ev.employee_name ? displayName(ev.employee_name, ev.employee_preferred_name) : ev.employee_id)}</p>
         <p class="text-xs text-slate-500">${esc(ev.employee_id)}</p>
       </td>
       <td class="px-4 py-3">${esc(ev.event_type)}</td>
@@ -597,7 +597,7 @@ function renderClaimsTable(claims) {
   tbody.innerHTML = claims.map(c => `
     <tr>
       <td class="px-4 py-3">
-        <p class="font-medium">${esc(c.employee_name || c.employee_id)}</p>
+        <p class="font-medium">${esc(c.employee_name ? displayName(c.employee_name, c.employee_preferred_name) : c.employee_id)}</p>
         <p class="text-xs text-slate-500">${esc(c.employee_id)}</p>
       </td>
       <td class="px-4 py-3">
@@ -636,7 +636,7 @@ function openClaimDecideModal(claimId) {
   if (!claim) return;
   currentDecideClaimId = claimId;
   document.getElementById('claimDecideInfo').textContent =
-    `${claim.employee_name || claim.employee_id} claimed ${fmtCurrency(claim.amount_claimed)} under '${claim.plan_name}' (${fmtDate(claim.claim_date)}). Reimbursement Cap plans are capped by the employee's remaining annual balance — an over-cap amount will be rejected by the server with the remaining balance shown.`;
+    `${claim.employee_name ? displayName(claim.employee_name, claim.employee_preferred_name) : claim.employee_id} claimed ${fmtCurrency(claim.amount_claimed)} under '${claim.plan_name}' (${fmtDate(claim.claim_date)}). Reimbursement Cap plans are capped by the employee's remaining annual balance — an over-cap amount will be rejected by the server with the remaining balance shown.`;
   document.getElementById('claimDecideAmount').value = claim.amount_claimed;
   document.getElementById('claimDecideModal').classList.remove('hidden');
 }

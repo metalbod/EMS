@@ -292,7 +292,7 @@ def list_task_assignments(conn, project_id: int, task_id: int, user: dict = Depe
     if not conn.execute("SELECT id FROM project_tasks WHERE id=? AND project_id=? AND institution_id=?", (task_id, project_id, inst_id)).fetchone():
         raise HTTPException(404, "Task not found")
     rows = conn.execute("""
-        SELECT ta.*, e.full_name, e.department, e.designation
+        SELECT ta.*, e.full_name, e.preferred_name, e.department, e.designation
         FROM task_assignments ta
         JOIN employees e ON e.employee_id = ta.employee_id AND e.institution_id = ta.institution_id
         WHERE ta.task_id=? AND ta.institution_id=?

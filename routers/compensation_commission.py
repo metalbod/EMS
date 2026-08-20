@@ -130,7 +130,7 @@ async def list_commission_entries(
         # cross-tenant-fan-out pattern.
         rows = conn.execute(
             """
-            SELECT c.*, e.full_name AS employee_name
+            SELECT c.*, e.full_name AS employee_name, e.preferred_name AS employee_preferred_name
             FROM commission_entries c
             JOIN employees e ON c.employee_id = e.employee_id AND c.institution_id = e.institution_id
             WHERE c.commission_plan_id = ? AND c.institution_id = ?

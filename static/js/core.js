@@ -80,6 +80,29 @@ function fmtDateTime(value, withSeconds) {
 }
 
 // ---------------------------------------------------------------------------
+// Employee display name — used everywhere an employee is referenced outside
+// the Employees List/Detail screens and official documents (payslips, bank
+// export, audit records, which stay on full_name only, untouched by this).
+// Shows the preferred name alone when set, otherwise falls back to the
+// full (government-ID) name — never both at once.
+// ---------------------------------------------------------------------------
+function displayName(fullName, preferredName) {
+  const full = (fullName || '').trim();
+  const pref = (preferredName || '').trim();
+  return pref || full;
+}
+
+// Employees List table row only — shows both names together, since that
+// screen is where full_name/preferred_name are captured and cross-checked.
+// Everywhere else uses displayName() (preferred name alone, or full name).
+function combinedName(fullName, preferredName) {
+  const full = (fullName || '').trim();
+  const pref = (preferredName || '').trim();
+  if (pref && pref.toLowerCase() !== full.toLowerCase()) return `${full} (${pref})`;
+  return full;
+}
+
+// ---------------------------------------------------------------------------
 // Currency display: "RM 1,234.56" everywhere (was 3 implementations —
 // fmtRM in benefits.js, fmtMoney in payroll.js, ~40 inline
 // Number(x).toLocaleString('en-MY', {...}) calls — each with slightly

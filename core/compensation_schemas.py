@@ -365,6 +365,7 @@ class MeritRecommendationResponse(MeritRecommendationBase):
 class MeritRecommendationWithEmployee(MeritRecommendationResponse):
     """Merit recommendation response with the employee's display name joined in."""
     employee_name: Optional[str] = None
+    employee_preferred_name: Optional[str] = None
 
 
 # ============================================================================
@@ -441,6 +442,7 @@ class BonusPayoutResponse(BonusPayoutBase):
 class BonusPayoutWithEmployee(BonusPayoutResponse):
     """Bonus payout with the employee's display name joined in."""
     employee_name: Optional[str] = None
+    employee_preferred_name: Optional[str] = None
 
 
 # ============================================================================
@@ -521,6 +523,7 @@ class CommissionEntryResponse(CommissionEntryBase):
 class CommissionEntryWithEmployee(CommissionEntryResponse):
     """Commission entry response with the employee's display name joined in."""
     employee_name: Optional[str] = None
+    employee_preferred_name: Optional[str] = None
 
 
 # ============================================================================
@@ -568,6 +571,7 @@ class EquityGrantResponse(EquityGrantBase):
 class EquityGrantWithEmployee(EquityGrantResponse):
     """Equity grant response with the employee's display name joined in."""
     employee_name: Optional[str] = None
+    employee_preferred_name: Optional[str] = None
 
 
 class VestingEventResponse(BaseModel):

@@ -418,7 +418,7 @@ def list_appraisals(conn, cycle_id: int, user: dict = Depends(get_current_user))
     if user["role"] == "superadmin":
         return []
     base = """
-        SELECT a.*, e.full_name, e.department, e.designation
+        SELECT a.*, e.full_name, e.preferred_name, e.department, e.designation
         FROM appraisals a JOIN employees e ON e.employee_id=a.employee_id AND e.institution_id=a.institution_id
         WHERE a.institution_id=? AND a.cycle_id=?
     """
@@ -437,7 +437,7 @@ def list_appraisals(conn, cycle_id: int, user: dict = Depends(get_current_user))
 def get_appraisal(conn, appraisal_id: int, user: dict = Depends(get_current_user)) -> Optional[Dict[str, Any]]:
     inst_id = need_inst(user)
     ap = conn.execute("""
-        SELECT a.*, e.full_name, e.department, e.designation
+        SELECT a.*, e.full_name, e.preferred_name, e.department, e.designation
         FROM appraisals a JOIN employees e ON e.employee_id=a.employee_id AND e.institution_id=a.institution_id
         WHERE a.id=? AND a.institution_id=?
     """, (appraisal_id, inst_id)).fetchone()
@@ -590,7 +590,7 @@ def queue_bonus_payout(conn, appraisal_id: int, body: BonusPayoutIn, user: dict 
 def list_performance_payouts(conn, status: Optional[str] = None, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES, *PAYROLL_VIEW_ROLES))) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
     sql = """
-        SELECT po.*, e.full_name, e.department, e.designation
+        SELECT po.*, e.full_name, e.preferred_name, e.department, e.designation
         FROM performance_payouts po
         JOIN employees e ON e.institution_id=po.institution_id AND e.employee_id=po.employee_id
         WHERE po.institution_id=?

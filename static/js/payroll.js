@@ -77,7 +77,7 @@ async function openPayrollRunDetail(runId) {
       : '';
     return `<tr class="border-t border-slate-100" data-payslip-id="${p.id}">
       <td class="px-3 py-2">
-        <p class="font-medium text-slate-800 cursor-pointer hover:underline" onclick="viewPayslip(${p.id})">${esc(p.full_name)}</p>
+        <p class="font-medium text-slate-800 cursor-pointer hover:underline" onclick="viewPayslip(${p.id})">${esc(displayName(p.full_name,p.preferred_name))}</p>
         <p class="text-xs text-slate-400">${esc(p.department||'')}${p.designation?' · '+esc(p.designation):''}${hourly?' · Hourly':''}</p>
       </td>
       <td class="px-3 py-2 text-right">${basicCell}</td>

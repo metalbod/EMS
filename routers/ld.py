@@ -147,7 +147,7 @@ def list_ld_enrollments(conn, status: Optional[str] = None, user: dict = Depends
     inst_id = need_inst(user)
     q = """
         SELECT en.*, c.title AS course_title, c.category AS course_category, c.cost AS course_cost,
-               e.full_name AS employee_name, e.department, e.designation,
+               e.full_name AS employee_name, e.preferred_name AS employee_preferred_name, e.department, e.designation,
                qz.id AS quiz_id,
                (SELECT COUNT(*) FROM ld_course_modules m WHERE m.course_id = c.id) AS module_count,
                (SELECT COUNT(*) FROM ld_lesson_progress lp WHERE lp.enrollment_id = en.id) AS modules_viewed

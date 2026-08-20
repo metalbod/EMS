@@ -476,14 +476,14 @@ function renderLeaveCalendarGrid(entries, holidays) {
         ${esc(h.name)}
       </div>`).join('');
     const chips = shown.map(e => `
-      <div class="text-xs bg-amber-50 text-amber-700 rounded px-1 py-0.5 truncate" title="${esc(e.full_name)}${e.leave_type_name ? ' — ' + esc(e.leave_type_name) : ''}">
-        ${esc(e.full_name)}${e.leave_type_name ? ` (${esc(e.leave_type_name)})` : ''}
+      <div class="text-xs bg-amber-50 text-amber-700 rounded px-1 py-0.5 truncate" title="${esc(displayName(e.full_name,e.preferred_name))}${e.leave_type_name ? ' — ' + esc(e.leave_type_name) : ''}">
+        ${esc(displayName(e.full_name,e.preferred_name))}${e.leave_type_name ? ` (${esc(e.leave_type_name)})` : ''}
       </div>`).join('');
     const extraLabel = rest.length > 0 ? `
       <div class="relative group">
         <div class="text-xs text-slate-400 cursor-default">+${rest.length} more</div>
         <div class="hidden group-hover:block absolute z-10 left-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg p-2 min-w-[160px] max-w-[240px] space-y-0.5">
-          ${rest.map(e => `<div class="text-xs text-slate-700 truncate">${esc(e.full_name)}${e.leave_type_name ? ` (${esc(e.leave_type_name)})` : ''}</div>`).join('')}
+          ${rest.map(e => `<div class="text-xs text-slate-700 truncate">${esc(displayName(e.full_name,e.preferred_name))}${e.leave_type_name ? ` (${esc(e.leave_type_name)})` : ''}</div>`).join('')}
         </div>
       </div>` : '';
     cells += `
@@ -586,9 +586,9 @@ function renderLeaveDashRanking(containerId, list, barColor) {
   el.innerHTML = list.map((e, i) => `
     <div class="flex items-center gap-2">
       <div class="w-5 text-xs text-slate-400 text-right flex-shrink-0">${i + 1}</div>
-      <div class="w-28 text-xs text-slate-700 truncate cursor-default leave-emp-name" title="${esc(e.full_name)}"
-           data-breakdown='${JSON.stringify({ name: e.full_name, department: e.department, breakdown: e.breakdown }).replace(/'/g,"&apos;")}'>
-        ${esc(e.full_name)}
+      <div class="w-28 text-xs text-slate-700 truncate cursor-default leave-emp-name" title="${esc(displayName(e.full_name,e.preferred_name))}"
+           data-breakdown='${JSON.stringify({ name: displayName(e.full_name,e.preferred_name), department: e.department, breakdown: e.breakdown }).replace(/'/g,"&apos;")}'>
+        ${esc(displayName(e.full_name,e.preferred_name))}
       </div>
       <div class="flex-1 bg-slate-100 rounded-full h-2">
         <div class="${barColor} h-2 rounded-full" style="width:${Math.min(100, e.utilization_percent)}%"></div>

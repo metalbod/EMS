@@ -105,7 +105,7 @@ function openLdEnrollModal(courseId) {
   if(canManage){
     empWrap.classList.remove('hidden');
     const sel=document.getElementById('ldEnrollEmpId');
-    sel.innerHTML=employees.filter(e=>e.status==='Active').map(e=>`<option value="${e.employee_id}">${e.employee_id} — ${esc(e.full_name)}</option>`).join('');
+    sel.innerHTML=employees.filter(e=>e.status==='Active').map(e=>`<option value="${e.employee_id}">${e.employee_id} — ${esc(displayName(e.full_name,e.preferred_name))}</option>`).join('');
     if(currentUser?.employee_id) sel.value=currentUser.employee_id;
   } else {
     empWrap.classList.add('hidden');
@@ -162,7 +162,7 @@ async function loadLdEnrollments() {
             ${hasQuiz?`<span class="badge text-xs bg-purple-100 text-purple-700">Quiz Required</span>`:''}
             ${en.module_count>0?`<span class="badge text-xs bg-slate-100 text-slate-600">${en.modules_viewed}/${en.module_count} lessons</span>`:''}
           </div>
-          <p class="text-xs text-slate-500">${esc(en.employee_name)} · ${esc(en.department||'')}${en.designation?' · '+esc(en.designation):''}</p>
+          <p class="text-xs text-slate-500">${esc(displayName(en.employee_name,en.employee_preferred_name))} · ${esc(en.department||'')}${en.designation?' · '+esc(en.designation):''}</p>
           ${en.notes?`<p class="text-xs text-slate-400 italic mt-1">${esc(en.notes)}</p>`:''}
         </div>
         <div class="flex items-center gap-2 flex-shrink-0">

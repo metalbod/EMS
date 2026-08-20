@@ -346,7 +346,7 @@ def list_ob_checklists(conn, type: Optional[str] = None, status: Optional[str] =
                        user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
     q = """
-        SELECT c.*, e.full_name AS employee_name, e.department, e.designation,
+        SELECT c.*, e.full_name AS employee_name, e.preferred_name AS employee_preferred_name, e.department, e.designation,
                COUNT(i.id) AS total_items,
                SUM(CASE WHEN i.status='Done' THEN 1 ELSE 0 END) AS done_items,
                SUM(CASE WHEN i.status='Pending' AND i.assigned_role=? THEN 1 ELSE 0 END) AS my_pending
@@ -363,7 +363,7 @@ def list_ob_checklists(conn, type: Optional[str] = None, status: Optional[str] =
         q += f" AND e.employee_id IN {frag}"; p.extend(fp)
     elif user["role"] == "employee":
         q += " AND c.employee_id=?"; p.append(user.get("employee_id",""))
-    q += " GROUP BY c.id, e.full_name, e.department, e.designation ORDER BY c.created_at DESC"
+    q += " GROUP BY c.id, e.full_name, e.preferred_name, e.department, e.designation ORDER BY c.created_at DESC"
     rows = conn.execute(q, p).fetchall()
     return [dict(r) for r in rows]
 
@@ -435,7 +435,7 @@ def start_ob_checklist(conn, body: OBChecklistStartIn, user: dict = Depends(get_
 def get_ob_checklist(conn, cl_id: int, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     inst_id = need_inst(user)
     cl = conn.execute(
-        "SELECT c.*, e.full_name AS employee_name, e.department, e.designation FROM ob_checklists c JOIN employees e ON e.employee_id=c.employee_id AND e.institution_id=c.institution_id WHERE c.id=? AND c.institution_id=?",
+        "SELECT c.*, e.full_name AS employee_name, e.preferred_name AS employee_preferred_name, e.department, e.designation FROM ob_checklists c JOIN employees e ON e.employee_id=c.employee_id AND e.institution_id=c.institution_id WHERE c.id=? AND c.institution_id=?",
         (cl_id, inst_id)
     ).fetchone()
     if not cl:

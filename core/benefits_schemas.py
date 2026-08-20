@@ -138,6 +138,7 @@ class LifeEventResponse(LifeEventCreate):
 class LifeEventWithEmployee(LifeEventResponse):
     """Life event response with the employee's display name joined in."""
     employee_name: Optional[str] = None
+    employee_preferred_name: Optional[str] = None
 
 
 class EnrollmentElect(BaseModel):
@@ -267,6 +268,7 @@ class ClaimResponse(BaseModel):
 class ClaimWithDetails(ClaimResponse):
     """Claim response with employee name and plan name/category joined in."""
     employee_name: Optional[str] = None
+    employee_preferred_name: Optional[str] = None
     plan_name: Optional[str] = None
     plan_category: Optional[str] = None
 

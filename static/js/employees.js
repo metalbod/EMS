@@ -38,7 +38,7 @@ function filterEmployees() {
   const q = document.getElementById('empSearch').value.toLowerCase();
   const s = document.getElementById('empStatusFilter').value;
   empFilteredData = employees.filter(e => {
-    const mQ = !q || [e.full_name,e.employee_id,e.ic_number,e.designation,e.department].some(v=>v?.toLowerCase().includes(q));
+    const mQ = !q || [e.full_name,e.preferred_name,e.employee_id,e.ic_number,e.designation,e.department].some(v=>v?.toLowerCase().includes(q));
     const mS = !s || e.status === s;
     return mQ && mS;
   });
@@ -66,7 +66,7 @@ function renderEmpTable() {
         <div class="flex items-center gap-3">
           <div class="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 text-xs font-bold flex-shrink-0">${e.full_name.split(' ').slice(0,2).map(w=>w[0]||'').join('').toUpperCase()}</div>
           <div>
-            <p class="font-medium">${esc(e.full_name)}</p>
+            <p class="font-medium">${esc(combinedName(e.full_name, e.preferred_name))}</p>
             <p class="text-xs text-slate-400">${esc(e.employee_id)} · ${esc(e.designation)}</p>
           </div>
         </div>
@@ -74,7 +74,7 @@ function renderEmpTable() {
       <td class="px-4 py-3 hidden md:table-cell text-sm text-slate-600">${esc(e.department)}</td>
       <td class="px-4 py-3 hidden lg:table-cell text-sm text-slate-600">${esc(e.employment_type)}</td>
       <td class="px-4 py-3 hidden lg:table-cell text-sm text-slate-600">${esc(e.location_name||'—')}</td>
-      <td class="px-4 py-3 hidden lg:table-cell text-sm text-slate-600">${esc(e.manager_name||'—')}</td>
+      <td class="px-4 py-3 hidden lg:table-cell text-sm text-slate-600">${e.manager_name?esc(displayName(e.manager_name,e.manager_preferred_name)):'—'}</td>
       <td class="px-4 py-3 hidden md:table-cell text-sm text-slate-600">${yearsOfServiceLabel(e)}</td>
       <td class="px-4 py-3"><span class="badge ${e.status==='Active'?'bg-emerald-100 text-emerald-700':'bg-slate-100 text-slate-500'}">${e.status}</span></td>
       <td class="px-4 py-3 text-right">
@@ -108,7 +108,7 @@ function viewEmployee(id) {
   tb.style.color = e.status==='Active' ? '#dc2626' : '#059669';
   const reportsToEmp = e.reports_to ? (employees||[]).find(x=>x.employee_id===e.reports_to) : null;
   const rt = e.reports_to===e.employee_id ? '⭐ CEO / Top of Org'
-    : (e.reports_to ? `${reportsToEmp?reportsToEmp.full_name:e.reports_to} (${e.reports_to})` : '—');
+    : (e.reports_to ? `${reportsToEmp?displayName(reportsToEmp.full_name,reportsToEmp.preferred_name):e.reports_to} (${e.reports_to})` : '—');
   document.getElementById('vt-personal').innerHTML = vgrid([
     ['Full Name',e.full_name,false,true],['Preferred Name',e.preferred_name||'—'],
     ['IC Number',e.ic_number,true],['Passport No.',e.passport_number||'—'],
@@ -432,7 +432,7 @@ function openAddModal() {
   toggleSalaryTypeFields();
   const rt=document.getElementById('fReportsTo');
   while(rt.options.length>2) rt.remove(2);
-  employees.filter(e=>e.status==='Active').forEach(e=>{const o=document.createElement('option');o.value=e.employee_id;o.textContent=`${e.employee_id} — ${e.full_name}`;rt.appendChild(o);});
+  employees.filter(e=>e.status==='Active').forEach(e=>{const o=document.createElement('option');o.value=e.employee_id;o.textContent=`${e.employee_id} — ${displayName(e.full_name,e.preferred_name)}`;rt.appendChild(o);});
   loadLocationDropdown();
   document.getElementById('empDependentsTabBtn').classList.add('hidden'); // dependents need an existing employee_id
   currentTab='personal'; switchTab('personal');
@@ -462,7 +462,7 @@ async function openEditModal(e) {
   toggleSalaryTypeFields();
   const rt=f('fReportsTo');
   while(rt.options.length>2) rt.remove(2);
-  employees.filter(em=>em.status==='Active'&&em.employee_id!==e.employee_id).forEach(em=>{const o=document.createElement('option');o.value=em.employee_id;o.textContent=`${em.employee_id} — ${em.full_name}`;rt.appendChild(o);});
+  employees.filter(em=>em.status==='Active'&&em.employee_id!==e.employee_id).forEach(em=>{const o=document.createElement('option');o.value=em.employee_id;o.textContent=`${em.employee_id} — ${displayName(em.full_name,em.preferred_name)}`;rt.appendChild(o);});
   rt.value=e.reports_to===e.employee_id?'SELF':(e.reports_to||'');
   await loadLocationDropdown();
   f('fDefaultLocation').value=e.default_location_id||'';

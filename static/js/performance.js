@@ -311,7 +311,7 @@ async function loadTeamAppraisalsPage() {
   listEl.innerHTML=teamRows.map(a=>`
     <tr class="border-t border-slate-100 ${a.status==='ManagerReview'?'cursor-pointer hover:bg-slate-50':''}" ${a.status==='ManagerReview'?`onclick="openManagerReview(${a.id})"`:''}>
       <td class="px-4 py-3">
-        <p class="font-medium text-slate-800">${esc(a.full_name)}</p>
+        <p class="font-medium text-slate-800">${esc(displayName(a.full_name,a.preferred_name))}</p>
         <p class="text-xs text-slate-400">${esc(a.department||'')}${a.designation?' · '+esc(a.designation):''}</p>
       </td>
       <td class="px-4 py-3"><span class="badge text-xs ${statusColor(APPR_STATUS_COLORS, a.status)}">${a.status}</span></td>
@@ -326,7 +326,7 @@ async function openManagerReview(appraisalId) {
   if(!res?.ok) return;
   const ap=await res.json();
   document.getElementById('mrAppraisalId').value=ap.id;
-  document.getElementById('mrModalTitle').textContent=`Manager Review — ${ap.full_name}`;
+  document.getElementById('mrModalTitle').textContent=`Manager Review — ${displayName(ap.full_name,ap.preferred_name)}`;
   document.getElementById('mrModalMeta').textContent=`${ap.department||''}${ap.designation?' · '+ap.designation:''}`;
   document.getElementById('mrGoalsList').innerHTML=ap.goals.length?ap.goals.map(g=>renderGoalRow(g,false)).join(''):'<p class="text-sm text-slate-400">No goals set.</p>';
   document.getElementById('mrSelfComments').textContent=ap.self_comments?`Self-review: "${ap.self_comments}"`:'No self-review comments.';
@@ -389,7 +389,7 @@ async function loadCalibrationPage() {
   listEl.innerHTML=calibRows.map(a=>`
     <tr class="border-t border-slate-100">
       <td class="px-4 py-3">
-        <p class="font-medium text-slate-800">${esc(a.full_name)}</p>
+        <p class="font-medium text-slate-800">${esc(displayName(a.full_name,a.preferred_name))}</p>
         <p class="text-xs text-slate-400">${esc(a.department||'')}</p>
       </td>
       <td class="px-4 py-3 text-slate-600">${a.self_rating??'—'}</td>
@@ -407,10 +407,10 @@ function renderPayoutCell(a, payouts) {
   const bonusTotal=bonuses.reduce((s,p)=>s+p.amount,0);
   const incrementHtml=increment
     ? `<span class="text-xs text-green-600">+${increment.increment_pct}% applied</span>`
-    : `<button onclick='openPayoutModal(${a.id},"increment","${esc(a.full_name)}")' class="text-xs text-blue-600 hover:underline">Apply Increment</button>`;
+    : `<button onclick='openPayoutModal(${a.id},"increment","${esc(displayName(a.full_name,a.preferred_name))}")' class="text-xs text-blue-600 hover:underline">Apply Increment</button>`;
   const bonusHtml=bonuses.length
-    ? `<span class="text-xs ${bonuses.some(p=>p.status==='Pending')?'text-amber-600':'text-green-600'}">${fmtCurrency(bonusTotal)} ${bonuses.some(p=>p.status==='Pending')?'queued':'paid'}</span> <button onclick='openPayoutModal(${a.id},"bonus","${esc(a.full_name)}")' class="text-xs text-blue-600 hover:underline">+Add</button>`
-    : `<button onclick='openPayoutModal(${a.id},"bonus","${esc(a.full_name)}")' class="text-xs text-blue-600 hover:underline">Add Bonus</button>`;
+    ? `<span class="text-xs ${bonuses.some(p=>p.status==='Pending')?'text-amber-600':'text-green-600'}">${fmtCurrency(bonusTotal)} ${bonuses.some(p=>p.status==='Pending')?'queued':'paid'}</span> <button onclick='openPayoutModal(${a.id},"bonus","${esc(displayName(a.full_name,a.preferred_name))}")' class="text-xs text-blue-600 hover:underline">+Add</button>`
+    : `<button onclick='openPayoutModal(${a.id},"bonus","${esc(displayName(a.full_name,a.preferred_name))}")' class="text-xs text-blue-600 hover:underline">Add Bonus</button>`;
   return `<div class="flex flex-col gap-1">${incrementHtml}${bonusHtml}</div>`;
 }
 

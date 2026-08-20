@@ -130,7 +130,7 @@ async def list_bonus_payouts(
         # cross-tenant-fan-out pattern.
         rows = conn.execute(
             """
-            SELECT p.*, e.full_name AS employee_name
+            SELECT p.*, e.full_name AS employee_name, e.preferred_name AS employee_preferred_name
             FROM bonus_payouts p
             JOIN employees e ON p.employee_id = e.employee_id AND p.institution_id = e.institution_id
             WHERE p.bonus_plan_id = ? AND p.institution_id = ?

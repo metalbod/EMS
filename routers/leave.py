@@ -42,6 +42,7 @@ class LeaveCalendarEntry(BaseModel):
     so the type never reaches a non-HR browser's network response at all."""
     employee_id: str
     full_name: str
+    preferred_name: Optional[str] = None
     start_date: str
     end_date: str
     days_count: float
@@ -345,7 +346,7 @@ def list_leave_balances(conn, employee_id: Optional[str] = None, year: Optional[
     year = year or datetime.now().year
     q = """
         SELECT b.*, lt.name AS leave_type_name, lt.accrual_mode, e.full_name AS employee_name,
-               e.department, e.start_date AS employee_start_date
+               e.preferred_name AS employee_preferred_name, e.department, e.start_date AS employee_start_date
         FROM leave_balances b
         JOIN leave_types lt ON lt.id = b.leave_type_id
         JOIN employees e ON e.employee_id = b.employee_id AND e.institution_id = b.institution_id
@@ -440,7 +441,7 @@ def adjust_leave_balance(conn, balance_id: int, body: LeaveBalanceAdjustIn, user
 def list_leave_applications(conn, status: Optional[str] = None, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
     q = """
-        SELECT a.*, lt.name AS leave_type_name, e.full_name AS employee_name, e.department, e.designation
+        SELECT a.*, lt.name AS leave_type_name, e.full_name AS employee_name, e.preferred_name AS employee_preferred_name, e.department, e.designation
         FROM leave_applications a
         JOIN leave_types lt ON lt.id = a.leave_type_id
         JOIN employees e ON e.employee_id = a.employee_id AND e.institution_id = a.institution_id
@@ -488,7 +489,7 @@ def get_leave_calendar(conn, year: int, month: int, user: dict = Depends(get_cur
     month_end = date(year, month, last_day).isoformat()
 
     rows = conn.execute("""
-        SELECT a.employee_id, e.full_name, a.start_date, a.end_date, a.days_count, lt.name AS leave_type_name
+        SELECT a.employee_id, e.full_name, e.preferred_name, a.start_date, a.end_date, a.days_count, lt.name AS leave_type_name
         FROM leave_applications a
         JOIN employees e ON e.employee_id = a.employee_id AND e.institution_id = a.institution_id
         JOIN leave_types lt ON lt.id = a.leave_type_id
@@ -674,13 +675,13 @@ def get_leave_utilization_dashboard(conn, year: Optional[int] = None,
     } for r in by_type]
 
     emp_rows = conn.execute("""
-        SELECT b.employee_id, e.full_name, e.department,
+        SELECT b.employee_id, e.full_name, e.preferred_name, e.department,
                SUM(b.entitled_days + b.carried_forward_days) AS total_entitled,
                SUM(b.used_days) AS total_used
         FROM leave_balances b
         JOIN employees e ON e.employee_id = b.employee_id AND e.institution_id = b.institution_id
         WHERE b.institution_id=? AND b.year=? AND e.status='Active'
-        GROUP BY b.employee_id, e.full_name, e.department
+        GROUP BY b.employee_id, e.full_name, e.preferred_name, e.department
         HAVING SUM(b.entitled_days + b.carried_forward_days) > 0
     """, (inst_id, year)).fetchall()
 
@@ -702,7 +703,7 @@ def get_leave_utilization_dashboard(conn, year: Optional[int] = None,
         return out
 
     ranked = [{
-        "employee_id": r["employee_id"], "full_name": r["full_name"], "department": r["department"],
+        "employee_id": r["employee_id"], "full_name": r["full_name"], "preferred_name": r["preferred_name"], "department": r["department"],
         "total_entitled": r["total_entitled"], "total_used": r["total_used"],
         "utilization_percent": round(r["total_used"] / r["total_entitled"] * 100, 1),
     } for r in emp_rows]

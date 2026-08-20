@@ -101,7 +101,7 @@ async def list_merit_recommendations(
         # reusing that code, e.g. auto-generated EMP0001/EMP0002/...).
         rows = conn.execute(
             """
-            SELECT r.*, e.full_name AS employee_name
+            SELECT r.*, e.full_name AS employee_name, e.preferred_name AS employee_preferred_name
             FROM merit_recommendations r
             JOIN employees e ON r.employee_id = e.employee_id AND r.institution_id = e.institution_id
             WHERE r.merit_review_cycle_id = ? AND r.institution_id = ?

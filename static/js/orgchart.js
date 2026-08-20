@@ -141,7 +141,8 @@ function renderOrgChart(nodes) {
       walk(cid);
     });
     const active=n.status==='Active';
-    const nm=n.full_name.length>18?n.full_name.slice(0,17)+'…':n.full_name;
+    const dn=displayName(n.full_name,n.preferred_name);
+    const nm=dn.length>18?dn.slice(0,17)+'…':dn;
     const ds=n.designation.length>22?n.designation.slice(0,21)+'…':n.designation;
     const hasKids=(children[id]||[]).length>0;
     const collapsed=orgCollapsed.has(id);
@@ -214,7 +215,7 @@ function renderOrgList(nodes) {
     const row=`<div class="flex items-center gap-1.5 py-1.5 px-2 rounded-lg hover:bg-slate-50 group">
         ${toggle}
         <span class="w-2 h-2 rounded-full flex-shrink-0 ${active?'bg-emerald-500':'bg-slate-300'}"></span>
-        <button onclick="orgFocus('${id}')" class="text-sm font-medium text-slate-800 hover:text-blue-600 truncate text-left flex-shrink-0 max-w-[220px]">${esc(n.full_name)}</button>
+        <button onclick="orgFocus('${id}')" class="text-sm font-medium text-slate-800 hover:text-blue-600 truncate text-left flex-shrink-0 max-w-[220px]">${esc(displayName(n.full_name,n.preferred_name))}</button>
         <span class="text-xs text-slate-400 truncate">${esc(n.designation)}</span>
         <span class="text-[10px] text-slate-400 truncate ml-auto flex-shrink-0 hidden sm:inline">${esc(n.department)}</span>
         ${childCount}
@@ -247,7 +248,7 @@ function renderOrgBreadcrumb(byId) {
     cur=(next&&next!==cur&&byId[next])?next:null;
   }
   el.innerHTML=`<button onclick="orgFocus(null)" class="text-blue-600 hover:underline flex-shrink-0">All Employees</button>`+
-    chain.map(n=>`<span class="flex-shrink-0">&rsaquo;</span><button onclick="orgFocus('${n.employee_id}')" class="hover:underline flex-shrink-0 ${n.employee_id===orgRootId?'font-semibold text-slate-700':'text-blue-600'}">${esc(n.full_name)}</button>`).join('');
+    chain.map(n=>`<span class="flex-shrink-0">&rsaquo;</span><button onclick="orgFocus('${n.employee_id}')" class="hover:underline flex-shrink-0 ${n.employee_id===orgRootId?'font-semibold text-slate-700':'text-blue-600'}">${esc(displayName(n.full_name,n.preferred_name))}</button>`).join('');
 }
 
 // ---------------------------------------------------------------------------

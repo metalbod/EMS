@@ -131,7 +131,7 @@ async def list_equity_grants(
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         rows = conn.execute(
             """
-            SELECT g.*, e.full_name AS employee_name
+            SELECT g.*, e.full_name AS employee_name, e.preferred_name AS employee_preferred_name
             FROM equity_grants g
             JOIN employees e ON g.employee_id = e.employee_id AND g.institution_id = e.institution_id
             WHERE g.institution_id = ?
@@ -157,7 +157,7 @@ async def get_equity_grant(
 
         grant = conn.execute(
             """
-            SELECT g.*, e.full_name AS employee_name
+            SELECT g.*, e.full_name AS employee_name, e.preferred_name AS employee_preferred_name
             FROM equity_grants g
             JOIN employees e ON g.employee_id = e.employee_id AND g.institution_id = e.institution_id
             WHERE g.id = ? AND g.institution_id = ?

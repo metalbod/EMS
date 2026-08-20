@@ -714,7 +714,7 @@ async def review_queue(
         _sweep_absences(conn, inst_id)
         rows = conn.execute(
             """
-            SELECT ar.*, e.full_name AS employee_name, e.department AS department
+            SELECT ar.*, e.full_name AS employee_name, e.preferred_name AS employee_preferred_name, e.department AS department
             FROM attendance_records ar
             JOIN employees e ON ar.employee_id = e.employee_id AND ar.institution_id = e.institution_id
             WHERE ar.institution_id = ? AND ar.status IN ('Late', 'Absent (Pending Review)')
@@ -725,7 +725,7 @@ async def review_queue(
         out = []
         for r in rows:
             base = _record_response(r).model_dump()
-            out.append(AttendanceRecordWithEmployee(**base, employee_name=r["employee_name"], department=r["department"]))
+            out.append(AttendanceRecordWithEmployee(**base, employee_name=r["employee_name"], employee_preferred_name=r["employee_preferred_name"], department=r["department"]))
         return out
     finally:
         conn.close()

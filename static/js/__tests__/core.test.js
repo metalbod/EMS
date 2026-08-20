@@ -516,3 +516,76 @@ describe('linkify', () => {
     expect(linkify(undefined)).toBe('');
   });
 });
+
+// Matches core.js's displayName — used everywhere an employee is referenced
+// outside the Employees List/Detail screens and official documents
+// (payslips, bank export, audit log, which stay on full_name only). Shows
+// the preferred name alone when set, otherwise the full (government-ID)
+// name — never both at once.
+describe('displayName', () => {
+  function displayName(fullName, preferredName) {
+    const full = (fullName || '').trim();
+    const pref = (preferredName || '').trim();
+    return pref || full;
+  }
+
+  it('returns the preferred name alone when set', () => {
+    expect(displayName('Mohammad Firdaus Bin Ahmad', 'Danny')).toBe('Danny');
+  });
+
+  it('falls back to the full name when there is no preferred name', () => {
+    expect(displayName('Jane Tan', null)).toBe('Jane Tan');
+    expect(displayName('Jane Tan', undefined)).toBe('Jane Tan');
+    expect(displayName('Jane Tan', '')).toBe('Jane Tan');
+  });
+
+  it('falls back to the full name when preferred name is only whitespace', () => {
+    expect(displayName('Jane Tan', '   ')).toBe('Jane Tan');
+  });
+
+  it('trims surrounding whitespace on both names', () => {
+    expect(displayName('  Jane Tan  ', '  Janey  ')).toBe('Janey');
+    expect(displayName('  Jane Tan  ', '')).toBe('Jane Tan');
+  });
+
+  it('handles a missing full name gracefully', () => {
+    expect(displayName(null, 'Danny')).toBe('Danny');
+    expect(displayName('', '')).toBe('');
+  });
+});
+
+// Matches core.js's combinedName — Employees List table row only, where
+// full_name/preferred_name are captured and cross-checked side by side.
+// Everywhere else uses displayName() instead (see above).
+describe('combinedName', () => {
+  function combinedName(fullName, preferredName) {
+    const full = (fullName || '').trim();
+    const pref = (preferredName || '').trim();
+    if (pref && pref.toLowerCase() !== full.toLowerCase()) return `${full} (${pref})`;
+    return full;
+  }
+
+  it('appends the preferred name in parentheses when set', () => {
+    expect(combinedName('Mohammad Firdaus Bin Ahmad', 'Danny')).toBe('Mohammad Firdaus Bin Ahmad (Danny)');
+  });
+
+  it('returns just the full name when there is no preferred name', () => {
+    expect(combinedName('Jane Tan', null)).toBe('Jane Tan');
+    expect(combinedName('Jane Tan', undefined)).toBe('Jane Tan');
+    expect(combinedName('Jane Tan', '')).toBe('Jane Tan');
+  });
+
+  it('does not duplicate the name when preferred name matches full name (case-insensitive)', () => {
+    expect(combinedName('Jane Tan', 'Jane Tan')).toBe('Jane Tan');
+    expect(combinedName('Jane Tan', 'jane tan')).toBe('Jane Tan');
+  });
+
+  it('trims surrounding whitespace on both names', () => {
+    expect(combinedName('  Jane Tan  ', '  Janey  ')).toBe('Jane Tan (Janey)');
+  });
+
+  it('handles a missing full name gracefully', () => {
+    expect(combinedName(null, 'Danny')).toBe(' (Danny)');
+    expect(combinedName('', '')).toBe('');
+  });
+});

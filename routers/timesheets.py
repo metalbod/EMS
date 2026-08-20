@@ -53,7 +53,7 @@ def _log_timesheet(conn, inst_id: int, ts_id: int, emp_id: str,
 def list_timesheets(conn, status: Optional[str] = None, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
     q = """
-        SELECT t.*, e.full_name AS employee_name, e.department, e.designation,
+        SELECT t.*, e.full_name AS employee_name, e.preferred_name AS employee_preferred_name, e.department, e.designation,
                COALESCE(SUM(te.hours),0) AS total_hours
         FROM timesheets t
         JOIN employees e ON e.employee_id = t.employee_id AND e.institution_id = t.institution_id
@@ -67,7 +67,7 @@ def list_timesheets(conn, status: Optional[str] = None, user: dict = Depends(get
         q += f" AND e.employee_id IN {frag}"; params.extend(fp)
     elif user["role"] == "employee":
         q += " AND t.employee_id=?"; params.append(user.get("employee_id", ""))
-    q += " GROUP BY t.id, e.full_name, e.department, e.designation ORDER BY t.period_start DESC"
+    q += " GROUP BY t.id, e.full_name, e.preferred_name, e.department, e.designation ORDER BY t.period_start DESC"
     rows = conn.execute(q, params).fetchall()
     result = [dict(r) for r in rows]
     if user["role"] != "employee":

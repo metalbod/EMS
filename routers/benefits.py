@@ -543,7 +543,7 @@ async def list_life_events(
         require_permission(conn, current_user, "benefits.decide_life_events_auto_enroll_view_compliance_report")
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         query = """
-            SELECT le.*, e.full_name AS employee_name
+            SELECT le.*, e.full_name AS employee_name, e.preferred_name AS employee_preferred_name
             FROM benefit_life_events le
             JOIN employees e ON le.employee_id = e.employee_id AND le.institution_id = e.institution_id
             WHERE le.institution_id = ?
@@ -1277,7 +1277,7 @@ async def list_claims(
     try:
         inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
         query = """
-            SELECT c.*, e.full_name AS employee_name, bp.plan_name, bp.plan_category
+            SELECT c.*, e.full_name AS employee_name, e.preferred_name AS employee_preferred_name, bp.plan_name, bp.plan_category
             FROM benefit_claims c
             JOIN employees e ON c.employee_id = e.employee_id AND c.institution_id = e.institution_id
             JOIN benefit_plans bp ON c.benefit_plan_id = bp.id

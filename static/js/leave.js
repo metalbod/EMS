@@ -105,7 +105,7 @@ async function openLeaveApplyModal() {
   if(isLeaveManager()||currentUser?.role==='manager'){
     empWrap.classList.remove('hidden');
     const sel=document.getElementById('leaveApplyEmpId');
-    sel.innerHTML=employees.filter(e=>e.status==='Active').map(e=>`<option value="${e.employee_id}">${e.employee_id} — ${esc(e.full_name)}</option>`).join('');
+    sel.innerHTML=employees.filter(e=>e.status==='Active').map(e=>`<option value="${e.employee_id}">${e.employee_id} — ${esc(displayName(e.full_name,e.preferred_name))}</option>`).join('');
     if(currentUser?.employee_id) sel.value=currentUser.employee_id;
   } else {
     empWrap.classList.add('hidden');
@@ -270,7 +270,7 @@ async function loadLeaveApprovals() {
       <div class="flex items-start justify-between gap-3">
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2 mb-0.5 flex-wrap">
-            <p class="font-medium text-slate-800">${esc(a.employee_name)}</p>
+            <p class="font-medium text-slate-800">${esc(displayName(a.employee_name, a.employee_preferred_name))}</p>
             <span class="badge ${statusColor(LEAVE_STATUS_COLORS, a.status)} text-xs">${a.status}</span>
           </div>
           <p class="text-xs text-slate-500">${esc(a.leave_type_name)} · ${fmtDate(a.start_date)} → ${fmtDate(a.end_date)} · ${a.days_count} day(s)</p>
