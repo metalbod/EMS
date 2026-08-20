@@ -347,6 +347,7 @@ def list_ob_checklists(conn, type: Optional[str] = None, status: Optional[str] =
     inst_id = need_inst(user)
     q = """
         SELECT c.*, e.full_name AS employee_name, e.preferred_name AS employee_preferred_name, e.department, e.designation,
+               e.start_date, e.probation_end_date, e.phone, e.work_email,
                COUNT(i.id) AS total_items,
                SUM(CASE WHEN i.status='Done' THEN 1 ELSE 0 END) AS done_items,
                SUM(CASE WHEN i.status='Pending' AND i.assigned_role=? THEN 1 ELSE 0 END) AS my_pending
@@ -363,7 +364,7 @@ def list_ob_checklists(conn, type: Optional[str] = None, status: Optional[str] =
         q += f" AND e.employee_id IN {frag}"; p.extend(fp)
     elif user["role"] == "employee":
         q += " AND c.employee_id=?"; p.append(user.get("employee_id",""))
-    q += " GROUP BY c.id, e.full_name, e.preferred_name, e.department, e.designation ORDER BY c.created_at DESC"
+    q += " GROUP BY c.id, e.full_name, e.preferred_name, e.department, e.designation, e.start_date, e.probation_end_date, e.phone, e.work_email ORDER BY c.created_at DESC"
     rows = conn.execute(q, p).fetchall()
     return [dict(r) for r in rows]
 

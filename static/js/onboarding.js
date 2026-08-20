@@ -8,42 +8,74 @@ const OB_ROLE_LABELS={employee:'Employee',manager:'Manager',hr_admin:'HR Admin',
 function obRoleColor(role){ return statusColor(OB_ROLE_COLORS, role); }
 function obRoleLabel(role){ return OB_ROLE_LABELS[role]||rolesCache.find(r=>r.role_key===role)?.display_name||role; }
 
+// Checklists list — one createListState per type (onboarding/offboarding
+// are separate tables with independent sort/page state), sorting and
+// paginating client-side over whatever the current status filter fetched.
+function obProgressValue(c) { return c.total_items ? c.done_items / c.total_items : 0; }
+const obListStates = {
+  onboarding: createListState({ sortKey: 'employee_name', sortValue: (c,key)=> key==='progress' ? obProgressValue(c) : c[key] }),
+  offboarding: createListState({ sortKey: 'employee_name', sortValue: (c,key)=> key==='progress' ? obProgressValue(c) : c[key] }),
+};
+let obRowsCache = { onboarding: [], offboarding: [] };
+
+function setObSort(type, key) { obListStates[type].setSort(key); renderObTable(type); }
+function setObPageSize(type, size) { obListStates[type].setPageSize(size); renderObTable(type); }
+function obPagePrev(type) { obListStates[type].prevPage(); renderObTable(type); }
+function obPageNext(type) { obListStates[type].nextPage(obRowsCache[type].length); renderObTable(type); }
+
 async function loadObChecklists(type, statusFilter) {
   obCurrentType=type;
-  const listEl=document.getElementById(`${type}List`);
+  const tbody=document.getElementById(`${type}TableBody`);
   const emptyEl=document.getElementById(`${type}Empty`);
-  listEl.innerHTML='<p class="text-slate-400 text-sm text-center py-8">Loading…</p>';
+  const pagination=document.getElementById(`${type}Pagination`);
+  tbody.innerHTML=`<tr><td colspan="9" class="text-center text-slate-400 text-sm py-8">Loading…</td></tr>`;
   let url=`/api/ob/checklists?type=${type}`;
   if(statusFilter&&statusFilter!=='all') url+=`&status=${encodeURIComponent(statusFilter)}`;
   const res=await api(url);
-  if(!res||!res.ok){listEl.innerHTML='';return;}
-  const rows=await res.json();
-  if(!rows.length){listEl.innerHTML='';emptyEl?.classList.remove('hidden');return;}
+  if(!res||!res.ok){tbody.innerHTML='';pagination?.classList.add('hidden');return;}
+  obRowsCache[type]=await res.json();
+  obListStates[type].resetPage();
+  renderObTable(type);
+}
+
+function renderObTable(type) {
+  const tbody=document.getElementById(`${type}TableBody`);
+  const emptyEl=document.getElementById(`${type}Empty`);
+  const pagination=document.getElementById(`${type}Pagination`);
+  const rows=obRowsCache[type];
+  obListStates[type].updateSortArrows(`#${type}List .ob-sort-arrow`);
+  if(!rows.length){tbody.innerHTML='';emptyEl?.classList.remove('hidden');pagination?.classList.add('hidden');return;}
   emptyEl?.classList.add('hidden');
+  pagination?.classList.remove('hidden');
+  document.getElementById(`${type}PageSize`).value=String(obListStates[type].pageSize);
   const canManage=['superadmin','hr_manager','hr_admin'].includes(currentUser?.role);
-  listEl.innerHTML=rows.map(c=>{
+  const { pageItems, start, total } = obListStates[type].view(rows);
+  document.getElementById(`${type}PageInfo`).textContent =
+    `${start + 1}-${Math.min(start + obListStates[type].pageSize, total)} of ${total}`;
+  tbody.innerHTML=pageItems.map(c=>{
     const pct=c.total_items?Math.round((c.done_items/c.total_items)*100):0;
     const myPending=c.my_pending>0;
-    return `<div class="bg-white border border-slate-200 rounded-xl p-4 cursor-pointer hover:shadow-sm transition" onclick="openObDetail(${c.id})">
-      <div class="flex items-start justify-between gap-3">
-        <div class="flex-1 min-w-0">
-          <div class="flex items-center gap-2 mb-0.5">
-            <p class="font-medium text-slate-800">${esc(displayName(c.employee_name, c.employee_preferred_name))}</p>
-            ${myPending?`<span class="badge bg-orange-100 text-orange-700 text-xs">Action Required</span>`:''}
-          </div>
-          <p class="text-xs text-slate-500">${esc(c.department||'')}${c.designation?' · '+esc(c.designation):''}</p>
+    return `<tr class="hover:bg-slate-50 cursor-pointer" onclick="openObDetail(${c.id})">
+      <td class="px-4 py-3">
+        <div class="flex items-center gap-2">
+          <span class="font-medium text-slate-800">${esc(displayName(c.employee_name, c.employee_preferred_name))}</span>
+          ${myPending?`<span class="badge bg-orange-100 text-orange-700 text-xs flex-shrink-0">Action Required</span>`:''}
         </div>
-        <div class="flex items-center gap-2 flex-shrink-0">
-          <span class="badge ${c.status==='Completed'?'bg-green-100 text-green-700':'bg-blue-100 text-blue-700'}">${c.status}</span>
-          ${canManage?`<button onclick="event.stopPropagation();deleteObChecklist(${c.id},'${type}')" class="text-slate-300 hover:text-red-500 text-xs" title="Delete"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>`:''}
+      </td>
+      <td class="px-4 py-3 hidden md:table-cell text-slate-600">${fmtDate(c.start_date)}</td>
+      <td class="px-4 py-3 hidden md:table-cell text-slate-600">${fmtDate(c.probation_end_date)}</td>
+      <td class="px-4 py-3 hidden lg:table-cell text-slate-600">${esc(c.phone||'—')}</td>
+      <td class="px-4 py-3 hidden lg:table-cell text-slate-600">${esc(c.work_email||'—')}</td>
+      <td class="px-4 py-3 hidden md:table-cell text-slate-600">${esc(c.employee_id)}</td>
+      <td class="px-4 py-3">
+        <div class="flex items-center gap-2">
+          <div class="w-16 bg-slate-100 rounded-full h-1.5"><div class="bg-blue-500 h-1.5 rounded-full" style="width:${pct}%"></div></div>
+          <span class="text-xs text-slate-500 flex-shrink-0">${c.done_items}/${c.total_items}</span>
         </div>
-      </div>
-      <div class="mt-3 flex items-center gap-3">
-        <div class="flex-1 bg-slate-100 rounded-full h-1.5"><div class="bg-blue-500 h-1.5 rounded-full" style="width:${pct}%"></div></div>
-        <span class="text-xs text-slate-500">${c.done_items}/${c.total_items} done</span>
-      </div>
-      <p class="text-xs text-slate-400 mt-1">Started ${fmtDate(c.created_at)} by ${esc(c.triggered_by)}</p>
-    </div>`;
+      </td>
+      <td class="px-4 py-3"><span class="badge ${c.status==='Completed'?'bg-green-100 text-green-700':'bg-blue-100 text-blue-700'}">${c.status}</span></td>
+      <td class="px-4 py-3 text-right">${canManage?`<button onclick="event.stopPropagation();deleteObChecklist(${c.id},'${type}')" class="text-slate-300 hover:text-red-500 text-xs" title="Delete"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>`:''}</td>
+    </tr>`;
   }).join('');
 }
 
