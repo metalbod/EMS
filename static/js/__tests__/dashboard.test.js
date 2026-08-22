@@ -157,6 +157,18 @@ describe('Leave Calendar — merging leave entries and onboarding action items p
     return { shown: dayItems.slice(0, 3), rest: dayItems.slice(3) };
   }
 
+  function displayName(fullName, preferredName) {
+    const full = (fullName || '').trim();
+    const pref = (preferredName || '').trim();
+    return pref || full;
+  }
+
+  function chipInner(item) {
+    return item.kind === 'leave'
+      ? displayName(item.e.full_name, item.e.preferred_name)
+      : `📌 ${item.o.title} — ${displayName(item.o.employee_name, item.o.employee_preferred_name)}`;
+  }
+
   it('places a leave entry and an action item due the same day into the same bucket', () => {
     const { byDay, obByDay } = bucketByDay(
       [{ start_date: '2026-08-10', end_date: '2026-08-10', full_name: 'Jane Tan' }],
@@ -201,5 +213,25 @@ describe('Leave Calendar — merging leave entries and onboarding action items p
     const { shown, rest } = dayView(byDay, obByDay, 15);
     expect(shown).toHaveLength(3);
     expect(rest).toHaveLength(2);
+  });
+
+  it('shows the employee name after the item title, so HR knows who the action item is for', () => {
+    const { obByDay } = bucketByDay(
+      [],
+      [{ title: 'Submit IC Copy', due_date: '2026-08-25 09:00:00', employee_name: 'Richie Teoh', employee_preferred_name: null }],
+      2026, 8
+    );
+    const { shown } = dayView({}, obByDay, 25);
+    expect(chipInner(shown[0])).toBe('📌 Submit IC Copy — Richie Teoh');
+  });
+
+  it('prefers the employee preferred name over full name in the chip, like the leave chip does', () => {
+    const { obByDay } = bucketByDay(
+      [],
+      [{ title: 'Submit IC Copy', due_date: '2026-08-25 09:00:00', employee_name: 'Richard Teoh', employee_preferred_name: 'Richie' }],
+      2026, 8
+    );
+    const { shown } = dayView({}, obByDay, 25);
+    expect(chipInner(shown[0])).toBe('📌 Submit IC Copy — Richie');
   });
 });

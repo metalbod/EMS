@@ -540,10 +540,10 @@ function renderLeaveCalendarGrid(entries, holidays, obItems) {
       </div>`).join('');
     const chipInner = item => item.kind === 'leave'
       ? `${esc(displayName(item.e.full_name,item.e.preferred_name))}${item.e.leave_type_name ? ` (${esc(item.e.leave_type_name)})` : ''}`
-      : `📌 ${esc(item.o.title)}`;
+      : `📌 ${esc(item.o.title)} — ${esc(displayName(item.o.employee_name,item.o.employee_preferred_name))}`;
     const chipTitle = item => item.kind === 'leave'
       ? `${esc(displayName(item.e.full_name,item.e.preferred_name))}${item.e.leave_type_name ? ' — ' + esc(item.e.leave_type_name) : ''}`
-      : esc(item.o.title);
+      : `${esc(item.o.title)} — ${esc(displayName(item.o.employee_name,item.o.employee_preferred_name))}`;
     const chips = shown.map(item => `
       <div class="text-xs ${item.kind==='leave'?'bg-amber-50 text-amber-700':'bg-indigo-50 text-indigo-700'} rounded px-1 py-0.5 truncate" title="${chipTitle(item)}">
         ${chipInner(item)}
