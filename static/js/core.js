@@ -412,7 +412,7 @@ function applyRoleUI() {
   document.getElementById('nav-audit').classList.toggle('hidden', !canAudit);
   document.getElementById('nav-users').classList.toggle('hidden', !canUsers);
   document.getElementById('addEmpBtn').classList.toggle('hidden', !canManage);
-  document.getElementById('nav-recruit-group').classList.toggle('hidden', hideEmp);
+  document.getElementById('nav-recruit-group').classList.toggle('hidden', hideEmp || role === 'employee');
   document.getElementById('nav-ld-group')?.classList.toggle('hidden', hideEmp);
   document.getElementById('nav-leave-group')?.classList.toggle('hidden', hideEmp);
   document.getElementById('nav-leave-approvals')?.classList.toggle('hidden', !['superadmin','hr_manager','hr_admin','manager'].includes(role));
