@@ -160,7 +160,8 @@
           </div>
         </div>
       </div>
-      <!-- Workforce (Onboarding/Offboarding — HR Manager / HR Admin only) -->
+      <!-- Workforce (Onboarding/Offboarding — HR Manager / HR Admin only;
+           Resignation Approvals — also Manager, for their own reports) -->
       <div id="nav-workforce-group" class="hidden">
         <button class="nav-rail-btn" onclick="toggleNavGroup('workforce')" title="Workforce">
           <svg class="nav-icon-chip nav-icon-workforce" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2v-5a2 2 0 00-2-2H5a2 2 0 00-2 2v5a2 2 0 002 2z"/></svg>
@@ -168,22 +169,19 @@
           <svg class="nav-rail-chevron w-3 h-3 ml-auto flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
         </button>
         <div id="submenu-workforce" class="nav-submenu hidden space-y-0.5">
-          <div class="nav-sub-item" onclick="showPage('onboarding');closeBurgerMenu();" data-page="onboarding">
+          <div id="nav-onboarding" class="hidden nav-sub-item" onclick="showPage('onboarding');closeBurgerMenu();" data-page="onboarding">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/></svg>
             Onboarding
           </div>
-          <div class="nav-sub-item" onclick="showPage('offboarding');closeBurgerMenu();" data-page="offboarding">
+          <div id="nav-offboarding" class="hidden nav-sub-item" onclick="showPage('offboarding');closeBurgerMenu();" data-page="offboarding">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
             Offboarding
           </div>
+          <div id="nav-resignation-approvals" class="hidden nav-sub-item" onclick="showPage('resignation-approvals');closeBurgerMenu();" data-page="resignation-approvals">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+            Resignation
+          </div>
         </div>
-      </div>
-      <!-- Resignation Approvals (Manager for direct reports, HR institution-wide) -->
-      <div id="nav-resignation-wrap" class="hidden">
-        <button class="nav-rail-btn" onclick="showPage('resignation-approvals');closeBurgerMenu();" data-page="resignation-approvals" title="Resignation Approvals">
-          <svg class="nav-icon-chip nav-icon-leave" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
-          <span class="nav-rail-label">Resignation</span>
-        </button>
       </div>
       <!-- Recruitment -->
       <div id="nav-recruit-group" class="hidden">

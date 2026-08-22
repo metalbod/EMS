@@ -397,8 +397,17 @@ function applyRoleUI() {
   document.getElementById('nav-institutions-wrap').classList.toggle('hidden', !isSA);
   document.getElementById('nav-sysnotif-wrap')?.classList.toggle('hidden', !isSA);
   document.getElementById('nav-emp-group').classList.toggle('hidden', hideEmp);
-  document.getElementById('nav-workforce-group')?.classList.toggle('hidden', !['hr_manager','hr_admin'].includes(role));
-  document.getElementById('nav-resignation-wrap')?.classList.toggle('hidden', !['superadmin','hr_manager','hr_admin','manager'].includes(role));
+  // Workforce's own rail button is visible to anyone who can see at least
+  // one of its three sub-items (HR sees all three; a plain manager sees
+  // only Resignation, for their own reports' requests) — each sub-item
+  // then has its own narrower toggle below, same nested pattern as Leave's
+  // "Approvals" sub-item.
+  const canWorkforceOb = ['hr_manager','hr_admin'].includes(role);
+  const canWorkforceResign = ['superadmin','hr_manager','hr_admin','manager'].includes(role);
+  document.getElementById('nav-workforce-group')?.classList.toggle('hidden', !canWorkforceOb && !canWorkforceResign);
+  document.getElementById('nav-onboarding')?.classList.toggle('hidden', !canWorkforceOb);
+  document.getElementById('nav-offboarding')?.classList.toggle('hidden', !canWorkforceOb);
+  document.getElementById('nav-resignation-approvals')?.classList.toggle('hidden', !canWorkforceResign);
   document.getElementById('nav-dashboard-wrap').classList.toggle('hidden', hideEmp);
   document.getElementById('nav-audit').classList.toggle('hidden', !canAudit);
   document.getElementById('nav-users').classList.toggle('hidden', !canUsers);
