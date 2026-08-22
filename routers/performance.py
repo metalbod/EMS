@@ -25,6 +25,8 @@ from core.roles import PAYROLL_VIEW_ROLES
 
 from core.audit import write_audit
 
+from core.compensation_helpers import add_hr_note
+
 from db import get_db
 
 from core.db_session import db_session
@@ -557,6 +559,12 @@ def apply_merit_increment(conn, appraisal_id: int, body: MeritIncrementIn, user:
     """, (inst_id, appraisal_id, ap["employee_id"], "MeritIncrement", delta, body.increment_pct, "Applied", user["username"]))
     write_audit(conn, user, inst_id, ap["employee_id"], emp["full_name"], "Merit Increment Applied",
                 [f"Basic Salary: {old_salary:.2f} -> {new_salary:.2f} ({body.increment_pct}% via appraisal #{appraisal_id})"])
+    add_hr_note(
+        conn, inst_id, ap["employee_id"],
+        f"Merit increment applied ({body.increment_pct:g}% increase, "
+        f"RM {old_salary:,.2f} → RM {new_salary:,.2f}) via appraisal #{appraisal_id}, by {user['username']}.",
+        user["username"],
+    )
     _log_appraisal(conn, inst_id, appraisal_id, ap["employee_id"], "Merit Increment Applied",
                     f"{body.increment_pct}% (+{delta:.2f}), new basic salary {new_salary:.2f}", user)
     conn.commit()

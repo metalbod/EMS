@@ -557,6 +557,13 @@ def test_full_merit_and_bonus_flow(client, hr_manager_auth, employee_with_user, 
     new_salary = emp_check.json()["basic_salary"]
     assert new_salary == round(old_salary + old_salary * 0.10, 2)
 
+    # A merit increment applied from an appraisal used to only reach the
+    # Audit Log and the appraisal's own history — unlike the equivalent
+    # Compensation -> Merit Cycle approval path, it never mirrored into HR
+    # Notes (see add_hr_note in routers/performance.py's apply_merit_increment).
+    notes = client.get(f"/api/employees/{emp['employee_id']}/notes", headers=hr_manager_auth).json()
+    assert any("Merit increment applied" in n["body"] for n in notes)
+
     bonus = client.post(f"/api/performance/appraisals/{appraisal['id']}/bonus",
                          headers=hr_manager_auth, json={"amount": 300})
     assert bonus.status_code == 201, bonus.text

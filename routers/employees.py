@@ -450,6 +450,7 @@ def _update_bulk_employee(conn, inst_id, employee_id: str, emp: EmployeeIn, user
     ).fetchone()
     changes = diff_employee(old, dict(new_row))
     write_audit(conn, user, inst_id, employee_id, emp.full_name, "UPDATE", changes, ip)
+    write_employee_change_note(conn, inst_id, employee_id, user, changes)
     return employee_id
 
 

@@ -16,7 +16,13 @@ from typing import Any, Dict, Optional
 
 from core.approval_workflow import start_workflow
 
+from core.audit import write_audit
+
 from routers.onboarding import _create_ob_checklist
+
+from routers.employees import write_employee_change_note
+
+_SYSTEM_ACTOR = {"id": None, "username": "system", "role": "system"}
 
 
 def file_resignation(conn, inst_id: int, emp, reason: str, effective_date: str, last_working_day: str,
@@ -47,17 +53,20 @@ def file_resignation(conn, inst_id: int, emp, reason: str, effective_date: str, 
     if auto_approved:
         _finalize_resignation(conn, inst_id, conn.execute(
             "SELECT * FROM resignation_requests WHERE id=?", (request_id,)
-        ).fetchone(), "approved", "system")
+        ).fetchone(), "approved", _SYSTEM_ACTOR)
     return request_id
 
 
-def _finalize_resignation(conn, inst_id: int, request_row, outcome: str, decided_by: str) -> None:
+def _finalize_resignation(conn, inst_id: int, request_row, outcome: str, actor: Dict[str, Any]) -> None:
     """Applies the terminal outcome ('approved'/'rejected') to a single
     resignation request: on approval, stamps the employee's resign_date/
-    last_working_day and auto-starts an Offboarding checklist (default
-    template) — recorded on ob_checklist_id so this never double-triggers.
-    On rejection, just updates status; employee record untouched. Caller
-    commits (matches core/overtime.py's _finalize_overtime shape)."""
+    last_working_day (logged to the Audit Log and the employee's HR Notes,
+    same as every other path that touches those fields — see
+    routers/employees.py's write_employee_change_note) and auto-starts an
+    Offboarding checklist (default template) — recorded on ob_checklist_id
+    so this never double-triggers. On rejection, just updates status;
+    employee record untouched. Caller commits (matches
+    core/overtime.py's _finalize_overtime shape)."""
     final_status = "Approved" if outcome == "approved" else "Rejected"
     decided_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
     ob_checklist_id = None
@@ -67,10 +76,19 @@ def _finalize_resignation(conn, inst_id: int, request_row, outcome: str, decided
             "SELECT * FROM employees WHERE employee_id=? AND institution_id=?",
             (request_row["employee_id"], inst_id)
         ).fetchone()
+        old_resign_date = emp["resign_date"] if emp else None
+        old_last_working_day = emp["last_working_day"] if emp else None
         conn.execute(
             "UPDATE employees SET resign_date=?,last_working_day=? WHERE employee_id=? AND institution_id=?",
             (request_row["effective_date"], request_row["last_working_day"], request_row["employee_id"], inst_id)
         )
+        changes = [
+            {"field": "resign_date", "label": "Resign Date", "old": old_resign_date or "", "new": request_row["effective_date"] or ""},
+            {"field": "last_working_day", "label": "Last Working Day", "old": old_last_working_day or "", "new": request_row["last_working_day"] or ""},
+        ]
+        write_audit(conn, actor, inst_id, request_row["employee_id"], emp["full_name"] if emp else request_row["employee_id"],
+                    "Resignation Approved", changes)
+        write_employee_change_note(conn, inst_id, request_row["employee_id"], actor, changes)
         existing_ob = conn.execute(
             "SELECT id FROM ob_checklists WHERE employee_id=? AND institution_id=? AND type='offboarding' AND status='In Progress'",
             (request_row["employee_id"], inst_id)
@@ -81,18 +99,18 @@ def _finalize_resignation(conn, inst_id: int, request_row, outcome: str, decided
             ob_checklist_id = _create_ob_checklist(
                 conn, inst_id, emp, "offboarding", None,
                 f"Auto-started from resignation request #{request_row['id']}", "system",
-                {"username": "system", "role": "system"}
+                _SYSTEM_ACTOR
             )
 
     conn.execute(
         "UPDATE resignation_requests SET status=?,approval_step=NULL,decided_by=?,decided_at=?,ob_checklist_id=? WHERE id=?",
-        (final_status, decided_by, decided_at, ob_checklist_id, request_row["id"])
+        (final_status, actor["username"], decided_at, ob_checklist_id, request_row["id"])
     )
     conn.commit()
 
 
-def apply_resignation_outcome(conn, inst_id: int, request_row, outcome: str, decided_by: str) -> None:
+def apply_resignation_outcome(conn, inst_id: int, request_row, outcome: str, actor: Dict[str, Any]) -> None:
     """Public entry point for routers/resignation.py's decide endpoint —
     thin wrapper so the 'advanced' (multi-step, not yet final) case is
     handled by the caller and only terminal outcomes reach here."""
-    _finalize_resignation(conn, inst_id, request_row, outcome, decided_by)
+    _finalize_resignation(conn, inst_id, request_row, outcome, actor)

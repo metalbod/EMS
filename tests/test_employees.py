@@ -285,6 +285,16 @@ def test_bulk_upload_updates_existing_employee(client, hr_manager_auth, make_tes
     assert updated["designation"] == "Senior Sales Rep"
     assert float(updated["basic_salary"]) == 4500
 
+    # A bulk-upload update to an *existing* employee used to skip the HR
+    # Notes mirror that every other update path writes (see
+    # write_employee_change_note in routers/employees.py) — only the Audit
+    # Log saw it, so the change was invisible on the employee's own HR
+    # Notes tab. Confirm both now record it.
+    notes = client.get(f"/api/employees/{emp['employee_id']}/notes", headers=hr_manager_auth).json()
+    assert any("Designation" in n["body"] and "Senior Sales Rep" in n["body"] for n in notes)
+    audit = client.get(f"/api/audit-logs?employee_id={emp['employee_id']}&action=UPDATE", headers=hr_manager_auth).json()
+    assert any(c["field"] == "designation" for a in audit for c in a["changes"])
+
 
 def test_bulk_upload_reports_row_errors_without_failing_whole_request(client, hr_manager_auth):
     header = "employee_id,full_name,ic_number,passport_number,nationality,race,religion,gender,date_of_birth,marital_status,personal_email,phone,address,department,designation,employment_type,start_date,probation_end_date,contract_end_date,work_email,epf_number,socso_number,income_tax_number,bank_name,bank_account,basic_salary,num_children,salary_type,hourly_rate,reports_to"

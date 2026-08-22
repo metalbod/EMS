@@ -157,7 +157,7 @@ def update_resignation_status(conn, request_id: int, body: ResignationDecisionIn
 
         if body.notes:
             conn.execute("UPDATE resignation_requests SET notes=? WHERE id=?", (body.notes, request_id))
-        apply_resignation_outcome(conn, inst_id, request_row, outcome, user["username"])
+        apply_resignation_outcome(conn, inst_id, request_row, outcome, user)
     elif body.status == "Withdrawn":
         if user["role"] == "employee" and user.get("employee_id") != request_row["employee_id"]:
             raise HTTPException(403, "Access denied")

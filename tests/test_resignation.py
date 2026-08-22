@@ -100,6 +100,17 @@ def test_full_approval_stamps_employee_and_creates_offboarding_checklist(client,
     assert emp_row["last_working_day"] == "2027-07-31"
     assert emp_row["status"] == "Active"  # never auto-deactivated — HR does that manually
 
+    # Approval used to leave no trace at all on the employee side (only the
+    # resignation_requests row + the auto-created checklist) — confirm it
+    # now shows up in both the Audit Log and HR Notes, same as every other
+    # path that touches resign_date/last_working_day.
+    notes = client.get(f"/api/employees/{emp['employee_id']}/notes", headers=hr_manager_auth).json()
+    assert any("Resign Date" in n["body"] and "Last Working Day" in n["body"] for n in notes)
+    audit = client.get("/api/audit-logs", headers=hr_manager_auth,
+                        params={"employee_id": emp["employee_id"], "action": "Resignation Approved"}).json()
+    assert len(audit) == 1
+    assert {c["field"] for c in audit[0]["changes"]} == {"resign_date", "last_working_day"}
+
     checklist = client.get(f"/api/ob/checklists/{ob_checklist_id}", headers=hr_manager_auth).json()
     assert checklist["type"] == "offboarding"
     assert checklist["employee_id"] == emp["employee_id"]
