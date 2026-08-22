@@ -142,6 +142,23 @@ def test_update_template_not_found_returns_404(client, hr_manager_auth):
     assert res.status_code == 404
 
 
+def test_create_template_with_due_date_rule(client, hr_manager_auth):
+    title = _unique_title()
+    res = client.post("/api/ob/templates", headers=hr_manager_auth, json={
+        "title": title, "type": "onboarding", "assigned_role": "hr_admin",
+        "due_date_rule": "1_month_from_start",
+    })
+    assert res.status_code == 201, res.text
+    assert res.json()["due_date_rule"] == "1_month_from_start"
+
+
+def test_create_template_invalid_due_date_rule_returns_422(client, hr_manager_auth):
+    res = client.post("/api/ob/templates", headers=hr_manager_auth, json={
+        "title": _unique_title(), "type": "onboarding", "due_date_rule": "not_a_real_rule",
+    })
+    assert res.status_code == 422
+
+
 def test_delete_template_soft_deletes(client, hr_manager_auth):
     title = _unique_title()
     created = client.post("/api/ob/templates", headers=hr_manager_auth,
@@ -189,6 +206,53 @@ def test_start_checklist_success_snapshots_active_templates(client, hr_manager_a
     assert detail.status_code == 200
     items = detail.json()["items"]
     assert any(i["title"] == title for i in items)
+
+
+def test_start_checklist_computes_due_date_from_month_rule(client, hr_manager_auth, make_test_employee, make_test_ob_checklist):
+    """A '1_month_from_start' template item resolves to a concrete due_date
+    on the snapshotted checklist item, computed from the checklist's own
+    start (today) — not asserting the exact date (that's
+    routers/onboarding.py's _add_months, already exercised precisely by
+    the anniversary test below), just that it landed in the right
+    ballpark, to avoid duplicating month-arithmetic in the test itself."""
+    from datetime import date
+
+    title = _unique_title()
+    client.post("/api/ob/templates", headers=hr_manager_auth, json={
+        "title": title, "type": "onboarding", "assigned_role": "hr_admin",
+        "due_date_rule": "1_month_from_start",
+    })
+    emp = make_test_employee()
+    checklist = make_test_ob_checklist(employee_id=emp["employee_id"])
+    detail = client.get(f"/api/ob/checklists/{checklist['id']}", headers=hr_manager_auth)
+    item = next(i for i in detail.json()["items"] if i["title"] == title)
+    assert item["due_date"] is not None
+    due = date.fromisoformat(item["due_date"][:10])
+    days_out = (due - date.today()).days
+    assert 25 <= days_out <= 35, f"expected ~1 month out, got {days_out} days ({item['due_date']})"
+
+
+def test_start_checklist_computes_due_date_from_joining_anniversary(client, hr_manager_auth, make_test_employee, make_test_ob_checklist):
+    """'joining_anniversary' resolves to the next occurrence of the
+    employee's start_date month/day on or after the checklist's start
+    (today) — asserted exactly here since the employee's start_date is
+    fully controlled (unlike "today", which is whatever date the suite
+    happens to run on)."""
+    from datetime import date
+
+    title = _unique_title()
+    client.post("/api/ob/templates", headers=hr_manager_auth, json={
+        "title": title, "type": "onboarding", "assigned_role": "hr_admin",
+        "due_date_rule": "joining_anniversary",
+    })
+    emp = make_test_employee(start_date="2026-01-01")
+    checklist = make_test_ob_checklist(employee_id=emp["employee_id"])
+    detail = client.get(f"/api/ob/checklists/{checklist['id']}", headers=hr_manager_auth)
+    item = next(i for i in detail.json()["items"] if i["title"] == title)
+    today = date.today()
+    this_years_anniversary = date(today.year, 1, 1)
+    expected = this_years_anniversary if this_years_anniversary >= today else date(today.year + 1, 1, 1)
+    assert item["due_date"][:10] == expected.isoformat()
 
 
 def test_legacy_default_templates_survive_first_custom_template_add(client, superadmin_headers):
@@ -353,6 +417,47 @@ def test_edit_item_success(client, hr_manager_auth, make_test_employee, make_tes
     assert updated_item["assigned_role"] == "manager"
 
 
+def test_add_item_with_due_date(client, hr_manager_auth, make_test_employee, make_test_ob_checklist):
+    """The ad-hoc "Add Action Item to the Employee" form (no template
+    involved) accepts a due_date directly — normalized from the raw
+    <input type="datetime-local"> value ('...T...', no seconds) to the
+    storage format ('... ...:00')."""
+    emp = make_test_employee()
+    checklist = make_test_ob_checklist(employee_id=emp["employee_id"])
+    res = client.post(f"/api/ob/checklists/{checklist['id']}/items", headers=hr_manager_auth, json={
+        "title": _unique_title(), "assigned_role": "hr_admin", "due_date": "2026-09-15T09:00",
+    })
+    assert res.status_code == 201, res.text
+    assert res.json()["due_date"] == "2026-09-15 09:00:00"
+
+
+def test_edit_item_can_set_and_clear_due_date(client, hr_manager_auth, make_test_employee, make_test_ob_checklist):
+    """Covers a template-sourced OR ad-hoc item being given a due date
+    later via Edit (not just at creation) — and clearing it back out."""
+    emp = make_test_employee()
+    checklist = make_test_ob_checklist(employee_id=emp["employee_id"])
+    add = client.post(f"/api/ob/checklists/{checklist['id']}/items", headers=hr_manager_auth,
+                       json={"title": _unique_title(), "assigned_role": "hr_admin"})
+    item = add.json()
+    assert item["due_date"] is None
+
+    res = client.put(f"/api/ob/checklists/{checklist['id']}/items/{item['id']}", headers=hr_manager_auth, json={
+        "title": item["title"], "assigned_role": "hr_admin", "due_date": "2026-10-01T14:30",
+    })
+    assert res.status_code == 200, res.text
+    detail = client.get(f"/api/ob/checklists/{checklist['id']}", headers=hr_manager_auth).json()
+    updated = next(i for i in detail["items"] if i["id"] == item["id"])
+    assert updated["due_date"] == "2026-10-01 14:30:00"
+
+    res2 = client.put(f"/api/ob/checklists/{checklist['id']}/items/{item['id']}", headers=hr_manager_auth, json={
+        "title": item["title"], "assigned_role": "hr_admin", "due_date": None,
+    })
+    assert res2.status_code == 200, res2.text
+    detail2 = client.get(f"/api/ob/checklists/{checklist['id']}", headers=hr_manager_auth).json()
+    cleared = next(i for i in detail2["items"] if i["id"] == item["id"])
+    assert cleared["due_date"] is None
+
+
 def test_add_item_invalid_role_returns_400(client, hr_manager_auth, make_test_employee, make_test_ob_checklist):
     emp = make_test_employee()
     checklist = make_test_ob_checklist(employee_id=emp["employee_id"])
@@ -464,3 +569,56 @@ def test_get_ob_history_requires_manage_role(client, employee_with_user):
     emp, emp_headers = employee_with_user
     res = client.get(f"/api/employees/{emp['employee_id']}/ob-history", headers=emp_headers)
     assert res.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Calendar — onboarding/offboarding action items with a due_date, surfaced
+# on the Home dashboard's Leave Calendar (static/js/dashboard.js's
+# loadLeaveCalendar/renderLeaveCalendarGrid) for whichever role they're
+# assigned to.
+# ---------------------------------------------------------------------------
+def test_ob_calendar_returns_item_in_its_due_month_only(client, hr_manager_auth, make_test_employee, make_test_ob_checklist):
+    emp = make_test_employee()
+    checklist = make_test_ob_checklist(employee_id=emp["employee_id"])
+    title = _unique_title()
+    added = client.post(f"/api/ob/checklists/{checklist['id']}/items", headers=hr_manager_auth, json={
+        "title": title, "assigned_role": "hr_manager", "due_date": "2026-11-20T10:00",
+    })
+    assert added.status_code == 201, added.text
+
+    cal = client.get("/api/ob/calendar", headers=hr_manager_auth, params={"year": 2026, "month": 11})
+    assert cal.status_code == 200
+    assert any(i["title"] == title for i in cal.json())
+
+    cal_wrong_month = client.get("/api/ob/calendar", headers=hr_manager_auth, params={"year": 2026, "month": 12})
+    assert all(i["title"] != title for i in cal_wrong_month.json())
+
+
+def test_ob_calendar_only_shows_items_assigned_to_viewers_role(
+    client, hr_manager_auth, make_test_employee, make_test_ob_checklist, make_test_user, test_institution
+):
+    emp = make_test_employee()
+    checklist = make_test_ob_checklist(employee_id=emp["employee_id"])
+    title = _unique_title()
+    added = client.post(f"/api/ob/checklists/{checklist['id']}/items", headers=hr_manager_auth, json={
+        "title": title, "assigned_role": "hr_admin", "due_date": "2026-11-05T09:00",
+    })
+    assert added.status_code == 201, added.text
+
+    # hr_manager viewer: item is assigned to hr_admin, not their own role.
+    cal = client.get("/api/ob/calendar", headers=hr_manager_auth, params={"year": 2026, "month": 11})
+    assert all(i["title"] != title for i in cal.json())
+
+    # hr_admin viewer: role matches, sees it institution-wide.
+    admin_token, _ = make_test_user(role="hr_admin")
+    admin_headers = {"Authorization": f"Bearer {admin_token}", "X-Institution-Id": str(test_institution["id"])}
+    cal2 = client.get("/api/ob/calendar", headers=admin_headers, params={"year": 2026, "month": 11})
+    assert any(i["title"] == title for i in cal2.json())
+
+
+def test_ob_calendar_superadmin_gets_empty_list(client, superadmin_headers):
+    """superadmin has no personal employee record and no single role match
+    to broadcast against — mirrors get_todos' own superadmin short-circuit."""
+    res = client.get("/api/ob/calendar", headers=superadmin_headers, params={"year": 2026, "month": 11})
+    assert res.status_code == 200
+    assert res.json() == []

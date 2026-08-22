@@ -768,7 +768,7 @@
                 <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
               </div>
               <div id="leaveCalGrid" class="grid grid-cols-7 gap-1"></div>
-              <p class="text-xs text-slate-400 mt-3">Shows approved leave only.</p>
+              <p class="text-xs text-slate-400 mt-3">Amber = approved leave. Indigo (📌) = onboarding/offboarding action items due that day, assigned to your role.</p>
             </div>
 
             <div id="leaveUtilDashSection" class="hidden mb-6">
@@ -1272,6 +1272,15 @@
                 <option value="">No linked course — manual completion</option>
               </select>
               <p class="text-xs text-slate-400 col-span-2 -mt-1">If linked, this item auto-completes when the employee finishes the course (passes its quiz, or is marked complete if it has no quiz).</p>
+              <select id="obTmplDueRule_onboarding" class="inp col-span-2">
+                <option value="">No due date</option>
+                <option value="1_month_from_start">1 Month from Start of Checklist</option>
+                <option value="2_months_from_start">2 Months from Start of Checklist</option>
+                <option value="3_months_from_start">3 Months from Start of Checklist</option>
+                <option value="joining_anniversary">On Anniversary of Joining Date</option>
+                <option value="birthday_anniversary">On Anniversary of Birth Date</option>
+              </select>
+              <p class="text-xs text-slate-400 col-span-2 -mt-1">When a checklist starts, this is resolved into an actual date for that employee — HR can still adjust it per employee afterwards. If set, the item shows on the assigned role's calendar.</p>
               <button onclick="addObTemplate('onboarding')" class="btn-primary text-sm col-span-2">Add Item</button>
             </div>
           </div>
@@ -1370,6 +1379,15 @@
                 <option value="">No linked course — manual completion</option>
               </select>
               <p class="text-xs text-slate-400 col-span-2 -mt-1">If linked, this item auto-completes when the employee finishes the course (passes its quiz, or is marked complete if it has no quiz).</p>
+              <select id="obTmplDueRule_offboarding" class="inp col-span-2">
+                <option value="">No due date</option>
+                <option value="1_month_from_start">1 Month from Start of Checklist</option>
+                <option value="2_months_from_start">2 Months from Start of Checklist</option>
+                <option value="3_months_from_start">3 Months from Start of Checklist</option>
+                <option value="joining_anniversary">On Anniversary of Joining Date</option>
+                <option value="birthday_anniversary">On Anniversary of Birth Date</option>
+              </select>
+              <p class="text-xs text-slate-400 col-span-2 -mt-1">When a checklist starts, this is resolved into an actual date for that employee — HR can still adjust it per employee afterwards. If set, the item shows on the assigned role's calendar.</p>
               <button onclick="addObTemplate('offboarding')" class="btn-primary text-sm col-span-2">Add Item</button>
             </div>
           </div>
@@ -3141,6 +3159,17 @@
           <option value="">No linked course — manual completion</option>
         </select>
         <p class="text-xs text-slate-400 mt-1">If linked, this item auto-completes when the employee finishes the course. Select "No linked course" to delink.</p>
+      </div>
+      <div><label class="lbl">Due Date Rule</label>
+        <select id="obTmplItemDueRule" class="inp">
+          <option value="">No due date</option>
+          <option value="1_month_from_start">1 Month from Start of Checklist</option>
+          <option value="2_months_from_start">2 Months from Start of Checklist</option>
+          <option value="3_months_from_start">3 Months from Start of Checklist</option>
+          <option value="joining_anniversary">On Anniversary of Joining Date</option>
+          <option value="birthday_anniversary">On Anniversary of Birth Date</option>
+        </select>
+        <p class="text-xs text-slate-400 mt-1">Resolved into an actual date per employee when their checklist starts; HR can still adjust it afterwards.</p>
       </div>
       <div class="flex justify-end gap-2 pt-2">
         <button onclick="closeObTmplItemModal()" class="btn-ghost">Cancel</button>

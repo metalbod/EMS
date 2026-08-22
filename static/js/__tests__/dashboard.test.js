@@ -121,3 +121,85 @@ describe('Workforce tab composition stats', () => {
     expect(race.some(r=>r.label==='Undefined')).toBe(false);
   });
 });
+
+// Matches dashboard.js's renderLeaveCalendarGrid — leave entries and
+// onboarding/offboarding action items (due_date, read literally with no
+// UTC/timezone conversion — see routers/onboarding.py's due_date being a
+// plain HR-entered wall-clock value, not a *_at timestamp) share one
+// combined per-day +N-more cap instead of each type getting its own.
+describe('Leave Calendar — merging leave entries and onboarding action items per day', () => {
+  function bucketByDay(entries, obItems, year, month) {
+    const firstDay = new Date(year, month - 1, 1);
+    const byDay = {};
+    for (const e of entries) {
+      const start = new Date(e.start_date + 'T00:00:00');
+      const end = new Date(e.end_date + 'T00:00:00');
+      for (let d = new Date(Math.max(start, firstDay)); d <= end && d.getMonth() === month - 1; d.setDate(d.getDate() + 1)) {
+        (byDay[d.getDate()] = byDay[d.getDate()] || []).push(e);
+      }
+    }
+    const obByDay = {};
+    for (const o of obItems) {
+      if (!o.due_date) continue;
+      const d = new Date(o.due_date.slice(0, 10) + 'T00:00:00');
+      if (d.getFullYear() === year && d.getMonth() === month - 1) {
+        (obByDay[d.getDate()] = obByDay[d.getDate()] || []).push(o);
+      }
+    }
+    return { byDay, obByDay };
+  }
+
+  function dayView(byDay, obByDay, day) {
+    const dayItems = [
+      ...(byDay[day] || []).map(e => ({ kind: 'leave', e })),
+      ...(obByDay[day] || []).map(o => ({ kind: 'ob', o })),
+    ];
+    return { shown: dayItems.slice(0, 3), rest: dayItems.slice(3) };
+  }
+
+  it('places a leave entry and an action item due the same day into the same bucket', () => {
+    const { byDay, obByDay } = bucketByDay(
+      [{ start_date: '2026-08-10', end_date: '2026-08-10', full_name: 'Jane Tan' }],
+      [{ title: 'Submit IC copy', due_date: '2026-08-10 09:00:00' }],
+      2026, 8
+    );
+    const { shown } = dayView(byDay, obByDay, 10);
+    expect(shown.map(i => i.kind).sort()).toEqual(['leave', 'ob']);
+  });
+
+  it('reads due_date literally as the local date — no UTC/timezone shift applied', () => {
+    // If this were run through parseUTC (appending 'Z'), a late-evening
+    // due_date near midnight could shift onto the wrong day depending on
+    // the browser's timezone offset. due_date is a plain wall-clock value,
+    // so only the 'YYYY-MM-DD' prefix is read, verbatim.
+    const { obByDay } = bucketByDay([], [{ title: 'Late item', due_date: '2026-08-31 23:30:00' }], 2026, 8);
+    expect(obByDay[31]).toHaveLength(1);
+    expect(obByDay[30]).toBeUndefined();
+  });
+
+  it('excludes an action item due in a different month', () => {
+    const { obByDay } = bucketByDay([], [{ title: 'Next month item', due_date: '2026-09-01 09:00:00' }], 2026, 8);
+    expect(obByDay[1]).toBeUndefined();
+  });
+
+  it('ignores an action item with no due_date set', () => {
+    const { obByDay } = bucketByDay([], [{ title: 'No due date', due_date: null }], 2026, 8);
+    expect(Object.keys(obByDay)).toHaveLength(0);
+  });
+
+  it('caps a busy day at 3 shown combined across both types, overflow in "rest"', () => {
+    const leaveEntries = [
+      { start_date: '2026-08-15', end_date: '2026-08-15', full_name: 'A' },
+      { start_date: '2026-08-15', end_date: '2026-08-15', full_name: 'B' },
+    ];
+    const obItems = [
+      { title: 'Item 1', due_date: '2026-08-15 09:00:00' },
+      { title: 'Item 2', due_date: '2026-08-15 10:00:00' },
+      { title: 'Item 3', due_date: '2026-08-15 11:00:00' },
+    ];
+    const { byDay, obByDay } = bucketByDay(leaveEntries, obItems, 2026, 8);
+    const { shown, rest } = dayView(byDay, obByDay, 15);
+    expect(shown).toHaveLength(3);
+    expect(rest).toHaveLength(2);
+  });
+});

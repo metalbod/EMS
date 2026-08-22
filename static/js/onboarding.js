@@ -8,6 +8,18 @@ const OB_ROLE_LABELS={employee:'Employee',manager:'Manager',hr_admin:'HR Admin',
 function obRoleColor(role){ return statusColor(OB_ROLE_COLORS, role); }
 function obRoleLabel(role){ return OB_ROLE_LABELS[role]||rolesCache.find(r=>r.role_key===role)?.display_name||role; }
 
+// Matches routers/onboarding.py's OB_DUE_DATE_RULES — a template item's
+// due date is picked as a RULE (no employee in context yet); it's resolved
+// into an actual per-employee date only once a checklist starts from that
+// template (see _compute_due_date in routers/onboarding.py).
+const OB_DUE_DATE_RULE_LABELS={
+  '1_month_from_start':'1 Month from Start of Checklist',
+  '2_months_from_start':'2 Months from Start of Checklist',
+  '3_months_from_start':'3 Months from Start of Checklist',
+  'joining_anniversary':'On Anniversary of Joining Date',
+  'birthday_anniversary':'On Anniversary of Birth Date',
+};
+
 // Checklists list — one createListState per type (onboarding/offboarding
 // are separate tables with independent sort/page state), sorting and
 // paginating client-side over whatever the current status filter fetched.
@@ -133,6 +145,7 @@ async function openObDetail(clId) {
               ${isLinked?`<span class="badge text-xs bg-green-100 text-green-700" title="Auto-completes via linked L&D course">🎓 Linked course</span>`:''}
             </div>
             ${item.description?`<p class="text-xs text-slate-400 mt-0.5">${esc(item.description)}</p>`:''}
+            ${item.due_date?`<p class="text-xs text-indigo-600 mt-0.5">📅 Due ${fmtDate(item.due_date)}, ${esc(item.due_date.slice(11,16))}</p>`:''}
             ${isLinked&&!isDone&&!isHR?`<p class="text-xs text-blue-600 mt-0.5">Complete this in <a href="#" onclick="closeObDetail();document.querySelector('[data-page=\\'ld-trainings\\']')?.click();return false;" class="underline">My Trainings</a> to auto-complete this item.</p>`:''}
             ${item.completed_by?`<p class="text-xs text-green-600 mt-0.5">✓ ${esc(item.completed_by)} · ${fmtDate(item.completed_at)}</p>`:''}
             ${item.notes?`<p class="text-xs text-slate-500 italic mt-0.5">${esc(item.notes)}</p>`:''}
@@ -144,7 +157,7 @@ async function openObDetail(clId) {
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.485 8.486L20.5 13"/></svg>
               <span id="obitem-attach-badge-${item.id}" class="${item.attachment_count>0?'':'hidden'} absolute -top-1.5 -right-1.5 bg-blue-500 text-white text-[9px] rounded-full min-w-[14px] h-3.5 px-0.5 flex items-center justify-center">${item.attachment_count||''}</span>
             </button>`:''}
-            ${canEdit?`<button onclick="showObItemEdit(${clId},${item.id},'${esc(item.title).replace(/'/g,"\\'")}','${esc(item.description||'').replace(/'/g,"\\'")}','${item.assigned_role}')" class="text-slate-300 hover:text-blue-500" title="Edit"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
+            ${canEdit?`<button onclick="showObItemEdit(${clId},${item.id},'${esc(item.title).replace(/'/g,"\\'")}','${esc(item.description||'').replace(/'/g,"\\'")}','${item.assigned_role}','${item.due_date||''}')" class="text-slate-300 hover:text-blue-500" title="Edit"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
             <button onclick="deleteObItem(${clId},${item.id})" class="text-slate-300 hover:text-red-500" title="Remove"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>`:''}
           </div>
         </div>`;
@@ -154,8 +167,8 @@ async function openObDetail(clId) {
   // Add item form at bottom (HR only)
   if(canEdit&&cl.status==='In Progress'){
     html+=`<div class="border-t border-slate-200 pt-3 mt-2">
-      <p class="text-xs font-medium text-slate-500 mb-2">Add Item</p>
-      <div class="flex gap-2">
+      <p class="text-xs font-medium text-slate-500 mb-2">Add Action Item to the Employee</p>
+      <div class="flex gap-2 flex-wrap">
         <input id="obAddTitle" class="inp flex-1 text-sm" placeholder="Item title…"/>
         <select id="obAddRole" class="inp text-sm" style="width:120px">
           <option value="employee">Employee</option>
@@ -163,6 +176,7 @@ async function openObDetail(clId) {
           <option value="hr_admin" selected>HR Admin</option>
           <option value="hr_manager">HR Manager</option>
         </select>
+        <input id="obAddDueDate" type="datetime-local" class="inp text-sm" title="Due date/time (optional) — shows on the assigned role's calendar"/>
         <button onclick="addObItem(${clId})" class="btn-primary text-sm px-3">Add</button>
       </div>
     </div>`;
@@ -281,10 +295,13 @@ async function submitStartOb(e) {
   loadObChecklists(type);
 }
 
-async function showObItemEdit(clId,itemId,title,description,assignedRole) {
+async function showObItemEdit(clId,itemId,title,description,assignedRole,dueDate) {
   const roles=[{v:'employee',l:'Employee'},{v:'manager',l:'Manager'},{v:'hr_admin',l:'HR Admin'},{v:'hr_manager',l:'HR Manager'}];
   const el=document.getElementById('obitem-'+itemId);
   if(!el) return;
+  // due_date is stored 'YYYY-MM-DD HH:MI:SS' — a datetime-local input wants
+  // 'YYYY-MM-DDTHH:MM' (no seconds, 'T' separator).
+  const dueDateLocal=dueDate?dueDate.slice(0,16).replace(' ','T'):'';
   el.innerHTML=`
     <div class="flex-1 space-y-2 py-1">
       <input id="obedit-title-${itemId}" class="inp text-sm w-full" value="${esc(title)}"/>
@@ -293,6 +310,11 @@ async function showObItemEdit(clId,itemId,title,description,assignedRole) {
         <select id="obedit-role-${itemId}" class="inp text-sm" style="width:120px">
           ${roles.map(r=>`<option value="${r.v}" ${r.v===assignedRole?'selected':''}>${r.l}</option>`).join('')}
         </select>
+      </div>
+      <div class="flex items-center gap-2">
+        <label class="text-xs text-slate-500 whitespace-nowrap">Due date/time</label>
+        <input id="obedit-duedate-${itemId}" type="datetime-local" class="inp text-sm" value="${dueDateLocal}"/>
+        ${dueDate?`<button type="button" onclick="document.getElementById('obedit-duedate-${itemId}').value=''" class="text-xs text-slate-400 hover:text-red-500">Clear</button>`:''}
       </div>
       <div class="flex gap-2">
         <button onclick="saveObItemEdit(${clId},${itemId})" class="btn-primary text-xs px-3 py-1">Save</button>
@@ -305,8 +327,9 @@ const saveObItemEdit = guardAsync(async function(clId,itemId) {
   const title=document.getElementById('obedit-title-'+itemId)?.value.trim();
   const desc=document.getElementById('obedit-desc-'+itemId)?.value.trim();
   const role=document.getElementById('obedit-role-'+itemId)?.value;
+  const dueDate=document.getElementById('obedit-duedate-'+itemId)?.value||null;
   if(!title){alert('Title is required');return;}
-  await api(`/api/ob/checklists/${clId}/items/${itemId}`,{method:'PUT',body:JSON.stringify({title,description:desc||null,assigned_role:role})});
+  await api(`/api/ob/checklists/${clId}/items/${itemId}`,{method:'PUT',body:JSON.stringify({title,description:desc||null,assigned_role:role,due_date:dueDate})});
   openObDetail(clId);
 });
 
@@ -319,8 +342,9 @@ async function deleteObItem(clId,itemId) {
 const addObItem = guardAsync(async function(clId) {
   const title=document.getElementById('obAddTitle')?.value.trim();
   const role=document.getElementById('obAddRole')?.value;
+  const dueDate=document.getElementById('obAddDueDate')?.value||null;
   if(!title){alert('Title is required');return;}
-  await api(`/api/ob/checklists/${clId}/items`,{method:'POST',body:JSON.stringify({title,assigned_role:role})});
+  await api(`/api/ob/checklists/${clId}/items`,{method:'POST',body:JSON.stringify({title,assigned_role:role,due_date:dueDate})});
   openObDetail(clId);
 });
 
@@ -469,16 +493,19 @@ const addObTemplate = guardAsync(async function(type) {
   const setId=obCurrentSetId[type];
   if(!setId){alert('Create a template first');return;}
   const courseVal=oel(type,'obTmplLdCourse').value;
+  const dueRuleVal=oel(type,'obTmplDueRule').value;
   const body={
     type,template_set_id:setId,title,description:oel(type,'obTmplDesc').value.trim()||null,
     assigned_role:oel(type,'obTmplRole').value,
-    linked_ld_course_id:courseVal?parseInt(courseVal):null
+    linked_ld_course_id:courseVal?parseInt(courseVal):null,
+    due_date_rule:dueRuleVal||null
   };
   const res=await api('/api/ob/templates',{method:'POST',body:JSON.stringify(body)});
   if(!res||!res.ok) return;
   oel(type,'obTmplTitle').value='';
   oel(type,'obTmplDesc').value='';
   oel(type,'obTmplLdCourse').value='';
+  oel(type,'obTmplDueRule').value='';
   await loadObTemplateSets(type, setId);
 });
 
@@ -495,6 +522,7 @@ function openObTmplItemModal(type,id) {
   document.getElementById('obTmplItemTitle').value=item.title;
   document.getElementById('obTmplItemDesc').value=item.description||'';
   document.getElementById('obTmplItemRole').value=item.assigned_role;
+  document.getElementById('obTmplItemDueRule').value=item.due_date_rule||'';
   const courseSel=document.getElementById('obTmplItemCourse');
   courseSel.innerHTML='<option value="">No linked course — manual completion</option>'+
     obTmplCoursesCache[type].map(c=>`<option value="${c.id}">${esc(c.title)}</option>`).join('');
@@ -509,10 +537,12 @@ const saveObTmplItemDetail = guardAsync(async function() {
   const title=document.getElementById('obTmplItemTitle').value.trim();
   if(!title){alert('Title is required');return;}
   const courseVal=document.getElementById('obTmplItemCourse').value;
+  const dueRuleVal=document.getElementById('obTmplItemDueRule').value;
   const body={
     type,title,description:document.getElementById('obTmplItemDesc').value.trim()||null,
     assigned_role:document.getElementById('obTmplItemRole').value,
-    linked_ld_course_id:courseVal?parseInt(courseVal):null
+    linked_ld_course_id:courseVal?parseInt(courseVal):null,
+    due_date_rule:dueRuleVal||null
   };
   const res=await api(`/api/ob/templates/${id}`,{method:'PUT',body:JSON.stringify(body)});
   if(!res||!res.ok) return;
@@ -574,6 +604,7 @@ function renderObSwimlane(type) {
         <div class="flex-1 cursor-pointer" onclick="openObTmplItemModal('${type}',${item.id})">
           <p class="text-xs font-semibold leading-tight">${esc(item.title)}</p>
           ${linkedCourse?`<p class="text-[10px] mt-1 opacity-80 truncate" title="${esc(linkedCourse.title)}">🎓 ${esc(linkedCourse.title)}</p>`:''}
+          ${item.due_date_rule?`<p class="text-[10px] mt-1 opacity-80 truncate" title="${esc(OB_DUE_DATE_RULE_LABELS[item.due_date_rule]||item.due_date_rule)}">📅 ${esc(OB_DUE_DATE_RULE_LABELS[item.due_date_rule]||item.due_date_rule)}</p>`:''}
         </div>
         ${canManage?`<div class="flex justify-end mt-1">
           <button onclick="deleteObTemplate('${type}',${item.id})" class="opacity-50 hover:opacity-100 hover:text-red-600" title="Remove"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg></button>

@@ -471,14 +471,16 @@ function loadLeaveCalendar() {
   Promise.all([
     api(`/api/leave/calendar?year=${leaveCalYear}&month=${leaveCalMonth}`),
     api(`/api/holidays?year=${leaveCalYear}`),
-  ]).then(async ([leaveRes, holidayRes]) => {
+    api(`/api/ob/calendar?year=${leaveCalYear}&month=${leaveCalMonth}`),
+  ]).then(async ([leaveRes, holidayRes, obRes]) => {
     const entries = (leaveRes && leaveRes.ok) ? await leaveRes.json() : [];
     const holidays = (holidayRes && holidayRes.ok) ? await holidayRes.json() : [];
-    renderLeaveCalendarGrid(entries, holidays);
+    const obItems = (obRes && obRes.ok) ? await obRes.json() : [];
+    renderLeaveCalendarGrid(entries, holidays, obItems);
   });
 }
 
-function renderLeaveCalendarGrid(entries, holidays) {
+function renderLeaveCalendarGrid(entries, holidays, obItems) {
   const grid = document.getElementById('leaveCalGrid');
   const firstDay = new Date(leaveCalYear, leaveCalMonth - 1, 1);
   const daysInMonth = new Date(leaveCalYear, leaveCalMonth, 0).getDate();
@@ -503,6 +505,18 @@ function renderLeaveCalendarGrid(entries, holidays) {
       (holidaysByDay[d.getDate()] = holidaysByDay[d.getDate()] || []).push(h);
     }
   }
+  // Onboarding/offboarding action items with a due_date — one day each,
+  // same bucketing as holidays. due_date is a plain HR-entered wall-clock
+  // value (not a UTC *_at timestamp — see routers/onboarding.py), so its
+  // date portion is read literally, no parseUTC/timezone conversion.
+  const obByDay = {};
+  for (const o of (obItems || [])) {
+    if (!o.due_date) continue;
+    const d = new Date(o.due_date.slice(0, 10) + 'T00:00:00');
+    if (d.getFullYear() === leaveCalYear && d.getMonth() === leaveCalMonth - 1) {
+      (obByDay[d.getDate()] = obByDay[d.getDate()] || []).push(o);
+    }
+  }
 
   const todayStr = new Date().toISOString().slice(0, 10);
   let cells = '';
@@ -512,22 +526,33 @@ function renderLeaveCalendarGrid(entries, holidays) {
     const isToday = dateStr === todayStr;
     const dayHolidays = holidaysByDay[day] || [];
     const isHoliday = dayHolidays.length > 0;
-    const dayEntries = byDay[day] || [];
-    const shown = dayEntries.slice(0, 3);
-    const rest = dayEntries.slice(3);
+    // Leave entries and action items share one combined +N-more cap, so a
+    // busy day doesn't just show whichever type happened to bucket first.
+    const dayItems = [
+      ...(byDay[day] || []).map(e => ({ kind: 'leave', e })),
+      ...(obByDay[day] || []).map(o => ({ kind: 'ob', o })),
+    ];
+    const shown = dayItems.slice(0, 3);
+    const rest = dayItems.slice(3);
     const holidayChips = dayHolidays.map(h => `
       <div class="text-xs bg-rose-50 text-rose-700 rounded px-1 py-0.5 truncate font-medium" title="${esc(h.name)}">
         ${esc(h.name)}
       </div>`).join('');
-    const chips = shown.map(e => `
-      <div class="text-xs bg-amber-50 text-amber-700 rounded px-1 py-0.5 truncate" title="${esc(displayName(e.full_name,e.preferred_name))}${e.leave_type_name ? ' — ' + esc(e.leave_type_name) : ''}">
-        ${esc(displayName(e.full_name,e.preferred_name))}${e.leave_type_name ? ` (${esc(e.leave_type_name)})` : ''}
+    const chipInner = item => item.kind === 'leave'
+      ? `${esc(displayName(item.e.full_name,item.e.preferred_name))}${item.e.leave_type_name ? ` (${esc(item.e.leave_type_name)})` : ''}`
+      : `📌 ${esc(item.o.title)}`;
+    const chipTitle = item => item.kind === 'leave'
+      ? `${esc(displayName(item.e.full_name,item.e.preferred_name))}${item.e.leave_type_name ? ' — ' + esc(item.e.leave_type_name) : ''}`
+      : esc(item.o.title);
+    const chips = shown.map(item => `
+      <div class="text-xs ${item.kind==='leave'?'bg-amber-50 text-amber-700':'bg-indigo-50 text-indigo-700'} rounded px-1 py-0.5 truncate" title="${chipTitle(item)}">
+        ${chipInner(item)}
       </div>`).join('');
     const extraLabel = rest.length > 0 ? `
       <div class="relative group">
         <div class="text-xs text-slate-400 cursor-default">+${rest.length} more</div>
         <div class="hidden group-hover:block absolute z-10 left-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg p-2 min-w-[160px] max-w-[240px] space-y-0.5">
-          ${rest.map(e => `<div class="text-xs text-slate-700 truncate">${esc(displayName(e.full_name,e.preferred_name))}${e.leave_type_name ? ` (${esc(e.leave_type_name)})` : ''}</div>`).join('')}
+          ${rest.map(item => `<div class="text-xs text-slate-700 truncate">${chipInner(item)}</div>`).join('')}
         </div>
       </div>` : '';
     cells += `

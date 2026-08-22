@@ -1,5 +1,6 @@
 """Onboarding / Offboarding — Templates and Checklists."""
-from datetime import datetime
+import calendar as _calendar_module
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -25,6 +26,67 @@ router = APIRouter()
 
 OB_MANAGE_ROLES = ("superadmin", "hr_manager", "hr_admin")
 
+# A template item's due_date_rule is picked with no employee in context yet
+# (see OBTemplateIn) — it's resolved into a concrete
+# ob_checklist_items.due_date only once start_ob_checklist() snapshots the
+# template against one real employee (see _compute_due_date below).
+OB_DUE_DATE_RULES = (
+    "1_month_from_start", "2_months_from_start", "3_months_from_start",
+    "joining_anniversary", "birthday_anniversary",
+)
+
+
+def _add_months(d: date, months: int) -> date:
+    month_index = d.month - 1 + months
+    year = d.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(d.day, _calendar_module.monthrange(year, month)[1])
+    return date(year, month, day)
+
+
+def _next_anniversary(from_date: date, anniversary_date_str: Optional[str]) -> Optional[date]:
+    """The next occurrence of anniversary_date_str's month/day on or after
+    from_date — works the same whether from_date is a fresh onboarding
+    checklist (typically the anniversary lands ~1 year out) or a later
+    offboarding checklist (whenever it happens to start)."""
+    if not anniversary_date_str:
+        return None
+    try:
+        anniv = datetime.strptime(anniversary_date_str[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+    def _in_year(year: int) -> date:
+        try:
+            return anniv.replace(year=year)
+        except ValueError:
+            return date(year, 2, 28)  # Feb 29 birthday/anniversary in a non-leap year
+
+    candidate = _in_year(from_date.year)
+    if candidate < from_date:
+        candidate = _in_year(from_date.year + 1)
+    return candidate
+
+
+def _compute_due_date(rule: Optional[str], start_from: date, emp: Dict[str, Any]) -> Optional[str]:
+    """Resolves a template item's due_date_rule into a concrete
+    'YYYY-MM-DD HH:MI:SS' for one specific employee's checklist item. 09:00
+    is just a reasonable default landing time — freely editable per
+    employee afterwards, same as the date itself."""
+    if rule == "1_month_from_start":
+        d = _add_months(start_from, 1)
+    elif rule == "2_months_from_start":
+        d = _add_months(start_from, 2)
+    elif rule == "3_months_from_start":
+        d = _add_months(start_from, 3)
+    elif rule == "joining_anniversary":
+        d = _next_anniversary(start_from, emp.get("start_date"))
+    elif rule == "birthday_anniversary":
+        d = _next_anniversary(start_from, emp.get("date_of_birth"))
+    else:
+        return None
+    return f"{d.isoformat()} 09:00:00" if d else None
+
 
 class OBTemplateSetIn(BaseModel):
     type: str = "onboarding"
@@ -44,6 +106,14 @@ class OBTemplateIn(BaseModel):
     assigned_role: str = "hr_admin"
     order_index: int = 0
     linked_ld_course_id: Optional[int] = None
+    due_date_rule: Optional[str] = None  # one of OB_DUE_DATE_RULES, or None (no due date)
+
+    @field_validator("due_date_rule")
+    @classmethod
+    def _validate_due_date_rule(cls, v):
+        if v is not None and v not in OB_DUE_DATE_RULES:
+            raise ValueError(f"due_date_rule must be one of: {', '.join(OB_DUE_DATE_RULES)}")
+        return v
 
 
 class OBTemplateMoveIn(BaseModel):
@@ -76,10 +146,29 @@ class OBItemAttachmentIn(BaseModel):
         return v
 
 
+def _normalize_due_date(v: Optional[str]) -> Optional[str]:
+    """Accepts either the storage format ('YYYY-MM-DD HH:MI:SS', from
+    _compute_due_date) or a raw <input type="datetime-local"> value
+    ('YYYY-MM-DDTHH:MM', no seconds) and normalizes to the former. Blank
+    string means "clear the due date", same as null."""
+    if not v:
+        return None
+    v = v.strip().replace("T", " ")
+    if len(v) == 16:  # YYYY-MM-DD HH:MM, no seconds
+        v += ":00"
+    return v
+
+
 class OBItemEditIn(BaseModel):
     title: str
     description: Optional[str] = None
     assigned_role: str = "hr_admin"
+    due_date: Optional[str] = None
+
+    @field_validator("due_date")
+    @classmethod
+    def _validate_due_date(cls, v):
+        return _normalize_due_date(v)
 
 
 class OBItemAddIn(BaseModel):
@@ -87,6 +176,12 @@ class OBItemAddIn(BaseModel):
     description: Optional[str] = None
     assigned_role: str = "hr_admin"
     linked_ld_course_id: Optional[int] = None
+    due_date: Optional[str] = None
+
+    @field_validator("due_date")
+    @classmethod
+    def _validate_due_date(cls, v):
+        return _normalize_due_date(v)
 
 
 # ---------------------------------------------------------------------------
@@ -262,8 +357,8 @@ def create_ob_template(conn, body: OBTemplateIn, user: dict = Depends(get_curren
     ).fetchone()[0]
     order_index = (max_order + 1) if max_order is not None else 0
     conn.execute(
-        "INSERT INTO ob_templates (institution_id,type,template_set_id,title,description,assigned_role,order_index,linked_ld_course_id) VALUES (?,?,?,?,?,?,?,?)",
-        (inst_id, body.type, body.template_set_id, body.title, body.description, body.assigned_role, order_index, body.linked_ld_course_id)
+        "INSERT INTO ob_templates (institution_id,type,template_set_id,title,description,assigned_role,order_index,linked_ld_course_id,due_date_rule) VALUES (?,?,?,?,?,?,?,?,?)",
+        (inst_id, body.type, body.template_set_id, body.title, body.description, body.assigned_role, order_index, body.linked_ld_course_id, body.due_date_rule)
     )
     conn.commit()
     row = conn.execute("SELECT * FROM ob_templates WHERE id=last_insert_rowid()").fetchone()
@@ -282,8 +377,8 @@ def update_ob_template(conn, tmpl_id: int, body: OBTemplateIn, user: dict = Depe
     if not tmpl:
         raise HTTPException(404, "Template not found")
     conn.execute(
-        "UPDATE ob_templates SET title=?,description=?,assigned_role=?,linked_ld_course_id=? WHERE id=?",
-        (body.title, body.description, body.assigned_role, body.linked_ld_course_id, tmpl_id)
+        "UPDATE ob_templates SET title=?,description=?,assigned_role=?,linked_ld_course_id=?,due_date_rule=? WHERE id=?",
+        (body.title, body.description, body.assigned_role, body.linked_ld_course_id, body.due_date_rule, tmpl_id)
     )
     conn.commit()
     row = conn.execute("SELECT * FROM ob_templates WHERE id=?", (tmpl_id,)).fetchone()
@@ -369,6 +464,49 @@ def list_ob_checklists(conn, type: Optional[str] = None, status: Optional[str] =
     return [dict(r) for r in rows]
 
 
+@router.get("/api/ob/calendar")
+@db_session
+def get_ob_calendar(conn, year: int, month: int, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
+    """Onboarding/offboarding checklist items with a due_date falling in
+    the given month — feeds the Home dashboard's Leave Calendar, which
+    this shares a grid with (see static/js/dashboard.js's
+    loadLeaveCalendar/renderLeaveCalendarGrid). Same role-broadcast +
+    org-hierarchy scoping as the Dashboard To-Do widget's own onboarding
+    section (routers/dashboard.py's get_todos): every user whose own role
+    matches an item's assigned_role sees it, narrowed to their own
+    checklist (employee) or their subordinates' (manager); HR roles see
+    institution-wide, both onboarding and offboarding together — the
+    caller distinguishes by each entry's own `type`."""
+    role = user["role"]
+    if role == "superadmin":
+        return []
+    inst_id = need_inst(user)
+    emp_id = user.get("employee_id")
+    if not (1 <= month <= 12):
+        raise HTTPException(400, "month must be between 1 and 12")
+    month_start = date(year, month, 1)
+    month_end_exclusive = _add_months(month_start, 1)
+
+    q = """
+        SELECT i.id, i.title, i.due_date, i.status, c.type, c.employee_id,
+               e.full_name AS employee_name, e.preferred_name AS employee_preferred_name
+        FROM ob_checklist_items i
+        JOIN ob_checklists c ON c.id = i.checklist_id
+        JOIN employees e ON e.employee_id = c.employee_id AND e.institution_id = c.institution_id
+        WHERE c.institution_id=? AND i.assigned_role=? AND i.due_date IS NOT NULL
+          AND i.due_date >= ? AND i.due_date < ?
+    """
+    params: list = [inst_id, role, month_start.isoformat(), month_end_exclusive.isoformat()]
+    if role == "manager":
+        frag, fp = subordinates_in_clause(inst_id, emp_id or "")
+        q += f" AND c.employee_id IN {frag}"; params.extend(fp)
+    elif role == "employee":
+        q += " AND c.employee_id=?"; params.append(emp_id or "")
+    q += " ORDER BY i.due_date"
+    rows = conn.execute(q, params).fetchall()
+    return [dict(r) for r in rows]
+
+
 @router.post("/api/ob/checklists", status_code=201)
 @db_session
 def start_ob_checklist(conn, body: OBChecklistStartIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
@@ -413,14 +551,16 @@ def start_ob_checklist(conn, body: OBChecklistStartIn, user: dict = Depends(get_
         "SELECT * FROM ob_templates WHERE institution_id=? AND type=? AND template_set_id=? AND is_active=1 ORDER BY order_index",
         (inst_id, body.type, template_set_id)
     ).fetchall()
+    checklist_start = date.today()
     for t in templates:
         enrollment_id = None
         if t["linked_ld_course_id"]:
             enrollment_id = auto_enroll_ld_course(conn, inst_id, body.employee_id, t["linked_ld_course_id"], user)
+        due_date = _compute_due_date(t["due_date_rule"], checklist_start, dict(emp))
         conn.execute(
-            "INSERT INTO ob_checklist_items (checklist_id,institution_id,template_id,title,description,assigned_role,order_index,linked_ld_course_id,linked_ld_enrollment_id) VALUES (?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO ob_checklist_items (checklist_id,institution_id,template_id,title,description,assigned_role,order_index,linked_ld_course_id,linked_ld_enrollment_id,due_date) VALUES (?,?,?,?,?,?,?,?,?,?)",
             (cl_id, inst_id, t["id"], t["title"], t["description"], t["assigned_role"], t["order_index"],
-             t["linked_ld_course_id"], enrollment_id)
+             t["linked_ld_course_id"], enrollment_id, due_date)
         )
     log_ob(conn, inst_id, cl_id, body.employee_id, body.type,
            "Checklist Started",
@@ -611,8 +751,8 @@ def edit_ob_item(conn, cl_id: int, item_id: int, body: OBItemEditIn,
     old = conn.execute("SELECT * FROM ob_checklist_items WHERE id=? AND checklist_id=?", (item_id, cl_id)).fetchone()
     cl2 = conn.execute("SELECT * FROM ob_checklists WHERE id=?", (cl_id,)).fetchone()
     conn.execute(
-        "UPDATE ob_checklist_items SET title=?,description=?,assigned_role=? WHERE id=?",
-        (body.title, body.description, body.assigned_role, item_id)
+        "UPDATE ob_checklist_items SET title=?,description=?,assigned_role=?,due_date=? WHERE id=?",
+        (body.title, body.description, body.assigned_role, body.due_date, item_id)
     )
     if cl2:
         log_ob(conn, inst_id, cl_id, cl2["employee_id"], cl2["type"],
@@ -640,9 +780,9 @@ def add_ob_item(conn, cl_id: int, body: OBItemAddIn,
     if body.linked_ld_course_id:
         enrollment_id = auto_enroll_ld_course(conn, inst_id, cl["employee_id"], body.linked_ld_course_id, user)
     conn.execute(
-        "INSERT INTO ob_checklist_items (checklist_id,institution_id,title,description,assigned_role,order_index,linked_ld_course_id,linked_ld_enrollment_id) VALUES (?,?,?,?,?,?,?,?)",
+        "INSERT INTO ob_checklist_items (checklist_id,institution_id,title,description,assigned_role,order_index,linked_ld_course_id,linked_ld_enrollment_id,due_date) VALUES (?,?,?,?,?,?,?,?,?)",
         (cl_id, inst_id, body.title, body.description, body.assigned_role, max_order + 1,
-         body.linked_ld_course_id, enrollment_id)
+         body.linked_ld_course_id, enrollment_id, body.due_date)
     )
     row = conn.execute("SELECT * FROM ob_checklist_items WHERE id=last_insert_rowid()").fetchone()
     log_ob(conn, inst_id, cl_id, cl["employee_id"], cl["type"],
