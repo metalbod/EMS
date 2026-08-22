@@ -27,6 +27,7 @@ from routers.approval_workflow_settings import router as approval_workflow_route
 from routers.projects import router as projects_router
 from routers.timesheets import router as timesheets_router
 from routers.overtime import router as overtime_router
+from routers.resignation import router as resignation_router
 from routers.recruitment import router as recruitment_router
 from routers.onboarding import router as onboarding_router
 from routers.ld import router as ld_router
@@ -152,6 +153,7 @@ app.include_router(approval_workflow_router)
 app.include_router(projects_router)
 app.include_router(timesheets_router)
 app.include_router(overtime_router)
+app.include_router(resignation_router)
 app.include_router(recruitment_router)
 app.include_router(onboarding_router)
 app.include_router(ld_router)

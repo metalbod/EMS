@@ -1,6 +1,6 @@
 """Generic approval-workflow engine, shared by every module that gates a
 request behind approval: Leave, Benefits Claims, Job Requisition,
-Timesheet, and L&D Enrollment. See README.md's "Approval workflow module"
+Timesheet, L&D Enrollment, Overtime, and Resignation. See README.md's "Approval workflow module"
 section for the full mechanism. Each module used to hardcode its own
 single-step role check (e.g. "role in (manager, hr_manager, hr_admin)")
 with no verification that an approving "manager" was the requester's
@@ -34,6 +34,7 @@ MODULE_HR_ROLES = {
     "requisition": ("hr_manager",),
     "ld_enrollment": ("hr_manager", "hr_admin"),
     "overtime": ("hr_manager", "hr_admin"),
+    "resignation": ("hr_manager", "hr_admin"),
 }
 
 # table + the employee column identifying who the request is *for* (the
@@ -48,6 +49,7 @@ MODULE_TABLE = {
     "requisition": "job_requisitions",
     "ld_enrollment": "ld_enrollments",
     "overtime": "overtime_records",
+    "resignation": "resignation_requests",
 }
 MODULE_EMPLOYEE_COL = {
     "leave": "employee_id",
@@ -56,6 +58,7 @@ MODULE_EMPLOYEE_COL = {
     "requisition": None,  # resolved via created_by -> users.employee_id
     "ld_enrollment": "employee_id",
     "overtime": "employee_id",
+    "resignation": "employee_id",
 }
 MODULE_PENDING_STATUSES = {
     "leave": ("Pending Approval",),
@@ -64,6 +67,7 @@ MODULE_PENDING_STATUSES = {
     "requisition": ("Pending Approval",),
     "ld_enrollment": ("Pending Approval",),
     "overtime": ("Pending",),
+    "resignation": ("Pending",),
 }
 
 

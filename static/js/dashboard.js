@@ -31,6 +31,7 @@ function renderDashboard() {
   checkDashboardNotification();
   loadDashboardTodos();
   document.getElementById('dashboardQuickActions')?.classList.toggle('hidden', currentUser?.role !== 'employee');
+  if (currentUser?.role === 'employee') refreshResignButtonState();
   if (currentUser.role === 'superadmin' && !currentInstitution) {
     document.getElementById('superadminGlobalDash').classList.remove('hidden');
     document.getElementById('instDash').classList.add('hidden');

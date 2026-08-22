@@ -43,7 +43,7 @@ FIELD_LABELS = {
     "address":"Address","department":"Department","designation":"Designation",
     "employment_type":"Employment Type","start_date":"Start Date",
     "probation_end_date":"Probation End Date","contract_end_date":"Contract End Date",
-    "resign_date":"Resign Date",
+    "resign_date":"Resign Date","last_working_day":"Last Working Day",
     "work_email":"Work Email","epf_number":"EPF Number","socso_number":"SOCSO Number",
     "income_tax_number":"Income Tax No.","bank_name":"Bank Name","bank_account":"Bank Account",
     "basic_salary":"Basic Salary","num_children":"No. of Children","salary_type":"Salary Type","hourly_rate":"Hourly Rate",
@@ -96,6 +96,7 @@ class EmployeeIn(BaseModel):
     probation_end_date: Optional[str] = None
     contract_end_date: Optional[str] = None
     resign_date: Optional[str] = None
+    last_working_day: Optional[str] = None
     work_email: Optional[str] = None
     epf_number: Optional[str] = None
     socso_number: Optional[str] = None
@@ -205,6 +206,7 @@ class EmployeeOut(BaseModel):
     probation_end_date: Optional[str] = None
     contract_end_date: Optional[str] = None
     resign_date: Optional[str] = None
+    last_working_day: Optional[str] = None
     work_email: Optional[str] = None
     epf_number: Optional[str] = None
     socso_number: Optional[str] = None
@@ -389,15 +391,15 @@ def _insert_new_employee(conn, inst_id, emp: EmployeeIn, user: dict, ip: Optiona
             institution_id, employee_id, full_name, preferred_name, ic_number, passport_number,
             nationality, race, religion, gender, date_of_birth, marital_status,
             personal_email, phone, address, department, designation, employment_type, start_date,
-            probation_end_date, contract_end_date, resign_date, work_email,
+            probation_end_date, contract_end_date, resign_date, last_working_day, work_email,
             epf_number, socso_number, income_tax_number, bank_name, bank_account, basic_salary, num_children,
             salary_type, hourly_rate, reports_to
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     """, (inst_id, emp_id, emp.full_name, emp.preferred_name, emp.ic_number, emp.passport_number,
           emp.nationality, emp.race or '', emp.religion or '', emp.gender or '', emp.date_of_birth or '', emp.marital_status or '',
           emp.personal_email, emp.phone, emp.address, emp.department, emp.designation,
           emp.employment_type, emp.start_date, emp.probation_end_date, emp.contract_end_date, emp.resign_date,
-          emp.work_email, emp.epf_number, emp.socso_number, emp.income_tax_number,
+          emp.last_working_day, emp.work_email, emp.epf_number, emp.socso_number, emp.income_tax_number,
           emp.bank_name, emp.bank_account, emp.basic_salary, emp.num_children,
           emp.salary_type, emp.hourly_rate, reports_to))
     if emp.default_location_id is not None:
@@ -663,7 +665,7 @@ def update_employee(conn, employee_id: str, emp: EmployeeIn, request: Request,
                 full_name=?,preferred_name=?,ic_number=?,passport_number=?,
                 nationality=?,race=?,religion=?,gender=?,date_of_birth=?,marital_status=?,
                 personal_email=?,phone=?,address=?,department=?,designation=?,employment_type=?,
-                start_date=?,probation_end_date=?,contract_end_date=?,resign_date=?,work_email=?,
+                start_date=?,probation_end_date=?,contract_end_date=?,resign_date=?,last_working_day=?,work_email=?,
                 epf_number=?,socso_number=?,income_tax_number=?,bank_name=?,bank_account=?,
                 basic_salary=?,num_children=?,salary_type=?,hourly_rate=?,reports_to=?
             WHERE institution_id=? AND employee_id=?
@@ -671,7 +673,7 @@ def update_employee(conn, employee_id: str, emp: EmployeeIn, request: Request,
               emp.nationality, emp.race, emp.religion, emp.gender, emp.date_of_birth,
               emp.marital_status, emp.personal_email, emp.phone, emp.address,
               emp.department, emp.designation, emp.employment_type, emp.start_date,
-              emp.probation_end_date, emp.contract_end_date, emp.resign_date, emp.work_email,
+              emp.probation_end_date, emp.contract_end_date, emp.resign_date, emp.last_working_day, emp.work_email,
               emp.epf_number, emp.socso_number, emp.income_tax_number,
               emp.bank_name, emp.bank_account, emp.basic_salary, emp.num_children,
               emp.salary_type, emp.hourly_rate, reports_to,

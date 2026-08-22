@@ -7,6 +7,7 @@ const AW_MODULES = [
   {key:'timesheet', label:'Timesheet'},
   {key:'ld_enrollment', label:'L&D Enrollment'},
   {key:'overtime', label:'Overtime'},
+  {key:'resignation', label:'Resignation'},
 ];
 const AW_STEP_LABELS = {
   direct_manager: 'Direct Manager',

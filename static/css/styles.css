@@ -95,6 +95,7 @@ main::before{
 .ld-enr-filter-active{background:var(--color-accent-light);color:var(--color-primary);border-color:#c7d2fe}
 .leave-filter-active{background:var(--color-accent-light);color:var(--color-primary);border-color:#c7d2fe}
 .leave-appr-filter-active{background:var(--color-accent-light);color:var(--color-primary);border-color:#c7d2fe}
+.resign-appr-filter-active{background:var(--color-accent-light);color:var(--color-primary);border-color:#c7d2fe}
 .project-filter-active{background:var(--color-accent-light);color:var(--color-primary);border-color:#c7d2fe}
 .ts-appr-filter-active{background:var(--color-accent-light);color:var(--color-primary);border-color:#c7d2fe}
 .att-tab-active{background:var(--color-accent-light);color:var(--color-primary);border-color:#c7d2fe}

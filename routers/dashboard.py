@@ -73,6 +73,7 @@ def get_todos(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, An
         ("timesheet", "timesheet-approvals", "timesheet"),
         ("ld_enrollment", "ld-trainings", "training enrollment"),
         ("overtime", "timesheet-approvals", "overtime record"),
+        ("resignation", "resignation-approvals", "resignation request"),
     )
     for module, page, noun in approval_targets:
         cnt = count_pending_for_approver(conn, inst_id, user, module)

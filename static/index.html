@@ -178,6 +178,13 @@
           </div>
         </div>
       </div>
+      <!-- Resignation Approvals (Manager for direct reports, HR institution-wide) -->
+      <div id="nav-resignation-wrap" class="hidden">
+        <button class="nav-rail-btn" onclick="showPage('resignation-approvals');closeBurgerMenu();" data-page="resignation-approvals" title="Resignation Approvals">
+          <svg class="nav-icon-chip nav-icon-leave" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+          <span class="nav-rail-label">Resignation</span>
+        </button>
+      </div>
       <!-- Recruitment -->
       <div id="nav-recruit-group" class="hidden">
         <button class="nav-rail-btn" onclick="toggleNavGroup('recruit')" title="Recruitment">
@@ -523,7 +530,7 @@
             </div>
 
             <!-- Quick Actions (employee role only) -->
-            <div id="dashboardQuickActions" class="hidden flex flex-wrap gap-3 mb-6">
+            <div id="dashboardQuickActions" class="hidden flex flex-wrap items-center gap-3 mb-6">
               <button onclick="dashShortcutApplyLeave()" class="btn-primary text-sm flex items-center gap-2">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
                 Apply Leave
@@ -532,6 +539,11 @@
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
                 Submit Claims
               </button>
+              <button id="dashboardResignBtn" onclick="openResignModal()" class="btn-ghost text-sm flex items-center gap-2 text-red-600">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                Resign
+              </button>
+              <p id="dashboardResignStatus" class="hidden text-sm text-slate-500"></p>
             </div>
 
             <!-- To-Do list (all roles except superadmin) — always visible, even when empty -->
@@ -1453,6 +1465,16 @@
         </div>
         <div id="leaveApprovalList" class="space-y-3"></div>
         <p id="leaveApprovalEmpty" class="hidden text-center text-slate-400 text-sm py-12">No leave applications to review.</p>
+      </div>
+
+      <!-- RESIGNATION APPROVALS -->
+      <div id="page-resignation-approvals" class="hidden">
+        <div class="flex items-center gap-2 mb-5">
+          <button onclick="setResignationApprovalFilter('Pending')" class="btn-ghost text-xs resign-appr-filter-btn resign-appr-filter-active">Pending</button>
+          <button onclick="setResignationApprovalFilter('')" class="btn-ghost text-xs resign-appr-filter-btn">All</button>
+        </div>
+        <div id="resignationApprovalList" class="space-y-3"></div>
+        <p id="resignationApprovalEmpty" class="hidden text-center text-slate-400 text-sm py-12">No resignation requests to review.</p>
       </div>
 
       <!-- HOLIDAY MANAGER -->
@@ -2903,6 +2925,7 @@
         <div><label class="block text-sm font-medium text-slate-700 mb-1">Probation End</label><input id="fProbationEndDate" type="date" class="inp"/></div>
         <div><label class="block text-sm font-medium text-slate-700 mb-1">Contract End</label><input id="fContractEndDate" type="date" class="inp"/></div>
         <div><label class="block text-sm font-medium text-slate-700 mb-1">Resign Date</label><input id="fResignDate" type="date" class="inp"/></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Last Working Day</label><input id="fLastWorkingDay" type="date" class="inp"/></div>
         <div><label class="block text-sm font-medium text-slate-700 mb-1">Work Email</label><input id="fWorkEmail" type="email" class="inp"/></div>
         <div><label class="block text-sm font-medium text-slate-700 mb-1">Reports To</label>
           <select id="fReportsTo" class="inp"><option value="">None (Top Level)</option><option value="SELF">⭐ Self (CEO / Top of Org)</option></select>
@@ -3013,6 +3036,7 @@
     <div class="flex gap-2 px-6 py-4 border-t border-slate-200">
       <button id="viewEditBtn" onclick="editFromView()" class="btn-primary hidden">Edit</button>
       <button id="viewToggleBtn" onclick="toggleStatusFromView()" class="btn-ghost hidden"></button>
+      <button id="viewFileResignBtn" onclick="fileResignationFromView()" class="btn-ghost hidden text-red-600">File Resignation</button>
       <div class="flex-1"></div>
       <button onclick="closeViewModal()" class="btn-ghost">Close</button>
     </div>
@@ -3343,6 +3367,36 @@
       <div class="flex gap-2 pt-2">
         <button type="submit" class="btn-primary">Submit Application</button>
         <button type="button" onclick="closeLeaveApplyModal()" class="btn-ghost">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Resign Modal (self-service, and HR-on-behalf from Employee detail) -->
+<div id="resignModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-md">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 id="resignModalTitle" class="text-base font-semibold">Submit Resignation</h2>
+      <button onclick="closeResignModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form onsubmit="submitResignation(event)" class="p-6 space-y-4">
+      <input type="hidden" id="resignEmpId"/>
+      <p id="resignForEmpName" class="hidden text-sm text-slate-600"></p>
+      <div><label class="lbl">Reason <span class="text-red-500">*</span></label><textarea id="resignReason" class="inp" rows="2" required placeholder="Reason for resignation…"></textarea></div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="lbl">Effective Date <span class="text-red-500">*</span></label><input id="resignEffectiveDate" type="date" class="inp" required onchange="if(document.getElementById('resignLastDay').value<this.value)document.getElementById('resignLastDay').value=this.value;"/></div>
+        <div><label class="lbl">Last Working Day <span class="text-red-500">*</span></label><input id="resignLastDay" type="date" class="inp" required/></div>
+      </div>
+      <p class="text-xs text-slate-400 -mt-2">Last working day must be on or after the effective date.</p>
+      <div>
+        <label class="lbl">Resignation Letter (optional)</label>
+        <input id="resignAttachFile" type="file" class="text-xs" onchange="handleResignAttachFile(event)"/>
+        <p class="text-xs text-slate-400 mt-1">PDF, Word, text, or image. Max ~6MB.</p>
+      </div>
+      <p id="resignErr" class="hidden text-xs text-red-600"></p>
+      <div class="flex gap-2 pt-2">
+        <button type="submit" class="btn-primary">Submit Resignation</button>
+        <button type="button" onclick="closeResignModal()" class="btn-ghost">Cancel</button>
       </div>
     </form>
   </div>
@@ -4914,6 +4968,7 @@
 <script src="/static/js/onboarding.js?v=74"></script>
 <script src="/static/js/ld.js?v=74"></script>
 <script src="/static/js/leave.js?v=74"></script>
+<script src="/static/js/resignation.js?v=1"></script>
 <script src="/static/js/approval-workflow.js?v=74"></script>
 <script src="/static/js/roles.js?v=4"></script>
 <script src="/static/js/timesheet.js?v=74"></script>

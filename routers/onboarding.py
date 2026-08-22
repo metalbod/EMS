@@ -507,6 +507,57 @@ def get_ob_calendar(conn, year: int, month: int, user: dict = Depends(get_curren
     return [dict(r) for r in rows]
 
 
+def _create_ob_checklist(conn, inst_id: int, emp, ob_type: str, template_set_id: Optional[int],
+                         notes: Optional[str], triggered_by: str, log_user: dict) -> int:
+    """Core checklist-creation logic — snapshot a template set's active
+    items into a new checklist for one employee. Shared by the HTTP route
+    below (start_ob_checklist) and core/resignation.py's auto-trigger on
+    resignation approval. Caller has already validated the employee exists
+    and there's no active checklist of this type; `emp` is that employee's
+    already-fetched row. Returns the new checklist id."""
+    if template_set_id:
+        _get_owning_template_set(conn, inst_id, template_set_id, ob_type)
+    else:
+        # Resolve through the same function create_ob_template uses, rather
+        # than a separate lookup here — the two used to disagree (this one
+        # never created a set, so it never adopted orphaned legacy templates
+        # either), which is what caused zero-item checklists and orphaned
+        # legacy checklists for institutions without an ob_template_sets row.
+        template_set_id = _resolve_or_create_default_set(conn, inst_id, ob_type)
+    conn.execute(
+        "INSERT INTO ob_checklists (institution_id,employee_id,type,triggered_by,notes) VALUES (?,?,?,?,?)",
+        (inst_id, emp["employee_id"], ob_type, triggered_by, notes)
+    )
+    cl_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    # Snapshot active templates from the chosen (or resolved-default)
+    # template set as items. template_set_id is always a real id by this
+    # point now — _resolve_or_create_default_set never returns None, it
+    # creates a set (and adopts any orphaned legacy templates into it) the
+    # first time one's needed — so there's no IS-NULL / legacy-templates
+    # branch to handle here any more.
+    templates = conn.execute(
+        "SELECT * FROM ob_templates WHERE institution_id=? AND type=? AND template_set_id=? AND is_active=1 ORDER BY order_index",
+        (inst_id, ob_type, template_set_id)
+    ).fetchall()
+    checklist_start = date.today()
+    for t in templates:
+        enrollment_id = None
+        if t["linked_ld_course_id"]:
+            enrollment_id = auto_enroll_ld_course(conn, inst_id, emp["employee_id"], t["linked_ld_course_id"], log_user)
+        due_date = _compute_due_date(t["due_date_rule"], checklist_start, dict(emp))
+        conn.execute(
+            "INSERT INTO ob_checklist_items (checklist_id,institution_id,template_id,title,description,assigned_role,order_index,linked_ld_course_id,linked_ld_enrollment_id,due_date) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (cl_id, inst_id, t["id"], t["title"], t["description"], t["assigned_role"], t["order_index"],
+             t["linked_ld_course_id"], enrollment_id, due_date)
+        )
+    log_ob(conn, inst_id, cl_id, emp["employee_id"], ob_type,
+           "Checklist Started",
+           f"{ob_type.capitalize()} checklist started for {emp['full_name']} with {len(templates)} items",
+           log_user)
+    conn.commit()
+    return cl_id
+
+
 @router.post("/api/ob/checklists", status_code=201)
 @db_session
 def start_ob_checklist(conn, body: OBChecklistStartIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
@@ -526,47 +577,7 @@ def start_ob_checklist(conn, body: OBChecklistStartIn, user: dict = Depends(get_
     ).fetchone()
     if existing:
         raise HTTPException(400, f"An active {body.type} checklist already exists for this employee")
-    template_set_id = body.template_set_id
-    if template_set_id:
-        _get_owning_template_set(conn, inst_id, template_set_id, body.type)
-    else:
-        # Resolve through the same function create_ob_template uses, rather
-        # than a separate lookup here — the two used to disagree (this one
-        # never created a set, so it never adopted orphaned legacy templates
-        # either), which is what caused zero-item checklists and orphaned
-        # legacy checklists for institutions without an ob_template_sets row.
-        template_set_id = _resolve_or_create_default_set(conn, inst_id, body.type)
-    conn.execute(
-        "INSERT INTO ob_checklists (institution_id,employee_id,type,triggered_by,notes) VALUES (?,?,?,?,?)",
-        (inst_id, body.employee_id, body.type, user["username"], body.notes)
-    )
-    cl_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-    # Snapshot active templates from the chosen (or resolved-default)
-    # template set as items. template_set_id is always a real id by this
-    # point now — _resolve_or_create_default_set never returns None, it
-    # creates a set (and adopts any orphaned legacy templates into it) the
-    # first time one's needed — so there's no IS-NULL / legacy-templates
-    # branch to handle here any more.
-    templates = conn.execute(
-        "SELECT * FROM ob_templates WHERE institution_id=? AND type=? AND template_set_id=? AND is_active=1 ORDER BY order_index",
-        (inst_id, body.type, template_set_id)
-    ).fetchall()
-    checklist_start = date.today()
-    for t in templates:
-        enrollment_id = None
-        if t["linked_ld_course_id"]:
-            enrollment_id = auto_enroll_ld_course(conn, inst_id, body.employee_id, t["linked_ld_course_id"], user)
-        due_date = _compute_due_date(t["due_date_rule"], checklist_start, dict(emp))
-        conn.execute(
-            "INSERT INTO ob_checklist_items (checklist_id,institution_id,template_id,title,description,assigned_role,order_index,linked_ld_course_id,linked_ld_enrollment_id,due_date) VALUES (?,?,?,?,?,?,?,?,?,?)",
-            (cl_id, inst_id, t["id"], t["title"], t["description"], t["assigned_role"], t["order_index"],
-             t["linked_ld_course_id"], enrollment_id, due_date)
-        )
-    log_ob(conn, inst_id, cl_id, body.employee_id, body.type,
-           "Checklist Started",
-           f"{body.type.capitalize()} checklist started for {emp['full_name']} with {len(templates)} items",
-           user)
-    conn.commit()
+    cl_id = _create_ob_checklist(conn, inst_id, emp, body.type, body.template_set_id, body.notes, user["username"], user)
     row = conn.execute("SELECT * FROM ob_checklists WHERE id=?", (cl_id,)).fetchone()
     return dict(row)
 
