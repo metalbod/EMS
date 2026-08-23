@@ -58,6 +58,7 @@ function openUserModal(uData=null) {
   empSel.innerHTML='<option value="">Not linked</option>';
   employees.forEach(e=>{const o=document.createElement('option');o.value=e.employee_id;o.textContent=`${e.employee_id} — ${displayName(e.full_name,e.preferred_name)}`;empSel.appendChild(o);});
   empSel.value=u?.employee_id||'';
+  initEmployeeSearchSelect('uEmployeeId', 'Search employee…');
   // Institution picker (superadmin no context)
   const instWrap=document.getElementById('uInstWrap');
   if(currentUser.role==='superadmin'&&!currentInstitution){

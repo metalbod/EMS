@@ -333,6 +333,7 @@ async function openStartObModal(type) {
   const sel=document.getElementById('startObEmpId');
   sel.innerHTML='<option value="">Select employee…</option>';
   employees.filter(e=>e.status==='Active').forEach(e=>{const o=document.createElement('option');o.value=e.employee_id;o.textContent=`${e.employee_id} — ${esc(displayName(e.full_name,e.preferred_name))}`;sel.appendChild(o);});
+  initEmployeeSearchSelect('startObEmpId', 'Search employee…');
   const setSel=document.getElementById('startObTemplateSet');
   setSel.innerHTML='<option value="">Loading…</option>';
   const res=await api(`/api/ob/template-sets?type=${type}`);

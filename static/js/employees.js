@@ -525,6 +525,7 @@ function openAddModal() {
   const rt=document.getElementById('fReportsTo');
   while(rt.options.length>2) rt.remove(2);
   employees.filter(e=>e.status==='Active').forEach(e=>{const o=document.createElement('option');o.value=e.employee_id;o.textContent=`${e.employee_id} — ${displayName(e.full_name,e.preferred_name)}`;rt.appendChild(o);});
+  initEmployeeSearchSelect('fReportsTo', 'Search employee…');
   loadLocationDropdown();
   document.getElementById('empDependentsTabBtn').classList.add('hidden'); // dependents need an existing employee_id
   currentTab='personal'; switchTab('personal');
@@ -558,6 +559,7 @@ async function openEditModal(e) {
   while(rt.options.length>2) rt.remove(2);
   employees.filter(em=>em.status==='Active'&&em.employee_id!==e.employee_id).forEach(em=>{const o=document.createElement('option');o.value=em.employee_id;o.textContent=`${em.employee_id} — ${displayName(em.full_name,em.preferred_name)}`;rt.appendChild(o);});
   rt.value=e.reports_to===e.employee_id?'SELF':(e.reports_to||'');
+  initEmployeeSearchSelect('fReportsTo', 'Search employee…');
   await loadLocationDropdown();
   f('fDefaultLocation').value=e.default_location_id||'';
   document.getElementById('empDependentsTabBtn').classList.remove('hidden');

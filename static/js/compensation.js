@@ -1299,6 +1299,7 @@ async function loadHrTotalRewards() {
       `<option value="${esc(e.employee_id)}">${esc(displayName(e.full_name,e.preferred_name))} (${esc(e.employee_id)})</option>`
     ).join('');
   }
+  initEmployeeSearchSelect('trEmployeeSelect', 'Search employee…');
 
   const empId = empSelect.value;
   const year = yearSelect.value;

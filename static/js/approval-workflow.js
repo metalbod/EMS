@@ -198,6 +198,7 @@ function _awPopulateEmployeeSelect(sel) {
     sel.innerHTML = (employees||[]).filter(e=>e.status==='Active')
       .map(e=>`<option value="${e.employee_id}">${esc(displayName(e.full_name,e.preferred_name))} (${esc(e.employee_id)})</option>`).join('');
   }
+  initEmployeeSearchSelect(sel.id, 'Search employee…');
 }
 
 function onAwNewStepTypeChange() {

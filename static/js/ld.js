@@ -107,6 +107,7 @@ function openLdEnrollModal(courseId) {
     const sel=document.getElementById('ldEnrollEmpId');
     sel.innerHTML=employees.filter(e=>e.status==='Active').map(e=>`<option value="${e.employee_id}">${e.employee_id} — ${esc(displayName(e.full_name,e.preferred_name))}</option>`).join('');
     if(currentUser?.employee_id) sel.value=currentUser.employee_id;
+    initEmployeeSearchSelect('ldEnrollEmpId', 'Search employee…');
   } else {
     empWrap.classList.add('hidden');
   }

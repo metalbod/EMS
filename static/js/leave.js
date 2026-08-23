@@ -107,6 +107,7 @@ async function openLeaveApplyModal() {
     const sel=document.getElementById('leaveApplyEmpId');
     sel.innerHTML=employees.filter(e=>e.status==='Active').map(e=>`<option value="${e.employee_id}">${e.employee_id} — ${esc(displayName(e.full_name,e.preferred_name))}</option>`).join('');
     if(currentUser?.employee_id) sel.value=currentUser.employee_id;
+    initEmployeeSearchSelect('leaveApplyEmpId', 'Search employee…');
   } else {
     empWrap.classList.add('hidden');
   }
