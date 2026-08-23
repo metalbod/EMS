@@ -153,3 +153,31 @@ def test_hr_admin_can_view_but_not_manage_probation_cycle(client, employee_with_
     assert denied.status_code == 403, denied.text
 
     client.delete(f"/api/ob/checklists/{checklist['id']}", headers=hr_manager_auth)
+
+
+def test_plain_employee_does_not_see_other_employees_probation_cycles_in_list(
+    client, employee_with_login, hr_manager_auth
+):
+    """GET /api/performance/cycles has no per-row filtering for standard
+    (org-wide) cycles — intentional, their name/dates aren't sensitive.
+    A probation cycle's *name* embeds the employee's full name, so
+    leaving it unfiltered would leak who's on probation to every
+    employee in the company via the My Goals & Appraisal cycle dropdown
+    (populateCycleSelect, static/js/performance.js)."""
+    subject, _ = employee_with_login(full_name="ZZ Probation Privacy Subject")
+    bystander, bystander_headers = employee_with_login(full_name="ZZ Probation Privacy Bystander")
+
+    start = client.post("/api/ob/checklists", headers=hr_manager_auth, json={
+        "employee_id": subject["employee_id"], "type": "onboarding", "enable_probation_review": True,
+    })
+    checklist = start.json()
+
+    bystander_cycles = client.get("/api/performance/cycles", headers=bystander_headers).json()
+    assert not any(c["employee_id"] == subject["employee_id"] for c in bystander_cycles), (
+        "a plain employee must never see another employee's probation cycles in the cycle list"
+    )
+
+    hr_cycles = client.get("/api/performance/cycles", headers=hr_manager_auth).json()
+    assert sum(1 for c in hr_cycles if c["employee_id"] == subject["employee_id"]) == 3
+
+    client.delete(f"/api/ob/checklists/{checklist['id']}", headers=hr_manager_auth)

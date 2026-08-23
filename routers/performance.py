@@ -203,7 +203,18 @@ def list_performance_cycles(conn, user: dict = Depends(get_current_user)) -> Lis
     rows = conn.execute(
         "SELECT * FROM performance_cycles WHERE institution_id=? ORDER BY period_start DESC", (inst_id,)
     ).fetchall()
-    return [dict(r) for r in rows]
+    # Standard (org-wide) cycles stay visible to everyone in the
+    # institution — their name/dates aren't sensitive, and every module
+    # page that lists cycles (My Goals, Team Appraisals, Calibration, the
+    # HR admin Cycles table) needs to see them to populate its selector.
+    # A probation cycle's *name* embeds the employee's full name, so
+    # leaving those unfiltered would leak who's on probation to every
+    # employee in the company — only include one if this user could
+    # actually access that employee's performance data.
+    return [
+        dict(r) for r in rows
+        if r["cycle_type"] != "probation" or _can_access_employee_performance(conn, inst_id, user, r["employee_id"], r["id"])
+    ]
 
 
 @router.post("/api/performance/cycles", status_code=201)
