@@ -127,6 +127,7 @@ async function openLeaveApplyModal() {
   leaveApplyBalancesCache=res?.ok?await res.json():[];
 
   updateLeaveApplyBalanceNote();
+  updateLeaveApplyDayPeriodVisibility();
   document.getElementById('leaveApplyDaysPreview').textContent='';
   await populateLeaveApplyProjectField();
   document.getElementById('leaveApplyModal').classList.remove('hidden');
@@ -220,12 +221,16 @@ function ldLeaveHalfDayDeduction(start, end, startPeriod, endPeriod) {
   return deduction;
 }
 
-// Shows/hides the Start Day / End Day half-day selectors: only offered
-// once both dates are picked, only for leave types with allow_half_day
-// checked (the sole control — see routers/leave.py's matching
-// server-side gate; a type's count_calendar_days no longer factors in),
-// and the End Day selector only when the range spans more than one date
-// (mirrors the DB's end_day_period-requires-a-range constraint).
+// Shows/hides the Start Day / End Day half-day selectors. The Start Day
+// selector (and the wrapper as a whole) appears as soon as a leave type
+// with allow_half_day checked is selected — the sole control, see
+// routers/leave.py's matching server-side gate; a type's
+// count_calendar_days no longer factors in — no need to wait for dates
+// to be picked too, since which date it applies to isn't relevant until
+// submit. The End Day selector stays gated on both dates being picked
+// AND spanning more than one date (mirrors the DB's
+// end_day_period-requires-a-range constraint) — showing it before that
+// would let someone pick a period for a date that isn't decided yet.
 function updateLeaveApplyDayPeriodVisibility() {
   const start=document.getElementById('leaveApplyStart').value;
   const end=document.getElementById('leaveApplyEnd').value;
@@ -233,10 +238,11 @@ function updateLeaveApplyDayPeriodVisibility() {
   const type=leaveTypesCache.find(t=>t.id===typeId);
   const wrap=document.getElementById('leaveApplyDayPeriodWrap');
   const endWrap=document.getElementById('leaveApplyEndPeriodWrap');
-  const eligible=!!(start && end && type && type.allow_half_day);
+  const eligible=!!(type && type.allow_half_day);
   wrap.classList.toggle('hidden', !eligible);
-  endWrap.classList.toggle('hidden', !eligible || start===end);
-  if(!eligible || start===end) document.getElementById('leaveApplyEndPeriod').value='';
+  const showEnd=eligible && !!start && !!end && start!==end;
+  endWrap.classList.toggle('hidden', !showEnd);
+  if(!showEnd) document.getElementById('leaveApplyEndPeriod').value='';
   if(!eligible) document.getElementById('leaveApplyStartPeriod').value='';
 }
 
