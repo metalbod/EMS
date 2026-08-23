@@ -2460,8 +2460,14 @@
 
       <!-- PERFORMANCE: My Goals & Appraisal -->
       <div id="page-perf-my" class="hidden">
-        <div class="flex items-center justify-between mb-5 gap-3">
-          <select id="perfMyCycleSelect" class="inp" style="max-width:280px" onchange="loadMyPerformancePage()"></select>
+        <div class="flex items-center justify-between mb-5 gap-3 flex-wrap">
+          <div class="flex items-center gap-3">
+            <select id="perfMyCycleSelect" class="inp" style="max-width:280px" onchange="loadMyPerformancePage()"></select>
+            <label class="flex items-center gap-1.5 text-xs text-slate-500 flex-shrink-0 cursor-pointer">
+              <input type="checkbox" id="perfMyShowClosed" onchange="togglePerfShowClosed('my', this.checked)" class="rounded"/>
+              Show closed
+            </label>
+          </div>
           <button id="perfAddGoalBtn" onclick="openGoalModal()" class="btn-primary text-sm flex items-center gap-2 flex-shrink-0 hidden">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
             Add Goal
@@ -2472,7 +2478,13 @@
 
       <!-- PERFORMANCE: Team Appraisals -->
       <div id="page-perf-team" class="hidden">
-        <select id="perfTeamCycleSelect" class="inp mb-5" style="max-width:280px" onchange="loadTeamAppraisalsPage()"></select>
+        <div class="flex items-center gap-3 mb-5">
+          <select id="perfTeamCycleSelect" class="inp" style="max-width:280px" onchange="loadTeamAppraisalsPage()"></select>
+          <label class="flex items-center gap-1.5 text-xs text-slate-500 flex-shrink-0 cursor-pointer">
+            <input type="checkbox" id="perfTeamShowClosed" onchange="togglePerfShowClosed('team', this.checked)" class="rounded"/>
+            Show closed
+          </label>
+        </div>
         <div class="bg-white rounded-xl border border-slate-200 overflow-x-auto">
           <table class="w-full text-sm">
             <thead class="bg-slate-50 border-b border-slate-200">
@@ -2492,8 +2504,14 @@
 
       <!-- PERFORMANCE: Calibration (hr_manager) -->
       <div id="page-perf-calibration" class="hidden">
-        <div class="flex items-center justify-between mb-5 gap-3">
-          <select id="perfCalibCycleSelect" class="inp" style="max-width:280px" onchange="loadCalibrationPage()"></select>
+        <div class="flex items-center justify-between mb-5 gap-3 flex-wrap">
+          <div class="flex items-center gap-3">
+            <select id="perfCalibCycleSelect" class="inp" style="max-width:280px" onchange="loadCalibrationPage()"></select>
+            <label class="flex items-center gap-1.5 text-xs text-slate-500 flex-shrink-0 cursor-pointer">
+              <input type="checkbox" id="perfCalibShowClosed" onchange="togglePerfShowClosed('calibration', this.checked)" class="rounded"/>
+              Show closed
+            </label>
+          </div>
           <div id="perfCalibActions" class="flex gap-2"></div>
         </div>
         <div id="perfCalibDistribution" class="bg-white rounded-xl border border-slate-200 p-5 mb-5"></div>

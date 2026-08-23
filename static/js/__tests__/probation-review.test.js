@@ -31,3 +31,36 @@ describe('Probation Review panel — status label mapping', () => {
     expect(statusLabel({ appraisal_status: 'Finalized', final_rating: null })).toBe('Final rating: —/5');
   });
 });
+
+// Matches performance.js's populateCycleSelect — a company accumulates many
+// Closed cycles over time (standard org-wide ones, plus 3 per employee per
+// probation review), so every cycle dropdown (My Goals, Team Appraisals,
+// Calibration) defaults to hiding them, with a "Show closed" checkbox to
+// opt back in per page.
+describe('Performance cycle dropdown — hiding Closed cycles by default', () => {
+  function visibleCycles(cycles, showClosed) {
+    return showClosed ? cycles : cycles.filter(c => c.status !== 'Closed');
+  }
+
+  const cycles = [
+    { id: 1, name: 'H1 2026', status: 'Active' },
+    { id: 2, name: 'Probation Review — Month 1 — Jane Doe', status: 'Closed' },
+    { id: 3, name: 'Probation Review — Month 2 — Jane Doe', status: 'Active' },
+    { id: 4, name: 'zz Test Cycle H1 2026', status: 'Calibration' },
+  ];
+
+  it('hides Closed cycles by default', () => {
+    const visible = visibleCycles(cycles, false);
+    expect(visible.map(c => c.id)).toEqual([1, 3, 4]);
+  });
+
+  it('includes Closed cycles once the "Show closed" checkbox is on', () => {
+    const visible = visibleCycles(cycles, true);
+    expect(visible.map(c => c.id)).toEqual([1, 2, 3, 4]);
+  });
+
+  it('never filters out non-Closed statuses (Active, Calibration) regardless of the toggle', () => {
+    expect(visibleCycles(cycles, false).every(c => c.status !== 'Closed')).toBe(true);
+    expect(visibleCycles(cycles, false)).toHaveLength(3);
+  });
+});

@@ -3,6 +3,16 @@
 let perfCyclesCache=[];
 let currentGoalForForm=null; // full goal object (incl. key_results) when editing an existing goal
 
+// Standard cycles run for months/years and a company accumulates many of
+// them (plus one per employee per probation month — see core/
+// performance_probation.py), so every cycle-picker defaults to hiding
+// Closed ones — otherwise My Goals/Team Appraisals/Calibration's dropdown
+// fills up with old, already-finalized reviews. Each page keeps its own
+// toggle state (independent, not shared) since e.g. HR reviewing
+// Calibration for the current quarter has no bearing on whether an
+// employee wants to see their own closed history in My Goals.
+const perfShowClosed = { my: false, team: false, calibration: false };
+
 const PERF_STATUS_COLORS={'Draft':'bg-slate-100 text-slate-600','Active':'bg-blue-100 text-blue-700','Calibration':'bg-amber-100 text-amber-700','Closed':'bg-green-100 text-green-700'};
 const APPR_STATUS_COLORS={'SelfReview':'bg-amber-100 text-amber-700','ManagerReview':'bg-blue-100 text-blue-700','Calibration':'bg-purple-100 text-purple-700','Finalized':'bg-green-100 text-green-700'};
 
@@ -12,11 +22,19 @@ async function loadPerfCyclesCache() {
   return perfCyclesCache;
 }
 
-function populateCycleSelect(selectId, cycles) {
+function togglePerfShowClosed(context, checked) {
+  perfShowClosed[context]=checked;
+  if(context==='my') loadMyPerformancePage();
+  else if(context==='team') loadTeamAppraisalsPage();
+  else if(context==='calibration') loadCalibrationPage();
+}
+
+function populateCycleSelect(selectId, cycles, showClosed) {
   const sel=document.getElementById(selectId);
   const prev=sel.value;
-  sel.innerHTML=cycles.map(c=>`<option value="${c.id}">${esc(c.name)} (${c.status})</option>`).join('')||'<option value="">No cycles yet</option>';
-  if(prev && cycles.some(c=>String(c.id)===String(prev))) sel.value=prev;
+  const visible=showClosed?cycles:cycles.filter(c=>c.status!=='Closed');
+  sel.innerHTML=visible.map(c=>`<option value="${c.id}">${esc(c.name)} (${c.status})</option>`).join('')||'<option value="">No cycles yet</option>';
+  if(prev && visible.some(c=>String(c.id)===String(prev))) sel.value=prev;
 }
 
 function renderGoalRow(g, editable) {
@@ -118,7 +136,7 @@ async function closeCycle(id) {
 // ---------------------------------------------------------------------------
 async function loadMyPerformancePage() {
   await loadPerfCyclesCache();
-  populateCycleSelect('perfMyCycleSelect', perfCyclesCache);
+  populateCycleSelect('perfMyCycleSelect', perfCyclesCache, perfShowClosed.my);
   const cycleId=document.getElementById('perfMyCycleSelect').value;
   const content=document.getElementById('perfMyContent');
   if(!cycleId){ content.innerHTML='<p class="text-slate-400 text-sm text-center py-12">No cycles yet.</p>'; document.getElementById('perfAddGoalBtn').classList.add('hidden'); return; }
@@ -306,7 +324,7 @@ const submitSelfReview = guardAsync(async function(appraisalId) {
 // ---------------------------------------------------------------------------
 async function loadTeamAppraisalsPage() {
   await loadPerfCyclesCache();
-  populateCycleSelect('perfTeamCycleSelect', perfCyclesCache);
+  populateCycleSelect('perfTeamCycleSelect', perfCyclesCache, perfShowClosed.team);
   const cycleId=document.getElementById('perfTeamCycleSelect').value;
   const listEl=document.getElementById('perfTeamList');
   const emptyEl=document.getElementById('perfTeamEmpty');
@@ -359,7 +377,7 @@ const submitManagerReview = guardAsync(async function() {
 // ---------------------------------------------------------------------------
 async function loadCalibrationPage() {
   await loadPerfCyclesCache();
-  populateCycleSelect('perfCalibCycleSelect', perfCyclesCache);
+  populateCycleSelect('perfCalibCycleSelect', perfCyclesCache, perfShowClosed.calibration);
   const cycleId=document.getElementById('perfCalibCycleSelect').value;
   const listEl=document.getElementById('perfCalibList');
   const emptyEl=document.getElementById('perfCalibEmpty');
