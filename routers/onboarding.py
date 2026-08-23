@@ -12,6 +12,8 @@ from core.org_queries import subordinates_in_clause, is_self_or_subordinate
 
 from core.ob_ld_shared import log_ob, auto_enroll_ld_course
 
+from core.performance_probation import create_probation_reviews
+
 from core.roles import get_valid_roles
 
 from core.validators import validate_document_data_url
@@ -42,6 +44,21 @@ def _add_months(d: date, months: int) -> date:
     month = month_index % 12 + 1
     day = min(d.day, _calendar_module.monthrange(year, month)[1])
     return date(year, month, day)
+
+
+def _probation_month_windows(anchor_date: date):
+    """(month_number, period_start, period_end) for Month 1/2/3 probation
+    review cycles — each covers just that month's window (Month 2 spans
+    Month 1's date -> Month 2's date, not day-0 -> Month 2). Passed into
+    core/performance_probation.py's create_probation_reviews, which has
+    no dependency on this module (see that file's docstring)."""
+    windows = []
+    period_start = anchor_date
+    for month in (1, 2, 3):
+        period_end = _add_months(anchor_date, month)
+        windows.append((month, period_start, period_end))
+        period_start = period_end
+    return windows
 
 
 def _next_anniversary(from_date: date, anniversary_date_str: Optional[str]) -> Optional[date]:
@@ -125,6 +142,7 @@ class OBChecklistStartIn(BaseModel):
     type: str = "onboarding"
     template_set_id: Optional[int] = None
     notes: Optional[str] = None
+    enable_probation_review: bool = False  # onboarding only — not every employee goes through probation
 
 
 class OBItemUpdateIn(BaseModel):
@@ -565,6 +583,8 @@ def start_ob_checklist(conn, body: OBChecklistStartIn, user: dict = Depends(get_
     inst_id = need_inst(user)
     if body.type not in ("onboarding","offboarding"):
         raise HTTPException(400, "type must be onboarding or offboarding")
+    if body.enable_probation_review and body.type != "onboarding":
+        raise HTTPException(400, "Probation review only applies to onboarding checklists")
     # Check employee exists
     emp = conn.execute("SELECT * FROM employees WHERE employee_id=? AND institution_id=?",
                        (body.employee_id, inst_id)).fetchone()
@@ -578,8 +598,63 @@ def start_ob_checklist(conn, body: OBChecklistStartIn, user: dict = Depends(get_
     if existing:
         raise HTTPException(400, f"An active {body.type} checklist already exists for this employee")
     cl_id = _create_ob_checklist(conn, inst_id, emp, body.type, body.template_set_id, body.notes, user["username"], user)
+    if body.enable_probation_review:
+        conn.execute("UPDATE ob_checklists SET probation_enabled=1 WHERE id=?", (cl_id,))
+        conn.commit()
+        create_probation_reviews(conn, inst_id, dict(emp), cl_id, _probation_month_windows(date.today()), user)
     row = conn.execute("SELECT * FROM ob_checklists WHERE id=?", (cl_id,)).fetchone()
     return dict(row)
+
+
+@router.post("/api/ob/checklists/{cl_id}/enable-probation-review", status_code=201)
+@db_session
+def enable_probation_review(conn, cl_id: int, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    """The 'add it later' entry point — for an onboarding checklist
+    already in progress that wasn't opted into probation review at
+    Start Onboarding time."""
+    require_permission(conn, user, "onboarding_offboarding.start_delete_checklist")
+    inst_id = need_inst(user)
+    cl = conn.execute("SELECT * FROM ob_checklists WHERE id=? AND institution_id=?", (cl_id, inst_id)).fetchone()
+    if not cl:
+        raise HTTPException(404, "Checklist not found")
+    if cl["type"] != "onboarding":
+        raise HTTPException(400, "Probation review only applies to onboarding checklists")
+    if cl["probation_enabled"]:
+        raise HTTPException(400, "Probation review is already enabled for this checklist")
+    emp = conn.execute("SELECT * FROM employees WHERE employee_id=? AND institution_id=?",
+                       (cl["employee_id"], inst_id)).fetchone()
+    if not emp:
+        raise HTTPException(404, "Employee not found")
+    conn.execute("UPDATE ob_checklists SET probation_enabled=1 WHERE id=?", (cl_id,))
+    conn.commit()
+    create_probation_reviews(conn, inst_id, dict(emp), cl_id, _probation_month_windows(date.today()), user)
+    row = conn.execute("SELECT * FROM ob_checklists WHERE id=?", (cl_id,)).fetchone()
+    return dict(row)
+
+
+@router.get("/api/ob/checklists/{cl_id}/probation-reviews")
+@db_session
+def get_probation_reviews(conn, cl_id: int, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
+    inst_id = need_inst(user)
+    cl = conn.execute("SELECT * FROM ob_checklists WHERE id=? AND institution_id=?", (cl_id, inst_id)).fetchone()
+    if not cl:
+        raise HTTPException(404, "Checklist not found")
+    if user["role"] == "employee" and cl["employee_id"] != user.get("employee_id"):
+        raise HTTPException(403, "Access denied to this checklist")
+    if user["role"] == "manager" and not is_self_or_subordinate(conn, inst_id, user.get("employee_id"), cl["employee_id"]):
+        raise HTTPException(403, "Access denied to this checklist")
+    rows = conn.execute(
+        """
+        SELECT pc.id AS cycle_id, pc.name, pc.status, pc.period_start, pc.period_end,
+               a.id AS appraisal_id, a.status AS appraisal_status, a.self_rating, a.manager_rating, a.final_rating
+        FROM performance_cycles pc
+        JOIN appraisals a ON a.cycle_id = pc.id AND a.employee_id = pc.employee_id
+        WHERE pc.source_ob_checklist_id=? AND pc.institution_id=?
+        ORDER BY pc.period_start
+        """,
+        (cl_id, inst_id)
+    ).fetchall()
+    return [dict(r) for r in rows]
 
 
 @router.get("/api/ob/checklists/{cl_id}")

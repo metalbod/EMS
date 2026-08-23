@@ -54,9 +54,18 @@ async function loadPerformanceCycles() {
   const emptyEl=document.getElementById('perfCycleEmpty');
   listEl.innerHTML='<tr><td colspan="4" class="text-slate-400 text-sm text-center py-8">Loading…</td></tr>';
   await loadPerfCyclesCache();
-  if(!perfCyclesCache.length){ listEl.innerHTML=''; emptyEl?.classList.remove('hidden'); return; }
+  // Probation cycles (one per employee per month, auto-managed from
+  // Onboarding — see static/js/onboarding.js's renderObProbationPanel)
+  // are deliberately excluded from this org-wide admin table: they're
+  // never manually Activated (created pre-Active, single appraisal
+  // already in place), so an "Activate" click here would incorrectly
+  // fan out appraisals to the whole company. They're still fully visible
+  // via the My Goals/Team Appraisals cycle dropdowns (populateCycleSelect),
+  // just not in this HR create/activate/close list.
+  const standardCycles=perfCyclesCache.filter(c=>c.cycle_type!=='probation');
+  if(!standardCycles.length){ listEl.innerHTML=''; emptyEl?.classList.remove('hidden'); return; }
   emptyEl?.classList.add('hidden');
-  listEl.innerHTML=perfCyclesCache.map(c=>{
+  listEl.innerHTML=standardCycles.map(c=>{
     let actions='';
     if(c.status==='Draft') actions=`<button onclick="activateCycle(${c.id})" class="text-xs text-blue-600 hover:underline">Activate</button>`;
     else if(c.status==='Active') actions=`<button onclick="openCalibration(${c.id})" class="text-xs text-blue-600 hover:underline">Open Calibration</button>`;

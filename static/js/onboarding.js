@@ -97,6 +97,62 @@ function setObFilter(type, status) {
   loadObChecklists(type, status);
 }
 
+// ---------------------------------------------------------------------------
+// Probation Review (Month 1/2/3) — employee-scoped Performance cycles, opted
+// into per-employee by HR (not every employee goes through probation). Fully
+// reuses the Performance module's own Self/Manager review UI — "View" just
+// deep-links into My Goals & Appraisal / Team Appraisals with the relevant
+// cycle preselected, rather than duplicating that UI here.
+// ---------------------------------------------------------------------------
+async function renderObProbationPanel(clId, cl) {
+  const panel = document.getElementById('obProbationPanel');
+  const canManage = ['superadmin', 'hr_manager', 'hr_admin'].includes(currentUser?.role);
+  if (!cl.probation_enabled) {
+    panel.innerHTML = (canManage && cl.status === 'In Progress')
+      ? `<button onclick="enableProbationReviewFromDetail(${clId})" class="btn-ghost text-xs mb-4">+ Enable Probation Review (Month 1/2/3)</button>`
+      : '';
+    return;
+  }
+  const res = await api(`/api/ob/checklists/${clId}/probation-reviews`);
+  const reviews = res?.ok ? await res.json() : [];
+  if (!reviews.length) { panel.innerHTML = ''; return; }
+  const statusLabel = r => r.appraisal_status === 'Finalized' ? `Final rating: ${r.final_rating ?? '—'}/5`
+    : r.appraisal_status === 'Calibration' ? 'Awaiting HR finalization'
+    : r.appraisal_status === 'ManagerReview' ? 'Awaiting manager review'
+    : 'Awaiting self-review';
+  panel.innerHTML = `<div class="mb-4">
+    <p class="text-xs font-medium text-slate-500 mb-2">Probation Review</p>
+    <div class="grid grid-cols-3 gap-2">
+      ${reviews.map((r, i) => `
+        <div class="border border-slate-200 rounded-lg p-3">
+          <p class="text-xs font-semibold text-slate-700">Month ${i + 1}</p>
+          <p class="text-xs ${r.appraisal_status === 'Finalized' ? 'text-green-600' : 'text-slate-500'} mt-1">${statusLabel(r)}</p>
+          <button onclick="viewProbationReview(${r.cycle_id})" class="text-xs text-blue-600 hover:underline mt-1">View →</button>
+        </div>`).join('')}
+    </div>
+  </div>`;
+}
+
+async function enableProbationReviewFromDetail(clId) {
+  if (!confirm('Enable Probation Review (Month 1/2/3) for this employee? This creates three linked Performance reviews right away.')) return;
+  const res = await api(`/api/ob/checklists/${clId}/enable-probation-review`, { method: 'POST' });
+  if (!res?.ok) { const d = await res?.json().catch(() => ({})); alert(d?.detail || 'Failed to enable'); return; }
+  await openObDetail(clId);
+}
+
+async function viewProbationReview(cycleId) {
+  closeObDetail();
+  const isEmployee = currentUser?.role === 'employee';
+  const targetPage = isEmployee ? 'perf-my' : 'perf-team';
+  const selId = isEmployee ? 'perfMyCycleSelect' : 'perfTeamCycleSelect';
+  const loadFn = isEmployee ? loadMyPerformancePage : loadTeamAppraisalsPage;
+  showPage(targetPage);
+  await loadFn();
+  const sel = document.getElementById(selId);
+  if (sel) sel.value = cycleId;
+  await loadFn();
+}
+
 async function openObDetail(clId) {
   viewingObId=clId;
   const res=await api(`/api/ob/checklists/${clId}`);
@@ -113,6 +169,8 @@ async function openObDetail(clId) {
   const badge=document.getElementById('obStatusBadge');
   badge.textContent=cl.status;
   badge.className=`badge ${cl.status==='Completed'?'bg-green-100 text-green-700':'bg-blue-100 text-blue-700'}`;
+  if(type==='onboarding') await renderObProbationPanel(clId, cl);
+  else document.getElementById('obProbationPanel').innerHTML='';
   // Group items by role
   const roles=['employee','manager','hr_admin','hr_manager'];
   const grouped={};
@@ -270,6 +328,8 @@ async function openStartObModal(type) {
   document.getElementById('startObSubmitBtn').textContent=type==='onboarding'?'Start Onboarding':'Start Offboarding';
   document.getElementById('startObNotes').value='';
   document.getElementById('startObErr').classList.add('hidden');
+  document.getElementById('startObEnableProbation').checked=false;
+  document.getElementById('startObProbationWrap').classList.toggle('hidden', type!=='onboarding');
   const sel=document.getElementById('startObEmpId');
   sel.innerHTML='<option value="">Select employee…</option>';
   employees.filter(e=>e.status==='Active').forEach(e=>{const o=document.createElement('option');o.value=e.employee_id;o.textContent=`${e.employee_id} — ${esc(displayName(e.full_name,e.preferred_name))}`;sel.appendChild(o);});
@@ -288,7 +348,7 @@ async function submitStartOb(e) {
   err.classList.add('hidden');
   const type=document.getElementById('startObType').value;
   const setId=document.getElementById('startObTemplateSet').value;
-  const body={employee_id:document.getElementById('startObEmpId').value,type,template_set_id:setId?parseInt(setId):null,notes:document.getElementById('startObNotes').value||null};
+  const body={employee_id:document.getElementById('startObEmpId').value,type,template_set_id:setId?parseInt(setId):null,notes:document.getElementById('startObNotes').value||null,enable_probation_review:type==='onboarding'&&document.getElementById('startObEnableProbation').checked};
   const res=await api('/api/ob/checklists',{method:'POST',body:JSON.stringify(body)});
   if(!res||!res.ok){const d=await res?.json();err.textContent=d?.detail||'Failed';err.classList.remove('hidden');return;}
   closeStartObModal();

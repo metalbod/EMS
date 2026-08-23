@@ -128,6 +128,15 @@ def _bucket_score(ratio: float) -> int:
 
 
 def _score_goal(conn, goal) -> Optional[float]:
+    cycle = conn.execute("SELECT cycle_type FROM performance_cycles WHERE id=?", (goal["cycle_id"],)).fetchone()
+    if cycle and cycle["cycle_type"] == "probation":
+        # Probation-review goals are a direct 1-5 rating on actual_value,
+        # not a KPI ratio — _bucket_score's ratio thresholds top out at
+        # bucket 4 for a ratio of exactly 1.0 (target/target), so a
+        # literal perfect 5/5 rating would otherwise never reach bucket 5.
+        if goal["actual_value"] is None:
+            return None
+        return float(min(5, max(1, round(goal["actual_value"]))))
     if goal["goal_type"] == "KPI":
         if not goal["target_value"] or goal["actual_value"] is None:
             return None
@@ -154,13 +163,26 @@ def _compute_weighted_rating(conn, cycle_id, employee_id) -> Optional[float]:
     return round(weighted_sum / total_weight, 2)
 
 
-def _can_access_employee_performance(conn, inst_id, user, employee_id) -> bool:
+def _cycle_is_probation(conn, cycle_id: int) -> bool:
+    cycle = conn.execute("SELECT cycle_type FROM performance_cycles WHERE id=?", (cycle_id,)).fetchone()
+    return bool(cycle and cycle["cycle_type"] == "probation")
+
+
+def _can_access_employee_performance(conn, inst_id, user, employee_id, cycle_id: Optional[int] = None) -> bool:
     if user["role"] == "hr_manager":
         return True
     if user.get("employee_id") == employee_id:
         return True
     if user["role"] == "manager":
         return is_self_or_subordinate(conn, inst_id, user.get("employee_id"), employee_id)
+    # hr_admin has no general Performance access (PERFORMANCE_MANAGE_ROLES
+    # is hr_manager-only) — but they do manage Onboarding, including
+    # opting an employee into probation review, so they need at least
+    # read access to the probation cycles they set up. View-only: they
+    # still can't edit goals or submit a manager-review (callers that
+    # allow writes don't pass cycle_id through to this check).
+    if user["role"] == "hr_admin" and cycle_id is not None:
+        return _cycle_is_probation(conn, cycle_id)
     return False
 
 
@@ -267,7 +289,7 @@ def list_goals(conn, cycle_id: int, employee_id: Optional[str] = None, user: dic
     if user["role"] == "superadmin":
         return []
     if employee_id:
-        if not _can_access_employee_performance(conn, inst_id, user, employee_id):
+        if not _can_access_employee_performance(conn, inst_id, user, employee_id, cycle_id):
             raise HTTPException(403, "Access denied")
         rows = conn.execute(
             "SELECT * FROM goals WHERE institution_id=? AND cycle_id=? AND employee_id=? ORDER BY created_at",
@@ -429,6 +451,12 @@ def list_appraisals(conn, cycle_id: int, user: dict = Depends(get_current_user))
     elif user["role"] == "manager":
         frag, fp = subordinates_in_clause(inst_id, user.get("employee_id", ""))
         rows = conn.execute(base + f" AND a.employee_id IN {frag} ORDER BY e.full_name", [inst_id, cycle_id, *fp]).fetchall()
+    elif user["role"] == "hr_admin" and _cycle_is_probation(conn, cycle_id):
+        # hr_admin has no general Performance access, but manages
+        # Onboarding (including opting an employee into probation review)
+        # — view-only for the probation cycle they set up, already scoped
+        # to a single cycle_id so there's no broader-company leak here.
+        rows = conn.execute(base + " ORDER BY e.full_name", (inst_id, cycle_id)).fetchall()
     else:
         rows = conn.execute(base + " AND a.employee_id=? ORDER BY e.full_name", (inst_id, cycle_id, user.get("employee_id", ""))).fetchall()
     return [dict(r) for r in rows]
@@ -444,7 +472,7 @@ def get_appraisal(conn, appraisal_id: int, user: dict = Depends(get_current_user
         WHERE a.id=? AND a.institution_id=?
     """, (appraisal_id, inst_id)).fetchone()
     if not ap: raise HTTPException(404, "Appraisal not found")
-    if not _can_access_employee_performance(conn, inst_id, user, ap["employee_id"]):
+    if not _can_access_employee_performance(conn, inst_id, user, ap["employee_id"], ap["cycle_id"]):
         raise HTTPException(403, "Access denied")
     goals = conn.execute(
         "SELECT * FROM goals WHERE institution_id=? AND cycle_id=? AND employee_id=? ORDER BY created_at",
@@ -507,6 +535,13 @@ def submit_manager_review(conn, appraisal_id: int, body: ManagerReviewIn, user: 
         (rating, body.manager_comments, appraisal_id)
     )
     _log_appraisal(conn, inst_id, appraisal_id, ap["employee_id"], "Manager Review Submitted", f"Manager rating: {rating}", user)
+    # A probation cycle only ever has this one appraisal — there's nothing
+    # to batch-wait for, so open calibration automatically instead of
+    # requiring HR to separately click "Open Calibration" across what
+    # would otherwise be a whole org-wide cycle.
+    cycle = conn.execute("SELECT cycle_type, status FROM performance_cycles WHERE id=?", (ap["cycle_id"],)).fetchone()
+    if cycle and cycle["cycle_type"] == "probation" and cycle["status"] == "Active":
+        conn.execute("UPDATE performance_cycles SET status='Calibration' WHERE id=?", (ap["cycle_id"],))
     conn.commit()
     row = conn.execute("SELECT * FROM appraisals WHERE id=?", (appraisal_id,)).fetchone()
     return dict(row)
