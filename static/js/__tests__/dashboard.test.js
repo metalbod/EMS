@@ -135,7 +135,10 @@ describe('Leave Calendar — merging leave entries and onboarding action items p
       const start = new Date(e.start_date + 'T00:00:00');
       const end = new Date(e.end_date + 'T00:00:00');
       for (let d = new Date(Math.max(start, firstDay)); d <= end && d.getMonth() === month - 1; d.setDate(d.getDate() + 1)) {
-        (byDay[d.getDate()] = byDay[d.getDate()] || []).push(e);
+        const day = d.getDate();
+        const dStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+        const dayPeriod = dStr === e.start_date ? e.start_day_period : (dStr === e.end_date ? e.end_day_period : null);
+        (byDay[day] = byDay[day] || []).push({ ...e, _dayPeriod: dayPeriod });
       }
     }
     const obByDay = {};
@@ -165,7 +168,7 @@ describe('Leave Calendar — merging leave entries and onboarding action items p
 
   function chipInner(item) {
     return item.kind === 'leave'
-      ? displayName(item.e.full_name, item.e.preferred_name)
+      ? `${displayName(item.e.full_name, item.e.preferred_name)}${item.e._dayPeriod ? ` (${item.e._dayPeriod})` : ''}`
       : `📌 ${item.o.title} — ${displayName(item.o.employee_name, item.o.employee_preferred_name)}`;
   }
 
@@ -233,5 +236,33 @@ describe('Leave Calendar — merging leave entries and onboarding action items p
     );
     const { shown } = dayView({}, obByDay, 25);
     expect(chipInner(shown[0])).toBe('📌 Submit IC Copy — Richie');
+  });
+
+  it('shows the half-day period only on the start day of a multi-day range, not on the days after', () => {
+    const { byDay } = bucketByDay(
+      [{ start_date: '2026-08-10', end_date: '2026-08-12', full_name: 'Jane Tan', start_day_period: 'PM', end_day_period: null }],
+      [], 2026, 8
+    );
+    expect(chipInner(dayView(byDay, {}, 10).shown[0])).toBe('Jane Tan (PM)');
+    expect(chipInner(dayView(byDay, {}, 11).shown[0])).toBe('Jane Tan');
+    expect(chipInner(dayView(byDay, {}, 12).shown[0])).toBe('Jane Tan');
+  });
+
+  it('shows the half-day period only on the end day of a multi-day range', () => {
+    const { byDay } = bucketByDay(
+      [{ start_date: '2026-08-10', end_date: '2026-08-12', full_name: 'Jane Tan', start_day_period: null, end_day_period: 'AM' }],
+      [], 2026, 8
+    );
+    expect(chipInner(dayView(byDay, {}, 10).shown[0])).toBe('Jane Tan');
+    expect(chipInner(dayView(byDay, {}, 11).shown[0])).toBe('Jane Tan');
+    expect(chipInner(dayView(byDay, {}, 12).shown[0])).toBe('Jane Tan (AM)');
+  });
+
+  it('shows no period suffix for a full-day entry', () => {
+    const { byDay } = bucketByDay(
+      [{ start_date: '2026-08-10', end_date: '2026-08-10', full_name: 'Jane Tan', start_day_period: null, end_day_period: null }],
+      [], 2026, 8
+    );
+    expect(chipInner(dayView(byDay, {}, 10).shown[0])).toBe('Jane Tan');
   });
 });

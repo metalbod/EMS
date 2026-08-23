@@ -487,14 +487,20 @@ function renderLeaveCalendarGrid(entries, holidays, obItems) {
   const daysInMonth = new Date(leaveCalYear, leaveCalMonth, 0).getDate();
   const startOffset = firstDay.getDay(); // 0=Sun
 
-  // Bucket each entry's days into the calendar cells they span.
+  // Bucket each entry's days into the calendar cells they span. A
+  // half-day period only annotates the specific day it applies to — the
+  // start day for start_day_period, the end day for end_day_period, never
+  // the full days in between — so each day gets its own shallow copy
+  // carrying just that day's period (or null for a full day).
   const byDay = {};
   for (const e of entries) {
     const start = new Date(e.start_date + 'T00:00:00');
     const end = new Date(e.end_date + 'T00:00:00');
     for (let d = new Date(Math.max(start, firstDay)); d <= end && d.getMonth() === leaveCalMonth - 1; d.setDate(d.getDate() + 1)) {
       const day = d.getDate();
-      (byDay[day] = byDay[day] || []).push(e);
+      const dStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+      const dayPeriod = dStr === e.start_date ? e.start_day_period : (dStr === e.end_date ? e.end_day_period : null);
+      (byDay[day] = byDay[day] || []).push({ ...e, _dayPeriod: dayPeriod });
     }
   }
   // Public holidays fall on exactly one day each (unlike leave, which can
@@ -540,10 +546,10 @@ function renderLeaveCalendarGrid(entries, holidays, obItems) {
         ${esc(h.name)}
       </div>`).join('');
     const chipInner = item => item.kind === 'leave'
-      ? `${esc(displayName(item.e.full_name,item.e.preferred_name))}${item.e.leave_type_name ? ` (${esc(item.e.leave_type_name)})` : ''}`
+      ? `${esc(displayName(item.e.full_name,item.e.preferred_name))}${item.e.leave_type_name ? ` (${esc(item.e.leave_type_name)})` : ''}${item.e._dayPeriod ? ` (${item.e._dayPeriod})` : ''}`
       : `📌 ${esc(item.o.title)} — ${esc(displayName(item.o.employee_name,item.o.employee_preferred_name))}`;
     const chipTitle = item => item.kind === 'leave'
-      ? `${esc(displayName(item.e.full_name,item.e.preferred_name))}${item.e.leave_type_name ? ' — ' + esc(item.e.leave_type_name) : ''}`
+      ? `${esc(displayName(item.e.full_name,item.e.preferred_name))}${item.e.leave_type_name ? ' — ' + esc(item.e.leave_type_name) : ''}${item.e._dayPeriod ? ` (${item.e._dayPeriod})` : ''}`
       : `${esc(item.o.title)} — ${esc(displayName(item.o.employee_name,item.o.employee_preferred_name))}`;
     const chips = shown.map(item => `
       <div class="text-xs ${item.kind==='leave'?'bg-amber-50 text-amber-700':'bg-indigo-50 text-indigo-700'} rounded px-1 py-0.5 truncate" title="${chipTitle(item)}">

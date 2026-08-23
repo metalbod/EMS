@@ -798,6 +798,208 @@ def test_max_days_per_month_splits_across_month_boundary(client, make_test_leave
     assert "January 2027" in res2.json()["detail"]
 
 
+# ---------------------------------------------------------------------------
+# Leave Applications: half-day (AM/PM)
+# ---------------------------------------------------------------------------
+def test_half_day_start_deducts_half_a_day(client, employee_with_user, make_test_leave_type):
+    emp, headers = employee_with_user
+    lt = make_test_leave_type(requires_approval=False)
+    res = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": WORK_WEEK_START, "end_date": WORK_WEEK_START,
+        "start_day_period": "AM",
+    })
+    assert res.status_code == 201, res.text
+    body = res.json()
+    assert body["days_count"] == 0.5
+    assert body["start_day_period"] == "AM"
+    assert body["end_day_period"] is None
+
+
+def test_half_day_start_and_end_on_multi_day_range(client, employee_with_user, make_test_leave_type):
+    """5 working days, PM on the first day and AM on the last — 4.0 days
+    total, independent half-day flags on each edge of the range."""
+    emp, headers = employee_with_user
+    lt = make_test_leave_type(requires_approval=False)
+    res = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": WORK_WEEK_START, "end_date": WORK_WEEK_END,
+        "start_day_period": "PM", "end_day_period": "AM",
+    })
+    assert res.status_code == 201, res.text
+    body = res.json()
+    assert body["days_count"] == 4.0
+    assert body["start_day_period"] == "PM"
+    assert body["end_day_period"] == "AM"
+
+
+def test_half_day_allowed_for_calendar_day_leave_type_by_default(client, employee_with_user, make_test_leave_type):
+    """allow_half_day is the SOLE control over half-day eligibility — a
+    calendar-day-counting type (e.g. Maternity/Paternity) is no longer
+    auto-blocked; it defaults to allowed like any other type."""
+    emp, headers = employee_with_user
+    lt = make_test_leave_type(requires_approval=False, annual_entitlement=60, count_calendar_days=True)
+    assert lt["allow_half_day"]
+    res = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": WORK_WEEK_START, "end_date": WORK_WEEK_START,
+        "start_day_period": "AM",
+    })
+    assert res.status_code == 201, res.text
+    assert res.json()["days_count"] == 0.5
+
+
+def test_half_day_rejected_for_calendar_day_leave_type_when_disallowed(client, employee_with_user, make_test_leave_type):
+    emp, headers = employee_with_user
+    lt = make_test_leave_type(requires_approval=False, annual_entitlement=60,
+                              count_calendar_days=True, allow_half_day=False)
+    res = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": WORK_WEEK_START, "end_date": WORK_WEEK_START,
+        "start_day_period": "AM",
+    })
+    assert res.status_code == 400
+    assert "does not allow half-day" in res.json()["detail"]
+
+
+def test_create_leave_type_defaults_to_allow_half_day(client, make_test_leave_type):
+    lt = make_test_leave_type()
+    assert lt["allow_half_day"]
+
+
+def test_update_leave_type_can_disable_half_day(client, hr_manager_auth, make_test_leave_type):
+    lt = make_test_leave_type()
+    res = client.put(f"/api/leave/types/{lt['id']}", headers=hr_manager_auth, json={
+        "name": lt["name"], "annual_entitlement": lt["annual_entitlement"], "allow_half_day": False,
+    })
+    assert res.status_code == 200, res.text
+    assert not res.json()["allow_half_day"]
+
+
+def test_half_day_rejected_when_leave_type_disallows_it(client, employee_with_user, make_test_leave_type):
+    emp, headers = employee_with_user
+    lt = make_test_leave_type(requires_approval=False, allow_half_day=False)
+    res = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": WORK_WEEK_START, "end_date": WORK_WEEK_START,
+        "start_day_period": "AM",
+    })
+    assert res.status_code == 400
+    assert "does not allow half-day" in res.json()["detail"]
+
+
+def test_end_day_period_rejected_when_start_equals_end_date(client, employee_with_user, make_test_leave_type):
+    emp, headers = employee_with_user
+    lt = make_test_leave_type(requires_approval=False)
+    res = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": WORK_WEEK_START, "end_date": WORK_WEEK_START,
+        "end_day_period": "AM",
+    })
+    assert res.status_code == 422
+
+
+def test_half_day_on_non_working_day_returns_400(client, employee_with_user, make_test_leave_type):
+    """2027-03-06 is a Saturday — not a countable day for a default
+    (working-days-only) leave type, so a half-day flag on it is rejected
+    even though the overall range (Mon-Sat) has other valid working days."""
+    emp, headers = employee_with_user
+    lt = make_test_leave_type(requires_approval=False)
+    res = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": WORK_WEEK_START, "end_date": "2027-03-06",
+        "end_day_period": "AM",
+    })
+    assert res.status_code == 400
+    assert "not a working day" in res.json()["detail"]
+
+
+def test_half_day_deduction_respected_by_monthly_cap(client, employee_with_user, make_test_leave_type):
+    """Two separate single-day half-day applications (0.5 day each) in the
+    same month should both fit under a 1.0/month cap (total 1.0, exactly at
+    the limit). If the cap math mistakenly treated each half-day
+    application as a full day, the second would be wrongly rejected."""
+    emp, headers = employee_with_user
+    lt = make_test_leave_type(name="ZZ Half Day Monthly Cap", annual_entitlement=30,
+                              requires_approval=False, max_days_per_month=1.0)
+    first = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": "2027-03-01", "end_date": "2027-03-01", "start_day_period": "AM",
+    })
+    assert first.status_code == 201, first.text
+    assert first.json()["days_count"] == 0.5
+
+    second = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": "2027-03-02", "end_date": "2027-03-02", "start_day_period": "PM",
+    })
+    assert second.status_code == 201, second.text
+    assert second.json()["days_count"] == 0.5
+
+    # A third application would push March to 1.5, over the 1.0 cap.
+    third = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": "2027-03-03", "end_date": "2027-03-03", "start_day_period": "AM",
+    })
+    assert third.status_code == 400
+    assert "day/month limit" in third.json()["detail"]
+
+
+def test_full_half_day_apply_approve_cancel_balance_round_trip(
+    client, hr_manager_auth, employee_with_user, make_test_leave_type
+):
+    emp, headers = employee_with_user
+    lt = make_test_leave_type(requires_approval=True, annual_entitlement=14)
+
+    apply_res = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": WORK_WEEK_START, "end_date": WORK_WEEK_START, "start_day_period": "AM",
+    })
+    assert apply_res.status_code == 201, apply_res.text
+    app_id = apply_res.json()["id"]
+    assert apply_res.json()["days_count"] == 0.5
+
+    approve_res = client.patch(
+        f"/api/leave/applications/{app_id}/status", headers=hr_manager_auth, json={"status": "Approved"}
+    )
+    assert approve_res.status_code == 200
+
+    balance_after_approve = client.get(
+        "/api/leave/balances", headers=hr_manager_auth,
+        params={"employee_id": emp["employee_id"], "year": 2027},
+    ).json()
+    bal_row = next(b for b in balance_after_approve if b["leave_type_id"] == lt["id"])
+    assert bal_row["used_days"] == 0.5
+
+    cancel_res = client.patch(
+        f"/api/leave/applications/{app_id}/status", headers=headers, json={"status": "Cancelled"}
+    )
+    assert cancel_res.status_code == 200
+
+    balance_after_cancel = client.get(
+        "/api/leave/balances", headers=hr_manager_auth,
+        params={"employee_id": emp["employee_id"], "year": 2027},
+    ).json()
+    bal_row = next(b for b in balance_after_cancel if b["leave_type_id"] == lt["id"])
+    assert bal_row["used_days"] == 0.0
+
+
+def test_leave_calendar_includes_half_day_periods(client, hr_manager_auth, employee_with_user, make_test_leave_type):
+    emp, headers = employee_with_user
+    lt = make_test_leave_type(requires_approval=False)
+    res = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": WORK_WEEK_START, "end_date": WORK_WEEK_START, "start_day_period": "AM",
+    })
+    assert res.status_code == 201, res.text
+
+    cal = client.get("/api/leave/calendar", headers=hr_manager_auth, params={"year": 2027, "month": 3})
+    assert cal.status_code == 200, cal.text
+    entry = next(e for e in cal.json() if e["employee_id"] == emp["employee_id"] and e["start_date"] == WORK_WEEK_START)
+    assert entry["start_day_period"] == "AM"
+    assert entry["end_day_period"] is None
+
+
 def test_concurrent_first_time_balance_lookups_do_not_500(client, make_test_leave_type, employee_with_user):
     """_get_or_create_leave_balance (core/leave_balance_ops.py) used to
     SELECT-then-INSERT with no protection against two concurrent callers

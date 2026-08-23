@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 from core.deps import get_current_user, need_inst, require_roles
 
@@ -46,6 +46,8 @@ class LeaveCalendarEntry(BaseModel):
     start_date: str
     end_date: str
     days_count: float
+    start_day_period: Optional[str] = None
+    end_day_period: Optional[str] = None
     leave_type_name: Optional[str] = None
 
 
@@ -58,6 +60,7 @@ class LeaveTypeIn(BaseModel):
     is_active: bool = True
     shares_entitlement_with_id: Optional[int] = None
     count_calendar_days: bool = False
+    allow_half_day: bool = True  # sole control over half-day (AM/PM) applications — see create_leave_application
     accrual_mode: str = "full_year"  # or "monthly" — see _accrued_days
     max_days_per_application: float = 0  # 0 = unlimited
     max_days_per_month: float = 0  # 0 = unlimited
@@ -105,11 +108,30 @@ class LeaveApplicationIn(BaseModel):
     # core/approval_workflow.py's PROJECT_MANAGER_MODULES. Ignored if the
     # workflow has no such step; a step with none picked just auto-skips.
     project_id: Optional[int] = None
+    # Marks the start/end date of the range as a half-day (morning-only or
+    # afternoon-only) instead of a full day — see _half_day_deduction.
+    # Rejected server-side for leave types that count_calendar_days (e.g.
+    # Maternity/Paternity), where a half-day doesn't apply.
+    start_day_period: Optional[str] = None  # None | "AM" | "PM"
+    end_day_period: Optional[str] = None  # None | "AM" | "PM" — only when end_date != start_date
 
     @field_validator("attachment")
     @classmethod
     def validate_attachment(cls, v):
         return validate_logo_url(v)  # reuses the data:-URI + size-cap validator
+
+    @field_validator("start_day_period", "end_day_period")
+    @classmethod
+    def _validate_day_period(cls, v):
+        if v is not None and v not in ("AM", "PM"):
+            raise ValueError("day period must be 'AM' or 'PM'")
+        return v
+
+    @model_validator(mode="after")
+    def _validate_end_period_needs_range(self):
+        if self.end_day_period and self.start_date == self.end_date:
+            raise ValueError("end_day_period cannot be set when start_date equals end_date — use start_day_period only")
+        return self
 
 
 class LeaveStatusIn(BaseModel):
@@ -151,6 +173,29 @@ def _compute_leave_days(conn, inst_id: int, start_date: str, end_date: str, coun
             count += 1
         d += timedelta(days=1)
     return float(count)
+
+
+def _half_day_deduction(conn, inst_id: int, start_date: str, end_date: str, count_calendar_days: bool,
+                        start_day_period: Optional[str], end_day_period: Optional[str]) -> float:
+    """Returns how much to subtract from _compute_leave_days' whole-range
+    count for the half-day period(s) requested — 0, 0.5, or 1.0. Each
+    period is only valid on a date _compute_leave_days would itself count
+    as a full day (reuses it on a single-day range instead of re-querying
+    holidays); a period on a weekend/holiday date raises 400. end_date's
+    period is ignored on a single-day application (start_date==end_date) —
+    the caller (LeaveApplicationIn's model validator) already rejects that
+    combination before this is reached, but the equality guard here keeps
+    this function correct standalone too."""
+    deduction = 0.0
+    if start_day_period:
+        if _compute_leave_days(conn, inst_id, start_date, start_date, count_calendar_days) != 1.0:
+            raise HTTPException(400, f"{start_date} is not a working day for this leave type — cannot apply a half-day there")
+        deduction += 0.5
+    if end_day_period and end_date != start_date:
+        if _compute_leave_days(conn, inst_id, end_date, end_date, count_calendar_days) != 1.0:
+            raise HTTPException(400, f"{end_date} is not a working day for this leave type — cannot apply a half-day there")
+        deduction += 0.5
+    return deduction
 
 
 def _accrued_days(annual_entitlement: float, join_date: Optional[str], as_of_date: str) -> float:
@@ -207,29 +252,61 @@ def _month_buckets(conn, inst_id: int, start_date: str, end_date: str, count_cal
     return buckets
 
 
+def _month_bucket_half_day_adjustment(start_date: str, end_date: str, start_day_period: Optional[str],
+                                      end_day_period: Optional[str]) -> Dict[tuple, float]:
+    """How much to subtract from each calendar-month bucket (see
+    _month_buckets) for the half-day period(s) on this application's own
+    start/end date — used to correct both the new application's own
+    buckets and each existing application's contribution in
+    _check_monthly_cap, since _month_buckets/_days_in_month_range only
+    know about whole-day counts."""
+    adj: Dict[tuple, float] = {}
+    if start_day_period:
+        d0 = datetime.strptime(start_date, "%Y-%m-%d").date()
+        key = (d0.year, d0.month)
+        adj[key] = adj.get(key, 0.0) + 0.5
+    if end_day_period and end_date != start_date:
+        d1 = datetime.strptime(end_date, "%Y-%m-%d").date()
+        key = (d1.year, d1.month)
+        adj[key] = adj.get(key, 0.0) + 0.5
+    return adj
+
+
 def _check_monthly_cap(conn, inst_id: int, employee_id: str, leave_type_id: int, count_calendar_days: bool,
-                       start_date: str, end_date: str, max_days_per_month: float, exclude_app_id: Optional[int] = None):
+                       start_date: str, end_date: str, max_days_per_month: float, exclude_app_id: Optional[int] = None,
+                       start_day_period: Optional[str] = None, end_day_period: Optional[str] = None):
     """Enforces max_days_per_month per calendar month the new application
     touches, counting Approved + Pending Approval applications of this same
     leave type (deliberately including Pending — several under-cap
     applications submitted at once shouldn't be able to collectively blow
-    past the limit while they all sit awaiting approval)."""
+    past the limit while they all sit awaiting approval). start_day_period/
+    end_day_period (both the new application's own, and each existing
+    application's stored values) reduce the relevant month's bucket by 0.5
+    each — otherwise a half-day application would count as a full day
+    against the cap."""
     if not max_days_per_month:
         return
     new_buckets = _month_buckets(conn, inst_id, start_date, end_date, count_calendar_days)
+    new_adj = _month_bucket_half_day_adjustment(start_date, end_date, start_day_period, end_day_period)
+    for key, amt in new_adj.items():
+        if key in new_buckets:
+            new_buckets[key] = max(0.0, new_buckets[key] - amt)
     if not new_buckets:
         return
-    q = "SELECT id, start_date, end_date FROM leave_applications WHERE institution_id=? AND employee_id=? AND leave_type_id=? AND status IN ('Approved', 'Pending Approval')"
+    q = ("SELECT id, start_date, end_date, start_day_period, end_day_period FROM leave_applications "
+         "WHERE institution_id=? AND employee_id=? AND leave_type_id=? AND status IN ('Approved', 'Pending Approval')")
     p = [inst_id, employee_id, leave_type_id]
     if exclude_app_id is not None:
         q += " AND id != ?"
         p.append(exclude_app_id)
     existing = conn.execute(q, p).fetchall()
     for (y, m), new_days in new_buckets.items():
-        existing_days = sum(
-            _days_in_month_range(conn, inst_id, r["start_date"], r["end_date"], count_calendar_days, y, m)
-            for r in existing
-        )
+        existing_days = 0.0
+        for r in existing:
+            existing_days += _days_in_month_range(conn, inst_id, r["start_date"], r["end_date"], count_calendar_days, y, m)
+            r_adj = _month_bucket_half_day_adjustment(r["start_date"], r["end_date"], r["start_day_period"], r["end_day_period"])
+            existing_days -= r_adj.get((y, m), 0.0)
+        existing_days = max(0.0, existing_days)
         total = existing_days + new_days
         if total > max_days_per_month:
             raise HTTPException(400, f"Exceeds the {max_days_per_month} day/month limit for {calendar.month_name[m]} {y} "
@@ -291,10 +368,10 @@ def create_leave_type(conn, body: LeaveTypeIn, user: dict = Depends(get_current_
     inst_id = need_inst(user)
     _validate_shares_entitlement(conn, inst_id, None, body.shares_entitlement_with_id, body.name)
     conn.execute(
-        "INSERT INTO leave_types (institution_id,name,annual_entitlement,requires_approval,requires_attachment,is_paid,is_active,shares_entitlement_with_id,count_calendar_days,accrual_mode,max_days_per_application,max_days_per_month,carry_forward_enabled,carry_forward_max_days,carry_forward_max_percent,carry_forward_expiry_days) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO leave_types (institution_id,name,annual_entitlement,requires_approval,requires_attachment,is_paid,is_active,shares_entitlement_with_id,count_calendar_days,allow_half_day,accrual_mode,max_days_per_application,max_days_per_month,carry_forward_enabled,carry_forward_max_days,carry_forward_max_percent,carry_forward_expiry_days) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (inst_id, body.name, body.annual_entitlement, 1 if body.requires_approval else 0,
          1 if body.requires_attachment else 0, 1 if body.is_paid else 0, 1 if body.is_active else 0,
-         body.shares_entitlement_with_id, 1 if body.count_calendar_days else 0,
+         body.shares_entitlement_with_id, 1 if body.count_calendar_days else 0, 1 if body.allow_half_day else 0,
          body.accrual_mode, body.max_days_per_application, body.max_days_per_month,
          1 if body.carry_forward_enabled else 0, body.carry_forward_max_days,
          body.carry_forward_max_percent, body.carry_forward_expiry_days)
@@ -313,10 +390,10 @@ def update_leave_type(conn, type_id: int, body: LeaveTypeIn, user: dict = Depend
         raise HTTPException(404, "Leave type not found")
     _validate_shares_entitlement(conn, inst_id, type_id, body.shares_entitlement_with_id, body.name)
     conn.execute(
-        "UPDATE leave_types SET name=?,annual_entitlement=?,requires_approval=?,requires_attachment=?,is_paid=?,is_active=?,shares_entitlement_with_id=?,count_calendar_days=?,accrual_mode=?,max_days_per_application=?,max_days_per_month=?,carry_forward_enabled=?,carry_forward_max_days=?,carry_forward_max_percent=?,carry_forward_expiry_days=? WHERE id=?",
+        "UPDATE leave_types SET name=?,annual_entitlement=?,requires_approval=?,requires_attachment=?,is_paid=?,is_active=?,shares_entitlement_with_id=?,count_calendar_days=?,allow_half_day=?,accrual_mode=?,max_days_per_application=?,max_days_per_month=?,carry_forward_enabled=?,carry_forward_max_days=?,carry_forward_max_percent=?,carry_forward_expiry_days=? WHERE id=?",
         (body.name, body.annual_entitlement, 1 if body.requires_approval else 0,
          1 if body.requires_attachment else 0, 1 if body.is_paid else 0, 1 if body.is_active else 0,
-         body.shares_entitlement_with_id, 1 if body.count_calendar_days else 0,
+         body.shares_entitlement_with_id, 1 if body.count_calendar_days else 0, 1 if body.allow_half_day else 0,
          body.accrual_mode, body.max_days_per_application, body.max_days_per_month,
          1 if body.carry_forward_enabled else 0, body.carry_forward_max_days,
          body.carry_forward_max_percent, body.carry_forward_expiry_days, type_id)
@@ -489,7 +566,8 @@ def get_leave_calendar(conn, year: int, month: int, user: dict = Depends(get_cur
     month_end = date(year, month, last_day).isoformat()
 
     rows = conn.execute("""
-        SELECT a.employee_id, e.full_name, e.preferred_name, a.start_date, a.end_date, a.days_count, lt.name AS leave_type_name
+        SELECT a.employee_id, e.full_name, e.preferred_name, a.start_date, a.end_date, a.days_count,
+               a.start_day_period, a.end_day_period, lt.name AS leave_type_name
         FROM leave_applications a
         JOIN employees e ON e.employee_id = a.employee_id AND e.institution_id = a.institution_id
         JOIN leave_types lt ON lt.id = a.leave_type_id
@@ -524,8 +602,12 @@ def create_leave_application(conn, body: LeaveApplicationIn, user: dict = Depend
         raise HTTPException(404, "Leave type not found")
     if lt["requires_attachment"] and not body.attachment:
         raise HTTPException(400, f"'{lt['name']}' requires a supporting document to be attached")
+    if not bool(lt["allow_half_day"]) and (body.start_day_period or body.end_day_period):
+        raise HTTPException(400, f"'{lt['name']}' does not allow half-day applications")
 
     days = _compute_leave_days(conn, inst_id, body.start_date, body.end_date, bool(lt["count_calendar_days"]))
+    days -= _half_day_deduction(conn, inst_id, body.start_date, body.end_date, bool(lt["count_calendar_days"]),
+                                body.start_day_period, body.end_day_period)
     if days <= 0:
         raise HTTPException(400, "Selected date range has no working days to apply (all weekends/public holidays)")
 
@@ -533,7 +615,8 @@ def create_leave_application(conn, body: LeaveApplicationIn, user: dict = Depend
         raise HTTPException(400, f"'{lt['name']}' allows at most {lt['max_days_per_application']} day(s) per application — requested {days}")
 
     _check_monthly_cap(conn, inst_id, body.employee_id, body.leave_type_id, bool(lt["count_calendar_days"]),
-                       body.start_date, body.end_date, lt["max_days_per_month"])
+                       body.start_date, body.end_date, lt["max_days_per_month"],
+                       start_day_period=body.start_day_period, end_day_period=body.end_day_period)
 
     year = datetime.strptime(body.start_date, "%Y-%m-%d").year
     balance = _get_or_create_leave_balance(conn, inst_id, body.employee_id, _balance_leave_type_id(lt), year)
@@ -553,18 +636,22 @@ def create_leave_application(conn, body: LeaveApplicationIn, user: dict = Depend
         if auto_approved:
             status = "Approved"
     conn.execute(
-        "INSERT INTO leave_applications (institution_id,employee_id,leave_type_id,start_date,end_date,days_count,status,reason,attachment,requested_by,approval_workflow_id,approval_step,project_id) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO leave_applications (institution_id,employee_id,leave_type_id,start_date,end_date,days_count,status,reason,attachment,requested_by,approval_workflow_id,approval_step,project_id,start_day_period,end_day_period) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (inst_id, body.employee_id, body.leave_type_id, body.start_date, body.end_date, days, status,
-         body.reason, body.attachment, user["username"], workflow_id, step_order, body.project_id)
+         body.reason, body.attachment, user["username"], workflow_id, step_order, body.project_id,
+         body.start_day_period, body.end_day_period)
     )
     app_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
     if status == "Approved":
         _consume_balance(conn, balance, days)
 
+    half_day_note = ""
+    if body.start_day_period: half_day_note += f", start day={body.start_day_period}"
+    if body.end_day_period: half_day_note += f", end day={body.end_day_period}"
     _log_leave(conn, inst_id, app_id, body.employee_id, "Applied",
-               f"Applied for {lt['name']}: {body.start_date} to {body.end_date} ({days} working day(s)) — status: {status}", user)
+               f"Applied for {lt['name']}: {body.start_date} to {body.end_date} ({days} working day(s){half_day_note}) — status: {status}", user)
     conn.commit()
     row = conn.execute("SELECT * FROM leave_applications WHERE id=?", (app_id,)).fetchone()
     return dict(row)

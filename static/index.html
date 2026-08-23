@@ -3375,6 +3375,22 @@
         <div><label class="lbl">Start Date <span class="text-red-500">*</span></label><input id="leaveApplyStart" type="date" class="inp" required onchange="updateLeaveApplyDaysPreview()"/></div>
         <div><label class="lbl">End Date <span class="text-red-500">*</span></label><input id="leaveApplyEnd" type="date" class="inp" required onchange="updateLeaveApplyDaysPreview()"/></div>
       </div>
+      <div id="leaveApplyDayPeriodWrap" class="hidden grid grid-cols-2 gap-3">
+        <div><label class="lbl">Start Day</label>
+          <select id="leaveApplyStartPeriod" class="inp" onchange="updateLeaveApplyDaysPreview()">
+            <option value="">Full day</option>
+            <option value="AM">Half day - Morning (AM)</option>
+            <option value="PM">Half day - Afternoon (PM)</option>
+          </select>
+        </div>
+        <div id="leaveApplyEndPeriodWrap"><label class="lbl">End Day</label>
+          <select id="leaveApplyEndPeriod" class="inp" onchange="updateLeaveApplyDaysPreview()">
+            <option value="">Full day</option>
+            <option value="AM">Half day - Morning (AM)</option>
+            <option value="PM">Half day - Afternoon (PM)</option>
+          </select>
+        </div>
+      </div>
       <p id="leaveApplyDaysPreview" class="text-xs text-slate-500"></p>
       <div id="leaveApplyProjectWrap" class="hidden">
         <label class="lbl">Project <span class="text-red-500">*</span></label>
@@ -3522,6 +3538,9 @@
       </label>
       <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
         <input type="checkbox" id="leaveTypeIsPaid" class="w-4 h-4" checked/> Paid leave <span class="text-slate-400 font-normal">(unchecked = docks pay in Payroll)</span>
+      </label>
+      <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+        <input type="checkbox" id="leaveTypeAllowHalfDay" class="w-4 h-4" checked/> Allow half-day (AM/PM) applications
       </label>
       <div class="flex gap-2 pt-2">
         <button type="submit" class="btn-primary">Save</button>

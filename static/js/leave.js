@@ -62,7 +62,7 @@ async function loadLeaveApplications() {
             <p class="font-medium text-slate-800">${esc(a.leave_type_name)}</p>
             <span class="badge ${statusColor(LEAVE_STATUS_COLORS, a.status)} text-xs">${a.status}</span>
           </div>
-          <p class="text-xs text-slate-500">${fmtDate(a.start_date)} → ${fmtDate(a.end_date)} · ${a.days_count} working day(s)</p>
+          <p class="text-xs text-slate-500">${fmtDate(a.start_date)} → ${fmtDate(a.end_date)} · ${a.days_count} working day(s)${ldHalfDaySuffix(a)}</p>
           ${a.reason?`<p class="text-xs text-slate-400 italic mt-1">${esc(a.reason)}</p>`:''}
           ${a.notes?`<p class="text-xs text-slate-500 mt-1">Note: ${esc(a.notes)}</p>`:''}
           ${a.attachment?`<a href="${a.attachment}" target="_blank" class="text-xs text-blue-600 hover:underline mt-1 inline-block">View attachment</a>`:''}
@@ -98,6 +98,9 @@ async function openLeaveApplyModal() {
   document.getElementById('leaveApplyReason').value='';
   document.getElementById('leaveApplyStart').value='';
   document.getElementById('leaveApplyEnd').value='';
+  document.getElementById('leaveApplyStartPeriod').value='';
+  document.getElementById('leaveApplyEndPeriod').value='';
+  document.getElementById('leaveApplyDayPeriodWrap').classList.add('hidden');
   document.getElementById('leaveApplyAttachFile').value='';
   leaveApplyAttachment=null;
 
@@ -189,6 +192,16 @@ function ldLeaveComputeWorkdays(startStr, endStr) {
   return count;
 }
 
+// Pure: renders an application's half-day period(s) as a display suffix,
+// e.g. " (PM start, AM end)" — "" when neither is set. Shared by both the
+// My Leave and Approvals list templates.
+function ldHalfDaySuffix(a) {
+  const parts=[];
+  if(a.start_day_period) parts.push(`${a.start_day_period} start`);
+  if(a.end_day_period) parts.push(`${a.end_day_period} end`);
+  return parts.length ? ` (${parts.join(', ')})` : '';
+}
+
 function ldLeaveComputeCalendarDays(startStr, endStr) {
   if(!startStr||!endStr) return 0;
   const start=new Date(startStr+'T00:00:00'), end=new Date(endStr+'T00:00:00');
@@ -196,20 +209,55 @@ function ldLeaveComputeCalendarDays(startStr, endStr) {
   return Math.round((end-start)/86400000)+1;
 }
 
+// Pure: how much to subtract from a whole-range day count for the
+// half-day period(s) selected — mirrors the backend's _half_day_deduction
+// arithmetic (0, 0.5, or 1.0). Kept side-effect-free so it's directly
+// testable and reusable from the preview below.
+function ldLeaveHalfDayDeduction(start, end, startPeriod, endPeriod) {
+  let deduction=0;
+  if(startPeriod) deduction+=0.5;
+  if(endPeriod && end!==start) deduction+=0.5;
+  return deduction;
+}
+
+// Shows/hides the Start Day / End Day half-day selectors: only offered
+// once both dates are picked, only for leave types with allow_half_day
+// checked (the sole control — see routers/leave.py's matching
+// server-side gate; a type's count_calendar_days no longer factors in),
+// and the End Day selector only when the range spans more than one date
+// (mirrors the DB's end_day_period-requires-a-range constraint).
+function updateLeaveApplyDayPeriodVisibility() {
+  const start=document.getElementById('leaveApplyStart').value;
+  const end=document.getElementById('leaveApplyEnd').value;
+  const typeId=parseInt(document.getElementById('leaveApplyTypeId').value);
+  const type=leaveTypesCache.find(t=>t.id===typeId);
+  const wrap=document.getElementById('leaveApplyDayPeriodWrap');
+  const endWrap=document.getElementById('leaveApplyEndPeriodWrap');
+  const eligible=!!(start && end && type && type.allow_half_day);
+  wrap.classList.toggle('hidden', !eligible);
+  endWrap.classList.toggle('hidden', !eligible || start===end);
+  if(!eligible || start===end) document.getElementById('leaveApplyEndPeriod').value='';
+  if(!eligible) document.getElementById('leaveApplyStartPeriod').value='';
+}
+
 function updateLeaveApplyDaysPreview() {
+  updateLeaveApplyDayPeriodVisibility();
   const start=document.getElementById('leaveApplyStart').value;
   const end=document.getElementById('leaveApplyEnd').value;
   const preview=document.getElementById('leaveApplyDaysPreview');
   if(!start||!end){ preview.textContent=''; return; }
   const typeId=parseInt(document.getElementById('leaveApplyTypeId').value);
   const type=leaveTypesCache.find(t=>t.id===typeId);
-  if(type?.count_calendar_days){
-    const days=ldLeaveComputeCalendarDays(start,end);
-    preview.textContent=`≈ ${days} calendar day(s) will be deducted (weekends & public holidays included)`;
-  } else {
-    const days=ldLeaveComputeWorkdays(start,end);
-    preview.textContent=`≈ ${days} working day(s) will be deducted (weekends & public holidays excluded)`;
+  const isCalendar=!!type?.count_calendar_days;
+  let days=isCalendar?ldLeaveComputeCalendarDays(start,end):ldLeaveComputeWorkdays(start,end);
+  if(type?.allow_half_day){
+    const startPeriod=document.getElementById('leaveApplyStartPeriod').value;
+    const endPeriod=document.getElementById('leaveApplyEndPeriod').value;
+    days-=ldLeaveHalfDayDeduction(start,end,startPeriod,endPeriod);
   }
+  preview.textContent=isCalendar
+    ?`≈ ${days} calendar day(s) will be deducted (weekends & public holidays included)`
+    :`≈ ${days} working day(s) will be deducted (weekends & public holidays excluded)`;
 }
 
 function handleLeaveAttachFile(e) {
@@ -240,6 +288,8 @@ async function submitLeaveApplication(e) {
     attachment: leaveApplyAttachment,
     project_id: !projectWrap.classList.contains('hidden') && document.getElementById('leaveApplyProjectId').value
       ? parseInt(document.getElementById('leaveApplyProjectId').value) : null,
+    start_day_period: document.getElementById('leaveApplyStartPeriod').value||null,
+    end_day_period: document.getElementById('leaveApplyEndPeriod').value||null,
   };
   const res=await api('/api/leave/applications',{method:'POST',body:JSON.stringify(body)});
   if(res?.ok){
@@ -274,7 +324,7 @@ async function loadLeaveApprovals() {
             <p class="font-medium text-slate-800">${esc(displayName(a.employee_name, a.employee_preferred_name))}</p>
             <span class="badge ${statusColor(LEAVE_STATUS_COLORS, a.status)} text-xs">${a.status}</span>
           </div>
-          <p class="text-xs text-slate-500">${esc(a.leave_type_name)} · ${fmtDate(a.start_date)} → ${fmtDate(a.end_date)} · ${a.days_count} day(s)</p>
+          <p class="text-xs text-slate-500">${esc(a.leave_type_name)} · ${fmtDate(a.start_date)} → ${fmtDate(a.end_date)} · ${a.days_count} day(s)${ldHalfDaySuffix(a)}</p>
           <p class="text-xs text-slate-400">${esc(a.department||'')}${a.designation?' · '+esc(a.designation):''}</p>
           ${a.reason?`<p class="text-xs text-slate-400 italic mt-1">${esc(a.reason)}</p>`:''}
           ${a.attachment?`<a href="${a.attachment}" target="_blank" class="text-xs text-blue-600 hover:underline mt-1 inline-block">View attachment</a>`:''}
@@ -399,6 +449,7 @@ async function loadLeaveTypesForManage() {
         ?`<span class="badge text-xs bg-amber-100 text-amber-700">Shares with ${esc(sharedType.name)}</span>`
         :`<span class="text-xs text-slate-400">${t.annual_entitlement} days/yr</span>`}
       ${t.count_calendar_days?'<span class="badge text-xs bg-slate-100 text-slate-600">Calendar days</span>':''}
+      ${!t.allow_half_day?'<span class="badge text-xs bg-slate-100 text-slate-600">No half-day</span>':''}
       ${t.accrual_mode==='monthly'?'<span class="badge text-xs bg-teal-100 text-teal-700">Accrues monthly</span>':''}
       ${t.max_days_per_application?`<span class="badge text-xs bg-slate-100 text-slate-600">Max ${t.max_days_per_application}/app</span>`:''}
       ${t.max_days_per_month?`<span class="badge text-xs bg-slate-100 text-slate-600">Max ${t.max_days_per_month}/mo</span>`:''}
@@ -434,6 +485,7 @@ function openLeaveTypeModal(typeId) {
     document.getElementById('leaveTypeRequiresApproval').checked=!!t?.requires_approval;
     document.getElementById('leaveTypeRequiresAttachment').checked=!!t?.requires_attachment;
     document.getElementById('leaveTypeIsPaid').checked=t?.is_paid===undefined?true:!!t.is_paid;
+    document.getElementById('leaveTypeAllowHalfDay').checked=t?.allow_half_day===undefined?true:!!t.allow_half_day;
     sharesSel.value=t?.shares_entitlement_with_id||'';
     document.getElementById('leaveTypeCarryForwardEnabled').checked=!!t?.carry_forward_enabled;
     document.getElementById('leaveTypeCarryMaxDays').value=t?.carry_forward_max_days||0;
@@ -449,6 +501,7 @@ function openLeaveTypeModal(typeId) {
     document.getElementById('leaveTypeRequiresApproval').checked=true;
     document.getElementById('leaveTypeRequiresAttachment').checked=false;
     document.getElementById('leaveTypeIsPaid').checked=true;
+    document.getElementById('leaveTypeAllowHalfDay').checked=true;
     sharesSel.value='';
     document.getElementById('leaveTypeCarryForwardEnabled').checked=false;
     document.getElementById('leaveTypeCarryMaxDays').value=0;
@@ -482,6 +535,7 @@ async function submitLeaveType(e) {
     requires_approval: document.getElementById('leaveTypeRequiresApproval').checked,
     requires_attachment: document.getElementById('leaveTypeRequiresAttachment').checked,
     is_paid: document.getElementById('leaveTypeIsPaid').checked,
+    allow_half_day: document.getElementById('leaveTypeAllowHalfDay').checked,
     shares_entitlement_with_id: sharesWith?parseInt(sharesWith):null,
     count_calendar_days: document.getElementById('leaveTypeCountMode').value==='calendar',
     accrual_mode: document.getElementById('leaveTypeAccrualMode').value,
