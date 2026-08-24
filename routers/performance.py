@@ -27,6 +27,10 @@ from core.audit import write_audit
 
 from core.compensation_helpers import add_hr_note
 
+from core.approval_workflow import advance_or_finalize
+
+from core.performance_pip import propose_pip, apply_pip_decision, record_pip_outcome
+
 from db import get_db
 
 from core.db_session import db_session
@@ -119,6 +123,68 @@ class BonusPayoutIn(BaseModel):
         return v
 
 
+class PipGoalIn(BaseModel):
+    goal_type: str = "KPI"
+    title: str
+    description: Optional[str] = None
+    weight: float = 0.0
+    target_value: Optional[float] = None
+    actual_value: Optional[float] = None
+    unit: Optional[str] = None
+
+    @field_validator("goal_type")
+    @classmethod
+    def _validate_goal_type(cls, v):
+        if v not in ("KPI", "OKR"):
+            raise ValueError("goal_type must be KPI or OKR")
+        return v
+
+
+class PipProposeIn(BaseModel):
+    employee_id: str
+    reason: str
+    start_date: str
+    end_date: str
+    goals: List[PipGoalIn] = []
+
+    @field_validator("reason")
+    @classmethod
+    def _validate_reason(cls, v):
+        if not v or not v.strip():
+            raise ValueError("reason is required")
+        return v.strip()
+
+
+class PipDecisionIn(BaseModel):
+    status: str  # Approved | Rejected
+    notes: Optional[str] = None
+
+
+class PipCheckinIn(BaseModel):
+    checkin_date: str
+    notes: str
+
+    @field_validator("notes")
+    @classmethod
+    def _validate_notes(cls, v):
+        if not v or not v.strip():
+            raise ValueError("notes is required")
+        return v.strip()
+
+
+class PipOutcomeIn(BaseModel):
+    outcome: str  # Successful | Extended | Failed
+    notes: Optional[str] = None
+    new_end_date: Optional[str] = None  # required when outcome == "Extended"
+
+    @field_validator("outcome")
+    @classmethod
+    def _validate_outcome(cls, v):
+        if v not in ("Successful", "Extended", "Failed"):
+            raise ValueError("outcome must be Successful, Extended, or Failed")
+        return v
+
+
 def _bucket_score(ratio: float) -> int:
     if ratio >= 1.15: return 5
     if ratio >= 1.00: return 4
@@ -168,6 +234,11 @@ def _cycle_is_probation(conn, cycle_id: int) -> bool:
     return bool(cycle and cycle["cycle_type"] == "probation")
 
 
+def _cycle_is_pip(conn, cycle_id: int) -> bool:
+    cycle = conn.execute("SELECT cycle_type FROM performance_cycles WHERE id=?", (cycle_id,)).fetchone()
+    return bool(cycle and cycle["cycle_type"] == "pip")
+
+
 def _can_access_employee_performance(conn, inst_id, user, employee_id, cycle_id: Optional[int] = None) -> bool:
     if user["role"] == "hr_manager":
         return True
@@ -207,13 +278,13 @@ def list_performance_cycles(conn, user: dict = Depends(get_current_user)) -> Lis
     # institution — their name/dates aren't sensitive, and every module
     # page that lists cycles (My Goals, Team Appraisals, Calibration, the
     # HR admin Cycles table) needs to see them to populate its selector.
-    # A probation cycle's *name* embeds the employee's full name, so
-    # leaving those unfiltered would leak who's on probation to every
-    # employee in the company — only include one if this user could
+    # A probation or PIP cycle's *name* embeds the employee's full name,
+    # so leaving those unfiltered would leak who's on probation/a PIP to
+    # every employee in the company — only include one if this user could
     # actually access that employee's performance data.
     return [
         dict(r) for r in rows
-        if r["cycle_type"] != "probation" or _can_access_employee_performance(conn, inst_id, user, r["employee_id"], r["id"])
+        if r["cycle_type"] not in ("probation", "pip") or _can_access_employee_performance(conn, inst_id, user, r["employee_id"], r["id"])
     ]
 
 
@@ -574,6 +645,118 @@ def calibrate_appraisal(conn, appraisal_id: int, body: CalibrateIn, user: dict =
                     f"Calibrated rating: {body.calibrated_rating}" if body.calibrated_rating is not None else "No override", user)
     conn.commit()
     row = conn.execute("SELECT * FROM appraisals WHERE id=?", (appraisal_id,)).fetchone()
+    return dict(row)
+
+
+# --- PIP (Performance Improvement Plan) ---
+@router.post("/api/performance/pip", status_code=201)
+@db_session
+def propose_pip_endpoint(conn, body: PipProposeIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    inst_id = need_inst(user)
+    if user["role"] not in ("manager", "hr_manager"):
+        raise HTTPException(403, "Only a manager or HR can propose a Performance Improvement Plan")
+    if not _can_access_employee_performance(conn, inst_id, user, body.employee_id):
+        raise HTTPException(403, "Access denied")
+    if user.get("employee_id") == body.employee_id:
+        raise HTTPException(400, "You cannot propose a PIP for yourself")
+    emp = conn.execute("SELECT * FROM employees WHERE employee_id=? AND institution_id=?",
+                        (body.employee_id, inst_id)).fetchone()
+    if not emp:
+        raise HTTPException(404, "Employee not found")
+    if body.end_date <= body.start_date:
+        raise HTTPException(400, "End date must be after start date")
+    existing = conn.execute(
+        "SELECT id FROM performance_cycles WHERE employee_id=? AND institution_id=? AND cycle_type='pip' AND status IN ('PendingApproval','Active')",
+        (body.employee_id, inst_id)
+    ).fetchone()
+    if existing:
+        raise HTTPException(400, "This employee already has a pending or active PIP")
+    cycle_id = propose_pip(conn, inst_id, emp, user, body.reason, body.start_date, body.end_date,
+                           [g.model_dump() for g in body.goals])
+    row = conn.execute("SELECT * FROM performance_cycles WHERE id=?", (cycle_id,)).fetchone()
+    return dict(row)
+
+
+@router.patch("/api/performance/pip/{cycle_id}/decide")
+@db_session
+def decide_pip(conn, cycle_id: int, body: PipDecisionIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    inst_id = need_inst(user)
+    valid = ("Approved", "Rejected")
+    if body.status not in valid:
+        raise HTTPException(400, f"status must be one of: {', '.join(valid)}")
+    cycle = conn.execute("SELECT * FROM performance_cycles WHERE id=? AND institution_id=? AND cycle_type='pip'",
+                         (cycle_id, inst_id)).fetchone()
+    if not cycle:
+        raise HTTPException(404, "PIP not found")
+    if cycle["status"] != "PendingApproval":
+        raise HTTPException(400, f"PIP is already {cycle['status']}")
+    action = "reject" if body.status == "Rejected" else "approve"
+    try:
+        outcome, next_step = advance_or_finalize(
+            conn, inst_id, "pip", cycle["employee_id"],
+            cycle["approval_workflow_id"], cycle["approval_step"], action, user
+        )
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    if outcome == "advanced":
+        conn.execute("UPDATE performance_cycles SET approval_step=? WHERE id=?", (next_step, cycle_id))
+        conn.commit()
+        return dict(conn.execute("SELECT * FROM performance_cycles WHERE id=?", (cycle_id,)).fetchone())
+    apply_pip_decision(conn, inst_id, cycle, outcome, user)
+    return dict(conn.execute("SELECT * FROM performance_cycles WHERE id=?", (cycle_id,)).fetchone())
+
+
+@router.get("/api/performance/pip/{cycle_id}/checkins")
+@db_session
+def list_pip_checkins(conn, cycle_id: int, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
+    inst_id = need_inst(user)
+    cycle = conn.execute("SELECT * FROM performance_cycles WHERE id=? AND institution_id=? AND cycle_type='pip'",
+                         (cycle_id, inst_id)).fetchone()
+    if not cycle:
+        raise HTTPException(404, "PIP not found")
+    if not _can_access_employee_performance(conn, inst_id, user, cycle["employee_id"], cycle_id):
+        raise HTTPException(403, "Access denied")
+    rows = conn.execute("SELECT * FROM pip_checkins WHERE cycle_id=? ORDER BY checkin_date, id", (cycle_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+@router.post("/api/performance/pip/{cycle_id}/checkins", status_code=201)
+@db_session
+def add_pip_checkin(conn, cycle_id: int, body: PipCheckinIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    inst_id = need_inst(user)
+    if user["role"] not in ("manager", "hr_manager"):
+        raise HTTPException(403, "Only a manager or HR can add a check-in")
+    cycle = conn.execute("SELECT * FROM performance_cycles WHERE id=? AND institution_id=? AND cycle_type='pip'",
+                         (cycle_id, inst_id)).fetchone()
+    if not cycle:
+        raise HTTPException(404, "PIP not found")
+    if not _can_access_employee_performance(conn, inst_id, user, cycle["employee_id"], cycle_id):
+        raise HTTPException(403, "Access denied")
+    if cycle["status"] != "Active":
+        raise HTTPException(400, "Check-ins can only be added while the PIP is Active")
+    conn.execute(
+        "INSERT INTO pip_checkins (institution_id,cycle_id,checkin_date,notes,created_by) VALUES (?,?,?,?,?)",
+        (inst_id, cycle_id, body.checkin_date, body.notes, user["username"])
+    )
+    conn.commit()
+    row = conn.execute("SELECT * FROM pip_checkins WHERE id=last_insert_rowid()").fetchone()
+    return dict(row)
+
+
+@router.patch("/api/performance/pip/{cycle_id}/outcome")
+@db_session
+def record_pip_outcome_endpoint(conn, cycle_id: int, body: PipOutcomeIn, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))) -> Dict[str, Any]:
+    inst_id = need_inst(user)
+    cycle = conn.execute("SELECT * FROM performance_cycles WHERE id=? AND institution_id=? AND cycle_type='pip'",
+                         (cycle_id, inst_id)).fetchone()
+    if not cycle:
+        raise HTTPException(404, "PIP not found")
+    if cycle["status"] != "Active":
+        raise HTTPException(400, f"PIP must be Active to record an outcome (currently {cycle['status']})")
+    if body.outcome == "Extended" and not body.new_end_date:
+        raise HTTPException(400, "new_end_date is required when outcome is Extended")
+    record_pip_outcome(conn, inst_id, cycle, body.outcome, body.notes, body.new_end_date, user)
+    row = conn.execute("SELECT * FROM performance_cycles WHERE id=?", (cycle_id,)).fetchone()
     return dict(row)
 
 

@@ -590,3 +590,315 @@ def test_list_payouts_requires_manage_or_payroll_view_role(client, employee_with
     _, emp_headers = employee_with_user
     res = client.get("/api/performance/payouts", headers=emp_headers)
     assert res.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# PIP (Performance Improvement Plan)
+# ---------------------------------------------------------------------------
+def _propose_pip(client, headers, employee_id, **overrides):
+    start, end = _period()
+    body = {
+        "employee_id": employee_id, "reason": "Missed delivery targets for two quarters",
+        "start_date": start, "end_date": end, "goals": [],
+    }
+    body.update(overrides)
+    return client.post("/api/performance/pip", headers=headers, json=body)
+
+
+def _notes_of_type(client, headers, employee_id, note_type):
+    res = client.get(f"/api/employees/{employee_id}/notes", headers=headers)
+    assert res.status_code == 200, res.text
+    return [n for n in res.json() if n["note_type"] == note_type]
+
+
+def test_propose_pip_by_manager_for_subordinate_succeeds(client, manager_with_subordinate):
+    manager_emp, mgr_headers, sub_emp = manager_with_subordinate
+    res = _propose_pip(client, mgr_headers, sub_emp["employee_id"])
+    assert res.status_code == 201, res.text
+    cycle = res.json()
+    assert cycle["cycle_type"] == "pip"
+    assert cycle["status"] == "PendingApproval"
+    assert cycle["employee_id"] == sub_emp["employee_id"]
+
+
+def test_propose_pip_for_non_subordinate_returns_403(client, manager_with_subordinate, make_test_employee):
+    _, mgr_headers, _ = manager_with_subordinate
+    unrelated = make_test_employee()
+    res = _propose_pip(client, mgr_headers, unrelated["employee_id"])
+    assert res.status_code == 403
+
+
+def test_propose_pip_by_hr_manager_succeeds(client, hr_manager_auth, make_test_employee):
+    emp = make_test_employee()
+    res = _propose_pip(client, hr_manager_auth, emp["employee_id"])
+    assert res.status_code == 201, res.text
+
+
+def test_propose_pip_for_self_returns_400(client, manager_with_subordinate):
+    manager_emp, mgr_headers, _ = manager_with_subordinate
+    res = _propose_pip(client, mgr_headers, manager_emp["employee_id"])
+    assert res.status_code == 400
+
+
+def test_propose_pip_end_before_start_returns_400(client, manager_with_subordinate):
+    _, mgr_headers, sub_emp = manager_with_subordinate
+    start, end = _period()
+    res = _propose_pip(client, mgr_headers, sub_emp["employee_id"], start_date=end, end_date=start)
+    assert res.status_code == 400
+
+
+def test_propose_pip_by_plain_employee_returns_403(client, employee_with_user, make_test_employee):
+    _, emp_headers = employee_with_user
+    other = make_test_employee()
+    res = _propose_pip(client, emp_headers, other["employee_id"])
+    assert res.status_code == 403
+
+
+def test_propose_pip_duplicate_while_pending_returns_400(client, manager_with_subordinate):
+    _, mgr_headers, sub_emp = manager_with_subordinate
+    first = _propose_pip(client, mgr_headers, sub_emp["employee_id"])
+    assert first.status_code == 201, first.text
+    second = _propose_pip(client, mgr_headers, sub_emp["employee_id"])
+    assert second.status_code == 400
+
+
+def test_decide_pip_approve_activates_and_writes_hr_note(client, hr_manager_auth, manager_with_subordinate):
+    _, mgr_headers, sub_emp = manager_with_subordinate
+    propose = _propose_pip(client, mgr_headers, sub_emp["employee_id"], reason="ZZ Approve Note Check")
+    cycle = propose.json()
+
+    decide = client.patch(f"/api/performance/pip/{cycle['id']}/decide", headers=hr_manager_auth,
+                           json={"status": "Approved"})
+    assert decide.status_code == 200, decide.text
+    assert decide.json()["status"] == "Active"
+
+    notes = _notes_of_type(client, hr_manager_auth, sub_emp["employee_id"], "performance")
+    assert any("ZZ Approve Note Check" in n["body"] for n in notes), (
+        "approving a PIP must write an HR Note under the performance topic"
+    )
+
+
+def test_decide_pip_reject_writes_no_hr_note(client, hr_manager_auth, manager_with_subordinate):
+    _, mgr_headers, sub_emp = manager_with_subordinate
+    propose = _propose_pip(client, mgr_headers, sub_emp["employee_id"])
+    cycle = propose.json()
+
+    before = _notes_of_type(client, hr_manager_auth, sub_emp["employee_id"], "performance")
+    decide = client.patch(f"/api/performance/pip/{cycle['id']}/decide", headers=hr_manager_auth,
+                           json={"status": "Rejected"})
+    assert decide.status_code == 200, decide.text
+    assert decide.json()["status"] == "Rejected"
+
+    after = _notes_of_type(client, hr_manager_auth, sub_emp["employee_id"], "performance")
+    assert len(after) == len(before), "rejecting a PIP proposal must not write an HR Note"
+
+
+def test_decide_pip_by_proposing_manager_returns_403(client, manager_with_subordinate):
+    _, mgr_headers, sub_emp = manager_with_subordinate
+    propose = _propose_pip(client, mgr_headers, sub_emp["employee_id"])
+    cycle = propose.json()
+    decide = client.patch(f"/api/performance/pip/{cycle['id']}/decide", headers=mgr_headers,
+                           json={"status": "Approved"})
+    assert decide.status_code == 403, (
+        "the proposing manager must not also be able to clear their own PIP's approval step"
+    )
+
+
+def test_decide_pip_already_decided_returns_400(client, hr_manager_auth, manager_with_subordinate):
+    _, mgr_headers, sub_emp = manager_with_subordinate
+    cycle = _propose_pip(client, mgr_headers, sub_emp["employee_id"]).json()
+    client.patch(f"/api/performance/pip/{cycle['id']}/decide", headers=hr_manager_auth, json={"status": "Approved"})
+    again = client.patch(f"/api/performance/pip/{cycle['id']}/decide", headers=hr_manager_auth, json={"status": "Approved"})
+    assert again.status_code == 400
+
+
+def test_checkin_add_and_list_by_manager(client, hr_manager_auth, manager_with_subordinate):
+    _, mgr_headers, sub_emp = manager_with_subordinate
+    cycle = _propose_pip(client, mgr_headers, sub_emp["employee_id"]).json()
+    client.patch(f"/api/performance/pip/{cycle['id']}/decide", headers=hr_manager_auth, json={"status": "Approved"})
+
+    add = client.post(f"/api/performance/pip/{cycle['id']}/checkins", headers=mgr_headers,
+                       json={"checkin_date": str(date.today()), "notes": "First check-in, some progress"})
+    assert add.status_code == 201, add.text
+
+    listing = client.get(f"/api/performance/pip/{cycle['id']}/checkins", headers=mgr_headers)
+    assert listing.status_code == 200
+    assert len(listing.json()) == 1
+
+
+def _login_as_manager(client, hr_manager_auth, test_institution, employee):
+    """Attaches a `manager`-role login to an already-existing employee
+    (unlike employee_with_login, which always creates its own fresh
+    employee) — needed for tests that need a *second* manager identity
+    distinct from manager_with_subordinate's own manager."""
+    username = f"zztpipmgr_{employee['employee_id'].lower()}"
+    password = "ZzPytest@123"
+    create_user = client.post("/api/users", headers=hr_manager_auth, json={
+        "username": username, "full_name": "ZZ PIP Test Manager",
+        "password": password, "role": "manager", "employee_id": employee["employee_id"],
+    })
+    assert create_user.status_code == 201, create_user.text
+    login = client.post("/api/auth/login", json={
+        "username": username, "password": password, "institution_code": test_institution["code"],
+    })
+    assert login.status_code == 200, login.text
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    return headers, create_user.json()["id"]
+
+
+def test_checkin_add_by_subject_employee_returns_403(
+    client, hr_manager_auth, test_institution, make_test_employee, employee_with_login
+):
+    manager_emp = make_test_employee()
+    mgr_headers, mgr_user_id = _login_as_manager(client, hr_manager_auth, test_institution, manager_emp)
+    sub_emp, sub_headers = employee_with_login(reports_to=manager_emp["employee_id"])
+
+    cycle = _propose_pip(client, mgr_headers, sub_emp["employee_id"]).json()
+    client.patch(f"/api/performance/pip/{cycle['id']}/decide", headers=hr_manager_auth, json={"status": "Approved"})
+
+    add = client.post(f"/api/performance/pip/{cycle['id']}/checkins", headers=sub_headers,
+                       json={"checkin_date": str(date.today()), "notes": "Trying to self-log"})
+    assert add.status_code == 403, "the PIP's own subject employee must be able to read but not add check-ins"
+
+    listing = client.get(f"/api/performance/pip/{cycle['id']}/checkins", headers=sub_headers)
+    assert listing.status_code == 200, "the subject employee should still be able to read the check-in log"
+
+    client.delete(f"/api/users/{mgr_user_id}", headers=hr_manager_auth)
+
+
+def test_checkin_add_before_approval_returns_400(client, manager_with_subordinate):
+    _, mgr_headers, sub_emp = manager_with_subordinate
+    cycle = _propose_pip(client, mgr_headers, sub_emp["employee_id"]).json()
+    add = client.post(f"/api/performance/pip/{cycle['id']}/checkins", headers=mgr_headers,
+                       json={"checkin_date": str(date.today()), "notes": "Too early"})
+    assert add.status_code == 400
+
+
+def test_checkin_list_denied_for_unrelated_manager(
+    client, hr_manager_auth, test_institution, manager_with_subordinate, make_test_employee
+):
+    _, mgr_headers, sub_emp = manager_with_subordinate
+    cycle = _propose_pip(client, mgr_headers, sub_emp["employee_id"]).json()
+    client.patch(f"/api/performance/pip/{cycle['id']}/decide", headers=hr_manager_auth, json={"status": "Approved"})
+
+    other_mgr_emp = make_test_employee()
+    other_mgr_headers, other_mgr_user_id = _login_as_manager(client, hr_manager_auth, test_institution, other_mgr_emp)
+
+    listing = client.get(f"/api/performance/pip/{cycle['id']}/checkins", headers=other_mgr_headers)
+    assert listing.status_code == 403
+
+    client.delete(f"/api/users/{other_mgr_user_id}", headers=hr_manager_auth)
+
+
+def test_record_outcome_successful_closes_cycle_and_writes_hr_note(client, hr_manager_auth, manager_with_subordinate):
+    _, mgr_headers, sub_emp = manager_with_subordinate
+    cycle = _propose_pip(client, mgr_headers, sub_emp["employee_id"]).json()
+    client.patch(f"/api/performance/pip/{cycle['id']}/decide", headers=hr_manager_auth, json={"status": "Approved"})
+
+    outcome = client.patch(f"/api/performance/pip/{cycle['id']}/outcome", headers=hr_manager_auth,
+                            json={"outcome": "Successful", "notes": "ZZ Turned it around"})
+    assert outcome.status_code == 200, outcome.text
+    body = outcome.json()
+    assert body["status"] == "Closed"
+    assert body["outcome"] == "Successful"
+
+    notes = _notes_of_type(client, hr_manager_auth, sub_emp["employee_id"], "performance")
+    assert any("Successful" in n["body"] and "ZZ Turned it around" in n["body"] for n in notes)
+
+    emp_after = client.get(f"/api/employees/{sub_emp['employee_id']}", headers=hr_manager_auth).json()
+    assert emp_after["status"] == sub_emp["status"], "recording a PIP outcome must not change employee status"
+
+
+def test_record_outcome_failed_closes_cycle(client, hr_manager_auth, manager_with_subordinate):
+    _, mgr_headers, sub_emp = manager_with_subordinate
+    cycle = _propose_pip(client, mgr_headers, sub_emp["employee_id"]).json()
+    client.patch(f"/api/performance/pip/{cycle['id']}/decide", headers=hr_manager_auth, json={"status": "Approved"})
+
+    outcome = client.patch(f"/api/performance/pip/{cycle['id']}/outcome", headers=hr_manager_auth,
+                            json={"outcome": "Failed", "notes": "ZZ No improvement"})
+    assert outcome.status_code == 200, outcome.text
+    assert outcome.json()["status"] == "Closed"
+    assert outcome.json()["outcome"] == "Failed"
+
+    emp_after = client.get(f"/api/employees/{sub_emp['employee_id']}", headers=hr_manager_auth).json()
+    assert emp_after["status"] == sub_emp["status"], "a Failed PIP outcome must not auto-trigger offboarding"
+
+
+def test_record_outcome_extended_requires_new_end_date(client, hr_manager_auth, manager_with_subordinate):
+    _, mgr_headers, sub_emp = manager_with_subordinate
+    cycle = _propose_pip(client, mgr_headers, sub_emp["employee_id"]).json()
+    client.patch(f"/api/performance/pip/{cycle['id']}/decide", headers=hr_manager_auth, json={"status": "Approved"})
+
+    outcome = client.patch(f"/api/performance/pip/{cycle['id']}/outcome", headers=hr_manager_auth,
+                            json={"outcome": "Extended", "notes": "ZZ Needs more time"})
+    assert outcome.status_code == 400
+
+
+def test_record_outcome_extended_keeps_active_with_new_end_date(client, hr_manager_auth, manager_with_subordinate):
+    _, mgr_headers, sub_emp = manager_with_subordinate
+    cycle = _propose_pip(client, mgr_headers, sub_emp["employee_id"]).json()
+    client.patch(f"/api/performance/pip/{cycle['id']}/decide", headers=hr_manager_auth, json={"status": "Approved"})
+
+    _, new_end = _period()
+    outcome = client.patch(f"/api/performance/pip/{cycle['id']}/outcome", headers=hr_manager_auth,
+                            json={"outcome": "Extended", "notes": "ZZ Needs more time", "new_end_date": new_end})
+    assert outcome.status_code == 200, outcome.text
+    body = outcome.json()
+    assert body["status"] == "Active"
+    assert body["outcome"] is None
+    assert body["period_end"] == new_end
+
+    notes = _notes_of_type(client, hr_manager_auth, sub_emp["employee_id"], "performance")
+    assert any("Extended" in n["body"] for n in notes)
+
+
+def test_record_outcome_requires_active_status(client, hr_manager_auth, manager_with_subordinate):
+    _, mgr_headers, sub_emp = manager_with_subordinate
+    cycle = _propose_pip(client, mgr_headers, sub_emp["employee_id"]).json()
+    # Still PendingApproval — never approved.
+    outcome = client.patch(f"/api/performance/pip/{cycle['id']}/outcome", headers=hr_manager_auth,
+                            json={"outcome": "Successful"})
+    assert outcome.status_code == 400
+
+
+def test_record_outcome_requires_manage_role(client, employee_with_user, hr_manager_auth, manager_with_subordinate):
+    _, mgr_headers, sub_emp = manager_with_subordinate
+    cycle = _propose_pip(client, mgr_headers, sub_emp["employee_id"]).json()
+    client.patch(f"/api/performance/pip/{cycle['id']}/decide", headers=hr_manager_auth, json={"status": "Approved"})
+    _, emp_headers = employee_with_user
+    outcome = client.patch(f"/api/performance/pip/{cycle['id']}/outcome", headers=emp_headers,
+                            json={"outcome": "Successful"})
+    assert outcome.status_code == 403
+
+
+def test_pip_hidden_from_unrelated_manager_in_cycle_list(
+    client, hr_manager_auth, test_institution, manager_with_subordinate, make_test_employee
+):
+    _, mgr_headers, sub_emp = manager_with_subordinate
+    cycle = _propose_pip(client, mgr_headers, sub_emp["employee_id"], reason="ZZ Privacy Check").json()
+
+    unrelated_mgr_emp = make_test_employee()
+    bystander_headers, bystander_user_id = _login_as_manager(client, hr_manager_auth, test_institution, unrelated_mgr_emp)
+
+    bystander_cycles = client.get("/api/performance/cycles", headers=bystander_headers).json()
+    assert not any(c["id"] == cycle["id"] for c in bystander_cycles), (
+        "a manager unrelated to a PIP must never see it in the cycle list"
+    )
+
+    hr_cycles = client.get("/api/performance/cycles", headers=hr_manager_auth).json()
+    assert any(c["id"] == cycle["id"] for c in hr_cycles)
+
+    client.delete(f"/api/users/{bystander_user_id}", headers=hr_manager_auth)
+
+
+def test_pip_hidden_from_unrelated_employee_in_cycle_list(
+    client, hr_manager_auth, manager_with_subordinate, employee_with_user
+):
+    _, mgr_headers, sub_emp = manager_with_subordinate
+    cycle = _propose_pip(client, mgr_headers, sub_emp["employee_id"], reason="ZZ Privacy Check Employee").json()
+
+    _, bystander_headers = employee_with_user
+    bystander_cycles = client.get("/api/performance/cycles", headers=bystander_headers).json()
+    assert not any(c["id"] == cycle["id"] for c in bystander_cycles), (
+        "a plain employee unrelated to a PIP must never see it in the cycle list"
+    )

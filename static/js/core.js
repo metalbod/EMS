@@ -625,7 +625,7 @@ function showPage(page) {
   if (page === 'payroll-mybenefits') loadMyBenefitsPage();
   if (page === 'payroll-myrewards') loadMyTotalRewards();
   if (page === 'perf-my')          loadMyPerformancePage();
-  if (page === 'perf-team')        loadTeamAppraisalsPage();
+  if (page === 'perf-team')        { loadTeamAppraisalsPage(); loadPipList(); }
   if (page === 'perf-cycles')      loadPerformanceCycles();
   if (page === 'perf-calibration') loadCalibrationPage();
   if (page === 'attendance-clock')     loadAttendanceClockPage();

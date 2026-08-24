@@ -35,6 +35,9 @@ MODULE_HR_ROLES = {
     "ld_enrollment": ("hr_manager", "hr_admin"),
     "overtime": ("hr_manager", "hr_admin"),
     "resignation": ("hr_manager", "hr_admin"),
+    "pip": ("hr_manager",),  # matches PERFORMANCE_MANAGE_ROLES — every other
+                              # Performance consequence (calibrate, merit,
+                              # bonus) is hr_manager-only, not hr_admin too.
 }
 
 # table + the employee column identifying who the request is *for* (the
@@ -50,6 +53,12 @@ MODULE_TABLE = {
     "ld_enrollment": "ld_enrollments",
     "overtime": "overtime_records",
     "resignation": "resignation_requests",
+    # Reuses performance_cycles rather than a dedicated table — standard/
+    # probation cycles never populate approval_workflow_id/approval_step
+    # (NULL for both) and never use the 'PendingApproval' status below, so
+    # sharing the table is safe: every engine query here also filters on
+    # those two columns being NOT NULL.
+    "pip": "performance_cycles",
 }
 MODULE_EMPLOYEE_COL = {
     "leave": "employee_id",
@@ -59,6 +68,7 @@ MODULE_EMPLOYEE_COL = {
     "ld_enrollment": "employee_id",
     "overtime": "employee_id",
     "resignation": "employee_id",
+    "pip": "employee_id",
 }
 MODULE_PENDING_STATUSES = {
     "leave": ("Pending Approval",),
@@ -68,6 +78,7 @@ MODULE_PENDING_STATUSES = {
     "ld_enrollment": ("Pending Approval",),
     "overtime": ("Pending",),
     "resignation": ("Pending",),
+    "pip": ("PendingApproval",),
 }
 
 
@@ -116,7 +127,16 @@ def get_or_create_default_workflow(conn, inst_id: int, module: str) -> Dict[str,
     lazily (2 steps: Direct Manager, then this module's HR roles) the
     first time it's needed, rather than seeded for every institution up
     front. Mirrors the ob_template_sets "resolve or create default"
-    pattern from the onboarding-templates module."""
+    pattern from the onboarding-templates module.
+
+    "pip" is a deliberate exception: a 'direct_manager' first step would
+    resolve to the PIP subject's direct manager — who, in the ordinary
+    case, IS the manager who just proposed the PIP in the first place, so
+    that step would trivially clear itself rather than add real scrutiny.
+    Its default is a single hr_manager step instead. Institutions can
+    still reconfigure either module's chain afterward via Settings ->
+    Approval Workflows, same as any other module — this only controls
+    what's seeded the first time."""
     row = conn.execute(
         "SELECT * FROM approval_workflows WHERE institution_id=? AND module=? AND is_active=1 "
         "ORDER BY is_default DESC, id LIMIT 1",
@@ -129,14 +149,20 @@ def get_or_create_default_workflow(conn, inst_id: int, module: str) -> Dict[str,
         (inst_id, module, "Default")
     )
     workflow_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-    conn.execute(
-        "INSERT INTO approval_workflow_steps (workflow_id,step_order,approver_type) VALUES (?,1,'direct_manager')",
-        (workflow_id,)
-    )
-    conn.execute(
-        "INSERT INTO approval_workflow_steps (workflow_id,step_order,approver_type) VALUES (?,2,'hr_manager')",
-        (workflow_id,)
-    )
+    if module == "pip":
+        conn.execute(
+            "INSERT INTO approval_workflow_steps (workflow_id,step_order,approver_type) VALUES (?,1,'hr_manager')",
+            (workflow_id,)
+        )
+    else:
+        conn.execute(
+            "INSERT INTO approval_workflow_steps (workflow_id,step_order,approver_type) VALUES (?,1,'direct_manager')",
+            (workflow_id,)
+        )
+        conn.execute(
+            "INSERT INTO approval_workflow_steps (workflow_id,step_order,approver_type) VALUES (?,2,'hr_manager')",
+            (workflow_id,)
+        )
     conn.commit()
     return conn.execute("SELECT * FROM approval_workflows WHERE id=?", (workflow_id,)).fetchone()
 

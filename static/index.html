@@ -2480,6 +2480,7 @@
 
       <!-- PERFORMANCE: My Goals & Appraisal -->
       <div id="page-perf-my" class="hidden">
+        <div id="perfMyPipWrap"></div>
         <div class="flex items-center justify-between mb-5 gap-3 flex-wrap">
           <div class="flex items-center gap-3">
             <select id="perfMyCycleSelect" class="inp" style="max-width:280px" onchange="loadMyPerformancePage()"></select>
@@ -2498,6 +2499,14 @@
 
       <!-- PERFORMANCE: Team Appraisals -->
       <div id="page-perf-team" class="hidden">
+        <!-- Performance Improvement Plans -->
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-sm font-semibold text-slate-700">Performance Improvement Plans</h3>
+          <button onclick="openPipProposeModal()" class="btn-primary text-xs px-3 py-1.5">Propose PIP</button>
+        </div>
+        <div id="pipList" class="space-y-3 mb-8"></div>
+        <p id="pipEmpty" class="hidden text-center text-slate-400 text-sm py-6 mb-8">No Performance Improvement Plans.</p>
+
         <div class="flex items-center gap-3 mb-5">
           <select id="perfTeamCycleSelect" class="inp" style="max-width:280px" onchange="loadTeamAppraisalsPage()"></select>
           <label class="flex items-center gap-1.5 text-xs text-slate-500 flex-shrink-0 cursor-pointer">
@@ -2818,6 +2827,51 @@
         <button type="button" onclick="closePayoutModal()" class="btn-ghost">Cancel</button>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- Propose PIP Modal -->
+<div id="pipProposeModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 class="text-base font-semibold">Propose Performance Improvement Plan</h2>
+      <button onclick="closePipProposeModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <div class="p-6 space-y-4">
+      <p id="pipProposeErr" class="hidden text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2"></p>
+      <div><label class="lbl">Employee</label><select id="pipEmpId" class="inp"></select></div>
+      <div><label class="lbl">Reason</label><textarea id="pipReason" class="inp" rows="3" placeholder="Describe the performance gap this plan addresses"></textarea></div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="lbl">Start Date</label><input id="pipStartDate" type="date" class="inp"/></div>
+        <div><label class="lbl">End Date</label><input id="pipEndDate" type="date" class="inp"/></div>
+      </div>
+      <div>
+        <div class="flex items-center justify-between mb-1">
+          <label class="lbl mb-0">Goals (optional)</label>
+          <button type="button" onclick="addPipGoalRow()" class="text-xs text-blue-600 hover:underline">+ Add goal</button>
+        </div>
+        <div id="pipGoalRows" class="space-y-2"></div>
+      </div>
+      <p class="text-xs text-slate-400">Routed to HR for approval before it takes effect.</p>
+      <div class="flex gap-2 pt-2">
+        <button type="button" onclick="submitPipPropose()" class="btn-primary">Submit for HR Approval</button>
+        <button type="button" onclick="closePipProposeModal()" class="btn-ghost">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PIP Detail Modal -->
+<div id="pipDetailModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <div>
+        <h2 id="pipDetailTitle" class="text-base font-semibold">Performance Improvement Plan</h2>
+        <p id="pipDetailMeta" class="text-xs text-slate-400 mt-0.5">—</p>
+      </div>
+      <button onclick="closePipDetailModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <div id="pipDetailBody" class="p-6 space-y-5"></div>
   </div>
 </div>
 
@@ -5115,6 +5169,7 @@
 <script src="/static/js/benefits.js?v=74"></script>
 <script src="/static/js/attendance.js?v=74"></script>
 <script src="/static/js/performance.js?v=74"></script>
+<script src="/static/js/pip.js?v=1"></script>
 <script src="/static/js/assistant.js?v=1"></script>
 <script src="/static/js/app-init.js?v=74"></script>
 </body>

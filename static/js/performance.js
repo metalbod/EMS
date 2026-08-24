@@ -32,7 +32,12 @@ function togglePerfShowClosed(context, checked) {
 function populateCycleSelect(selectId, cycles, showClosed) {
   const sel=document.getElementById(selectId);
   const prev=sel.value;
-  const visible=showClosed?cycles:cycles.filter(c=>c.status!=='Closed');
+  // PIP cycles never go through the appraisal flow (no Self/Manager
+  // Review, no Calibration) — they'd sit in these selectors as a dead
+  // end (0 appraisals, nothing to review). Surfaced instead via their
+  // own PIP list/detail UI (pip.js) on perf-team and perf-my.
+  const appraisalCycles=cycles.filter(c=>c.cycle_type!=='pip');
+  const visible=showClosed?appraisalCycles:appraisalCycles.filter(c=>c.status!=='Closed');
   sel.innerHTML=visible.map(c=>`<option value="${c.id}">${esc(c.name)} (${c.status})</option>`).join('')||'<option value="">No cycles yet</option>';
   if(prev && visible.some(c=>String(c.id)===String(prev))) sel.value=prev;
 }
@@ -136,6 +141,7 @@ async function closeCycle(id) {
 // ---------------------------------------------------------------------------
 async function loadMyPerformancePage() {
   await loadPerfCyclesCache();
+  loadMyPip();
   populateCycleSelect('perfMyCycleSelect', perfCyclesCache, perfShowClosed.my);
   const cycleId=document.getElementById('perfMyCycleSelect').value;
   const content=document.getElementById('perfMyContent');
