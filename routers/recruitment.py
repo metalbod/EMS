@@ -271,8 +271,8 @@ def list_requisitions(conn,
               WHERE c.requisition_id=r.id AND c.stage IN ('Screening','Interview','Offer','Hired')) AS shortlisted_count,
             (SELECT COUNT(DISTINCT i.candidate_id) FROM interviews i
               WHERE i.requisition_id=r.id AND i.status='Completed') AS interviewed_count,
-            (SELECT COUNT(DISTINCT o.candidate_id) FROM offers o
-              WHERE o.requisition_id=r.id) AS offer_count
+            (SELECT COUNT(*) FROM candidates c
+              WHERE c.requisition_id=r.id AND c.stage IN ('Offer','Hired')) AS offer_count
         FROM job_requisitions r WHERE r.institution_id=?
     """
     p = [inst_id]

@@ -49,6 +49,28 @@ def test_get_requisition_not_found_returns_404(client, hr_manager_auth):
     assert res.status_code == 404
 
 
+def test_list_requisitions_offer_count_reflects_candidate_stage(client, hr_manager_auth):
+    """offer_count must count candidates whose pipeline stage has reached
+    Offer/Hired, not rows in the `offers` table — a candidate can be moved
+    to the Offer stage via the plain Move Stage action (PATCH .../stage)
+    without ever going through the separate formal Create Offer Letter
+    flow that inserts into `offers`, so a table-based count silently
+    undercounts. Mirrors shortlisted_count's own stage-based counting."""
+    req = client.post("/api/recruitment/requisitions", headers=hr_manager_auth,
+                       json={"title": _unique_title(), "department": "Engineering"}).json()
+    cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth, json={
+        "full_name": "ZZ Offer Stage Candidate", "requisition_id": req["id"],
+    }).json()
+    move = client.patch(f"/api/recruitment/candidates/{cand['id']}/stage", headers=hr_manager_auth,
+                         json={"stage": "Offer"})
+    assert move.status_code == 200, move.text
+
+    listing = client.get("/api/recruitment/requisitions", headers=hr_manager_auth,
+                          params={"department": "Engineering"}).json()
+    row = next(r for r in listing if r["id"] == req["id"])
+    assert row["offer_count"] == 1, "a candidate at Offer stage must count even with no formal offer letter created"
+
+
 def test_update_requisition_only_draft_editable(client, hr_manager_auth):
     req = client.post("/api/recruitment/requisitions", headers=hr_manager_auth,
                        json={"title": _unique_title(), "department": "Sales"}).json()
