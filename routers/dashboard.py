@@ -19,6 +19,8 @@ from core.org_queries import subordinates_in_clause
 
 from core.approval_workflow import count_pending_for_approver
 
+from routers.employee_documents import STATUS_CASE_SQL
+
 from db import get_db
 
 from core.db_session import db_session
@@ -82,6 +84,24 @@ def get_todos(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, An
                 "key": f"{module}-approvals",
                 "label": f"{cnt} {noun}{'s' if cnt != 1 else ''} awaiting your approval",
                 "page": page, "count": cnt,
+            })
+
+    # Employee document compliance reminders (work permit renewal, passport
+    # expiry, etc — see routers/employee_documents.py) — HR-only,
+    # institution-wide (no per-employee narrowing, same as the onboarding
+    # block below for HR roles), one aggregate row rather than one per
+    # document since counts could be numerous.
+    if role in ("hr_manager", "hr_admin"):
+        cnt = conn.execute(f"""
+            SELECT COUNT(*) FROM employee_documents ed
+            JOIN employee_document_types edt ON edt.id = ed.document_type_id
+            WHERE ed.institution_id=? AND ({STATUS_CASE_SQL}) != 'ok'
+        """, (inst_id,)).fetchone()[0]
+        if cnt:
+            todos.append({
+                "key": "employee-documents-expiring",
+                "label": f"{cnt} employee document{'s' if cnt != 1 else ''} expiring soon",
+                "page": "dash-leave", "count": cnt,
             })
 
     # Onboarding/Offboarding checklist items assigned to this user's role —

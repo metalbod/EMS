@@ -349,6 +349,10 @@
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 100-8 4 4 0 000 8zm6 3.13a4 4 0 00-3-3.87m-9 3.87a4 4 0 013-3.87"/></svg>
             Roles
           </div>
+          <div id="nav-document-types" class="hidden nav-sub-item" onclick="showPage('settings-document-types');closeBurgerMenu();" data-page="settings-document-types">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+            Document Types
+          </div>
         </div>
       </div>
       <!-- Compensation (HR Manager / Payroll Manager only) -->
@@ -1968,6 +1972,22 @@
         </div>
       </div>
 
+      <!-- SETTINGS: Document Types (HR Manager / HR Admin) -->
+      <div id="page-settings-document-types" class="hidden">
+        <div class="flex justify-between items-center mb-4">
+          <div>
+            <h3 class="text-lg font-semibold">Document Types</h3>
+            <p class="text-xs text-slate-400 mt-1">Define the document types HR tracks per employee — e.g. Work Permit, Passport — each with its own reminder window before it's flagged as expiring soon.</p>
+          </div>
+          <button onclick="openEmployeeDocTypeModal()" class="btn-primary text-sm flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Add Document Type
+          </button>
+        </div>
+        <div id="employeeDocTypeList" class="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100 px-4"></div>
+        <p id="employeeDocTypeEmpty" class="hidden text-sm text-slate-400 text-center py-8">No document types yet.</p>
+      </div>
+
       <!-- COMPENSATION: Pay Grades (HR Manager / Payroll Manager) -->
       <div id="page-comp-paygrades" class="hidden">
         <div class="flex justify-between items-center mb-4">
@@ -3026,12 +3046,24 @@
       <button class="view-tab-btn px-4 py-3 text-sm text-slate-500" data-vtab="vt-statutory" onclick="switchViewTab('vt-statutory')">Statutory &amp; Payroll</button>
       <button id="vt-compensation-btn" class="view-tab-btn px-4 py-3 text-sm text-slate-500 hidden" data-vtab="vt-compensation" onclick="switchViewTab('vt-compensation')">Compensation</button>
       <button id="vt-notes-btn" class="view-tab-btn px-4 py-3 text-sm text-slate-500 hidden" data-vtab="vt-notes" onclick="switchViewTab('vt-notes')">HR Notes 🔒</button>
+      <button id="vt-documents-btn" class="view-tab-btn px-4 py-3 text-sm text-slate-500 hidden" data-vtab="vt-documents" onclick="switchViewTab('vt-documents')">Documents</button>
     </div>
     <div id="vt-personal" class="view-tab-panel p-6"></div>
     <div id="vt-employment" class="view-tab-panel p-6 hidden"></div>
     <div id="vt-locations" class="view-tab-panel p-6 hidden"></div>
     <div id="vt-statutory" class="view-tab-panel p-6 hidden"></div>
     <div id="vt-compensation" class="view-tab-panel p-6 hidden"></div>
+    <div id="vt-documents" class="view-tab-panel p-6 hidden">
+      <div class="flex justify-between items-center mb-4">
+        <p class="text-xs text-slate-400">Track time-sensitive documents for this employee — e.g. Work Permit, Passport.</p>
+        <button onclick="openEmployeeDocumentForm()" class="btn-primary text-sm flex items-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+          Add Document
+        </button>
+      </div>
+      <div id="employeeDocumentList" class="space-y-2"></div>
+      <p id="employeeDocumentEmpty" class="hidden text-sm text-slate-400 text-center py-8">No documents tracked yet.</p>
+    </div>
     <div id="vt-notes" class="view-tab-panel p-6 hidden">
       <div id="noteForm" class="mb-5 bg-slate-50 border border-slate-200 rounded-xl p-4">
         <div class="flex gap-3 mb-3">
@@ -3056,6 +3088,38 @@
       <div class="flex-1"></div>
       <button onclick="closeViewModal()" class="btn-ghost">Close</button>
     </div>
+  </div>
+</div>
+
+<!-- Add/Edit Employee Document Modal -->
+<div id="employeeDocumentModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 id="employeeDocumentModalTitle" class="text-base font-semibold">Add Document</h2>
+      <button onclick="closeEmployeeDocumentModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form onsubmit="submitEmployeeDocument(event)" class="p-6 space-y-4">
+      <input type="hidden" id="employeeDocumentId"/>
+      <div><label class="lbl">Document Type <span class="text-red-500">*</span></label>
+        <select id="employeeDocumentTypeId" class="inp" required></select>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="lbl">Document Number</label><input id="employeeDocumentNumber" class="inp" placeholder="Optional"/></div>
+        <div><label class="lbl">Issue Date</label><input id="employeeDocumentIssueDate" type="date" class="inp"/></div>
+      </div>
+      <div><label class="lbl">Expiry Date <span class="text-red-500">*</span></label><input id="employeeDocumentExpiryDate" type="date" class="inp" required/></div>
+      <div><label class="lbl">Notes</label><textarea id="employeeDocumentNotes" class="inp" rows="2" placeholder="Optional notes…"></textarea></div>
+      <div>
+        <label class="lbl">Attachment</label>
+        <input id="employeeDocumentAttachFile" type="file" accept="image/*,.pdf,.doc,.docx,.txt" class="text-xs" onchange="handleEmployeeDocumentAttachFile(event)"/>
+        <p id="employeeDocumentAttachName" class="text-xs text-slate-400 mt-1">Optional — max ~6MB.</p>
+      </div>
+      <p id="employeeDocumentErr" class="hidden text-xs text-red-600"></p>
+      <div class="flex gap-2 pt-2">
+        <button type="submit" class="btn-primary">Save</button>
+        <button type="button" onclick="closeEmployeeDocumentModal()" class="btn-ghost">Cancel</button>
+      </div>
+    </form>
   </div>
 </div>
 
@@ -3545,6 +3609,32 @@
       <div class="flex gap-2 pt-2">
         <button type="submit" class="btn-primary">Save</button>
         <button type="button" onclick="closeLeaveTypeModal()" class="btn-ghost">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Add/Edit Employee Document Type Modal -->
+<div id="employeeDocTypeModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 id="employeeDocTypeModalTitle" class="text-base font-semibold">Add Document Type</h2>
+      <button onclick="closeEmployeeDocTypeModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form onsubmit="submitEmployeeDocType(event)" class="p-6 space-y-4">
+      <input type="hidden" id="employeeDocTypeId"/>
+      <div><label class="lbl">Name <span class="text-red-500">*</span></label><input id="employeeDocTypeName" class="inp" required placeholder="e.g. Work Permit"/></div>
+      <div>
+        <label class="lbl">Reminder Window (days) <span class="text-red-500">*</span></label>
+        <input id="employeeDocTypeWindow" type="number" min="1" step="1" class="inp" value="30" required/>
+        <p class="text-xs text-slate-400 mt-1">Flagged as "expiring soon" starting this many days before the expiry date.</p>
+      </div>
+      <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+        <input type="checkbox" id="employeeDocTypeActive" class="w-4 h-4" checked/> Active
+      </label>
+      <div class="flex gap-2 pt-2">
+        <button type="submit" class="btn-primary">Save</button>
+        <button type="button" onclick="closeEmployeeDocTypeModal()" class="btn-ghost">Cancel</button>
       </div>
     </form>
   </div>
@@ -5015,6 +5105,7 @@
 <script src="/static/js/resignation.js?v=1"></script>
 <script src="/static/js/approval-workflow.js?v=74"></script>
 <script src="/static/js/roles.js?v=4"></script>
+<script src="/static/js/employee-documents.js?v=1"></script>
 <script src="/static/js/timesheet.js?v=74"></script>
 <script src="/static/js/notifications.js?v=74"></script>
 <script src="/static/js/payroll.js?v=74"></script>

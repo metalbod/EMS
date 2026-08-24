@@ -35,6 +35,7 @@ from routers.dashboard import router as dashboard_router
 from routers.payroll import router as payroll_router
 from routers.performance import router as performance_router
 from routers.employees import router as employees_router
+from routers.employee_documents import router as employee_documents_router
 from routers.locations import router as locations_router
 from routers.location_features import router as location_features_router
 from routers.location_phase2 import router as location_phase2_router
@@ -161,6 +162,7 @@ app.include_router(dashboard_router)
 app.include_router(payroll_router)
 app.include_router(performance_router)
 app.include_router(employees_router)
+app.include_router(employee_documents_router)
 app.include_router(locations_router)
 app.include_router(location_features_router)
 app.include_router(location_phase2_router)

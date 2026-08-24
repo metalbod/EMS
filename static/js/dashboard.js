@@ -414,11 +414,21 @@ async function loadDashboardTodos() {
     return;
   }
   emptyEl.classList.add('hidden');
-  listEl.innerHTML=items.map(t=>`
-    <div class="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-50 cursor-pointer transition" onclick="showPage('${t.page}')">
+  listEl.innerHTML=items.map(t=>{
+    // A "dash-" page value is a Dashboard sub-tab (e.g. "dash-leave" for
+    // the monthly calendar), not a top-level page — showPage() alone
+    // lands on the Dashboard's default tab, so it needs switchDashTab()
+    // too. No top-level ALL_PAGES entry starts with "dash-", so this
+    // prefix check is unambiguous.
+    const onclick = t.page.startsWith('dash-')
+      ? `showPage('dashboard');switchDashTab('${t.page}')`
+      : `showPage('${t.page}')`;
+    return `
+    <div class="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-50 cursor-pointer transition" onclick="${onclick}">
       <span class="text-sm text-slate-700">${esc(t.label)}</span>
       <svg class="w-4 h-4 text-slate-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 // Dashboard quick-action shortcuts (employee role only — see
@@ -469,19 +479,26 @@ const LEAVE_CAL_MONTH_NAMES = ['January','February','March','April','May','June'
 
 function loadLeaveCalendar() {
   document.getElementById('leaveCalMonthLabel').textContent = `${LEAVE_CAL_MONTH_NAMES[leaveCalMonth-1]} ${leaveCalYear}`;
+  // Document expiry reminders (work permit renewal, passport expiry, etc)
+  // are HR-only — skip the fetch entirely for other roles rather than
+  // just discarding an unauthorized response; the endpoint also enforces
+  // this server-side (routers/employee_documents.py) as defense in depth.
+  const canViewDocExpiry = ['hr_manager','hr_admin'].includes(currentUser?.role);
   Promise.all([
     api(`/api/leave/calendar?year=${leaveCalYear}&month=${leaveCalMonth}`),
     api(`/api/holidays?year=${leaveCalYear}`),
     api(`/api/ob/calendar?year=${leaveCalYear}&month=${leaveCalMonth}`),
-  ]).then(async ([leaveRes, holidayRes, obRes]) => {
+    canViewDocExpiry ? api(`/api/employee-documents/calendar?year=${leaveCalYear}&month=${leaveCalMonth}`) : Promise.resolve(null),
+  ]).then(async ([leaveRes, holidayRes, obRes, docRes]) => {
     const entries = (leaveRes && leaveRes.ok) ? await leaveRes.json() : [];
     const holidays = (holidayRes && holidayRes.ok) ? await holidayRes.json() : [];
     const obItems = (obRes && obRes.ok) ? await obRes.json() : [];
-    renderLeaveCalendarGrid(entries, holidays, obItems);
+    const docExpiries = (docRes && docRes.ok) ? await docRes.json() : [];
+    renderLeaveCalendarGrid(entries, holidays, obItems, docExpiries);
   });
 }
 
-function renderLeaveCalendarGrid(entries, holidays, obItems) {
+function renderLeaveCalendarGrid(entries, holidays, obItems, docExpiries) {
   const grid = document.getElementById('leaveCalGrid');
   const firstDay = new Date(leaveCalYear, leaveCalMonth - 1, 1);
   const daysInMonth = new Date(leaveCalYear, leaveCalMonth, 0).getDate();
@@ -524,6 +541,15 @@ function renderLeaveCalendarGrid(entries, holidays, obItems) {
       (obByDay[d.getDate()] = obByDay[d.getDate()] || []).push(o);
     }
   }
+  // Employee document expiries (work permit renewal, passport expiry,
+  // etc) — one day each like holidays, no range walk needed.
+  const docExpiryByDay = {};
+  for (const de of (docExpiries || [])) {
+    const d = new Date(de.expiry_date + 'T00:00:00');
+    if (d.getFullYear() === leaveCalYear && d.getMonth() === leaveCalMonth - 1) {
+      (docExpiryByDay[d.getDate()] = docExpiryByDay[d.getDate()] || []).push(de);
+    }
+  }
 
   const todayStr = new Date().toISOString().slice(0, 10);
   let cells = '';
@@ -538,6 +564,7 @@ function renderLeaveCalendarGrid(entries, holidays, obItems) {
     const dayItems = [
       ...(byDay[day] || []).map(e => ({ kind: 'leave', e })),
       ...(obByDay[day] || []).map(o => ({ kind: 'ob', o })),
+      ...(docExpiryByDay[day] || []).map(de => ({ kind: 'docexpiry', de })),
     ];
     const shown = dayItems.slice(0, 3);
     const rest = dayItems.slice(3);
@@ -545,14 +572,26 @@ function renderLeaveCalendarGrid(entries, holidays, obItems) {
       <div class="text-xs bg-rose-50 text-rose-700 rounded px-1 py-0.5 truncate font-medium" title="${esc(h.name)}">
         ${esc(h.name)}
       </div>`).join('');
-    const chipInner = item => item.kind === 'leave'
-      ? `${esc(displayName(item.e.full_name,item.e.preferred_name))}${item.e.leave_type_name ? ` (${esc(item.e.leave_type_name)})` : ''}${item.e._dayPeriod ? ` (${item.e._dayPeriod})` : ''}`
-      : `📌 ${esc(item.o.title)} — ${esc(displayName(item.o.employee_name,item.o.employee_preferred_name))}`;
-    const chipTitle = item => item.kind === 'leave'
-      ? `${esc(displayName(item.e.full_name,item.e.preferred_name))}${item.e.leave_type_name ? ' — ' + esc(item.e.leave_type_name) : ''}${item.e._dayPeriod ? ` (${item.e._dayPeriod})` : ''}`
-      : `${esc(item.o.title)} — ${esc(displayName(item.o.employee_name,item.o.employee_preferred_name))}`;
+    const chipInner = item => {
+      if (item.kind === 'leave') return `${esc(displayName(item.e.full_name,item.e.preferred_name))}${item.e.leave_type_name ? ` (${esc(item.e.leave_type_name)})` : ''}${item.e._dayPeriod ? ` (${item.e._dayPeriod})` : ''}`;
+      if (item.kind === 'docexpiry') return `⚠️ ${esc(displayName(item.de.full_name,item.de.preferred_name))} — ${esc(item.de.document_type_name)} expires`;
+      return `📌 ${esc(item.o.title)} — ${esc(displayName(item.o.employee_name,item.o.employee_preferred_name))}`;
+    };
+    const chipTitle = item => {
+      if (item.kind === 'leave') return `${esc(displayName(item.e.full_name,item.e.preferred_name))}${item.e.leave_type_name ? ' — ' + esc(item.e.leave_type_name) : ''}${item.e._dayPeriod ? ` (${item.e._dayPeriod})` : ''}`;
+      if (item.kind === 'docexpiry') return `${esc(displayName(item.de.full_name,item.de.preferred_name))} — ${esc(item.de.document_type_name)} expires ${fmtDate(item.de.expiry_date)}`;
+      return `${esc(item.o.title)} — ${esc(displayName(item.o.employee_name,item.o.employee_preferred_name))}`;
+    };
+    const chipClass = item => {
+      if (item.kind === 'leave') return 'bg-amber-50 text-amber-700';
+      if (item.kind === 'ob') return 'bg-indigo-50 text-indigo-700';
+      // docexpiry — colored by urgency, same status vocabulary as the
+      // Employee Detail Documents tab (routers/employee_documents.py's
+      // STATUS_CASE_SQL).
+      return item.de.status === 'overdue' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-800';
+    };
     const chips = shown.map(item => `
-      <div class="text-xs ${item.kind==='leave'?'bg-amber-50 text-amber-700':'bg-indigo-50 text-indigo-700'} rounded px-1 py-0.5 truncate" title="${chipTitle(item)}">
+      <div class="text-xs ${chipClass(item)} rounded px-1 py-0.5 truncate" title="${chipTitle(item)}">
         ${chipInner(item)}
       </div>`).join('');
     const extraLabel = rest.length > 0 ? `

@@ -7,9 +7,9 @@ let currentEmpId = null, viewingId = null, editingUserId = null;
 let currentTab = 'personal';
 let openGroups = new Set(['empMgmt']);
 const TABS = ['personal','employment','statutory','dependents'];
-const VIEW_TABS = ['vt-personal','vt-employment','vt-locations','vt-statutory','vt-compensation','vt-notes'];
+const VIEW_TABS = ['vt-personal','vt-employment','vt-locations','vt-statutory','vt-compensation','vt-notes','vt-documents'];
 const HR_NOTE_ROLES = ['superadmin','hr_manager','hr_admin'];
-const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','leave-my','leave-approvals','leave-holidays','resignation-approvals','projects','timesheet-my','timesheet-approvals','overtime-my','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','comp-paygrades','comp-joblevels','comp-jobroles','comp-meritcycles','comp-bonusplans','comp-commissions','comp-equity','comp-totalrewards','comp-payequity','ben-plans','ben-periods','ben-lifeevents','ben-claims','ben-compliance','payroll-runs','payroll-my','payroll-myrewards','payroll-mybenefits','perf-my','perf-team','perf-cycles','perf-calibration','attendance-clock','attendance-review','settings-attendance','settings-approval-workflow','settings-roles','coming-soon'];
+const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','leave-my','leave-approvals','leave-holidays','resignation-approvals','projects','timesheet-my','timesheet-approvals','overtime-my','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','comp-paygrades','comp-joblevels','comp-jobroles','comp-meritcycles','comp-bonusplans','comp-commissions','comp-equity','comp-totalrewards','comp-payequity','ben-plans','ben-periods','ben-lifeevents','ben-claims','ben-compliance','payroll-runs','payroll-my','payroll-myrewards','payroll-mybenefits','perf-my','perf-team','perf-cycles','perf-calibration','attendance-clock','attendance-review','settings-attendance','settings-approval-workflow','settings-roles','settings-document-types','coming-soon'];
 
 // ---------------------------------------------------------------------------
 // Global loading indicator
@@ -431,13 +431,15 @@ function applyRoleUI() {
   const canLocations = ['hr_manager','hr_admin'].includes(role);
   const canApprovalWorkflow = ['superadmin','hr_manager','hr_admin'].includes(role);
   const canRoles = ['superadmin','hr_manager','hr_admin'].includes(role);
-  document.getElementById('nav-settings-wrap')?.classList.toggle('hidden', hideEmp || !(canAudit || canUsers || canNotify || canBulkUpload || canLocations || canAttendanceManage || canApprovalWorkflow || canRoles));
+  const canDocTypes = ['hr_manager','hr_admin'].includes(role);
+  document.getElementById('nav-settings-wrap')?.classList.toggle('hidden', hideEmp || !(canAudit || canUsers || canNotify || canBulkUpload || canLocations || canAttendanceManage || canApprovalWorkflow || canRoles || canDocTypes));
   document.getElementById('nav-settings-notifications')?.classList.toggle('hidden', !canNotify);
   document.getElementById('nav-bulk-upload')?.classList.toggle('hidden', !canBulkUpload);
   document.getElementById('nav-locations')?.classList.toggle('hidden', !canLocations);
   document.getElementById('nav-attendance-settings')?.classList.toggle('hidden', !canAttendanceManage);
   document.getElementById('nav-approval-workflow')?.classList.toggle('hidden', !canApprovalWorkflow);
   document.getElementById('nav-roles')?.classList.toggle('hidden', !canRoles);
+  document.getElementById('nav-document-types')?.classList.toggle('hidden', !canDocTypes);
 
   // Compensation: its own top-level menu, visible to HR Manager, Payroll
   // Manager, and the dedicated Compensation Manager role — explicitly
@@ -574,7 +576,8 @@ function showPage(page) {
     'attendance-clock':'Clock In / Out', 'attendance-review':'Attendance Review',
     'settings-attendance':'Settings — Attendance',
     'settings-approval-workflow':'Settings — Approval Workflows',
-    'settings-roles':'Settings — Roles'
+    'settings-roles':'Settings — Roles',
+    'settings-document-types':'Settings — Document Types'
   };
   document.getElementById('pageTitle').textContent = titles[page] || page;
   if (page === 'dashboard')    renderDashboard();
@@ -630,6 +633,7 @@ function showPage(page) {
   if (page === 'settings-attendance')  loadAttendanceSettingsPage();
   if (page === 'settings-approval-workflow') loadApprovalWorkflowPage();
   if (page === 'settings-roles') loadRolesPage();
+  if (page === 'settings-document-types') loadEmployeeDocTypesPage();
 }
 
 // ---------------------------------------------------------------------------

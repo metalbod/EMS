@@ -190,6 +190,10 @@ function viewEmployee(id) {
   badge.textContent = e.status;
   badge.className = `badge ${e.status==='Active'?'bg-emerald-100 text-emerald-700':'bg-slate-100 text-slate-500'}`;
   document.getElementById('vt-notes-btn').classList.toggle('hidden', !canNotes);
+  // Employee document compliance tracking is HR-only end to end (matches
+  // routers/employee_documents.py's require_roles("hr_manager","hr_admin")
+  // — narrower than canWrite, which also allows superadmin).
+  document.getElementById('vt-documents-btn').classList.toggle('hidden', !['hr_manager','hr_admin'].includes(role));
   document.getElementById('noteForm').classList.toggle('hidden', !canNotes);
   document.getElementById('viewEditBtn').classList.toggle('hidden', !canWrite);
   document.getElementById('viewToggleBtn').classList.toggle('hidden', !canToggle);
@@ -245,6 +249,7 @@ function switchViewTab(name) {
     if(btn){btn.classList.toggle('view-tab-active',t===name);btn.classList.toggle('text-slate-500',t!==name);}
   });
   if(name==='vt-notes') loadNotes();
+  if(name==='vt-documents') loadEmployeeDocuments(viewingId);
 }
 
 function closeViewModal() { closeModal('viewModal', () => viewingId=null); }
