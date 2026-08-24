@@ -57,6 +57,15 @@ The frontend is vanilla JavaScript (no framework) with HTML templates in
 - `static/js/core.js` — global auth, boot, page navigation, role switching
 - `static/js/app-init.js` — menu and navigation UI interactions
 - `static/js/payroll.js`, `static/js/leave.js`, etc. — feature-specific logic
+- `static/js/employee-picker.js` — `initEmployeeSearchSelect(selectId,
+  placeholder)`, a shared helper turning any plain employee `<select>`
+  into a type-to-search picker (institutions can have 100+ employees).
+  Non-invasive by design: it hides the real `<select>` behind a text
+  input + dropdown but keeps it as the actual source of truth (same
+  `id`/`.value`, dispatches a real `change` event on pick), so every one
+  of the 8 call sites across the app needed only a single added line —
+  no changes to how each site already builds its `<option>`s or reads
+  the value back out on submit.
 
 ### UI Design (Navigation & Menu)
 
@@ -491,20 +500,49 @@ that lowers `carried_forward_days` below the row's own
 `carried_forward_used_days` clamps the used-counter down to match, so
 "remaining carry-forward" can never go negative from an admin edit.
 
+### Half-day (AM/PM) applications
+
+The start and/or end date of a leave application can each independently
+be marked as a half-day (`start_day_period`/`end_day_period` on
+`leave_applications`, `'AM'`/`'PM'`/`NULL`) — e.g. PM on the first day,
+full days between, AM on the last day. A single-day application only
+ever uses `start_day_period` (`end_day_period` is DB-constrained to
+`NULL` whenever `start_date = end_date`). Deduction is computed once at
+submission (`_half_day_deduction` in `routers/leave.py`, reused by
+`_check_monthly_cap` so a half-day application can't be miscounted as a
+full day against a monthly cap) and stored on `days_count` — the rest of
+the lifecycle (approve/reject/cancel) just reuses that stored figure,
+same as every other leave amount.
+
+Availability is governed by a single per-leave-type flag,
+`leave_types.allow_half_day` (default on) — **not** inferred from
+`count_calendar_days`, so a calendar-day-counting type (e.g.
+Maternity/Paternity) can still offer half-day if HR leaves it on, or a
+normal type can have it turned off. The frontend shows the Start
+Day/End Day selectors as soon as an eligible type is picked (not
+gated on both dates being filled in first — `updateLeaveApplyDayPeriodVisibility`
+in `static/js/leave.js`).
+
 ## Approval workflow module
 
 `core/approval_workflow.py` / `routers/approval_workflow_settings.py` /
 `static/js/approval-workflow.js`.
 
-Five modules — Leave, Benefits Claims, Job Requisition, Timesheet, and
-L&D Enrollment — used to each hardcode their own single-step role check
-(e.g. `role in (manager, hr_manager, hr_admin)`), with no verification
-that an approving "manager" was the requester's *actual* manager. This
-replaces all five with one shared, per-institution-configurable engine:
-an ordered chain of 1-4 steps, each step being `direct_manager`,
-`skip_level_manager`, `hr_manager` (a fixed, module-specific role set —
-see `MODULE_HR_ROLES`, since these weren't identical before: Claims never
-included `hr_admin`, Requisition approval was `hr_manager`-only), or
+Originally five modules — Leave, Benefits Claims, Job Requisition,
+Timesheet, and L&D Enrollment — used to each hardcode their own
+single-step role check (e.g. `role in (manager, hr_manager, hr_admin)`),
+with no verification that an approving "manager" was the requester's
+*actual* manager. This replaced all five with one shared,
+per-institution-configurable engine, since extended to **Overtime** and
+**Resignation** too (7 modules total — see `MODULE_TABLE` in
+`core/approval_workflow.py` for the current list): an ordered chain of
+1-4 steps, each step being `direct_manager`, `skip_level_manager`,
+`hr_manager` (a fixed, module-specific role set — see `MODULE_HR_ROLES`,
+since these weren't identical before: Claims never included `hr_admin`,
+Requisition approval was `hr_manager`-only), `project_manager` (resolved
+via the request's own project(s) — direct on Leave/Claims/Timesheet, via
+the parent timesheet's projects on Overtime, since an overtime record has
+no project of its own — see `PROJECT_MANAGER_MODULES`), or
 `specific_employee` (a named override, e.g. routing one leave type
 straight to a named compliance officer regardless of org chart).
 
@@ -624,6 +662,50 @@ built-in roles plus this institution's custom roles (see below) —
 validated dynamically via `core/roles.py`'s `get_valid_roles`, not a
 fixed list.
 
+### Probation Review (Month 1/2/3)
+
+HR can opt a specific employee's onboarding checklist into "Probation
+Review" — a checkbox at Start Onboarding, or added later from an
+in-progress checklist — rather than it being automatic for every
+employee, since not everyone goes through probation. Enabling it creates
+three Performance cycles up front (`core/performance_probation.py`), one
+each for Month 1/2/3 of employment, fully reusing the existing Goals/
+Appraisal engine via a new employee-scoped cycle mode
+(`performance_cycles.cycle_type='probation'` + `employee_id` set)
+instead of the org-wide batch cycles HR creates manually (which stay
+`cycle_type='standard'`, `employee_id` `NULL`). Each probation cycle gets
+exactly one appraisal (not the org-wide fan-out standard cycles get) and
+a fixed 6-criterion rubric (Job Knowledge, Quality of Work, Productivity,
+Attendance & Punctuality, Communication, Cultural Fit), then goes through
+the same Self → Manager → Calibration → Final flow as any other
+appraisal. Only HR (`superadmin`/`hr_manager`/`hr_admin`) can see whether
+a given employee is on probation — a plain `manager` or `employee`
+viewer never sees this status on someone else's record, even
+indirectly through the Performance cycle list.
+
+## Resignation workflow
+
+`core/resignation.py` / `routers/resignation.py`.
+
+Employees can self-file a resignation from the Home dashboard ("Resign"
+button); HR can also file one on an employee's behalf from the Employee
+detail view. A request captures a reason, effective date (defaults to
+today), and a required last working day (distinct from the effective
+date, to account for a notice period), plus an optional resignation
+letter attachment.
+
+Routed through a `"resignation"` module on the same generic
+approval-workflow engine as Leave/Claims/Timesheet/etc. (default Direct
+Manager → HR Manager chain, configurable per institution in Settings →
+Approval Workflows — see "Approval workflow module" above). On final
+approval, `employees.resign_date`/`last_working_day` are stamped and an
+Offboarding checklist is auto-started from the institution's default
+Offboarding template, reusing `routers/onboarding.py`'s checklist-creation
+logic (factored out of `start_ob_checklist` for this). Employee `status`
+is left untouched by this flow — HR still deactivates the record
+manually once the last working day has passed, matching how Offboarding
+already works for exits filed the old way.
+
 ## Custom roles
 
 `core/roles.py` / `routers/roles.py` / Settings → Roles UI.
@@ -642,6 +724,47 @@ Role validity checks moved out of `UserIn`/`UserUpdate`'s Pydantic
 `field_validator`s (which can't see the DB or the institution) into the
 endpoint bodies, once `inst_id` is known — an invalid role on user
 create/update now returns `400`, not Pydantic's `422`.
+
+## Employee document compliance reminders
+
+`routers/employee_documents.py` / `static/js/employee-documents.js`.
+
+HR-configurable reminders for time-sensitive employee documents — e.g. a
+foreign employee's work permit renewal, or a passport nearing expiry.
+`employee_document_types` is an institution-defined list (HR adds
+whatever categories it needs — Work Permit, Passport, anything else — via
+Settings → Document Types), each with its own `reminder_window_days`.
+`employee_documents` is one row per (employee, document type) —
+`UNIQUE(employee_id, document_type_id)`, so renewing a document means
+`PUT`-ing the existing row's `expiry_date` in place rather than creating
+a new one; there's no renewal-history table. Any employee can have any
+number of tracked documents regardless of nationality — there's no
+"foreigner" flag gating this, since `employees.nationality` is free text
+with no reliable way to validate it.
+
+Expiry status (`overdue` / `expiring_soon` / `ok`) is computed lazily in
+SQL from `CURRENT_DATE` on every read (`STATUS_CASE_SQL` in
+`routers/employee_documents.py`, reused verbatim by every endpoint that
+needs it) — matching this project's no-cron-jobs rule, same as the Leave
+module's carry-forward expiry sweep above. `expiring_soon` covers today
+through exactly the type's `reminder_window_days` out, inclusive.
+
+This feature is HR-only end to end (`require_roles("hr_manager",
+"hr_admin")` on every endpoint, deliberately narrower than most
+employee-record writes, which also allow `superadmin`). Reminders surface
+in two places: an aggregate line in the Dashboard To-Do widget
+(`routers/dashboard.py`'s `get_todos`, gated the same way as its
+onboarding-checklist block — institution-wide for HR roles, no
+per-employee narrowing), and color-coded chips (red = overdue, amber =
+expiring soon) on the existing Dashboard monthly Leave Calendar rather
+than a separate list page — `GET /api/employee-documents/calendar`
+mirrors `get_leave_calendar`'s shape so `static/js/dashboard.js`'s
+`renderLeaveCalendarGrid` can merge it in alongside leave/holiday/
+onboarding entries, one more source in the same day-bucketing pattern.
+Since the calendar view lives inside a page other roles can also open,
+the frontend only fetches this data at all when the logged-in role is
+`hr_manager`/`hr_admin` — the endpoint enforces the same restriction
+server-side as defense in depth.
 
 ## Deployment (Fly.io)
 
