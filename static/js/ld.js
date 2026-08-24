@@ -1,6 +1,21 @@
 // Learning & Development
 // ---------------------------------------------------------------------------
-let ldCoursesCache=[], ldCatFilter='', ldEnrollFilter='';
+let ldCoursesCache=[], ldCatFilter='', ldEnrollFilter='', ldEnrollData=[];
+const ldEnrollList = createListState({
+  sortKey: 'employee_name',
+  pageSize: Number.MAX_SAFE_INTEGER,
+  sortValue: (en, key) => key === 'progress' ? (en.module_count > 0 ? en.modules_viewed / en.module_count : -1) : en[key],
+});
+const LD_ENROLL_COLUMNS = [
+  { key:'employee_name', label:'Employee', sortKey:'employee_name' },
+  { key:'department', label:'Department', sortKey:'department' },
+  { key:'course_title', label:'Course', sortKey:'course_title' },
+  { key:'course_category', label:'Category', sortKey:'course_category' },
+  { key:'status', label:'Status', sortKey:'status' },
+  { key:'progress', label:'Progress', sortKey:'progress' },
+  { key:'created_at', label:'Requested', sortKey:'created_at' },
+  { key:'completed_at', label:'Completed', sortKey:'completed_at' },
+];
 const LD_CATEGORY_LABELS={mandatory:'Mandatory',professional_development:'Professional Dev',certification:'Certification'};
 const LD_CATEGORY_COLORS={mandatory:'bg-red-100 text-red-700',professional_development:'bg-blue-100 text-blue-700',certification:'bg-purple-100 text-purple-700'};
 const LD_STATUS_COLORS={'Pending Approval':'bg-amber-100 text-amber-700','Approved':'bg-blue-100 text-blue-700','Rejected':'bg-red-100 text-red-700','In Progress':'bg-blue-100 text-blue-700','Completed':'bg-green-100 text-green-700'};
@@ -138,39 +153,51 @@ async function submitLdEnroll(e) {
 }
 
 async function loadLdEnrollments() {
-  const listEl=document.getElementById('ldEnrollmentList');
+  const bodyEl=document.getElementById('ldEnrollTableBody');
   const emptyEl=document.getElementById('ldEnrollmentEmpty');
-  listEl.innerHTML='<p class="text-slate-400 text-sm text-center py-8">Loading…</p>';
+  bodyEl.innerHTML='<tr><td colspan="9" class="text-slate-400 text-sm text-center py-8">Loading…</td></tr>';
   let url='/api/ld/enrollments';
   if(ldEnrollFilter) url+=`?status=${encodeURIComponent(ldEnrollFilter)}`;
   const res=await api(url);
-  if(!res||!res.ok){listEl.innerHTML='';return;}
-  const rows=await res.json();
-  if(!rows.length){listEl.innerHTML='';emptyEl?.classList.remove('hidden');return;}
+  ldEnrollData=res&&res.ok?await res.json():[];
+  renderLdEnrollTable();
+}
+
+function setLdSort(key) { ldEnrollList.setSort(key); renderLdEnrollTable(); }
+
+function renderLdEnrollTableHead() {
+  document.getElementById('ldEnrollTableHead').innerHTML = LD_ENROLL_COLUMNS.map(c =>
+    `<th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide cursor-pointer select-none whitespace-nowrap" onclick="setLdSort('${c.sortKey}')">${esc(c.label)}<span class="ld-sort-arrow" data-sort-key="${c.sortKey}"></span></th>`
+  ).join('') + `<th class="px-4 py-2.5"></th>`;
+}
+
+function renderLdEnrollTable() {
+  const bodyEl=document.getElementById('ldEnrollTableBody');
+  const emptyEl=document.getElementById('ldEnrollmentEmpty');
+  renderLdEnrollTableHead();
+  ldEnrollList.updateSortArrows('.ld-sort-arrow');
+  if(!ldEnrollData.length){bodyEl.innerHTML='';emptyEl?.classList.remove('hidden');return;}
   emptyEl?.classList.add('hidden');
   const canApprove=['superadmin','hr_manager','hr_admin','manager'].includes(currentUser?.role);
-  listEl.innerHTML=rows.map(en=>{
+  const { pageItems } = ldEnrollList.view(ldEnrollData);
+  bodyEl.innerHTML=pageItems.map(en=>{
     const isSelf = currentUser?.role!=='employee' || currentUser?.employee_id===en.employee_id;
     const isOwnEmployeeAccount = currentUser?.role==='employee' && currentUser?.employee_id===en.employee_id;
     const canAct = en.status==='In Progress' && isSelf;
     const hasQuiz = !!en.quiz_id;
-    return `<div class="bg-white border border-slate-200 rounded-xl p-4">
-      <div class="flex items-start justify-between gap-3">
-        <div class="flex-1 min-w-0">
-          <div class="flex items-center gap-2 mb-0.5 flex-wrap">
-            <p class="font-medium text-slate-800">${esc(en.course_title)}</p>
-            <span class="badge text-xs ${statusColor(LD_CATEGORY_COLORS, en.course_category)}">${LD_CATEGORY_LABELS[en.course_category]||en.course_category}</span>
-            ${hasQuiz?`<span class="badge text-xs bg-purple-100 text-purple-700">Quiz Required</span>`:''}
-            ${en.module_count>0?`<span class="badge text-xs bg-slate-100 text-slate-600">${en.modules_viewed}/${en.module_count} lessons</span>`:''}
-          </div>
-          <p class="text-xs text-slate-500">${esc(displayName(en.employee_name,en.employee_preferred_name))} · ${esc(en.department||'')}${en.designation?' · '+esc(en.designation):''}</p>
-          ${en.notes?`<p class="text-xs text-slate-400 italic mt-1">${esc(en.notes)}</p>`:''}
-        </div>
-        <div class="flex items-center gap-2 flex-shrink-0">
-          <span class="badge ${statusColor(LD_STATUS_COLORS, en.status)}">${en.status}</span>
-        </div>
-      </div>
-      <div class="mt-3 flex items-center gap-2">
+    return `<tr class="border-t border-slate-100">
+      <td class="px-4 py-3 font-medium text-slate-800 whitespace-nowrap">${esc(displayName(en.employee_name,en.employee_preferred_name))}</td>
+      <td class="px-4 py-3 text-slate-600 whitespace-nowrap">${esc(en.department||'—')}</td>
+      <td class="px-4 py-3">
+        <p class="text-slate-800">${esc(en.course_title)}</p>
+        ${hasQuiz?`<span class="badge text-xs bg-purple-100 text-purple-700 mt-1 inline-block">Quiz Required</span>`:''}
+      </td>
+      <td class="px-4 py-3 whitespace-nowrap"><span class="badge text-xs ${statusColor(LD_CATEGORY_COLORS, en.course_category)}">${LD_CATEGORY_LABELS[en.course_category]||en.course_category}</span></td>
+      <td class="px-4 py-3 whitespace-nowrap"><span class="badge ${statusColor(LD_STATUS_COLORS, en.status)}">${en.status}</span></td>
+      <td class="px-4 py-3 text-slate-600 whitespace-nowrap">${en.module_count>0?`${en.modules_viewed}/${en.module_count} lessons`:'—'}</td>
+      <td class="px-4 py-3 text-slate-600 whitespace-nowrap">${fmtDate(en.created_at)}</td>
+      <td class="px-4 py-3 text-slate-600 whitespace-nowrap">${en.completed_at?fmtDate(en.completed_at):'—'}</td>
+      <td class="px-4 py-3 text-right whitespace-nowrap">
         ${en.status==='Pending Approval'&&canApprove?`
           <button onclick="updateLdEnrollStatus(${en.id},'Approved')" class="btn-primary text-xs px-3 py-1.5">Approve</button>
           <button onclick="updateLdEnrollStatus(${en.id},'Rejected')" class="btn-ghost text-xs px-3 py-1.5 text-red-600">Reject</button>
@@ -179,9 +206,8 @@ async function loadLdEnrollments() {
         ${en.status==='In Progress'&&hasQuiz&&isOwnEmployeeAccount?`<button onclick="openLdTakeQuizModal(${en.course_id},${en.id})" class="btn-primary text-xs px-3 py-1.5">Take Quiz</button>`:''}
         ${en.status==='In Progress'&&hasQuiz&&!isOwnEmployeeAccount?`<span class="text-xs text-slate-400 italic">Awaiting employee to take quiz</span>`:''}
         ${canAct&&!hasQuiz?`<button onclick="updateLdEnrollStatus(${en.id},'Completed')" class="btn-primary text-xs px-3 py-1.5">Mark Complete</button>`:''}
-      </div>
-      <p class="text-xs text-slate-400 mt-2">Requested ${fmtDate(en.created_at)} by ${esc(en.requested_by)}${en.completed_at?' · Completed '+fmtDate(en.completed_at):''}</p>
-    </div>`;
+      </td>
+    </tr>`;
   }).join('');
 }
 
