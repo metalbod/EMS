@@ -143,6 +143,25 @@ def _log_candidate(conn, inst_id: int, cand_id: int, action: str, detail: str, b
     )
 
 
+def _transition_candidate_stage(conn, inst_id: int, cand_id: int, new_stage: str):
+    """The single place candidates.stage is ever written, so
+    candidate_stage_history (used for "time spent per stage" — the
+    candidate detail Time in Stage tab and the recruitment dashboard's
+    per-stage averages) can never drift out of sync with it. Closes
+    whatever stage row is currently open (there's at most one per
+    candidate) and opens a new one for new_stage."""
+    conn.execute(
+        "UPDATE candidate_stage_history SET exited_at=to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS') "
+        "WHERE candidate_id=? AND institution_id=? AND exited_at IS NULL",
+        (cand_id, inst_id)
+    )
+    conn.execute(
+        "INSERT INTO candidate_stage_history (institution_id,candidate_id,stage) VALUES (?,?,?)",
+        (inst_id, cand_id, new_stage)
+    )
+    conn.execute("UPDATE candidates SET stage=? WHERE id=? AND institution_id=?", (new_stage, cand_id, inst_id))
+
+
 def _get_candidate(conn, inst_id, cand_id):
     row = conn.execute(
         "SELECT * FROM candidates WHERE id=? AND institution_id=?", (cand_id, inst_id)
@@ -482,6 +501,8 @@ def create_candidate(conn, body: CandidateIn, user: dict = Depends(get_current_u
           body.expected_salary, body.notice_period, body.linkedin_url, body.referral_by,
           body.notes, user["username"]))
     cid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    row = conn.execute("SELECT stage FROM candidates WHERE id=?", (cid,)).fetchone()
+    _transition_candidate_stage(conn, inst_id, cid, row["stage"])
     _log_candidate(conn, inst_id, cid, "Created", f"Candidate '{body.full_name}' added via {body.source}", user["username"])
     conn.commit()
     row = conn.execute("SELECT * FROM candidates WHERE id=?", (cid,)).fetchone()
@@ -619,9 +640,11 @@ def move_stage(conn, cand_id: int, body: CandidateStageIn, user: dict = Depends(
     extra_notes = f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M')}] Stage moved to {body.stage} by {user['username']}: {body.notes or ''}".strip()
     old = _get_candidate(conn, inst_id, cand_id)
     conn.execute("""
-        UPDATE candidates SET stage=?, notes=COALESCE(notes,'') || ?
+        UPDATE candidates SET notes=COALESCE(notes,'') || ?
         WHERE id=? AND institution_id=?
-    """, (body.stage, extra_notes, cand_id, inst_id))
+    """, (extra_notes, cand_id, inst_id))
+    if body.stage != old.get("stage"):
+        _transition_candidate_stage(conn, inst_id, cand_id, body.stage)
     detail = f"Stage changed: {old.get('stage','?')} → {body.stage}"
     if body.notes: detail += f" | Reason: {body.notes}"
     _log_candidate(conn, inst_id, cand_id, "Stage Changed", detail, user["username"])
@@ -671,10 +694,10 @@ def schedule_interview(conn, body: InterviewIn, user: dict = Depends(get_current
           body.location, body.interviewers, body.notes, user["username"]))
     iid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     # Auto-move candidate to Interview stage
-    conn.execute(
-        "UPDATE candidates SET stage='Interview' WHERE id=? AND institution_id=? AND stage IN ('New','Screening')",
-        (body.candidate_id, inst_id)
-    )
+    cand_row = conn.execute("SELECT stage FROM candidates WHERE id=? AND institution_id=?",
+                            (body.candidate_id, inst_id)).fetchone()
+    if cand_row and cand_row["stage"] in ("New", "Screening"):
+        _transition_candidate_stage(conn, inst_id, body.candidate_id, "Interview")
     _log_candidate(conn, inst_id, body.candidate_id, "Interview Scheduled",
         f"{body.interview_type} interview on {body.scheduled_date} at {body.scheduled_time}"
         + (f" with {body.interviewers}" if body.interviewers else ""),
@@ -816,8 +839,7 @@ def create_offer(conn, body: OfferIn, user: dict = Depends(get_current_user)) ->
     # letter (company-initiated), so it maps to Rejected by Company —
     # distinct from a candidate declining/withdrawing themselves.
     new_stage = "Offer" if body.offer_type == "Offer" else "Rejected by Company"
-    conn.execute("UPDATE candidates SET stage=? WHERE id=? AND institution_id=?",
-                 (new_stage, body.candidate_id, inst_id))
+    _transition_candidate_stage(conn, inst_id, body.candidate_id, new_stage)
     sal = f"RM {body.salary_offered:,.0f}" if body.salary_offered else "—"
     _log_candidate(conn, inst_id, body.candidate_id, f"{body.offer_type} Letter Generated",
         f"{body.offer_type} letter created" + (f" | Salary: {sal}" if body.offer_type == "Offer" else ""),
@@ -853,8 +875,10 @@ def update_offer_status(conn, offer_id: int, body: OfferStatusIn,
     conn.execute("UPDATE offers SET status=? WHERE id=?", (body.status, offer_id))
     # Sync candidate stage
     if body.status == "Accepted" and row["offer_type"] == "Offer":
-        conn.execute("UPDATE candidates SET stage='Offer' WHERE id=? AND institution_id=?",
-                     (row["candidate_id"], inst_id))
+        cand_row = conn.execute("SELECT stage FROM candidates WHERE id=? AND institution_id=?",
+                                (row["candidate_id"], inst_id)).fetchone()
+        if cand_row and cand_row["stage"] != "Offer":
+            _transition_candidate_stage(conn, inst_id, row["candidate_id"], "Offer")
     _log_candidate(conn, inst_id, row["candidate_id"], "Offer Status Updated",
         f"{row['offer_type']} letter status changed to '{body.status}'", user["username"])
     conn.commit()
@@ -941,6 +965,21 @@ def get_candidate_audit(conn, cand_id: int, user: dict = Depends(get_current_use
     return [dict(r) for r in rows]
 
 
+@router.get("/api/recruitment/candidates/{cand_id}/stage-history")
+@db_session
+def get_candidate_stage_history(conn, cand_id: int, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
+    require_permission(conn, user, "recruitment.view_candidate_stage_timing")
+    inst_id = need_inst(user)
+    _get_candidate(conn, inst_id, cand_id)
+    rows = conn.execute("""
+        SELECT *, EXTRACT(EPOCH FROM (
+            COALESCE(exited_at::timestamp, NOW() AT TIME ZONE 'UTC') - entered_at::timestamp
+        ))::int AS duration_seconds
+        FROM candidate_stage_history WHERE candidate_id=? AND institution_id=? ORDER BY entered_at ASC
+    """, (cand_id, inst_id)).fetchall()
+    return [dict(r) for r in rows]
+
+
 @router.get("/api/recruitment/dashboard-stats")
 @db_session
 def recruitment_dashboard_stats(conn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
@@ -985,6 +1024,17 @@ def recruitment_dashboard_stats(conn, user: dict = Depends(get_current_user)) ->
         (iid,)
     ).fetchone()[0]
 
+    # Average time spent per stage — blends completed stays (exited_at
+    # set) with candidates still currently in that stage (exited_at
+    # NULL, using NOW() as the still-running end point), per design.
+    stage_time_rows = conn.execute("""
+        SELECT stage, AVG(EXTRACT(EPOCH FROM (
+            COALESCE(exited_at::timestamp, NOW() AT TIME ZONE 'UTC') - entered_at::timestamp
+        )))::int AS avg_seconds
+        FROM candidate_stage_history WHERE institution_id=? GROUP BY stage
+    """, (iid,)).fetchall()
+    avg_time_in_stage = {r["stage"]: r["avg_seconds"] for r in stage_time_rows}
+
     return {
         "req_by_status": req_by_status,
         "cand_by_stage": cand_by_stage,
@@ -995,4 +1045,5 @@ def recruitment_dashboard_stats(conn, user: dict = Depends(get_current_user)) ->
         "hired_this_month": hired_this_month,
         "total_requisitions": sum(req_by_status.values()),
         "total_candidates": sum(cand_by_stage.values()),
+        "avg_time_in_stage": avg_time_in_stage,
     }

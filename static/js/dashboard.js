@@ -230,12 +230,14 @@ function loadRecruitmentDash() {
     const totalCands = s.total_candidates || 1;
     document.getElementById('rCandPipeline').innerHTML = s.total_candidates ? PIPELINE_STAGES.map(stage => {
       const cnt = s.cand_by_stage[stage] || 0;
+      const avgSeconds = (s.avg_time_in_stage || {})[stage];
       return `<div class="flex items-center gap-2">
         <div class="w-20 text-xs text-slate-600">${stage}</div>
         <div class="flex-1 bg-slate-100 rounded-full h-2">
           <div class="${statusColor(PIPELINE_COLORS, stage, 'bg-slate-400')} h-2 rounded-full" style="width:${Math.round(cnt/totalCands*100)}%"></div>
         </div>
         <div class="text-xs text-slate-500 w-5 text-right">${cnt}</div>
+        <div class="text-xs text-slate-400 w-16 text-right">avg ${fmtDuration(avgSeconds)}</div>
       </div>`;
     }).join('') : '<p class="text-slate-400 text-sm">No candidates yet.</p>';
 

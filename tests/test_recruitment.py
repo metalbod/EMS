@@ -294,6 +294,122 @@ def test_candidate_audit_log_requires_manage_role(client, hr_manager_auth, make_
 
 
 # ---------------------------------------------------------------------------
+# Candidate stage history (time spent per stage)
+# ---------------------------------------------------------------------------
+def test_create_candidate_seeds_initial_stage_history_row(client, hr_manager_auth):
+    cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
+                        json={"full_name": "ZZ Stage History Seed Candidate"}).json()
+    res = client.get(f"/api/recruitment/candidates/{cand['id']}/stage-history", headers=hr_manager_auth)
+    assert res.status_code == 200
+    rows = res.json()
+    assert len(rows) == 1
+    assert rows[0]["stage"] == "New"
+    assert rows[0]["exited_at"] is None
+    assert rows[0]["duration_seconds"] is not None
+
+
+def test_move_stage_closes_previous_row_and_opens_new_one(client, hr_manager_auth):
+    cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
+                        json={"full_name": "ZZ Stage History Move Candidate"}).json()
+    client.patch(f"/api/recruitment/candidates/{cand['id']}/stage", headers=hr_manager_auth,
+                 json={"stage": "Screening"})
+    rows = client.get(f"/api/recruitment/candidates/{cand['id']}/stage-history",
+                       headers=hr_manager_auth).json()
+    assert [r["stage"] for r in rows] == ["New", "Screening"]
+    assert rows[0]["exited_at"] is not None, "the superseded 'New' row must be closed"
+    assert rows[1]["exited_at"] is None, "the new 'Screening' row must still be open"
+
+
+def test_move_stage_to_same_stage_does_not_duplicate_history_row(client, hr_manager_auth):
+    """Re-submitting the candidate's already-current stage (e.g. HR just
+    adding notes via the Move Stage action) must not split one
+    continuous stay into two history rows."""
+    cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
+                        json={"full_name": "ZZ Stage History Noop Candidate"}).json()
+    client.patch(f"/api/recruitment/candidates/{cand['id']}/stage", headers=hr_manager_auth,
+                 json={"stage": "New", "notes": "still reviewing"})
+    rows = client.get(f"/api/recruitment/candidates/{cand['id']}/stage-history",
+                       headers=hr_manager_auth).json()
+    assert len(rows) == 1
+
+
+def test_schedule_interview_tracks_stage_history(client, hr_manager_auth):
+    cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
+                        json={"full_name": "ZZ Stage History Interview Candidate"}).json()
+    client.post("/api/recruitment/interviews", headers=hr_manager_auth, json={
+        "candidate_id": cand["id"], "scheduled_date": "2030-01-01", "scheduled_time": "10:00",
+    })
+    rows = client.get(f"/api/recruitment/candidates/{cand['id']}/stage-history",
+                       headers=hr_manager_auth).json()
+    assert [r["stage"] for r in rows] == ["New", "Interview"]
+
+
+def test_offer_and_decline_track_stage_history(client, hr_manager_auth):
+    cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
+                        json={"full_name": "ZZ Stage History Offer Candidate"}).json()
+    client.post("/api/recruitment/offers", headers=hr_manager_auth,
+                json={"candidate_id": cand["id"], "offer_type": "Offer", "salary_offered": 5000.0})
+    rows = client.get(f"/api/recruitment/candidates/{cand['id']}/stage-history",
+                       headers=hr_manager_auth).json()
+    assert [r["stage"] for r in rows] == ["New", "Offer"]
+
+    decline_cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
+                                json={"full_name": "ZZ Stage History Decline Candidate"}).json()
+    client.post("/api/recruitment/offers", headers=hr_manager_auth,
+                json={"candidate_id": decline_cand["id"], "offer_type": "Decline"})
+    decline_rows = client.get(f"/api/recruitment/candidates/{decline_cand['id']}/stage-history",
+                               headers=hr_manager_auth).json()
+    assert [r["stage"] for r in decline_rows] == ["New", "Rejected by Company"]
+
+
+def test_accept_offer_status_tracks_stage_history_without_duplicating(client, hr_manager_auth):
+    cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
+                        json={"full_name": "ZZ Stage History Accept Candidate"}).json()
+    offer = client.post("/api/recruitment/offers", headers=hr_manager_auth,
+                        json={"candidate_id": cand["id"], "salary_offered": 5000.0}).json()
+    # create_offer already moved the candidate to 'Offer' — accepting it
+    # re-confirms the same stage and must not open a spurious duplicate row.
+    client.patch(f"/api/recruitment/offers/{offer['id']}/status", headers=hr_manager_auth,
+                json={"status": "Accepted"})
+    rows = client.get(f"/api/recruitment/candidates/{cand['id']}/stage-history",
+                       headers=hr_manager_auth).json()
+    assert [r["stage"] for r in rows] == ["New", "Offer"]
+
+
+def test_stage_history_requires_manage_role(client, hr_manager_auth, make_test_user, test_institution):
+    cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
+                        json={"full_name": "ZZ Restricted Stage History Candidate"}).json()
+    token, _ = make_test_user(role="employee")
+    headers = {"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}
+    res = client.get(f"/api/recruitment/candidates/{cand['id']}/stage-history", headers=headers)
+    assert res.status_code == 403
+
+
+def test_stage_history_allows_manager_role(client, hr_manager_auth, make_test_user, test_institution):
+    """Deliberately broader than the audit log — manager can see how long
+    their own candidates have sat in each stage."""
+    cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
+                        json={"full_name": "ZZ Manager Stage History Candidate"}).json()
+    token, _ = make_test_user(role="manager")
+    headers = {"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}
+    res = client.get(f"/api/recruitment/candidates/{cand['id']}/stage-history", headers=headers)
+    assert res.status_code == 200
+
+
+def test_dashboard_stats_includes_avg_time_in_stage(client, hr_manager_auth):
+    cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
+                        json={"full_name": "ZZ Dashboard Stage Time Candidate"}).json()
+    client.patch(f"/api/recruitment/candidates/{cand['id']}/stage", headers=hr_manager_auth,
+                 json={"stage": "Screening"})
+    res = client.get("/api/recruitment/dashboard-stats", headers=hr_manager_auth)
+    assert res.status_code == 200
+    body = res.json()
+    assert "avg_time_in_stage" in body
+    assert "Screening" in body["avg_time_in_stage"]
+    assert body["avg_time_in_stage"]["Screening"] >= 0
+
+
+# ---------------------------------------------------------------------------
 # Candidate Documents
 # ---------------------------------------------------------------------------
 _TEST_PDF_DATA_URL = "data:application/pdf;base64,JVBERi0xLjQKJcOkw7zDtsO4Cg=="

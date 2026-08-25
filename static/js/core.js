@@ -79,6 +79,15 @@ function fmtDateTime(value, withSeconds) {
   return `${fmtDate(d)}, ${d.toLocaleTimeString([], timeOpts)}`;
 }
 
+function fmtDuration(seconds) {
+  if(seconds==null) return '—';
+  if(seconds<3600) return '< 1h';
+  const days=Math.floor(seconds/86400);
+  const hours=Math.floor((seconds%86400)/3600);
+  if(days>0) return hours>0?`${days}d ${hours}h`:`${days}d`;
+  return `${hours}h`;
+}
+
 // ---------------------------------------------------------------------------
 // Employee display name — used everywhere an employee is referenced outside
 // the Employees List/Detail screens and official documents (payslips, bank

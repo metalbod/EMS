@@ -217,6 +217,8 @@ MATRIX: List[Dict[str, Any]] = [
             _action("Approve requisition", "POST /api/recruitment/requisitions/{id}/approve", _flat("hr_manager"),
                      note=CONFIGURABLE + " — approval-workflow engine; HR fallback here is hr_manager only (narrower than most other modules, no hr_admin)."),
             _action("View candidate audit log", "GET /api/recruitment/candidates/{id}/audit", _flat(*_RECRUIT_WRITE)),
+            _action("View candidate stage timing", "GET /api/recruitment/candidates/{id}/stage-history", _flat(*_RECRUIT_WRITE, "manager"),
+                     note="Deliberately broader than the audit log above — manager included so a hiring manager can see how long their own candidates have sat in each stage."),
         ],
     },
     {

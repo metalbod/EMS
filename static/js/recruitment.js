@@ -475,6 +475,10 @@ async function openCandDetail(candId) {
   // History tab visible to HR roles only
   const canViewHistory=['superadmin','hr_manager','hr_admin'].includes(currentUser?.role);
   document.getElementById('cdHistoryTab').classList.toggle('hidden',!canViewHistory);
+  // Time in Stage tab visible to HR roles + manager (matches the
+  // Recruitment dashboard tab's own canRecruit visibility, dashboard.js)
+  const canViewStageTime=['superadmin','hr_manager','hr_admin','manager'].includes(currentUser?.role);
+  document.getElementById('cdStageTimeTab').classList.toggle('hidden',!canViewStageTime);
   switchCandTab('cdt-profile');
   document.getElementById('candDetailModal').classList.remove('hidden');
 }
@@ -503,8 +507,28 @@ async function loadCandHistory() {
   </div>`;
 }
 
+async function loadCandStageTime() {
+  if(!viewingCandId) return;
+  const el=document.getElementById('cdt-stagetime');
+  el.innerHTML='<p class="text-slate-400 text-sm">Loading…</p>';
+  const res=await api(`/api/recruitment/candidates/${viewingCandId}/stage-history`);
+  if(!res||!res.ok){el.innerHTML='<p class="text-red-500 text-sm">Failed to load stage history.</p>';return;}
+  const rows=await res.json();
+  if(!rows.length){el.innerHTML='<p class="text-slate-400 text-sm">No stage history recorded yet.</p>';return;}
+  el.innerHTML=`<div class="space-y-3">
+    ${rows.map(r=>`
+      <div class="flex items-center justify-between border border-slate-200 rounded-xl px-4 py-3">
+        <div>
+          <span class="badge text-xs ${stageBadgeClass(r.stage)}">${esc(r.stage)}</span>
+          <p class="text-xs text-slate-500 mt-1">${fmtDateTime(r.entered_at)} → ${r.exited_at?fmtDateTime(r.exited_at):'Current'}</p>
+        </div>
+        <p class="text-sm font-medium text-slate-700">${fmtDuration(r.duration_seconds)}</p>
+      </div>`).join('')}
+  </div>`;
+}
+
 function switchCandTab(tab){
-  ['cdt-profile','cdt-interviews','cdt-resume','cdt-history'].forEach(t=>{
+  ['cdt-profile','cdt-interviews','cdt-resume','cdt-stagetime','cdt-history'].forEach(t=>{
     document.getElementById(t).classList.toggle('hidden',t!==tab);
   });
   document.querySelectorAll('[data-cdtab]').forEach(b=>{
@@ -512,6 +536,7 @@ function switchCandTab(tab){
     b.classList.toggle('text-slate-500',b.dataset.cdtab!==tab);
   });
   if(tab==='cdt-history') loadCandHistory();
+  if(tab==='cdt-stagetime') loadCandStageTime();
 }
 async function moveCandStage() {
   if(!viewingCandId) return;

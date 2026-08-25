@@ -4046,11 +4046,13 @@
       <button class="view-tab-btn view-tab-active px-4 py-3 text-sm" data-cdtab="cdt-profile" onclick="switchCandTab('cdt-profile')">Profile</button>
       <button class="view-tab-btn px-4 py-3 text-sm text-slate-500" data-cdtab="cdt-interviews" onclick="switchCandTab('cdt-interviews')">Interviews &amp; Scores</button>
       <button class="view-tab-btn px-4 py-3 text-sm text-slate-500" data-cdtab="cdt-resume" onclick="switchCandTab('cdt-resume')">Resume</button>
+      <button id="cdStageTimeTab" class="view-tab-btn px-4 py-3 text-sm text-slate-500 hidden" data-cdtab="cdt-stagetime" onclick="switchCandTab('cdt-stagetime')">Time in Stage</button>
       <button id="cdHistoryTab" class="view-tab-btn px-4 py-3 text-sm text-slate-500 hidden" data-cdtab="cdt-history" onclick="switchCandTab('cdt-history')">History</button>
     </div>
     <div id="cdt-profile" class="p-6"></div>
     <div id="cdt-interviews" class="p-6 hidden"></div>
     <div id="cdt-resume" class="p-6 hidden"></div>
+    <div id="cdt-stagetime" class="p-6 hidden"></div>
     <div id="cdt-history" class="p-6 hidden"></div>
     <div class="flex gap-2 px-6 py-4 border-t border-slate-200">
       <select id="cdStageSelect" class="inp w-40" onchange="moveCandStage()"></select>
