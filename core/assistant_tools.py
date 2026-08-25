@@ -149,7 +149,7 @@ async def get_overtime(user: dict) -> dict:
 
 async def get_team_leave_balance(user: dict) -> dict:
     try:
-        rows = await asyncio.to_thread(list_leave_balances, employee_id=None, year=None, user=user)
+        rows = await asyncio.to_thread(list_leave_balances, employee_id=None, year=None, team=True, user=user)
     except HTTPException as e:
         return _err(e)
     return {"team_leave_balances": [

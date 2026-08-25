@@ -417,7 +417,7 @@ def delete_leave_type(conn, type_id: int, user: dict = Depends(get_current_user)
 # ---------------------------------------------------------------------------
 @router.get("/api/leave/balances")
 @db_session
-def list_leave_balances(conn, employee_id: Optional[str] = None, year: Optional[int] = None,
+def list_leave_balances(conn, employee_id: Optional[str] = None, year: Optional[int] = None, team: bool = False,
                         user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
     year = year or datetime.now().year
@@ -432,6 +432,13 @@ def list_leave_balances(conn, employee_id: Optional[str] = None, year: Optional[
     p: list = [inst_id, year]
     if user["role"] == "employee":
         q += " AND b.employee_id=?"; p.append(user.get("employee_id", ""))
+    elif user["role"] == "manager" and team:
+        # Explicit team view (e.g. the AI assistant's "my team's leave
+        # balance" tool) — broadens to the manager's full downstream
+        # reporting chain, same subordinates_in_clause pattern as
+        # list_leave_applications above.
+        frag, fp = subordinates_in_clause(inst_id, user.get("employee_id", ""))
+        q += f" AND b.employee_id IN {frag}"; p.extend(fp)
     elif user["role"] == "manager":
         # Default to the manager's own balances — this is what "My Leave"
         # wants, not blended-in rows from every subordinate. An explicit

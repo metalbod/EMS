@@ -202,16 +202,17 @@ def manager_with_report(client, hr_manager_auth, make_test_employee, test_instit
 def test_self_scoped_tool_excludes_subordinate_data(manager_with_report):
     manager_user, report_emp = manager_with_report
 
-    unscoped = assistant_tools.list_leave_balances(employee_id=None, year=None, user=manager_user)
+    team_result = asyncio.run(assistant_tools.get_team_leave_balance(manager_user))
     self_scoped_result = asyncio.run(assistant_tools.get_leave_balance(manager_user))
 
     # Both employees see the same set of N active leave types (N depends on
     # ambient state in the shared test institution, so don't hardcode it) —
-    # unscoped (real role="manager") sees both employees' rows (2N), while
-    # the self-scoped call sees only the manager's own (N). The 2x relation
-    # holds regardless of N.
+    # the team tool (manager + report_emp) sees both employees' rows (2N),
+    # while the self-scoped call sees only the manager's own (N). The 2x
+    # relation holds regardless of N, and only holds if self-scoped never
+    # blends in the subordinate's rows.
     assert len(self_scoped_result["leave_balances"]) > 0
-    assert len(unscoped) == 2 * len(self_scoped_result["leave_balances"])
+    assert len(team_result["team_leave_balances"]) == 2 * len(self_scoped_result["leave_balances"])
 
 
 def test_team_tool_includes_subordinate_data(manager_with_report):
