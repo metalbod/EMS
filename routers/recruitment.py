@@ -19,7 +19,7 @@ from core.permission_matrix import require_permission
 
 router = APIRouter()
 
-CANDIDATE_STAGES  = ["New","Screening","Interview","Offer","Hired","Rejected","Withdrawn"]
+CANDIDATE_STAGES  = ["New","Screening","Interview","Pending Checks","Offer","Hired","Rejected by Candidate","Rejected by Company","Withdrawn"]
 INTERVIEW_TYPES   = ["Phone","Video","In-Person","Technical","Panel"]
 OFFER_TYPES       = ["Offer","Decline"]
 OFFER_STATUSES    = ["Draft","Sent","Accepted","Rejected","Withdrawn"]
@@ -266,9 +266,9 @@ def list_requisitions(conn,
     q = """
         SELECT r.*,
             (SELECT COUNT(*) FROM candidates c
-              WHERE c.requisition_id=r.id AND c.stage NOT IN ('Rejected','Withdrawn')) AS candidate_count,
+              WHERE c.requisition_id=r.id AND c.stage NOT IN ('Rejected by Candidate','Rejected by Company','Withdrawn')) AS candidate_count,
             (SELECT COUNT(*) FROM candidates c
-              WHERE c.requisition_id=r.id AND c.stage IN ('Screening','Interview','Offer','Hired')) AS shortlisted_count,
+              WHERE c.requisition_id=r.id AND c.stage IN ('Screening','Interview','Pending Checks','Offer','Hired')) AS shortlisted_count,
             (SELECT COUNT(DISTINCT i.candidate_id) FROM interviews i
               WHERE i.requisition_id=r.id AND i.status='Completed') AS interviewed_count,
             (SELECT COUNT(*) FROM candidates c
@@ -812,8 +812,10 @@ def create_offer(conn, body: OfferIn, user: dict = Depends(get_current_user)) ->
     """, (inst_id, body.candidate_id, body.requisition_id, body.offer_type,
           body.salary_offered, body.start_date, body.expiry_date, letter, user["username"]))
     oid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-    # Move candidate stage
-    new_stage = "Offer" if body.offer_type == "Offer" else "Rejected"
+    # Move candidate stage. A "Decline" letter is HR sending a regret
+    # letter (company-initiated), so it maps to Rejected by Company —
+    # distinct from a candidate declining/withdrawing themselves.
+    new_stage = "Offer" if body.offer_type == "Offer" else "Rejected by Company"
     conn.execute("UPDATE candidates SET stage=? WHERE id=? AND institution_id=?",
                  (new_stage, body.candidate_id, inst_id))
     sal = f"RM {body.salary_offered:,.0f}" if body.salary_offered else "—"

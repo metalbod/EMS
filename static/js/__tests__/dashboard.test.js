@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
 // Matches dashboard.js's loadRecruitmentDash() candidate-pipeline render —
-// always lists all 7 canonical stages (matching Candidate Bank's stage
-// filter list), rather than hiding Hired/Rejected/Withdrawn when their
-// count is zero.
+// always lists all 9 canonical stages (matching Candidate Bank's stage
+// filter list), rather than hiding Hired/Rejected by Candidate/Rejected
+// by Company/Withdrawn when their count is zero.
 describe('Recruitment dashboard candidate pipeline', () => {
-  const PIPELINE_STAGES = ['New','Screening','Interview','Offer','Hired','Rejected','Withdrawn'];
-  const PIPELINE_COLORS = {New:'bg-slate-400',Screening:'bg-blue-400',Interview:'bg-purple-400',Offer:'bg-yellow-400',Hired:'bg-emerald-500',Rejected:'bg-red-400',Withdrawn:'bg-slate-300'};
+  const PIPELINE_STAGES = ['New','Screening','Interview','Pending Checks','Offer','Hired','Rejected by Candidate','Rejected by Company','Withdrawn'];
+  const PIPELINE_COLORS = {New:'bg-slate-400',Screening:'bg-blue-400',Interview:'bg-purple-400','Pending Checks':'bg-orange-400',Offer:'bg-yellow-400',Hired:'bg-emerald-500','Rejected by Candidate':'bg-red-400','Rejected by Company':'bg-red-400',Withdrawn:'bg-slate-300'};
 
   function statusColor(map, key, fallback) { return map[key] || fallback; }
 
@@ -28,7 +28,7 @@ describe('Recruitment dashboard candidate pipeline', () => {
     document.body.innerHTML = '<div id="rCandPipeline"></div>';
   });
 
-  it('shows all 7 stages even when Hired/Rejected/Withdrawn are zero, matching Candidate Bank', () => {
+  it('shows all 9 stages even when Hired/Rejected by Candidate/Rejected by Company/Withdrawn are zero, matching Candidate Bank', () => {
     document.getElementById('rCandPipeline').innerHTML = renderPipeline({
       total_candidates: 8,
       cand_by_stage: { New: 3, Screening: 2, Interview: 1, Offer: 1, Withdrawn: 1 },

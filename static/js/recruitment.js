@@ -12,8 +12,10 @@ const CAND_SORT_FIELDS = ['full_name','requisition_title','source','created_at',
 
 function stageBadgeClass(stage) {
   const m = {New:'bg-slate-100 text-slate-600',Screening:'bg-blue-100 text-blue-700',
-    Interview:'bg-purple-100 text-purple-700',Offer:'bg-yellow-100 text-yellow-700',
-    Hired:'bg-green-100 text-green-700',Rejected:'bg-red-100 text-red-600',
+    Interview:'bg-purple-100 text-purple-700','Pending Checks':'bg-orange-100 text-orange-700',
+    Offer:'bg-yellow-100 text-yellow-700',
+    Hired:'bg-green-100 text-green-700','Rejected by Candidate':'bg-red-100 text-red-600',
+    'Rejected by Company':'bg-red-100 text-red-600',
     Withdrawn:'bg-slate-100 text-slate-500'};
   return m[stage]||'bg-slate-100 text-slate-600';
 }

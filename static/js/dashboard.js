@@ -225,8 +225,8 @@ function loadRecruitmentDash() {
     document.getElementById('rStatOffers').textContent = s.offers_pending;
 
     // Candidate pipeline bar chart
-    const PIPELINE_STAGES = ['New','Screening','Interview','Offer','Hired','Rejected','Withdrawn'];
-    const PIPELINE_COLORS = {New:'bg-slate-400',Screening:'bg-blue-400',Interview:'bg-purple-400',Offer:'bg-yellow-400',Hired:'bg-emerald-500',Rejected:'bg-red-400',Withdrawn:'bg-slate-300'};
+    const PIPELINE_STAGES = ['New','Screening','Interview','Pending Checks','Offer','Hired','Rejected by Candidate','Rejected by Company','Withdrawn'];
+    const PIPELINE_COLORS = {New:'bg-slate-400',Screening:'bg-blue-400',Interview:'bg-purple-400','Pending Checks':'bg-orange-400',Offer:'bg-yellow-400',Hired:'bg-emerald-500','Rejected by Candidate':'bg-red-400','Rejected by Company':'bg-red-400',Withdrawn:'bg-slate-300'};
     const totalCands = s.total_candidates || 1;
     document.getElementById('rCandPipeline').innerHTML = s.total_candidates ? PIPELINE_STAGES.map(stage => {
       const cnt = s.cand_by_stage[stage] || 0;

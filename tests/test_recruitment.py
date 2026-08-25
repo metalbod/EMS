@@ -71,6 +71,30 @@ def test_list_requisitions_offer_count_reflects_candidate_stage(client, hr_manag
     assert row["offer_count"] == 1, "a candidate at Offer stage must count even with no formal offer letter created"
 
 
+def test_list_requisitions_stats_include_pending_checks_and_rejected_split(client, hr_manager_auth):
+    req = client.post("/api/recruitment/requisitions", headers=hr_manager_auth,
+                       json={"title": _unique_title(), "department": "Engineering"}).json()
+
+    pending = client.post("/api/recruitment/candidates", headers=hr_manager_auth, json={
+        "full_name": "ZZ Pending Checks Req Candidate", "requisition_id": req["id"],
+    }).json()
+    client.patch(f"/api/recruitment/candidates/{pending['id']}/stage", headers=hr_manager_auth,
+                 json={"stage": "Pending Checks"})
+
+    for stage in ("Rejected by Candidate", "Rejected by Company"):
+        cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth, json={
+            "full_name": f"ZZ {stage} Req Candidate", "requisition_id": req["id"],
+        }).json()
+        client.patch(f"/api/recruitment/candidates/{cand['id']}/stage", headers=hr_manager_auth,
+                     json={"stage": stage})
+
+    listing = client.get("/api/recruitment/requisitions", headers=hr_manager_auth,
+                          params={"department": "Engineering"}).json()
+    row = next(r for r in listing if r["id"] == req["id"])
+    assert row["shortlisted_count"] == 1, "Pending Checks must count as shortlisted, like Screening/Interview/Offer/Hired"
+    assert row["candidate_count"] == 1, "both Rejected by Candidate and Rejected by Company must be excluded from the active candidate count, same as the old bare Rejected was"
+
+
 def test_update_requisition_only_draft_editable(client, hr_manager_auth):
     req = client.post("/api/recruitment/requisitions", headers=hr_manager_auth,
                        json={"title": _unique_title(), "department": "Sales"}).json()
@@ -206,6 +230,37 @@ def test_move_stage_invalid_stage_returns_400(client, hr_manager_auth):
     res = client.patch(f"/api/recruitment/candidates/{cand['id']}/stage", headers=hr_manager_auth,
                         json={"stage": "Bogus"})
     assert res.status_code == 400
+
+
+def test_move_stage_to_pending_checks_success(client, hr_manager_auth):
+    cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
+                        json={"full_name": "ZZ Pending Checks Candidate"}).json()
+    res = client.patch(f"/api/recruitment/candidates/{cand['id']}/stage", headers=hr_manager_auth,
+                        json={"stage": "Pending Checks"})
+    assert res.status_code == 200, res.text
+    assert res.json()["stage"] == "Pending Checks"
+
+
+def test_move_stage_bare_rejected_no_longer_valid(client, hr_manager_auth):
+    """The old single 'Rejected' value was split into 'Rejected by
+    Candidate'/'Rejected by Company' — the bare value must no longer be
+    accepted going forward (existing rows were backfilled by migration
+    a05baafa6355, not left as a still-valid third option)."""
+    cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
+                        json={"full_name": "ZZ Bare Rejected Candidate"}).json()
+    res = client.patch(f"/api/recruitment/candidates/{cand['id']}/stage", headers=hr_manager_auth,
+                        json={"stage": "Rejected"})
+    assert res.status_code == 400
+
+
+def test_move_stage_to_rejected_by_candidate_and_company(client, hr_manager_auth):
+    for stage in ("Rejected by Candidate", "Rejected by Company"):
+        cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
+                            json={"full_name": f"ZZ {stage} Candidate"}).json()
+        res = client.patch(f"/api/recruitment/candidates/{cand['id']}/stage", headers=hr_manager_auth,
+                            json={"stage": stage})
+        assert res.status_code == 200, res.text
+        assert res.json()["stage"] == stage
 
 
 def test_move_stage_success(client, hr_manager_auth):
@@ -427,7 +482,10 @@ def test_create_offer_auto_generates_letter_and_moves_stage(client, hr_manager_a
     assert cand_check["stage"] == "Offer"
 
 
-def test_create_decline_offer_moves_candidate_to_rejected(client, hr_manager_auth):
+def test_create_decline_offer_moves_candidate_to_rejected_by_company(client, hr_manager_auth):
+    """A regret letter is HR/company-initiated, so it must map to
+    'Rejected by Company', not the ambiguous bare 'Rejected' or
+    'Rejected by Candidate'."""
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
                         json={"full_name": "ZZ Decline Candidate"}).json()
     res = client.post("/api/recruitment/offers", headers=hr_manager_auth, json={
@@ -437,7 +495,7 @@ def test_create_decline_offer_moves_candidate_to_rejected(client, hr_manager_aut
     assert "regret to inform" in res.json()["letter_content"]
 
     cand_check = client.get(f"/api/recruitment/candidates/{cand['id']}", headers=hr_manager_auth).json()
-    assert cand_check["stage"] == "Rejected"
+    assert cand_check["stage"] == "Rejected by Company"
 
 
 def test_get_offer_not_found_returns_404(client, hr_manager_auth):
