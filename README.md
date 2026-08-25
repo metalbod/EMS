@@ -163,6 +163,30 @@ python celery_worker.py
 
 The FastAPI app runs normally: `uvicorn main:app --reload`
 
+### Production Deployment
+
+Production (`ems-app` on Fly.io) does **not** run a separate Redis instance or
+Celery worker — there's a single Fly machine running only `uvicorn main:app`
+(see `fly.toml`/`Dockerfile`, no `[processes]` worker entry). Instead, the
+`CELERY_TASK_ALWAYS_EAGER` Fly secret is set to `true`, which makes
+`core/tasks.py` configure Celery with `task_always_eager=True`: `.apply_async()`
+calls execute the task **synchronously, inline, in the same request** that
+queued it, using an in-memory broker/backend (`broker="memory://"`) instead of
+Redis — no separate worker process is needed or running.
+
+This is a deliberate choice for this app's current scale, not a stopgap left
+over from local dev — but it has one real consequence worth knowing:
+**the `202 Accepted` / poll-`GET /api/tasks/{task_id}` contract described below
+doesn't reflect what actually happens in production.** The HTTP response for
+`POST /api/payroll/runs` or `POST /api/employees/bulk-upload` isn't sent until
+the *entire* task has finished running inline — there's no real "pending" state
+to poll for. As institution size grows, a large payroll run generating payslips
+for hundreds of employees synchronously inside one request is a real
+request-timeout risk (see "Known limitations" below). If that ever becomes a
+problem in practice, the fix is to actually provision Redis + a Fly worker
+process and unset `CELERY_TASK_ALWAYS_EAGER` in production — the code path
+already supports it, it's just not deployed that way today.
+
 ### Async Endpoint Pattern
 
 ```python
@@ -789,3 +813,11 @@ See commit history / project notes for the running tech-debt list. Notably:
 payroll statutory tables are simplified approximations (see
 `payroll_calc.py` docstring — verify against official tables before real
 use).
+
+- **Payroll run / bulk upload block synchronously in production**, despite
+  their `202 Accepted` response. Production runs Celery in eager mode (see
+  "Production Deployment" under "Async Operations" above) with no separate
+  worker, so `POST /api/payroll/runs` and `POST /api/employees/bulk-upload`
+  don't return until all the work is done — a large institution's payroll run
+  is a real request-timeout risk as headcount grows. No incident yet, but
+  worth watching; the fix is provisioning a real Redis + worker deployment.

@@ -81,12 +81,18 @@ def _normalize_bulk_upload_date(value, fmt):
 
 # Redis connection string: redis://[:password]@host:port/db
 # Default for local dev: redis://localhost:6379/0
-# In test mode with CELERY_TASK_ALWAYS_EAGER, skip broker/backend since results are immediate
+# CELERY_TASK_ALWAYS_EAGER is set to true in *production* (ems-app's Fly
+# secrets), not just for tests — there's no Redis instance or separate
+# worker machine deployed at all (see README.md's "Async Operations >
+# Production Deployment"). Eager mode skips the broker/backend since
+# results are available immediately, in-process.
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 ALWAYS_EAGER = os.environ.get("CELERY_TASK_ALWAYS_EAGER", "false").lower() == "true"
 
 # In eager mode, tasks execute immediately and return directly (no need for a broker/backend).
-# Use a dummy broker/backend to avoid connection attempts. In production, Redis is used.
+# Use a dummy broker/backend to avoid connection attempts. A real Redis broker is only
+# actually used when ALWAYS_EAGER is false, e.g. local dev with `redis-server` running —
+# production today runs eager, not Redis-backed (see comment above).
 BROKER_URL = "memory://" if ALWAYS_EAGER else REDIS_URL
 BACKEND_URL = "cache+memory://" if ALWAYS_EAGER else REDIS_URL
 

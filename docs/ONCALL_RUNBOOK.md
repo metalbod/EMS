@@ -104,10 +104,14 @@ psql $DATABASE_URL -c "SELECT 1;"
 curl -I https://sentry.io/health
 # Should return 200
 
-# Redis status (if using Celery workers)
-redis-cli -u $REDIS_URL ping
-# Expected: PONG
-# If error → Redis is down or credentials wrong
+# Redis / Celery worker — NOT APPLICABLE to production today.
+# ems-app runs Celery in eager mode (CELERY_TASK_ALWAYS_EAGER=true Fly
+# secret): payroll-run generation and bulk employee upload execute
+# synchronously inline in the same request, in the main uvicorn process —
+# no Redis instance is provisioned, no separate worker machine exists (see
+# README.md's "Async Operations > Production Deployment"). If either of
+# those two endpoints are timing out or erroring, look at the main app's
+# own logs/Sentry, not a worker — there isn't one.
 
 # GitHub Actions (CI/CD)
 https://github.com/metalbod/EMS/actions
