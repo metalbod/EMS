@@ -426,3 +426,75 @@ def test_location_manager_optional(client, hr_manager_auth, test_institution, ma
     """Test that location manager is optional."""
     body = make_test_location(name="No Manager Location")
     assert body["manager_user_id"] is None
+
+
+# ---------------------------------------------------------------------------
+# Role gating on write endpoints (previously this whole file had none)
+# ---------------------------------------------------------------------------
+def _employee_headers(make_test_user, test_institution, role="employee"):
+    token, _ = make_test_user(role=role)
+    return {"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}
+
+
+def test_create_location_requires_manage_role(client, make_test_user, test_institution):
+    headers = _employee_headers(make_test_user, test_institution)
+    res = client.post("/api/locations", headers=headers,
+                       json=_valid_location_payload(test_institution["id"]))
+    assert res.status_code == 403
+
+
+def test_update_location_requires_manage_role(client, make_test_user, test_institution, make_test_location):
+    location = make_test_location(name="Gate Update Location")
+    headers = _employee_headers(make_test_user, test_institution, role="manager")
+    res = client.put(f"/api/locations/{location['id']}", headers=headers, json={"name": "Hijacked"})
+    assert res.status_code == 403
+
+
+def test_delete_location_requires_manage_role(client, make_test_user, test_institution, make_test_location):
+    location = make_test_location(name="Gate Delete Location")
+    headers = _employee_headers(make_test_user, test_institution)
+    res = client.delete(f"/api/locations/{location['id']}", headers=headers)
+    assert res.status_code == 403
+
+
+def test_assign_employee_to_location_requires_manage_role(client, make_test_user, make_test_employee, test_institution, make_test_location):
+    location = make_test_location(name="Gate Assign Location", location_type="branch")
+    emp = make_test_employee()
+    headers = _employee_headers(make_test_user, test_institution)
+    res = client.post(
+        f"/api/employees/{emp['employee_id']}/locations",
+        headers=headers,
+        json={"location_id": location["id"], "assignment_type": "primary", "start_date": "2026-08-01"},
+    )
+    assert res.status_code == 403
+
+
+def test_bulk_assign_locations_requires_manage_role(client, make_test_user, make_test_employee, test_institution, make_test_location):
+    location = make_test_location(name="Gate Bulk Location", location_type="branch")
+    emp = make_test_employee()
+    headers = _employee_headers(make_test_user, test_institution)
+    res = client.post(
+        "/api/employees/bulk-assign-locations",
+        headers=headers,
+        json={"assignments": [{
+            "employee_id": emp["employee_id"], "location_id": location["id"],
+            "assignment_type": "primary", "start_date": "2026-08-01",
+        }]},
+    )
+    assert res.status_code == 403
+
+
+def test_hr_admin_can_manage_locations(client, make_test_user, test_institution):
+    """hr_admin is in LOCATIONS_MANAGE_ROLES alongside hr_manager/superadmin."""
+    headers = _employee_headers(make_test_user, test_institution, role="hr_admin")
+    res = client.post("/api/locations", headers=headers,
+                       json=_valid_location_payload(test_institution["id"]))
+    assert res.status_code == 201
+
+
+def test_list_locations_does_not_require_manage_role(client, make_test_user, test_institution, make_test_location):
+    """Read-only endpoints stay open to any authenticated in-tenant user."""
+    make_test_location(name="Gate Read Location")
+    headers = _employee_headers(make_test_user, test_institution)
+    res = client.get(f"/api/institutions/{test_institution['id']}/locations", headers=headers)
+    assert res.status_code == 200

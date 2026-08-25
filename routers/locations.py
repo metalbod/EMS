@@ -5,6 +5,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from db import get_db, IntegrityError
 from core.deps import get_current_user
+from core.permission_matrix import require_permission
 from core.location_assignments import has_primary_location
 from core.location_schemas import (
     LocationCreate,
@@ -23,6 +24,14 @@ from core.location_schemas import (
 logger = logging.getLogger("ems.locations")
 router = APIRouter(prefix="/api", tags=["locations"])
 
+# Previously this whole file had zero role gating on any endpoint — any
+# authenticated in-tenant user, including a plain employee, could create,
+# edit, or delete a location, or reassign any other employee's location.
+# Matches the frontend's own canLocations gate (static/js/core.js) and the
+# core/permission_matrix.py "Locations" module's manage row.
+LOCATIONS_MANAGE_ROLES = ("superadmin", "hr_manager", "hr_admin")
+_LOCATIONS_MANAGE_KEY = "locations.create_edit_delete_location_manage_employee_location_assignments_decide_transfers"
+
 
 @router.post("/locations", status_code=status.HTTP_201_CREATED)
 async def create_location(
@@ -32,6 +41,7 @@ async def create_location(
     """Create a new location/outlet for the institution."""
     conn = get_db()
     try:
+        require_permission(conn, current_user, _LOCATIONS_MANAGE_KEY)
         inst_id = current_user.get("institution_id")
         if not inst_id:
             raise HTTPException(401, detail="Institution context required")
@@ -174,6 +184,7 @@ async def update_location(
     """Update location details."""
     conn = get_db()
     try:
+        require_permission(conn, current_user, _LOCATIONS_MANAGE_KEY)
         # Get location to verify access
         location = conn.execute(
             "SELECT * FROM locations WHERE id = ?", (location_id,)
@@ -226,6 +237,7 @@ async def delete_location(
     """Soft-delete a location by setting is_active = 0."""
     conn = get_db()
     try:
+        require_permission(conn, current_user, _LOCATIONS_MANAGE_KEY)
         location = conn.execute(
             "SELECT * FROM locations WHERE id = ?", (location_id,)
         ).fetchone()
@@ -386,6 +398,7 @@ async def assign_employee_to_location(
     """Assign an employee to a location."""
     conn = get_db()
     try:
+        require_permission(conn, current_user, _LOCATIONS_MANAGE_KEY)
         inst_id = current_user.get("institution_id")
 
         # Verify employee exists
@@ -509,6 +522,7 @@ async def update_employee_location_assignment(
     """Update an employee's assignment to a location."""
     conn = get_db()
     try:
+        require_permission(conn, current_user, _LOCATIONS_MANAGE_KEY)
         inst_id = current_user.get("institution_id")
 
         # Verify assignment exists
@@ -559,6 +573,7 @@ async def remove_employee_from_location(
     """Remove an employee from a location by setting end_date to today."""
     conn = get_db()
     try:
+        require_permission(conn, current_user, _LOCATIONS_MANAGE_KEY)
         inst_id = current_user.get("institution_id")
 
         assignment = conn.execute(
@@ -596,6 +611,7 @@ async def bulk_assign_locations(
     """Bulk assign multiple employees to locations."""
     conn = get_db()
     try:
+        require_permission(conn, current_user, _LOCATIONS_MANAGE_KEY)
         inst_id = current_user.get("institution_id")
         created = 0
         errors = []

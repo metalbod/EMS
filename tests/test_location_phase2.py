@@ -4,6 +4,11 @@ from datetime import datetime, timedelta
 from conftest import _valid_employee_payload, _valid_location_payload
 
 
+def _employee_headers(make_test_user, test_institution, role="employee"):
+    token, _ = make_test_user(role=role)
+    return {"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}
+
+
 @pytest.fixture
 def setup_phase2_data(client, hr_manager_auth, test_institution):
     """Set up test data for Phase 2 tests."""
@@ -627,3 +632,95 @@ class TestPhase2ErrorHandling:
         )
         # Should either be 404 (not found) or 403 (forbidden)
         assert response.status_code in [404, 403]
+
+
+class TestPhase2RoleGating:
+    """Previously none of these endpoints had any role gate at all."""
+
+    def test_transfer_request_requires_manage_role(self, setup_phase2_data, make_test_user, test_institution):
+        data = setup_phase2_data
+        employee = data["employee"]
+        location = data["location"]
+        headers = _employee_headers(make_test_user, test_institution)
+        response = data["client"].post(
+            f"/api/employees/{employee['employee_id']}/transfer-request",
+            params={"to_location_id": location["id"]},
+            headers=headers,
+        )
+        assert response.status_code == 403
+
+    def test_approve_transfer_requires_manage_role(self, setup_phase2_data, make_test_user, test_institution):
+        data = setup_phase2_data
+        client = data["client"]
+        auth_headers = data["auth_headers"]
+        employee = data["employee"]
+        location = data["location"]
+
+        response = client.post(
+            f"/api/employees/{employee['employee_id']}/transfer-request",
+            params={"to_location_id": location["id"]},
+            headers=auth_headers,
+        )
+        transfer_id = response.json()["id"]
+
+        headers = _employee_headers(make_test_user, test_institution)
+        response = client.put(f"/api/transfer-requests/{transfer_id}/approve", headers=headers)
+        assert response.status_code == 403
+
+    def test_reject_transfer_requires_manage_role(self, setup_phase2_data, make_test_user, test_institution):
+        data = setup_phase2_data
+        client = data["client"]
+        auth_headers = data["auth_headers"]
+        employee = data["employee"]
+        location = data["location"]
+
+        response = client.post(
+            f"/api/employees/{employee['employee_id']}/transfer-request",
+            params={"to_location_id": location["id"]},
+            headers=auth_headers,
+        )
+        transfer_id = response.json()["id"]
+
+        headers = _employee_headers(make_test_user, test_institution)
+        response = client.put(
+            f"/api/transfer-requests/{transfer_id}/reject",
+            params={"reason": "test"},
+            headers=headers,
+        )
+        assert response.status_code == 403
+
+    def test_location_payroll_dashboard_requires_payroll_view_role(self, setup_phase2_data, make_test_user, test_institution):
+        data = setup_phase2_data
+        headers = _employee_headers(make_test_user, test_institution)
+        response = data["client"].get(
+            f"/api/payroll/location/{data['location']['id']}/dashboard",
+            headers=headers,
+        )
+        assert response.status_code == 403
+
+    def test_institution_payroll_summary_requires_payroll_view_role(self, setup_phase2_data, make_test_user, test_institution):
+        data = setup_phase2_data
+        headers = _employee_headers(make_test_user, test_institution)
+        response = data["client"].get(
+            f"/api/payroll/institution/{data['institution']['id']}/summary",
+            headers=headers,
+        )
+        assert response.status_code == 403
+
+    def test_payroll_manager_can_view_location_dashboard(self, setup_phase2_data, payroll_manager_auth):
+        data = setup_phase2_data
+        response = data["client"].get(
+            f"/api/payroll/location/{data['location']['id']}/dashboard",
+            headers=payroll_manager_auth,
+        )
+        assert response.status_code == 200
+
+    def test_utilization_trends_does_not_require_manage_role(self, setup_phase2_data, make_test_user, test_institution):
+        """Read-only endpoints stay open to any authenticated in-tenant user."""
+        data = setup_phase2_data
+        headers = _employee_headers(make_test_user, test_institution)
+        response = data["client"].get(
+            f"/api/locations/{data['location']['id']}/utilization-trends",
+            headers=headers,
+        )
+        assert response.status_code == 200

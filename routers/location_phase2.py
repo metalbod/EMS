@@ -4,7 +4,9 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 from db import get_db
-from core.deps import get_current_user
+from core.deps import get_current_user, require_roles
+from core.permission_matrix import require_permission
+from core.roles import PAYROLL_VIEW_ROLES
 from core.location_features_schemas import (
     LocationTransferResponse,
     LocationPayrollSummary,
@@ -30,6 +32,7 @@ async def request_location_transfer(
     """Request a location transfer for an employee."""
     conn = get_db()
     try:
+        require_permission(conn, current_user, "locations.create_edit_delete_location_manage_employee_location_assignments_decide_transfers")
         inst_id = current_user.get("institution_id")
         user_id = current_user.get("id")
 
@@ -151,6 +154,7 @@ async def approve_transfer_request(
     """Approve a location transfer request."""
     conn = get_db()
     try:
+        require_permission(conn, current_user, "locations.create_edit_delete_location_manage_employee_location_assignments_decide_transfers")
         inst_id = current_user.get("institution_id")
         user_id = current_user.get("id")
 
@@ -240,6 +244,7 @@ async def reject_transfer_request(
     """Reject a location transfer request."""
     conn = get_db()
     try:
+        require_permission(conn, current_user, "locations.create_edit_delete_location_manage_employee_location_assignments_decide_transfers")
         inst_id = current_user.get("institution_id")
         user_id = current_user.get("id")
 
@@ -296,7 +301,10 @@ async def reject_transfer_request(
 @router.get("/payroll/location/{location_id}/dashboard")
 async def get_location_payroll_dashboard(
     location_id: int,
-    current_user: dict = Depends(get_current_user),
+    # Previously no role gate at all — any authenticated user of any role
+    # could pull payroll data. Matches routers/payroll.py's own
+    # PAYROLL_VIEW_ROLES gate (deliberately excludes superadmin).
+    current_user: dict = Depends(require_roles(*PAYROLL_VIEW_ROLES)),
 ) -> Dict[str, Any]:
     """Get comprehensive payroll dashboard for a location."""
     conn = get_db()
@@ -390,7 +398,10 @@ async def get_location_payroll_dashboard(
 @router.get("/payroll/institution/{institution_id}/summary")
 async def get_institution_payroll_summary(
     institution_id: int,
-    current_user: dict = Depends(get_current_user),
+    # Previously no role gate at all — any authenticated user of any role
+    # could pull institution-wide payroll data. Matches routers/payroll.py's
+    # own PAYROLL_VIEW_ROLES gate (deliberately excludes superadmin).
+    current_user: dict = Depends(require_roles(*PAYROLL_VIEW_ROLES)),
 ) -> Dict[str, Any]:
     """Get institution-wide payroll summary across all locations."""
     conn = get_db()
@@ -463,8 +474,12 @@ async def get_utilization_history(
         if not location:
             raise HTTPException(404, detail="Location not found")
 
-        # For now, return current snapshot
-        # In a production system, you'd query a time-series table or audit logs
+        # No historical utilization snapshots are recorded anywhere in this
+        # schema (no time-series table, and location_capacity_alerts only
+        # covers threshold breaches, not routine readings) — this always
+        # returns today's single snapshot regardless of `days`, rather than
+        # faking a history. A real fix needs a periodic-snapshot table, which
+        # doesn't exist yet.
         emp_count = conn.execute(
             """
             SELECT COUNT(*) FROM employee_location_assignments
@@ -521,11 +536,12 @@ async def get_utilization_trends(
         capacity = location["capacity"] or 100
         current_utilization = (emp_count / capacity * 100) if capacity > 0 else 0
 
-        # Get historical average (simplified - would use audit data)
-        historical_avg = current_utilization  # Placeholder
-
-        # Trend calculation
-        trend = "stable"  # Placeholder
+        # Same limitation as get_utilization_history above: no historical
+        # snapshots exist to average or trend over, so both values below are
+        # not real calculations — they mirror the current reading rather than
+        # claiming a trend that can't be computed yet.
+        historical_avg = current_utilization
+        trend = "stable"
 
         return {
             "location_id": location_id,

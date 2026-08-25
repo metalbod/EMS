@@ -52,6 +52,7 @@ wrapper everywhere.
 | `locations.py`, `location_features.py`, `location_phase2.py` | Multi-location: assignments, transfers, budgets, capacity alerts |
 | `approval_workflow_settings.py` | Configurable approval chains (see README) |
 | `roles.py` | Per-institution custom roles (built-ins + additions like "IT Infra") |
+| `assistant.py` | AI self-service chatbot (Claude Haiku) over the caller's own/team's leave, payroll, benefits, timesheet data — read-only, server-side-scoped tools, Redis-backed hourly rate limit |
 | `users.py` | User accounts, role assignment |
 | `institutions.py` | Tenant (company) CRUD, superadmin-only |
 | `dashboard.py` | Personal To-Do widget (aggregates pending items across modules) |

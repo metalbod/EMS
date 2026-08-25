@@ -790,6 +790,27 @@ the frontend only fetches this data at all when the logged-in role is
 `hr_manager`/`hr_admin` — the endpoint enforces the same restriction
 server-side as defense in depth.
 
+## AI assistant
+
+`routers/assistant.py` / `core/assistant_tools.py` / `core/anthropic_client.py`
+/ `static/js/assistant.js`.
+
+A self-service chatbot (`POST /api/assistant/chat`, Claude Haiku via the
+Anthropic API) that answers questions about the logged-in user's own
+leave balance, payslips, benefits, and timesheet/overtime status — and,
+for managers using the team-scoped tools, their direct team's data for
+those same areas. Read-only end to end: no tool can mutate data, and
+chat history is ephemeral (the client resends recent turns each request;
+nothing is persisted server-side).
+
+Every tool Claude can call is zero-argument — the model never supplies
+an `employee_id`, so there's no code path for it to ask for someone
+else's data even if asked to. The actual scoping happens server-side in
+`core/assistant_tools.py`, keyed off the authenticated `current_user`
+only (see that module's docstring for the self-scoped vs. team-scoped
+split). A Redis-backed rate limit (`CHAT_RATE_LIMIT_PER_HOUR`, currently
+30) applies per user per rolling hour.
+
 ## Deployment (Fly.io)
 
 The app is deployed to Fly.io with a rolling-update strategy. Key deployment

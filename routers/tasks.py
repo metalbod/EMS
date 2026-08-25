@@ -1,12 +1,14 @@
 """Task tracking and status endpoints for async operations."""
 from fastapi import APIRouter, HTTPException, Depends
 
-from core.deps import require_roles
+from core.deps import get_current_user
+from core.db_session import db_session
 from core.schemas import ErrorResponse
 from core.tasks import get_task_status
-from db import get_db
 
 router = APIRouter()
+
+_TASK_HR_TIER_ROLES = ("hr_manager", "hr_admin", "payroll_manager", "superadmin")
 
 
 class TaskStatusResponse:
@@ -15,7 +17,8 @@ class TaskStatusResponse:
 
 
 @router.get("/api/tasks/{task_id}", tags=["tasks"])
-def get_task(task_id: str, user: dict = Depends(require_roles("employee", "hr_manager", "hr_admin", "payroll_manager", "superadmin"))):
+@db_session
+def get_task(conn, task_id: str, user: dict = Depends(get_current_user)):
     """Get the status of an async task.
 
     Returns:
@@ -23,10 +26,14 @@ def get_task(task_id: str, user: dict = Depends(require_roles("employee", "hr_ma
     - result: task output (when status is success)
     - error: error message (when status is failure)
     """
-    # Get from Celery backend
-    status = get_task_status(task_id)
+    track = conn.execute("SELECT user_id FROM task_tracking WHERE id=?", (task_id,)).fetchone()
 
-    # Optionally: verify task belongs to this user (future: read from task_tracking table)
-    # For now, any authenticated user can check any task ID
+    # No tracking row (e.g. a task predating this table, or an untracked
+    # task type) means ownership can't be verified — only HR-tier roles may
+    # blind-guess a task ID in that case. A tracked task additionally allows
+    # its own creator.
+    is_owner = track is not None and track["user_id"] == user["id"]
+    if not is_owner and user["role"] not in _TASK_HR_TIER_ROLES:
+        raise HTTPException(403, detail="Not authorized to view this task")
 
-    return status
+    return get_task_status(task_id)

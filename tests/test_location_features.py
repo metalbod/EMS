@@ -1,6 +1,6 @@
 """Tests for location features: history, alerts, reports, capacity planning."""
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from db import get_db
 from conftest import _valid_employee_payload
 
@@ -620,3 +620,147 @@ def test_complete_location_feature_workflow(
     assert dashboard["location_id"] == data["loc1_id"]
     assert "current_status" in dashboard
     assert "forecast" in dashboard
+
+
+# ============================================================================
+# ROLE GATING (previously these endpoints had no role gate at all)
+# ============================================================================
+
+def _employee_headers(make_test_user, test_institution, role="employee"):
+    token, _ = make_test_user(role=role)
+    return {"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}
+
+
+def test_payroll_runs_requires_payroll_view_role(client, setup_location_features, make_test_user, test_institution):
+    data = setup_location_features
+    headers = _employee_headers(make_test_user, test_institution)
+    res = client.get(f"/api/locations/{data['loc1_id']}/payroll-runs", headers=headers)
+    assert res.status_code == 403
+
+
+def test_payroll_summary_requires_payroll_view_role(client, setup_location_features, make_test_user, test_institution):
+    data = setup_location_features
+    headers = _employee_headers(make_test_user, test_institution)
+    res = client.get(f"/api/locations/{data['loc1_id']}/payroll-summary", headers=headers)
+    assert res.status_code == 403
+
+
+def test_payroll_manager_can_view_payroll_summary(client, setup_location_features, payroll_manager_auth):
+    data = setup_location_features
+    res = client.get(f"/api/locations/{data['loc1_id']}/payroll-summary", headers=payroll_manager_auth)
+    assert res.status_code == 200
+
+
+def test_acknowledge_capacity_alert_requires_manage_role(client, setup_location_features, make_test_user, test_institution):
+    headers = _employee_headers(make_test_user, test_institution)
+    res = client.put(
+        "/api/capacity-alerts/99999/acknowledge",
+        json={"acknowledged_at": datetime.utcnow().isoformat()},
+        headers=headers,
+    )
+    assert res.status_code == 403
+
+
+# ============================================================================
+# REAL average_tenure_days / projected_departures / planned_leaves
+# (previously hardcoded TODO placeholders)
+# ============================================================================
+
+def test_employee_report_average_tenure_days_is_computed(client, hr_manager_auth, test_institution, make_test_location):
+    location = client.post(
+        "/api/locations", headers=hr_manager_auth,
+        json={
+            "name": "Tenure Location",
+            "code": "TEN_" + str(datetime.utcnow().timestamp()).replace(".", ""),
+            "city": "Kuala Lumpur", "state": "KL", "location_type": "branch", "capacity": 50,
+        },
+    ).json()
+
+    start_date = (date.today() - timedelta(days=100)).isoformat()
+    emp = client.post(
+        "/api/employees", headers=hr_manager_auth,
+        json=_valid_employee_payload(full_name="Tenure Test Employee", start_date=start_date),
+    ).json()
+    client.post(
+        f"/api/employees/{emp['employee_id']}/locations", headers=hr_manager_auth,
+        json={"location_id": location["id"], "assignment_type": "primary", "start_date": start_date},
+    )
+
+    res = client.post(
+        f"/api/reports/location/{location['id']}/employees",
+        json={"location_id": location["id"], "include_inactive": False},
+        headers=hr_manager_auth,
+    )
+    assert res.status_code == 200
+    avg_tenure = res.json()["summary"]["average_tenure_days"]
+    assert 99 <= avg_tenure <= 101
+
+    client.patch(f"/api/employees/{emp['employee_id']}/status", headers=hr_manager_auth, json={"status": "Inactive"})
+
+
+def test_capacity_forecast_reflects_upcoming_contract_end(client, hr_manager_auth, test_institution, make_test_location):
+    location = client.post(
+        "/api/locations", headers=hr_manager_auth,
+        json={
+            "name": "Forecast Location",
+            "code": "FC_" + str(datetime.utcnow().timestamp()).replace(".", ""),
+            "city": "Kuala Lumpur", "state": "KL", "location_type": "branch", "capacity": 50,
+        },
+    ).json()
+
+    contract_end = (date.today() + timedelta(days=10)).isoformat()
+    emp = client.post(
+        "/api/employees", headers=hr_manager_auth,
+        json=_valid_employee_payload(
+            full_name="Departing Test Employee",
+            employment_type="Contract",
+            contract_end_date=contract_end,
+        ),
+    ).json()
+    client.post(
+        f"/api/employees/{emp['employee_id']}/locations", headers=hr_manager_auth,
+        json={"location_id": location["id"], "assignment_type": "primary", "start_date": "2026-01-01"},
+    )
+
+    res = client.get(f"/api/locations/{location['id']}/capacity-dashboard", headers=hr_manager_auth)
+    assert res.status_code == 200
+    forecast = res.json()["forecast"]
+    assert forecast["projected_departures"] == 1
+    assert forecast["projected_headcount"] == forecast["current_headcount"] - 1
+
+    client.patch(f"/api/employees/{emp['employee_id']}/status", headers=hr_manager_auth, json={"status": "Inactive"})
+
+
+def test_capacity_forecast_reflects_planned_leave(client, hr_manager_auth, test_institution, make_test_location, make_test_leave_type):
+    location = client.post(
+        "/api/locations", headers=hr_manager_auth,
+        json={
+            "name": "Leave Forecast Location",
+            "code": "LFC_" + str(datetime.utcnow().timestamp()).replace(".", ""),
+            "city": "Kuala Lumpur", "state": "KL", "location_type": "branch", "capacity": 50,
+        },
+    ).json()
+    emp = client.post(
+        "/api/employees", headers=hr_manager_auth,
+        json=_valid_employee_payload(full_name="Leave Forecast Employee"),
+    ).json()
+    client.post(
+        f"/api/employees/{emp['employee_id']}/locations", headers=hr_manager_auth,
+        json={"location_id": location["id"], "assignment_type": "primary", "start_date": "2026-01-01"},
+    )
+    lt = make_test_leave_type(requires_approval=False)
+
+    leave_start = (date.today() + timedelta(days=5)).isoformat()
+    leave_end = (date.today() + timedelta(days=6)).isoformat()
+    leave_res = client.post(
+        "/api/leave/applications", headers=hr_manager_auth,
+        json={"employee_id": emp["employee_id"], "leave_type_id": lt["id"], "start_date": leave_start, "end_date": leave_end},
+    )
+    assert leave_res.status_code == 201
+    assert leave_res.json()["status"] == "Approved"
+
+    res = client.get(f"/api/locations/{location['id']}/capacity-dashboard", headers=hr_manager_auth)
+    assert res.status_code == 200
+    assert res.json()["forecast"]["planned_leaves"] == 1
+
+    client.patch(f"/api/employees/{emp['employee_id']}/status", headers=hr_manager_auth, json={"status": "Inactive"})

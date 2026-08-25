@@ -125,6 +125,7 @@ _LD_MANAGE = ("superadmin", "hr_manager", "hr_admin")                # LD_MANAGE
 _PROJECT_MANAGE = ("superadmin", "hr_manager")                       # PROJECT_MANAGE_ROLES — no hr_admin
 _ROLE_MANAGE = ("superadmin", "hr_manager", "hr_admin")              # routers/roles.py ROLE_MANAGE_ROLES
 _USER_MANAGE = ("superadmin", "hr_manager")                          # CAN_MANAGE_USERS
+_LOCATIONS_MANAGE = ("superadmin", "hr_manager", "hr_admin")         # routers/locations.py LOCATIONS_MANAGE_ROLES — matches the frontend's own canLocations gate (static/js/core.js)
 _NOTIFICATION_MANAGE = ("hr_manager", "hr_admin")                    # NOTIFICATION_MANAGE_ROLES — no superadmin
 _HR_NOTE_READ = ("superadmin", "hr_manager", "hr_admin")             # HR_NOTE_ROLES
 _HR_NOTE_DELETE = ("superadmin", "hr_manager")                       # narrower than read/create
@@ -301,15 +302,18 @@ MATRIX: List[Dict[str, Any]] = [
             _action("Manage projects, tasks, assignments", "routers/projects.py", _flat(*_PROJECT_MANAGE), note="No hr_admin."),
             _action("Utilization report", "GET /api/projects/utilization", _flat(*_PROJECT_MANAGE)),
             _action("View my projects / project tasks / assignments", "GET endpoints", _no_restriction(), note="Scoped to the caller's own assignments."),
-            _action("Get task by id", "GET /api/tasks/{id}", _flat("employee", "hr_manager", "hr_admin", "payroll_manager", "superadmin"),
-                     note="Unusually broad allow-list, missing only manager and compensation_manager — confirm intentional."),
+            _action("Get task by id", "GET /api/tasks/{id} (routers/tasks.py, not routers/projects.py)", _no_restriction(),
+                     note="No role check — the router itself enforces per-task ownership instead: the caller must be the task's own creator (task_tracking.user_id) or hold an HR-tier role (hr_manager/hr_admin/payroll_manager/superadmin); a task with no tracking row is HR-tier-only. Previously neither the role list nor this ownership check existed — any authenticated user of any role could look up any task ID."),
         ],
     },
     {
         "module": "Locations",
         "actions": [
-            _action("Create / edit / delete locations, assignments, budgets, transfers", "locations.py, location_features.py, location_phase2.py", _no_restriction(),
-                     note="No role gate at all today — any authenticated in-tenant user, including plain employee, can write here. Worth a separate decision on whether to restrict this."),
+            _action("View locations, assignments, stats, capacity, transfer history", "GET endpoints across locations.py/location_features.py/location_phase2.py", _no_restriction()),
+            _action("Create / edit / delete location, manage employee-location assignments, decide transfers", "POST/PUT/DELETE in locations.py; POST/PUT transfer-request/approve/reject in location_phase2.py", _flat(*_LOCATIONS_MANAGE),
+                     note="Previously no role gate at all — any authenticated in-tenant user, including plain employee, could write here. Fixed; matches the frontend's existing canLocations gate."),
+            _action("View location / institution payroll summaries", "GET .../payroll-runs, payroll-summary, payroll/location/*, payroll/institution/* in location_features.py + location_phase2.py", _flat(*_PAYROLL_VIEW),
+                     note="Previously no role gate at all, exposing payroll data to any authenticated user. Fixed via a hardcoded require_roles(*PAYROLL_VIEW_ROLES) gate, deliberately NOT routed through require_permission()/ENFORCED_ACTION_KEYS — same reasoning as Payroll's own rows below: PAYROLL_VIEW_ROLES excludes superadmin on purpose, and has_permission() always grants superadmin first, so enforcing this through the override system would silently hand superadmin payroll access it doesn't have today."),
         ],
     },
     {
@@ -464,11 +468,19 @@ ENFORCED_ACTION_KEYS = frozenset({
     "projects_tasks.utilization_report",
     # NOT projects_tasks.view_my_projects_project_tasks_assignments —
     # NO_RESTRICTION, self-scoped, nothing to enforce.
-    # NOT projects_tasks.get_task_by_id — pre-existing note flags this row's
-    # access dict as suspiciously broad ("missing only manager and
-    # compensation_manager, confirm intentional") and it doesn't correspond
-    # to any route in routers/projects.py; leaving untouched rather than
-    # enforcing a gate nobody has verified is correct.
+    # NOT projects_tasks.get_task_by_id — NO_RESTRICTION now (was a flat
+    # role list that didn't match any real check in the router at all).
+    # The router enforces real per-task ownership itself; nothing here for
+    # the override system to retrofit.
+    "locations.create_edit_delete_location_manage_employee_location_assignments_decide_transfers",
+    # NOT locations.view_locations_assignments_stats_capacity_transfer_history
+    # — NO_RESTRICTION, nothing to enforce.
+    # NOT locations.view_location_institution_payroll_summaries — deliberately
+    # excluded, same escalation reasoning as every Payroll row below
+    # (PAYROLL_VIEW_ROLES excludes superadmin; has_permission() always grants
+    # superadmin first, so enforcing this would hand it payroll access it
+    # doesn't have today). Gated with a direct require_roles(*PAYROLL_VIEW_ROLES)
+    # in the router instead, matching routers/payroll.py's own convention.
     "recruitment.create_edit_requisition_candidate_interview_offer",
     "recruitment.view_candidate_audit_log",
     # NOT recruitment.view_requisitions_candidates_interviews_offers —

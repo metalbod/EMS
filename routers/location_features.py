@@ -1,10 +1,12 @@
 """API endpoints for location features: history, transfers, alerts, budgets, reports."""
 import logging
 from typing import List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from fastapi import APIRouter, Depends, HTTPException, status
 from db import get_db
-from core.deps import get_current_user
+from core.deps import get_current_user, require_roles
+from core.permission_matrix import require_permission
+from core.roles import PAYROLL_VIEW_ROLES
 from core.location_features_schemas import (
     EmployeeAssignmentHistory,
     AssignmentHistoryEntry,
@@ -16,6 +18,7 @@ from core.location_features_schemas import (
     CapacityStatus,
     CapacityForecast,
     LocationCapacityDashboard,
+    LocationBudgetResponse,
     LocationPayrollSummary,
     ReportScheduleCreate,
     ReportScheduleResponse,
@@ -34,7 +37,10 @@ async def get_location_payroll_runs(
     location_id: int,
     period_start: Optional[str] = None,
     period_end: Optional[str] = None,
-    current_user: dict = Depends(get_current_user),
+    # Previously no role gate at all — any authenticated user of any role
+    # could pull payroll data. Matches routers/payroll.py's own
+    # PAYROLL_VIEW_ROLES gate (deliberately excludes superadmin).
+    current_user: dict = Depends(require_roles(*PAYROLL_VIEW_ROLES)),
 ) -> List[dict]:
     """Get payroll runs for a specific location."""
     conn = get_db()
@@ -94,7 +100,10 @@ async def get_location_payroll_summary(
     location_id: int,
     period_start: Optional[str] = None,
     period_end: Optional[str] = None,
-    current_user: dict = Depends(get_current_user),
+    # Previously no role gate at all — any authenticated user of any role
+    # could pull payroll data. Matches routers/payroll.py's own
+    # PAYROLL_VIEW_ROLES gate (deliberately excludes superadmin).
+    current_user: dict = Depends(require_roles(*PAYROLL_VIEW_ROLES)),
 ) -> LocationPayrollSummary:
     """Get payroll summary for a location."""
     conn = get_db()
@@ -391,6 +400,7 @@ async def acknowledge_capacity_alert(
     """Acknowledge a capacity alert."""
     conn = get_db()
     try:
+        require_permission(conn, current_user, "locations.create_edit_delete_location_manage_employee_location_assignments_decide_transfers")
         user_id = current_user.get("id")
         acknowledged_at = data.acknowledged_at or datetime.utcnow().isoformat()
 
@@ -562,11 +572,15 @@ async def get_employee_report_by_location(
         report_rows = []
         dept_counts = {}
         status_counts = {"Active": 0, "Inactive": 0}
+        tenure_days = []
 
         for emp in employees:
             dept = emp["department"]
             dept_counts[dept] = dept_counts.get(dept, 0) + 1
             status_counts[emp["status"]] = status_counts.get(emp["status"], 0) + 1
+
+            if emp["start_date"]:
+                tenure_days.append((date.today() - date.fromisoformat(str(emp["start_date"])[:10])).days)
 
             # Get all locations for this employee
             all_locs = conn.execute(
@@ -605,7 +619,7 @@ async def get_employee_report_by_location(
             summary={
                 "by_department": dept_counts,
                 "by_status": status_counts,
-                "average_tenure_days": 0,  # TODO: calculate
+                "average_tenure_days": round(sum(tenure_days) / len(tenure_days)) if tenure_days else 0,
             },
         )
 
@@ -747,6 +761,32 @@ async def get_location_capacity_dashboard(
             (location_id,),
         ).fetchone()
 
+        today_iso = date.today().isoformat()
+        forecast_end_iso = (date.today() + timedelta(days=30)).isoformat()
+
+        projected_departures = conn.execute(
+            """
+            SELECT COUNT(*) FROM employee_location_assignments ela
+            JOIN employees e ON e.employee_id = ela.employee_id AND e.institution_id = ela.institution_id
+            WHERE ela.location_id = ? AND ela.institution_id = ? AND ela.is_active = 1
+              AND e.contract_end_date IS NOT NULL AND e.contract_end_date BETWEEN ? AND ?
+            """,
+            (location_id, inst_id, today_iso, forecast_end_iso),
+        ).fetchone()[0]
+
+        planned_leaves = conn.execute(
+            """
+            SELECT COUNT(DISTINCT la.employee_id) FROM leave_applications la
+            JOIN employee_location_assignments ela ON ela.employee_id = la.employee_id AND ela.institution_id = la.institution_id
+            WHERE ela.location_id = ? AND ela.institution_id = ? AND ela.is_active = 1
+              AND la.status = 'Approved' AND la.start_date <= ? AND la.end_date >= ?
+            """,
+            (location_id, inst_id, forecast_end_iso, today_iso),
+        ).fetchone()[0]
+
+        projected_headcount = emp_count - projected_departures
+        forecast_utilization = (projected_headcount / capacity * 100) if capacity > 0 else 0
+
         return LocationCapacityDashboard(
             location_id=location_id,
             location_name=location["name"],
@@ -767,10 +807,10 @@ async def get_location_capacity_dashboard(
                 location_name=location["name"],
                 forecast_period="next-30-days",
                 current_headcount=emp_count,
-                projected_departures=0,  # TODO: calculate from contracts
-                planned_leaves=0,  # TODO: get from leave system
-                projected_headcount=emp_count,
-                forecast_utilization=utilization,
+                projected_departures=projected_departures,
+                planned_leaves=planned_leaves,
+                projected_headcount=projected_headcount,
+                forecast_utilization=round(forecast_utilization, 1),
                 recruitment_needed=0,
                 actions_recommended=[],
             ),
@@ -787,8 +827,22 @@ async def get_location_capacity_dashboard(
                 )
                 for alert in alerts
             ],
-            trend_data=[],  # TODO: calculate from historical data
-            budget_info=None,  # TODO: format budget data
+            # No historical utilization snapshots are recorded anywhere in this
+            # schema (see routers/location_phase2.py's utilization-history/trends
+            # endpoints, which have the same limitation) — a real trend needs a
+            # time-series table that doesn't exist yet. Left empty rather than
+            # faked.
+            trend_data=[],
+            budget_info=LocationBudgetResponse(
+                id=budget["id"],
+                location_id=budget["location_id"],
+                period_start=budget["period_start"],
+                period_end=budget["period_end"],
+                budget_amount=budget["budget_amount"],
+                actual_amount=budget["actual_amount"],
+                created_at=budget["created_at"],
+                updated_at=budget["updated_at"],
+            ) if budget else None,
         )
 
     finally:
