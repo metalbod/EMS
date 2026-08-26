@@ -452,7 +452,10 @@ function applyRoleUI() {
   document.getElementById('nav-attendance-review')?.classList.toggle('hidden', !canAttendanceManage);
   const canNotify = HR_STAFF_ROLES.includes(role);
   const canBulkUpload = role === 'hr_manager';
-  const canLocations = HR_STAFF_ROLES.includes(role);
+  // Matches the backend's LOCATIONS_MANAGE_ROLES (routers/locations.py) —
+  // previously excluded superadmin, which meant a superadmin couldn't even
+  // see the nav entry for something the backend already let them manage.
+  const canLocations = HR_MANAGE_ROLES.includes(role);
   const canApprovalWorkflow = HR_MANAGE_ROLES.includes(role);
   const canRoles = HR_MANAGE_ROLES.includes(role);
   const canDocTypes = HR_STAFF_ROLES.includes(role);
