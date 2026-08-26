@@ -118,7 +118,7 @@ _RECRUIT_WRITE = ("superadmin", "hr_manager", "hr_admin")           # routers/re
 _BENEFITS = ("superadmin", "hr_manager", "payroll_manager", "compensation_manager")  # require_benefits_role — no hr_admin
 _BENEFITS_DEPENDENTS = ("superadmin", "hr_manager", "hr_admin")     # require_dependents_manage_role
 _BENEFITS_DASHBOARD = ("superadmin", "hr_manager", "compensation_manager", "manager")  # require_benefits_dashboard_role
-_COMP_HR = ("superadmin", "hr_manager", "payroll_manager", "compensation_manager")  # compensation_helpers.require_hr_role — no hr_admin
+_COMP_HR = ("superadmin", "hr_manager", "payroll_manager", "compensation_manager")  # Compensation module's HR-tier gate — no hr_admin
 _ATTENDANCE_MANAGE = ("superadmin", "hr_manager", "hr_admin")       # require_attendance_manage_role
 _PERFORMANCE_MANAGE = ("hr_manager",)                                # PERFORMANCE_MANAGE_ROLES — no superadmin, no hr_admin
 _LD_MANAGE = ("superadmin", "hr_manager", "hr_admin")                # LD_MANAGE_ROLES
@@ -513,9 +513,8 @@ ENFORCED_ACTION_KEYS = frozenset({
     "compensation.manage_merit_cycles_recommendations",
     "compensation.view_someone_s_total_rewards_pay_equity_report",
     # NOT compensation.view_own_total_rewards — NO_RESTRICTION, self-scoped.
-    # _COMP_HR (core/compensation_helpers.py's require_hr_role) includes
-    # superadmin, unlike Payroll's role tuples above, so this module doesn't
-    # have that same escalation problem.
+    # _COMP_HR includes superadmin, unlike Payroll's role tuples above, so
+    # this module doesn't have that same escalation problem.
     "benefits.manage_benefit_plans_eligibility_enrollment_periods",
     "benefits.decide_life_events_auto_enroll_view_compliance_report",
     "benefits.manage_employee_dependents_hr_side",

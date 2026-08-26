@@ -8,7 +8,22 @@ let currentTab = 'personal';
 let openGroups = new Set(['empMgmt']);
 const TABS = ['personal','employment','statutory','dependents'];
 const VIEW_TABS = ['vt-personal','vt-employment','vt-locations','vt-statutory','vt-compensation','vt-notes','vt-documents'];
-const HR_NOTE_ROLES = ['superadmin','hr_manager','hr_admin'];
+// Shared role-tier constants for the `.includes(role)` checks that gate nav
+// visibility and per-page "can manage" toggles across the app. Extracted
+// because the same role sets were previously hand-typed as inline array
+// literals independently in many files — 60+ occurrences, most of them
+// byte-identical — which meant fixing one code+role wart didn't fix its
+// copies anywhere else. Each constant here is named for the role tier it
+// represents, not any one caller, since the same tier gets reused for many
+// unrelated features. Only sets that were actually duplicated somewhere are
+// listed — a role combination used in exactly one place stays as a plain
+// inline array there.
+const HR_MANAGE_ROLES = ['superadmin','hr_manager','hr_admin'];
+const HR_AND_MANAGER_ROLES = ['superadmin','hr_manager','hr_admin','manager'];
+const HR_STAFF_ROLES = ['hr_manager','hr_admin'];                  // no superadmin
+const HR_MANAGER_ONLY_ROLES = ['superadmin','hr_manager'];         // no hr_admin
+const COMPENSATION_STAFF_ROLES = ['hr_manager','payroll_manager','compensation_manager'];
+const BENEFITS_DASHBOARD_ROLES = ['hr_manager','compensation_manager','manager'];
 const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','leave-my','leave-approvals','leave-holidays','resignation-approvals','projects','timesheet-my','timesheet-approvals','overtime-my','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','comp-paygrades','comp-joblevels','comp-jobroles','comp-meritcycles','comp-bonusplans','comp-commissions','comp-equity','comp-totalrewards','comp-payequity','ben-plans','ben-periods','ben-lifeevents','ben-claims','ben-compliance','payroll-runs','payroll-my','payroll-myrewards','payroll-mybenefits','perf-my','perf-team','perf-cycles','perf-calibration','attendance-clock','attendance-review','settings-attendance','settings-approval-workflow','settings-roles','settings-document-types','coming-soon'];
 
 // ---------------------------------------------------------------------------
@@ -389,9 +404,9 @@ function updateBrandHeader() {
 function applyRoleUI() {
   const role = currentUser?.role;
   const isSA = role === 'superadmin';
-  const canManage = ['superadmin','hr_manager','hr_admin'].includes(role);
-  const canAudit  = ['superadmin','hr_manager'].includes(role);
-  const canUsers  = ['superadmin','hr_manager'].includes(role);
+  const canManage = HR_MANAGE_ROLES.includes(role);
+  const canAudit  = HR_MANAGER_ONLY_ROLES.includes(role);
+  const canUsers  = HR_MANAGER_ONLY_ROLES.includes(role);
   const hideEmp = isSA && !currentInstitution;
 
   updateBrandHeader();
@@ -411,8 +426,8 @@ function applyRoleUI() {
   // only Resignation, for their own reports' requests) — each sub-item
   // then has its own narrower toggle below, same nested pattern as Leave's
   // "Approvals" sub-item.
-  const canWorkforceOb = ['hr_manager','hr_admin'].includes(role);
-  const canWorkforceResign = ['superadmin','hr_manager','hr_admin','manager'].includes(role);
+  const canWorkforceOb = HR_STAFF_ROLES.includes(role);
+  const canWorkforceResign = HR_AND_MANAGER_ROLES.includes(role);
   document.getElementById('nav-workforce-group')?.classList.toggle('hidden', !canWorkforceOb && !canWorkforceResign);
   document.getElementById('nav-onboarding')?.classList.toggle('hidden', !canWorkforceOb);
   document.getElementById('nav-offboarding')?.classList.toggle('hidden', !canWorkforceOb);
@@ -424,23 +439,23 @@ function applyRoleUI() {
   document.getElementById('nav-recruit-group').classList.toggle('hidden', hideEmp || role === 'employee');
   document.getElementById('nav-ld-group')?.classList.toggle('hidden', hideEmp);
   document.getElementById('nav-leave-group')?.classList.toggle('hidden', hideEmp);
-  document.getElementById('nav-leave-approvals')?.classList.toggle('hidden', !['superadmin','hr_manager','hr_admin','manager'].includes(role));
+  document.getElementById('nav-leave-approvals')?.classList.toggle('hidden', !HR_AND_MANAGER_ROLES.includes(role));
   document.getElementById('nav-leave-holidays')?.classList.toggle('hidden', !canManage);
   document.getElementById('nav-timesheet-group')?.classList.toggle('hidden', hideEmp);
-  document.getElementById('nav-timesheet-approvals')?.classList.toggle('hidden', !['superadmin','hr_manager','hr_admin','manager'].includes(role));
-  document.getElementById('nav-projects')?.classList.toggle('hidden', !['superadmin','hr_manager'].includes(role));
+  document.getElementById('nav-timesheet-approvals')?.classList.toggle('hidden', !HR_AND_MANAGER_ROLES.includes(role));
+  document.getElementById('nav-projects')?.classList.toggle('hidden', !HR_MANAGER_ONLY_ROLES.includes(role));
   // Clock In/Out is self-service for anyone with an employee record; the
   // employee_id-linked check happens on load (see attendance.js), the nav
   // toggle here just hides it from superadmin (no employee record at all).
   document.getElementById('nav-attendance-clock')?.classList.toggle('hidden', hideEmp || isSA);
-  const canAttendanceManage = ['superadmin','hr_manager','hr_admin'].includes(role);
+  const canAttendanceManage = HR_MANAGE_ROLES.includes(role);
   document.getElementById('nav-attendance-review')?.classList.toggle('hidden', !canAttendanceManage);
-  const canNotify = ['hr_manager','hr_admin'].includes(role);
+  const canNotify = HR_STAFF_ROLES.includes(role);
   const canBulkUpload = role === 'hr_manager';
-  const canLocations = ['hr_manager','hr_admin'].includes(role);
-  const canApprovalWorkflow = ['superadmin','hr_manager','hr_admin'].includes(role);
-  const canRoles = ['superadmin','hr_manager','hr_admin'].includes(role);
-  const canDocTypes = ['hr_manager','hr_admin'].includes(role);
+  const canLocations = HR_STAFF_ROLES.includes(role);
+  const canApprovalWorkflow = HR_MANAGE_ROLES.includes(role);
+  const canRoles = HR_MANAGE_ROLES.includes(role);
+  const canDocTypes = HR_STAFF_ROLES.includes(role);
   document.getElementById('nav-settings-wrap')?.classList.toggle('hidden', hideEmp || !(canAudit || canUsers || canNotify || canBulkUpload || canLocations || canAttendanceManage || canApprovalWorkflow || canRoles || canDocTypes));
   document.getElementById('nav-settings-notifications')?.classList.toggle('hidden', !canNotify);
   document.getElementById('nav-bulk-upload')?.classList.toggle('hidden', !canBulkUpload);
@@ -455,13 +470,13 @@ function applyRoleUI() {
   // excludes HR Admin (previously included, now revoked) and superadmin
   // (unlike most other groups, which superadmin can see whenever an
   // institution is selected).
-  const canCompensation = ['hr_manager','payroll_manager','compensation_manager'].includes(role);
+  const canCompensation = COMPENSATION_STAFF_ROLES.includes(role);
   document.getElementById('nav-compensation-group')?.classList.toggle('hidden', !canCompensation);
 
   // Benefits: its own top-level menu, same access gate as Compensation
   // (deliberate choice — reuse the existing role set rather than add a
   // dedicated Benefits Manager role).
-  const canBenefits = ['hr_manager','payroll_manager','compensation_manager'].includes(role);
+  const canBenefits = COMPENSATION_STAFF_ROLES.includes(role);
   document.getElementById('nav-benefits-group')?.classList.toggle('hidden', !canBenefits);
 
   const canPayrollView = ['payroll_manager','hr_manager'].includes(role);
@@ -477,7 +492,7 @@ function applyRoleUI() {
   document.getElementById('nav-perf-calibration')?.classList.toggle('hidden', role !== 'hr_manager');
 
   // OB buttons
-  const canManageOb=['superadmin','hr_manager','hr_admin'].includes(role);
+  const canManageOb=HR_MANAGE_ROLES.includes(role);
   document.getElementById('startOnboardingBtn')?.classList.toggle('hidden',!canManageOb);
   document.getElementById('startOffboardingBtn')?.classList.toggle('hidden',!canManageOb);
   document.getElementById('obSubTab_onboarding_templates')?.classList.toggle('hidden',!canManageOb);

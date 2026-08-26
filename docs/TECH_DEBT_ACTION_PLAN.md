@@ -1,5 +1,27 @@
 # Tech-Debt Action Plan - Updated
 
+> **⚠️ SUPERSEDED (2026-08-26).** This plan is over five weeks stale and no
+> longer reflects reality — kept only as a historical record, not a live
+> plan. What actually happened instead:
+> - **Manual Connection Cleanup**: `@db_session` (`core/db_session.py`)
+>   was built and is rolling out router-by-router, not all at once — see
+>   CLAUDE.md's Phase-3 backlog for the files still pending.
+> - **Split main.py**: happened, but by extracting routers/composition
+>   root logic (already mostly done by the time this plan was written),
+>   not by "moving 800 lines of schema DDL out of `init_db()`" — that
+>   function doesn't exist any more; schema DDL lives entirely in Alembic
+>   migrations (see "Database schema migrations" in README.md). `main.py`
+>   is ~170 lines today, already past this plan's ~400-line target.
+> - **Type Hints / Split Large Routers / ADRs**: none of these happened.
+>   `recruitment.py` and `performance.py` grew rather than shrank. 4 of
+>   the 5 planned ADRs were never written.
+> - **Monitoring Dashboard**: not tracked further here; check current
+>   on-call tooling instead of this doc.
+>
+> For an up-to-date, scored view of what's actually outstanding, see the
+> "EMS Debt Ledger" artifact (or ask for a fresh tech-debt audit) rather
+> than treating this document as current.
+
 **Status**: Skipping CRITICAL backups/rotations, focusing on remaining tech-debt  
 **Updated**: 2026-07-17  
 **Scope**: HIGH and MEDIUM priority items

@@ -57,7 +57,7 @@ const EMP_COLUMNS = [
   { key:'employment_type', label:'Employee Type', sortKey:'employment_type', default:true, render:e=>esc(e.employment_type||'—') },
   { key:'years_of_service', label:'Years of Service', sortKey:'years_of_service', default:true, render:e=>yearsOfServiceLabel(e) },
   { key:'status', label:'Status', sortKey:'status', default:true, render:e=>`<span class="badge ${e.status==='Active'?'bg-emerald-100 text-emerald-700':'bg-slate-100 text-slate-500'}">${e.status}</span>` },
-  { key:'pay_grade', label:'Pay Grade', sortKey:'pay_grade_name', default:false, roles:['hr_manager','payroll_manager','compensation_manager'], render:e=>esc(e.pay_grade_name||'—') },
+  { key:'pay_grade', label:'Pay Grade', sortKey:'pay_grade_name', default:false, roles:COMPENSATION_STAFF_ROLES, render:e=>esc(e.pay_grade_name||'—') },
 ];
 const EMP_COLUMNS_STORAGE_KEY = 'empListColumns';
 
@@ -181,9 +181,9 @@ function viewEmployee(id) {
   const e = employees.find(em=>em.employee_id===id); if(!e) return;
   viewingId = id;
   const role = currentUser.role;
-  const canWrite  = ['superadmin','hr_manager','hr_admin'].includes(role);
-  const canToggle = ['superadmin','hr_manager'].includes(role);
-  const canNotes  = HR_NOTE_ROLES.includes(role);
+  const canWrite  = HR_MANAGE_ROLES.includes(role);
+  const canToggle = HR_MANAGER_ONLY_ROLES.includes(role);
+  const canNotes  = HR_MANAGE_ROLES.includes(role);
   document.getElementById('viewName').textContent = e.full_name;
   document.getElementById('viewMeta').textContent = `${e.employee_id} · ${e.designation} · ${e.department}`;
   const badge = document.getElementById('viewBadge');
@@ -193,7 +193,7 @@ function viewEmployee(id) {
   // Employee document compliance tracking is HR-only end to end (matches
   // routers/employee_documents.py's require_roles("hr_manager","hr_admin")
   // — narrower than canWrite, which also allows superadmin).
-  document.getElementById('vt-documents-btn').classList.toggle('hidden', !['hr_manager','hr_admin'].includes(role));
+  document.getElementById('vt-documents-btn').classList.toggle('hidden', !HR_STAFF_ROLES.includes(role));
   document.getElementById('noteForm').classList.toggle('hidden', !canNotes);
   document.getElementById('viewEditBtn').classList.toggle('hidden', !canWrite);
   document.getElementById('viewToggleBtn').classList.toggle('hidden', !canToggle);
@@ -303,7 +303,7 @@ async function loadEmployeeLocations(empId) {
 async function loadRelatedContracts(empId) {
   const el=document.getElementById('relatedContracts');
   if(!el) return;
-  const canRehire=['superadmin','hr_manager','hr_admin'].includes(currentUser?.role);
+  const canRehire=HR_MANAGE_ROLES.includes(currentUser?.role);
   try {
     const r=await api(`/api/employees/${empId}/related-contracts`);
     if(!r.ok){el.innerHTML='';return;}
@@ -403,7 +403,7 @@ async function loadNotes() {
   if(!notesRes||!notesRes.ok) return;
   const notes=await notesRes.json();
   const obLogs=obRes?.ok ? await obRes.json() : [];
-  const canDelete=['superadmin','hr_manager'].includes(currentUser.role);
+  const canDelete=HR_MANAGER_ONLY_ROLES.includes(currentUser.role);
 
   const notesHtml=notes.length?notes.map(n=>`
     <div class="rounded-xl border border-slate-200 p-4 bg-white">

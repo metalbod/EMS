@@ -104,8 +104,8 @@ async def get_my_total_rewards(
     current_user: dict = Depends(get_current_user),
 ) -> TotalRewardsStatement:
     """Self-service: the logged-in employee's own total rewards statement.
-    No require_hr_role gate — every employee can see their own pay, just
-    not anyone else's (employee_id is pinned to current_user, not a
+    No HR-role gate — every employee can see their own pay, just not
+    anyone else's (employee_id is pinned to current_user, not a
     caller-supplied param)."""
     emp_id = current_user.get("employee_id")
     if not emp_id:

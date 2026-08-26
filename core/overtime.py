@@ -26,9 +26,11 @@ from core.approval_workflow import start_workflow, project_ids_for_row
 
 from core.leave_balance_ops import _get_or_create_leave_balance, _credit_balance
 
-# Approximates a Monthly-salary employee's hourly rate the same way
-# routers/payroll.py's own overtime approximation already does — see that
-# file's MONTHLY_NORMAL_HOURS disclaimer, same caveat applies here.
+# Simplified monthly normal-hours threshold (8hrs x 22 working days), shared
+# with routers/payroll.py's own overtime-pay split (which imports this
+# constant rather than redeclaring it). This is an approximation —
+# Malaysia's Employment Act overtime rules are based on daily/weekly
+# limits, not a flat monthly figure; verify before relying on it.
 MONTHLY_NORMAL_HOURS = 176.0
 
 

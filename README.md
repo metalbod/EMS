@@ -39,9 +39,11 @@ connection pools (`db.py`):
   `NOSUPERUSER`, DML-only grants, not table owner) used for all regular
   request-serving queries. Row-level security tenant-isolation policies
   actually apply to this connection.
-- **`ADMIN_DATABASE_URL`** — the schema-owning role, used only for DDL
-  (`init_db()` on boot, Alembic migrations). Falls back to `DATABASE_URL`
-  if unset, for environments that haven't split the two roles.
+- **`ADMIN_DATABASE_URL`** — the schema-owning role, used for DDL (Alembic
+  migrations) and for `core/seed.py`'s startup seed data (superadmin user,
+  onboarding templates — INSERT/UPDATE only, no DDL). Falls back to
+  `DATABASE_URL` if unset, for environments that haven't split the two
+  roles.
 
 This split exists because Postgres roles with `BYPASSRLS` (including
 `postgres` on some managed providers) silently skip RLS policy checks
@@ -298,19 +300,16 @@ neither is configured.
 
 ## Database schema migrations
 
-The schema predating this section is still owned by `main.py`'s
-`init_db()`/`_init_db_body()` — idempotent `CREATE TABLE IF NOT EXISTS` /
-`ALTER TABLE ... ADD COLUMN IF NOT EXISTS` statements that run on every app
-boot. That mechanism is unchanged and still authoritative for anything that
-already exists.
-
-[Alembic](https://alembic.sqlalchemy.org/) is now set up (`migrations/`,
-`alembic.ini`) for **new** schema changes going forward, so they go through
-reviewable, versioned migrations instead of being appended to `init_db()`.
-The current schema was stamped as a baseline (`alembic stamp head`, revision
-`75b14e73962f`) without running any DDL — see that migration's docstring for
-why. This app has no ORM, so autogenerate isn't available; write migrations
-by hand with `op.execute("...")`, matching the raw-SQL style used everywhere
+[Alembic](https://alembic.sqlalchemy.org/) (`migrations/`, `alembic.ini`)
+owns the schema. `main.py` no longer has any DDL of its own — the
+`init_db()`/`_init_db_body()` function this section used to describe was
+removed as part of restructuring `main.py` into routers; the schema that
+function used to own is now `20260717_0001_full_schema_ddl.py`. The
+pre-Alembic schema was stamped as a baseline (`alembic stamp head`,
+revision `75b14e73962f`, an empty no-op migration) rather than run as
+real DDL — see that migration's docstring for why. This app has no ORM,
+so autogenerate isn't available; write migrations by hand with
+`op.execute("...")`, matching the raw-SQL style used everywhere
 else in this codebase.
 
 ```bash
@@ -816,13 +815,15 @@ split). A Redis-backed rate limit (`CHAT_RATE_LIMIT_PER_HOUR`, currently
 The app is deployed to Fly.io with a rolling-update strategy. Key deployment
 details:
 
-- **Health checks:** configured in `fly.toml` with a 30-second grace period.
-  This grace period is necessary because `init_db()` (line 1032 in `main.py`)
-  runs synchronously at app startup during Uvicorn's import of the `main`
-  module. This runs DDL/schema initialization (CREATE TABLE, CREATE POLICY,
-  CREATE INDEX, etc.) that can take time, especially on the initial deployment
-  or after schema changes. The 30s grace period ensures health checks don't
-  timeout before initialization is complete.
+- **Health checks:** configured in `fly.toml` with a 45-second grace period.
+  This grace period is for `core/seed.py`'s `init_db_seed()`, called from
+  `main.py`'s `lifespan` startup handler — it runs synchronously before the
+  app starts accepting traffic. It does **not** run any DDL (schema is
+  managed entirely by Alembic migrations, applied separately before
+  deploy — see "Database schema migrations" below); it only seeds/upserts
+  the platform superadmin user and default onboarding templates, which is
+  normally fast, but the grace period gives it — plus DB connection
+  startup — headroom before a health check would time it out.
 
 - **Asset versioning:** CSS and JS static files get automatic cache-busting via
   query strings (see "Frontend asset versioning" above). No manual steps needed

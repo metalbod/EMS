@@ -4,10 +4,10 @@ let leaveTypesCache=[], leaveFilter='', leaveApprovalFilter='Pending Approval', 
 const LEAVE_STATUS_COLORS={'Pending Approval':'bg-amber-100 text-amber-700','Approved':'bg-green-100 text-green-700','Rejected':'bg-red-100 text-red-700','Cancelled':'bg-slate-100 text-slate-500'};
 
 function isLeaveManager() {
-  return ['superadmin','hr_manager','hr_admin'].includes(currentUser?.role);
+  return HR_MANAGE_ROLES.includes(currentUser?.role);
 }
 function canApproveLeave() {
-  return ['superadmin','hr_manager','hr_admin','manager'].includes(currentUser?.role);
+  return HR_AND_MANAGER_ROLES.includes(currentUser?.role);
 }
 
 // ---------------------------------------------------------------------------

@@ -51,7 +51,7 @@ async function loadRequisitions() {
   const res=await api('/api/recruitment/requisitions'+(status?`?status=${encodeURIComponent(status)}`:''));
   if(!res||!res.ok) return;
   const rows=await res.json();
-  const canManage=['superadmin','hr_manager','hr_admin'].includes(currentUser?.role);
+  const canManage=HR_MANAGE_ROLES.includes(currentUser?.role);
   document.getElementById('addReqBtn')?.classList.toggle('hidden',!canManage);
   const body=document.getElementById('reqTableBody');
   const empty=document.getElementById('reqEmpty');
@@ -137,7 +137,7 @@ async function openReqDetail(reqId) {
         ${(r.candidates||[]).map(c=>`<div class="flex items-center gap-2 py-1 border-b border-slate-100"><span class="flex-1">${esc(c.full_name)}</span><span class="badge ${stageBadgeClass(c.stage)}">${esc(c.stage)}</span><button onclick="closeBothReq();openCandDetail(${c.id})" class="text-xs text-blue-600 hover:underline">View</button></div>`).join('')||'<p class="text-slate-400">No candidates yet.</p>'}
       </div>
     </div>`;
-  const canApprove=['superadmin','hr_manager'].includes(currentUser?.role);
+  const canApprove=HR_MANAGER_ONLY_ROLES.includes(currentUser?.role);
   const appSection=document.getElementById('rdApprovalSection');
   appSection.classList.toggle('hidden',!(r.status==='Pending Approval'&&canApprove));
   document.getElementById('rdEditBtn').classList.toggle('hidden',r.status!=='Draft');
@@ -220,7 +220,7 @@ async function loadCandidates() {
   if(!res||!res.ok) return;
   const rows=await res.json();
   recruitCandidates=rows;
-  const canManage=['superadmin','hr_manager','hr_admin'].includes(currentUser?.role);
+  const canManage=HR_MANAGE_ROLES.includes(currentUser?.role);
   document.getElementById('addCandBtn')?.classList.toggle('hidden',!canManage);
   const body=document.getElementById('candTableBody');
   const empty=document.getElementById('candEmpty');
@@ -467,17 +467,17 @@ async function openCandDetail(candId) {
   // Stage select
   const ss=document.getElementById('cdStageSelect');
   ss.innerHTML=(recruitMeta.stages||[]).map(s=>`<option${s===c.stage?' selected':''}>${esc(s)}</option>`).join('');
-  const canManage=['superadmin','hr_manager','hr_admin'].includes(currentUser?.role);
+  const canManage=HR_MANAGE_ROLES.includes(currentUser?.role);
   document.getElementById('cdScheduleBtn').classList.toggle('hidden',!canManage);
   document.getElementById('cdOfferBtn').classList.toggle('hidden',!canManage);
   const showConvert=canManage&&['Offer','Hired'].includes(c.stage)&&(c.offers||[]).some(o=>o.status==='Accepted'&&o.offer_type==='Offer');
   document.getElementById('cdConvertBtn').classList.toggle('hidden',!showConvert);
   // History tab visible to HR roles only
-  const canViewHistory=['superadmin','hr_manager','hr_admin'].includes(currentUser?.role);
+  const canViewHistory=HR_MANAGE_ROLES.includes(currentUser?.role);
   document.getElementById('cdHistoryTab').classList.toggle('hidden',!canViewHistory);
   // Time in Stage tab visible to HR roles + manager (matches the
   // Recruitment dashboard tab's own canRecruit visibility, dashboard.js)
-  const canViewStageTime=['superadmin','hr_manager','hr_admin','manager'].includes(currentUser?.role);
+  const canViewStageTime=HR_AND_MANAGER_ROLES.includes(currentUser?.role);
   document.getElementById('cdStageTimeTab').classList.toggle('hidden',!canViewStageTime);
   switchCandTab('cdt-profile');
   document.getElementById('candDetailModal').classList.remove('hidden');
@@ -587,7 +587,7 @@ async function loadInterviews() {
   const res=await api('/api/recruitment/interviews'+(status?`?status=${encodeURIComponent(status)}`:''));
   if(!res||!res.ok) return;
   const rows=await res.json();
-  const canManage=['superadmin','hr_manager','hr_admin'].includes(currentUser?.role);
+  const canManage=HR_MANAGE_ROLES.includes(currentUser?.role);
   document.getElementById('addIntBtn')?.classList.toggle('hidden',!canManage);
   const body=document.getElementById('intTableBody');
   const empty=document.getElementById('intEmpty');
@@ -713,7 +713,7 @@ async function loadOffers() {
   const res=await api('/api/recruitment/offers');
   if(!res||!res.ok) return;
   const rows=await res.json();
-  const canManage=['superadmin','hr_manager','hr_admin'].includes(currentUser?.role);
+  const canManage=HR_MANAGE_ROLES.includes(currentUser?.role);
   document.getElementById('addOfferBtn')?.classList.toggle('hidden',!canManage);
   const body=document.getElementById('offerTableBody');
   const empty=document.getElementById('offerEmpty');

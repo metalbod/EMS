@@ -21,6 +21,8 @@ from core.roles import PAYROLL_VIEW_ROLES
 
 from core.tasks import generate_payroll_run
 
+from core.overtime import MONTHLY_NORMAL_HOURS
+
 from core.db_session import db_session
 
 from db import get_db, IntegrityError
@@ -51,11 +53,6 @@ def _employee_age(dob_str):
     return today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
 
 
-# Simplified monthly normal-hours threshold (8hrs x 22 working days) used to split
-# Hourly employees' approved timesheet hours into regular vs. overtime (1.5x rate).
-# This is an approximation — Malaysia's Employment Act overtime rules are based on
-# daily/weekly limits, not a flat monthly figure; verify before relying on it.
-MONTHLY_NORMAL_HOURS = 176.0
 OVERTIME_MULTIPLIER = 1.5
 
 

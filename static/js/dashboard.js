@@ -128,7 +128,7 @@ function renderDashboard() {
   // Locations overview (Workforce tab, HR Manager / HR Admin only) — the one
   // section besides base stats that still fetches immediately, since it's
   // grouped into the always-visible Workforce tab rather than a lazy tab.
-  const canViewLoc = ['hr_manager','hr_admin'].includes(currentUser?.role);
+  const canViewLoc = HR_STAFF_ROLES.includes(currentUser?.role);
   document.getElementById('locDashSection').classList.toggle('hidden', !canViewLoc);
   if (canViewLoc) loadLocationsOverviewDash();
 
@@ -138,11 +138,11 @@ function renderDashboard() {
   _dashTabLoaded.timesheet = false;
   _dashTabLoaded.compensation = false;
   _dashTabLoaded.leave = false;
-  const canRecruit = ['superadmin','hr_manager','hr_admin','manager'].includes(currentUser?.role);
-  const canViewUtil = ['superadmin','hr_manager'].includes(currentUser?.role);
-  const canViewBenefitsDash = ['hr_manager','compensation_manager','manager'].includes(currentUser?.role);
+  const canRecruit = HR_AND_MANAGER_ROLES.includes(currentUser?.role);
+  const canViewUtil = HR_MANAGER_ONLY_ROLES.includes(currentUser?.role);
+  const canViewBenefitsDash = BENEFITS_DASHBOARD_ROLES.includes(currentUser?.role);
   const hasEmployeeRecord = !!currentUser?.employee_id;
-  const canViewLeaveDash = ['hr_manager','hr_admin'].includes(currentUser?.role);
+  const canViewLeaveDash = HR_STAFF_ROLES.includes(currentUser?.role);
   document.getElementById('dash-tab-recruitment-btn').classList.toggle('hidden', !canRecruit);
   document.getElementById('dash-tab-timesheet-btn').classList.toggle('hidden', !canViewUtil);
   document.getElementById('dash-tab-compensation-btn').classList.toggle('hidden', !(canViewBenefitsDash || hasEmployeeRecord));
@@ -289,7 +289,7 @@ function loadTimesheetDash() {
 
 function loadCompensationDash() {
   // Benefits cost & utilization — HR Manager / Compensation Manager / Manager
-  const canViewBenefitsDash = ['hr_manager','compensation_manager','manager'].includes(currentUser?.role);
+  const canViewBenefitsDash = BENEFITS_DASHBOARD_ROLES.includes(currentUser?.role);
   document.getElementById('benefitsDashSection')?.classList.toggle('hidden', !canViewBenefitsDash);
   if (canViewBenefitsDash) {
     api('/api/benefits/reports/dashboard').then(async res => {
@@ -485,7 +485,7 @@ function loadLeaveCalendar() {
   // are HR-only — skip the fetch entirely for other roles rather than
   // just discarding an unauthorized response; the endpoint also enforces
   // this server-side (routers/employee_documents.py) as defense in depth.
-  const canViewDocExpiry = ['hr_manager','hr_admin'].includes(currentUser?.role);
+  const canViewDocExpiry = HR_STAFF_ROLES.includes(currentUser?.role);
   Promise.all([
     api(`/api/leave/calendar?year=${leaveCalYear}&month=${leaveCalMonth}`),
     api(`/api/holidays?year=${leaveCalYear}`),
@@ -621,7 +621,7 @@ let leaveDashTypeFilter = null; // { id, name } | null — null means "all types
 
 function loadLeaveDash() {
   loadLeaveCalendar();
-  const canViewLeaveDash = ['hr_manager','hr_admin'].includes(currentUser?.role);
+  const canViewLeaveDash = HR_STAFF_ROLES.includes(currentUser?.role);
   document.getElementById('leaveUtilDashSection').classList.toggle('hidden', !canViewLeaveDash);
   if (canViewLeaveDash) {
     leaveDashTypeFilter = null;

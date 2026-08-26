@@ -60,7 +60,7 @@ function renderObTable(type) {
   emptyEl?.classList.add('hidden');
   pagination?.classList.remove('hidden');
   document.getElementById(`${type}PageSize`).value=String(obListStates[type].pageSize);
-  const canManage=['superadmin','hr_manager','hr_admin'].includes(currentUser?.role);
+  const canManage=HR_MANAGE_ROLES.includes(currentUser?.role);
   const { pageItems, start, total } = obListStates[type].view(rows);
   document.getElementById(`${type}PageInfo`).textContent =
     `${start + 1}-${Math.min(start + obListStates[type].pageSize, total)} of ${total}`;
@@ -106,7 +106,7 @@ function setObFilter(type, status) {
 // ---------------------------------------------------------------------------
 async function renderObProbationPanel(clId, cl) {
   const panel = document.getElementById('obProbationPanel');
-  const canManage = ['superadmin', 'hr_manager', 'hr_admin'].includes(currentUser?.role);
+  const canManage = HR_MANAGE_ROLES.includes(currentUser?.role);
   if (!cl.probation_enabled) {
     panel.innerHTML = (canManage && cl.status === 'In Progress')
       ? `<button onclick="enableProbationReviewFromDetail(${clId})" class="btn-ghost text-xs mb-4">+ Enable Probation Review (Month 1/2/3)</button>`
@@ -172,12 +172,12 @@ async function openObDetail(clId) {
   if(type==='onboarding') await renderObProbationPanel(clId, cl);
   else document.getElementById('obProbationPanel').innerHTML='';
   // Group items by role
-  const roles=['employee','manager','hr_admin','hr_manager'];
+  const roles=OB_ROLES_ORDER;
   const grouped={};
   roles.forEach(r=>grouped[r]=[]);
   cl.items.forEach(i=>{ if(grouped[i.assigned_role]) grouped[i.assigned_role].push(i); });
-  const canComplete=role=>role===currentUser?.role||['superadmin','hr_manager','hr_admin'].includes(currentUser?.role);
-  const canEdit=['superadmin','hr_manager','hr_admin'].includes(currentUser?.role);
+  const canComplete=role=>role===currentUser?.role||HR_MANAGE_ROLES.includes(currentUser?.role);
+  const canEdit=HR_MANAGE_ROLES.includes(currentUser?.role);
   let html='';
   roles.forEach(role=>{
     const items=grouped[role];
@@ -189,7 +189,7 @@ async function openObDetail(clId) {
       </div>
       ${items.map(item=>{
         const isDone=item.status==='Done'||item.status==='N/A';
-        const isHR=['superadmin','hr_manager','hr_admin'].includes(currentUser?.role);
+        const isHR=HR_MANAGE_ROLES.includes(currentUser?.role);
         const isLinked=!!item.linked_ld_course_id;
         const canAct=canComplete(role)&&cl.status==='In Progress'&&!(isLinked&&!isHR);
         return `<div class="flex items-start gap-3 py-2.5 border-b border-slate-100 last:border-0" id="obitem-${item.id}">
@@ -645,7 +645,7 @@ function renderObSwimlane(type) {
   grid.style.gridTemplateRows=`repeat(${rolesOrder.length}, minmax(80px,auto))`;
   grid.style.gap=`${gap}px`;
 
-  const canManage=['superadmin','hr_manager','hr_admin'].includes(currentUser?.role);
+  const canManage=HR_MANAGE_ROLES.includes(currentUser?.role);
   let html='';
   rolesOrder.forEach((role,rIdx)=>{
     html+=`<div style="grid-column:1;grid-row:${rIdx+1}" class="flex items-center">

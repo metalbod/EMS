@@ -32,7 +32,7 @@ async function loadLdCourses() {
   ldCoursesCache=rows;
   if(!rows.length){listEl.innerHTML='';emptyEl?.classList.remove('hidden');return;}
   emptyEl?.classList.add('hidden');
-  const canManage=['superadmin','hr_manager','hr_admin'].includes(currentUser?.role);
+  const canManage=HR_MANAGE_ROLES.includes(currentUser?.role);
   listEl.innerHTML=rows.map(c=>`
     <div class="bg-white border border-slate-200 rounded-xl p-4">
       <div class="flex items-start justify-between gap-2 mb-2">
@@ -116,7 +116,7 @@ function openLdEnrollModal(courseId) {
     costNote.classList.add('hidden');
   }
   const empWrap=document.getElementById('ldEnrollEmpWrap');
-  const canManage=['superadmin','hr_manager','hr_admin','manager'].includes(currentUser?.role);
+  const canManage=HR_AND_MANAGER_ROLES.includes(currentUser?.role);
   if(canManage){
     empWrap.classList.remove('hidden');
     const sel=document.getElementById('ldEnrollEmpId');
@@ -136,7 +136,7 @@ function closeLdEnrollModal() {
 async function submitLdEnroll(e) {
   e.preventDefault();
   const courseId=parseInt(document.getElementById('ldEnrollCourseId').value);
-  const canManage=['superadmin','hr_manager','hr_admin','manager'].includes(currentUser?.role);
+  const canManage=HR_AND_MANAGER_ROLES.includes(currentUser?.role);
   const employeeId=canManage?document.getElementById('ldEnrollEmpId').value:currentUser?.employee_id;
   if(!employeeId){alert('No employee selected.');return;}
   const res=await api('/api/ld/enrollments',{method:'POST',body:JSON.stringify({
@@ -178,7 +178,7 @@ function renderLdEnrollTable() {
   ldEnrollList.updateSortArrows('.ld-sort-arrow');
   if(!ldEnrollData.length){bodyEl.innerHTML='';emptyEl?.classList.remove('hidden');return;}
   emptyEl?.classList.add('hidden');
-  const canApprove=['superadmin','hr_manager','hr_admin','manager'].includes(currentUser?.role);
+  const canApprove=HR_AND_MANAGER_ROLES.includes(currentUser?.role);
   const { pageItems } = ldEnrollList.view(ldEnrollData);
   bodyEl.innerHTML=pageItems.map(en=>{
     const isSelf = currentUser?.role!=='employee' || currentUser?.employee_id===en.employee_id;

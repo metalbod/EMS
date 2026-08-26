@@ -9,7 +9,7 @@ let tsApprovalFilter='Submitted';
 const TS_STATUS_COLORS={'Draft':'bg-slate-100 text-slate-600','Submitted':'bg-amber-100 text-amber-700','Approved':'bg-green-100 text-green-700','Rejected':'bg-red-100 text-red-700'};
 
 function isProjectManager() {
-  return ['superadmin','hr_manager'].includes(currentUser?.role);
+  return HR_MANAGER_ONLY_ROLES.includes(currentUser?.role);
 }
 
 // ---------------------------------------------------------------------------
