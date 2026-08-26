@@ -6,10 +6,35 @@ import json
 from datetime import date
 from celery import Celery
 from celery.result import AsyncResult
+import psycopg2
 
 logger = logging.getLogger("ems")
 
 BULK_UPLOAD_DATE_COLUMNS = ("date_of_birth", "start_date", "probation_end_date", "contract_end_date")
+
+# Narrow, deliberate retry scope: only the transient dead-connection class
+# get_db()/get_admin_db() already guard against for a fresh connection (see
+# db.py's _get_live_raw) but can't help with once a task already has a live
+# connection mid-run and the Supabase pooler kills it out from under it (see
+# CLAUDE.md's recurring-gotchas note on this exact error). Anything else —
+# a bad row, a business-rule violation, a real integrity conflict — should
+# fail once and report, not retry into the same deterministic failure.
+#
+# Backoff is capped short (max 10s, 2 attempts) on purpose: production runs
+# Celery in eager mode (CELERY_TASK_ALWAYS_EAGER — see the module docstring
+# below), so a retry here blocks synchronously inside the same HTTP request
+# rather than requeuing — a few extra seconds beats the task dying outright
+# on a transient blip, but this isn't the place for a long backoff. Once
+# Redis + a real worker are provisioned (tracked in the tech-debt backlog),
+# retries will actually requeue instead of blocking.
+_TRANSIENT_DB_ERRORS = (psycopg2.OperationalError, psycopg2.InterfaceError)
+_RETRY_KWARGS = dict(
+    autoretry_for=_TRANSIENT_DB_ERRORS,
+    retry_backoff=True,
+    retry_backoff_max=10,
+    retry_jitter=True,
+    max_retries=2,
+)
 
 
 def _detect_bulk_upload_date_format(samples):
@@ -118,7 +143,7 @@ app.conf.update(
 )
 
 
-@app.task(bind=True)
+@app.task(bind=True, **_RETRY_KWARGS)
 def generate_payroll_run(self, inst_id: int, run_id: int, period_start: str, period_end: str):
     """Generate payslips for all active employees in a payroll run (async)."""
     try:
@@ -132,6 +157,29 @@ def generate_payroll_run(self, inst_id: int, run_id: int, period_start: str, per
 
         conn = get_db()
         try:
+            # _generate_payslip does an unconditional INSERT with no upsert —
+            # safe on a normal first run (create_payroll_run only ever calls
+            # this task once per fresh run_id), but a retry (see
+            # autoretry_for above) could in principle re-invoke this task
+            # after a prior attempt's commit actually landed despite the
+            # connection error that triggered the retry. Guard against
+            # double-inserting payslips for the same run in that case rather
+            # than trusting the retry is always hitting a truly-uncommitted
+            # attempt.
+            existing = conn.execute(
+                "SELECT COUNT(*) FROM payslips WHERE payroll_run_id=?", (run_id,)
+            ).fetchone()[0]
+            if existing:
+                run = conn.execute("SELECT * FROM payroll_runs WHERE id=?", (run_id,)).fetchone()
+                logger.info(f"Task {self.request.id}: run {run_id} already has {existing} payslips (retry after a prior attempt's commit landed) — skipping regeneration")
+                return {
+                    "run_id": run["id"],
+                    "status": run["status"],
+                    "employee_count": existing,
+                    "period_start": run["period_start"],
+                    "period_end": run["period_end"],
+                }
+
             employees = conn.execute(
                 "SELECT * FROM employees WHERE institution_id=? AND status='Active'",
                 (inst_id,)
@@ -160,7 +208,7 @@ def generate_payroll_run(self, inst_id: int, run_id: int, period_start: str, per
         raise
 
 
-@app.task(bind=True)
+@app.task(bind=True, **_RETRY_KWARGS)
 def bulk_upload_employees_task(self, inst_id: int, csv_content: str, user_id: int, username: str, role: str):
     """Bulk upload employees from CSV content (async). Returns dict with created/errors."""
     try:

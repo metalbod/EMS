@@ -829,6 +829,17 @@ details:
   query strings (see "Frontend asset versioning" above). No manual steps needed
   when deploying changes to `static/`.
 
+- **Automatic rollback on a failed health check:** `deploy.sh` captures the
+  current live image before deploying; if the post-deploy `curl` check
+  doesn't return `200`, it redeploys that captured image (no rebuild, so
+  it's fast) rather than leaving prod on a broken release. This rolls back
+  the **app only** — the Alembic migration that already ran at the start
+  of `deploy.sh` is not undone (requires `jq`, already on the deploy
+  machine). If a migration isn't backward-compatible with the previous
+  app code, a rolled-back app can still misbehave against the new schema;
+  the script's own warning output calls this out rather than implying the
+  rollback is a complete fix.
+
 ## Known limitations
 
 See commit history / project notes for the running tech-debt list. Notably:

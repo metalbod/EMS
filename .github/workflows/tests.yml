@@ -27,12 +27,18 @@ jobs:
         run: npm ci
 
       - name: Scan Python dependencies for known vulnerabilities
-        # Warn-only for now: pip-audit already finds 21 known vulnerabilities
-        # in current pinned deps (pyjwt, python-dotenv, starlette) that
-        # predate this scanning step — fixing those is a separate dependency-
-        # upgrade effort, not something this step should block merges on.
-        # Findings are printed to the CI log either way so they stay visible.
-        run: pip-audit -r requirements.txt || echo "::warning::pip-audit found known vulnerabilities — see log above. Non-blocking for now; see tech-debt notes."
+        # This used to be permanently warn-only, from when pip-audit found
+        # 21 known vulnerabilities in pyjwt/python-dotenv/starlette that
+        # predated this scanning step. Triaged 2026-08-27: all of those
+        # pinned versions have since moved on (unrelated maintenance) and a
+        # fresh scan finds nothing on requirements.txt. requirements-dev.txt
+        # did have one real finding at triage time (pytest 8.4.2,
+        # PYSEC-2026-1845, a /tmp-directory-naming local DoS/privilege
+        # issue) — fixed by bumping the pin to 9.1.1, already what every CI
+        # run's actual pytest version was resolving to anyway. Blocking now
+        # that there's nothing left to suppress; a future real finding
+        # should fail CI, not get silently swallowed forever by a warning.
+        run: pip-audit -r requirements.txt && pip-audit -r requirements-dev.txt
 
       - name: Scan Node dependencies for known vulnerabilities
         run: npm audit || echo "::warning::npm audit found known vulnerabilities — see log above. Non-blocking for now."
