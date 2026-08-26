@@ -425,9 +425,12 @@ function applyRoleUI() {
   // one of its three sub-items (HR sees all three; a plain manager sees
   // only Resignation, for their own reports' requests) — each sub-item
   // then has its own narrower toggle below, same nested pattern as Leave's
-  // "Approvals" sub-item.
+  // "Approvals" sub-item. Deliberately excludes superadmin from both: a
+  // platform-level account has no employee record or direct reports of
+  // its own, so Workforce (onboarding/offboarding/resignation, all
+  // in-tenant employee-lifecycle actions) isn't something it manages.
   const canWorkforceOb = HR_STAFF_ROLES.includes(role);
-  const canWorkforceResign = HR_AND_MANAGER_ROLES.includes(role);
+  const canWorkforceResign = ['hr_manager', 'hr_admin', 'manager'].includes(role);
   document.getElementById('nav-workforce-group')?.classList.toggle('hidden', !canWorkforceOb && !canWorkforceResign);
   document.getElementById('nav-onboarding')?.classList.toggle('hidden', !canWorkforceOb);
   document.getElementById('nav-offboarding')?.classList.toggle('hidden', !canWorkforceOb);
