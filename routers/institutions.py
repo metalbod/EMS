@@ -12,8 +12,28 @@ from core.db_session import db_session
 
 from core.onboarding_seed import seed_ob_templates
 from core.validators import validate_logo_url
+from core.anthropic_client import ANTHROPIC_API_KEY
 
 router = APIRouter()
+
+
+def _with_ai_key_status(row: dict) -> dict:
+    """Superadmin gets to see WHETHER an institution is using its own
+    Anthropic key, the platform default, or neither — never the key
+    itself (not even encrypted) — see routers/assistant.py's
+    ASSISTANT_SETTINGS_ROLES for why superadmin can't manage/see the key
+    itself: it's a real billing-relevant credential, hr_manager-only by
+    product decision."""
+    d = dict(row)
+    has_own_key = bool(d.pop("anthropic_api_key_encrypted", None))
+    d.pop("anthropic_api_key_last4", None)
+    if has_own_key:
+        d["ai_key_status"] = "byok"
+    elif ANTHROPIC_API_KEY:
+        d["ai_key_status"] = "platform"
+    else:
+        d["ai_key_status"] = "none"
+    return d
 
 
 class InstitutionIn(BaseModel):
@@ -71,7 +91,7 @@ def list_institutions(conn, user: dict = Depends(require_roles("superadmin"))) -
         FROM institutions i
         ORDER BY i.created_at DESC
     """).fetchall()
-    return [dict(r) for r in rows]
+    return [_with_ai_key_status(r) for r in rows]
 
 
 @router.get("/api/admin/active-users")
@@ -128,7 +148,7 @@ def create_institution(conn, body: InstitutionIn, user: dict = Depends(require_r
             SELECT i.*, 0 AS employee_count, 1 AS user_count
             FROM institutions i WHERE i.id=?
         """, (inst_id,)).fetchone()
-        return dict(row)
+        return _with_ai_key_status(row)
     except IntegrityError as e:
         conn.rollback()
         raise HTTPException(400, str(e))
@@ -148,7 +168,7 @@ def get_institution(conn, inst_id: int, user: dict = Depends(require_roles("supe
     """, (inst_id,)).fetchone()
     if not row:
         raise HTTPException(404, "Institution not found")
-    return dict(row)
+    return _with_ai_key_status(row)
 
 
 @router.put("/api/institutions/{inst_id}")

@@ -6,8 +6,13 @@ const ASSISTANT_MAX_HISTORY_TURNS = 8;
 let assistantHistory = [];
 let assistantBusy = false;
 
-function initAssistant() {
-  document.getElementById('assistantFab')?.classList.remove('hidden');
+async function initAssistant() {
+  // Hidden entirely (not just left to fail gracefully in chat) when the
+  // institution has neither its own BYOK key nor a platform default — see
+  // GET /api/assistant/availability, open to any authenticated user.
+  const res = await api('/api/assistant/availability');
+  const data = res?.ok ? await res.json() : null;
+  if (data?.available) document.getElementById('assistantFab')?.classList.remove('hidden');
 }
 
 function toggleAssistantPanel() {

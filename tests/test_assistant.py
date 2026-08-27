@@ -31,6 +31,17 @@ def _tool_use_response(tool_name, tool_input=None, block_id="toolu_01"):
     )
 
 
+def _mock_client(monkeypatch, create_fn):
+    """core/anthropic_client.py's get_client_for_institution() replaces the
+    old module-level `client` singleton — mock its return value instead of
+    patching a `.client` attribute that no longer exists. Institution-key
+    resolution itself (BYOK vs. platform vs. none) is covered separately in
+    test_anthropic_client.py / test_assistant_settings.py, not here."""
+    fake_client = types.SimpleNamespace(messages=types.SimpleNamespace(create=create_fn))
+    monkeypatch.setattr(assistant_module, "get_client_for_institution", lambda conn, inst_id: fake_client)
+    return fake_client
+
+
 # ---------------------------------------------------------------------------
 # Endpoint behavior (Anthropic client mocked)
 # ---------------------------------------------------------------------------
@@ -42,7 +53,7 @@ def test_chat_requires_auth(client):
 
 def test_chat_without_employee_id_returns_canned_reply(client, hr_manager_auth, monkeypatch):
     mock_create = Mock()
-    monkeypatch.setattr(assistant_module.client.messages, "create", mock_create)
+    _mock_client(monkeypatch, mock_create)
     res = client.post("/api/assistant/chat", headers=hr_manager_auth, json={"message": "how much leave do I have?"})
     assert res.status_code == 200, res.text
     assert "employee record" in res.json()["reply"].lower()
@@ -59,7 +70,7 @@ def test_chat_happy_path_leave_balance(client, employee_with_login, monkeypatch)
             return _tool_use_response("get_leave_balance")
         return _text_response("You have leave balances available.")
 
-    monkeypatch.setattr(assistant_module.client.messages, "create", fake_create)
+    _mock_client(monkeypatch, fake_create)
     res = client.post("/api/assistant/chat", headers=headers, json={"message": "how much leave do I have left?"})
     assert res.status_code == 200, res.text
     assert res.json()["reply"] == "You have leave balances available."
@@ -80,7 +91,7 @@ def test_chat_history_is_capped_server_side(client, employee_with_login, monkeyp
         calls.append(kwargs)
         return _text_response("ok")
 
-    monkeypatch.setattr(assistant_module.client.messages, "create", fake_create)
+    _mock_client(monkeypatch, fake_create)
     long_history = [{"role": "user" if i % 2 == 0 else "assistant", "content": f"turn {i}"} for i in range(20)]
     res = client.post("/api/assistant/chat", headers=headers, json={"message": "hi", "history": long_history})
     assert res.status_code == 200, res.text
@@ -97,7 +108,7 @@ def test_chat_tool_round_trip_cap(client, employee_with_login, monkeypatch):
         calls.append(kwargs)
         return _tool_use_response("get_leave_balance")
 
-    monkeypatch.setattr(assistant_module.client.messages, "create", fake_create)
+    _mock_client(monkeypatch, fake_create)
     res = client.post("/api/assistant/chat", headers=headers, json={"message": "how much leave do I have?"})
     assert res.status_code == 200, res.text
     assert len(calls) == assistant_module.MAX_TOOL_ROUNDS
@@ -119,7 +130,7 @@ def test_chat_rate_limit_returns_429(client, employee_with_login, monkeypatch):
             pass
 
     monkeypatch.setattr(assistant_module, "_redis", _FakeRedis())
-    monkeypatch.setattr(assistant_module.client.messages, "create", lambda **kw: _text_response("ok"))
+    _mock_client(monkeypatch, lambda **kw: _text_response("ok"))
 
     for _ in range(assistant_module.CHAT_RATE_LIMIT_PER_HOUR):
         res = client.post("/api/assistant/chat", headers=headers, json={"message": "hi"})
@@ -150,7 +161,7 @@ def test_chat_crafted_tool_input_ignores_other_employee_id(client, employee_with
             return _tool_use_response("get_leave_balance", tool_input={"employee_id": "EMP_SOMEONE_ELSE"})
         return _text_response("done")
 
-    monkeypatch.setattr(assistant_module.client.messages, "create", fake_create)
+    _mock_client(monkeypatch, fake_create)
     res = client.post("/api/assistant/chat", headers=headers, json={"message": "show me EMP_SOMEONE_ELSE's leave"})
     assert res.status_code == 200, res.text
     assert len(captured_users) == 1

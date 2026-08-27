@@ -353,6 +353,10 @@
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
             Document Types
           </div>
+          <div id="nav-ai-assistant-settings" class="hidden nav-sub-item" onclick="showPage('settings-ai-assistant');closeBurgerMenu();" data-page="settings-ai-assistant">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+            AI Assistant
+          </div>
         </div>
       </div>
       <!-- Compensation (HR Manager / Payroll Manager only) -->
@@ -895,6 +899,7 @@
                 <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none" onclick="setInstSort('plan')">Plan<span class="inst-sort-arrow" data-sort-key="plan"></span></th>
                 <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none" onclick="setInstSort('employee_count')">Staff<span class="inst-sort-arrow" data-sort-key="employee_count"></span></th>
                 <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none" onclick="setInstSort('status')">Status<span class="inst-sort-arrow" data-sort-key="status"></span></th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase" title="Whether this institution uses its own Anthropic API key, the platform's, or none">AI Key</th>
                 <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none" onclick="setInstSort('created_at')">Created At<span class="inst-sort-arrow" data-sort-key="created_at"></span></th>
                 <th class="px-4 py-3"></th>
               </tr>
@@ -1995,6 +2000,30 @@
         </div>
         <div id="employeeDocTypeList" class="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100 px-4"></div>
         <p id="employeeDocTypeEmpty" class="hidden text-sm text-slate-400 text-center py-8">No document types yet.</p>
+      </div>
+
+      <!-- SETTINGS: AI Assistant (hr_manager only — BYOK Anthropic key) -->
+      <div id="page-settings-ai-assistant" class="hidden">
+        <div class="mb-4">
+          <h3 class="text-lg font-semibold">AI Assistant</h3>
+          <p class="text-xs text-slate-400 mt-1">Bring your own Anthropic API key so your organization's AI assistant usage is billed to your own Anthropic account instead of the shared platform key. Leave this unset to keep using the platform's key (if one is configured).</p>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 p-6 max-w-xl">
+          <div id="aiAssistantStatusRow" class="flex items-center gap-2 mb-4">
+            <span id="aiAssistantStatusBadge" class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500">Loading…</span>
+            <span id="aiAssistantStatusDetail" class="text-xs text-slate-400"></span>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">Anthropic API Key</label>
+            <input id="aiAssistantKeyInput" type="password" autocomplete="off" placeholder="sk-ant-..." class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+            <p class="text-xs text-slate-400 mt-1">Get a key from <a href="https://console.anthropic.com/" target="_blank" rel="noopener" class="text-indigo-600 hover:underline">console.anthropic.com</a>. It's validated before saving and never shown again after that.</p>
+          </div>
+          <div class="flex items-center gap-2 mt-4">
+            <button onclick="saveAiAssistantKey()" class="btn-primary text-sm">Save Key</button>
+            <button id="aiAssistantRemoveBtn" onclick="removeAiAssistantKey()" class="hidden text-sm px-3 py-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50">Remove Key</button>
+          </div>
+          <p id="aiAssistantMsg" class="text-xs mt-3"></p>
+        </div>
       </div>
 
       <!-- COMPENSATION: Pay Grades (HR Manager / Payroll Manager) -->
@@ -5182,6 +5211,7 @@
 <script src="/static/js/performance.js?v=74"></script>
 <script src="/static/js/pip.js?v=1"></script>
 <script src="/static/js/assistant.js?v=1"></script>
+<script src="/static/js/ai-assistant-settings.js?v=1"></script>
 <script src="/static/js/app-init.js?v=74"></script>
 </body>
 </html>

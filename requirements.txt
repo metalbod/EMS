@@ -3,6 +3,7 @@ uvicorn[standard]==0.51.0
 psycopg2-binary==2.9.12
 pyjwt==2.13.0
 bcrypt==5.0.0
+cryptography==50.0.1
 python-dotenv==1.2.2
 pydantic==2.13.4
 sentry-sdk[fastapi]==2.68.1

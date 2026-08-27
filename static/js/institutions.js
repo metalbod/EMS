@@ -88,6 +88,11 @@ function renderInstTable() {
   const empty = document.getElementById('instEmpty');
   const pagination = document.getElementById('instPagination');
   const planColors = {starter:'bg-slate-100 text-slate-600',professional:'bg-blue-100 text-blue-700',enterprise:'bg-violet-100 text-violet-700'};
+  const aiKeyBadge = {
+    byok: {label:'Own key', cls:'bg-violet-100 text-violet-700'},
+    platform: {label:'Platform', cls:'bg-slate-100 text-slate-600'},
+    none: {label:'None', cls:'bg-amber-100 text-amber-700'},
+  };
   instList.updateSortArrows('.inst-sort-arrow');
   if (!institutions.length) { tbody.innerHTML=''; empty.classList.remove('hidden'); pagination.classList.add('hidden'); return; }
   empty.classList.add('hidden');
@@ -121,6 +126,7 @@ function renderInstTable() {
         <p class="text-xs text-slate-400">/ ${i.max_employees}</p>
       </td>
       <td class="px-4 py-3"><span class="badge ${i.status==='Active'?'bg-emerald-100 text-emerald-700':'bg-red-100 text-red-600'}">${i.status}</span></td>
+      <td class="px-4 py-3"><span class="badge ${aiKeyBadge[i.ai_key_status]?.cls||''}">${aiKeyBadge[i.ai_key_status]?.label||'—'}</span></td>
       <td class="px-4 py-3">
         <p class="text-sm">${fmtDate(i.created_at)}</p>
         <p class="text-xs text-slate-400">${i.created_at.slice(11,19)}</p>

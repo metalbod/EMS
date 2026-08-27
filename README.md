@@ -818,6 +818,34 @@ only (see that module's docstring for the self-scoped vs. team-scoped
 split). A Redis-backed rate limit (`CHAT_RATE_LIMIT_PER_HOUR`, currently
 30) applies per user per rolling hour.
 
+### Bring-your-own-key (BYOK)
+
+An institution can supply its own Anthropic API key instead of relying
+on the platform's shared `ANTHROPIC_API_KEY` — useful for isolating
+billing/usage per tenant. `core/anthropic_client.py`'s
+`get_client_for_institution()` resolves, per request: the institution's
+own key if configured, else the platform default (`ANTHROPIC_API_KEY`,
+now optional rather than fail-fast), else `None` — in which case
+`/api/assistant/chat` returns a plain "not set up yet" reply instead of
+erroring, and the frontend hides the chat widget entirely.
+
+Managed via `GET`/`PUT`/`DELETE /api/assistant/settings`, gated to
+**`hr_manager` only** (`ASSISTANT_SETTINGS_ROLES` in
+`routers/assistant.py`) — deliberately narrower than this app's usual
+Settings-page HR tier, since it's a real billing-relevant credential.
+`PUT` validates the key against the real Anthropic API (a free
+`models.list()` call) before saving, so a typo is caught immediately.
+The key is encrypted at rest with Fernet
+(`core/secrets_encryption.py`, `TENANT_SECRETS_ENCRYPTION_KEY` env var —
+see `.env.example`) and never round-trips back out of the API in any
+form; only `configured` (bool), `key_last4`, and `added_at` are exposed.
+
+Superadmin gets read-only visibility into which institutions are on
+BYOK vs. the platform default vs. neither (`ai_key_status`:
+`"byok"`/`"platform"`/`"none"`, computed in
+`routers/institutions.py`'s `_with_ai_key_status()`) — never the key
+itself.
+
 ## Deployment (Fly.io)
 
 The app is deployed to Fly.io with a rolling-update strategy. Key deployment

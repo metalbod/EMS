@@ -14,22 +14,36 @@ import json
 import logging
 import os
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Literal
+from typing import Any, Dict, List, Literal, Optional
 
 import anthropic
 import redis
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from core.deps import get_current_user
+from core.deps import get_current_user, need_inst, require_roles
 
-from core.anthropic_client import client
+from core.anthropic_client import get_client_for_institution
+
+from core.secrets_encryption import encrypt_secret
+
+from core.db_session import db_session
+
+from db import get_db
 
 from core import assistant_tools
 
 logger = logging.getLogger("ems")
 
 router = APIRouter()
+
+# Deliberately narrower than the usual Settings-page HR tier (which also
+# includes superadmin/hr_admin elsewhere) — an institution's own Anthropic
+# key is a real billing-relevant credential, and the product decision here
+# was hr_manager only. Superadmin gets its own, separate, read-only
+# visibility instead (BYOK vs. platform-default vs. none) on the
+# institutions list in routers/institutions.py — never the key itself.
+ASSISTANT_SETTINGS_ROLES = ("hr_manager",)
 
 MODEL = "claude-haiku-4-5"
 MAX_HISTORY_TURNS = 8
@@ -173,6 +187,16 @@ class AssistantChatOut(BaseModel):
     reply: str
 
 
+class AssistantSettingsIn(BaseModel):
+    api_key: str = Field(..., min_length=1, max_length=500)
+
+
+class AssistantSettingsOut(BaseModel):
+    configured: bool
+    key_last4: Optional[str] = None
+    added_at: Optional[str] = None
+
+
 def _enforce_chat_rate_limit(user: dict) -> None:
     bucket = datetime.now(timezone.utc).strftime("%Y%m%d%H")
     key = f"assistant_chat_rl:{user['id']}:{bucket}"
@@ -193,12 +217,12 @@ def _build_messages(history: List[AssistantTurn], message: str) -> List[Dict[str
     return messages
 
 
-async def _run_tool_loop(messages: List[Dict[str, Any]], user: dict) -> str:
+async def _run_tool_loop(anthropic_client: anthropic.Anthropic, messages: List[Dict[str, Any]], user: dict) -> str:
     tools = SELF_TOOLS + TEAM_TOOLS if user.get("role") == "manager" else SELF_TOOLS
 
     for _ in range(MAX_TOOL_ROUNDS):
         try:
-            resp = client.messages.create(
+            resp = anthropic_client.messages.create(
                 model=MODEL,
                 max_tokens=1024,
                 system=SYSTEM_PROMPT,
@@ -230,6 +254,26 @@ async def _run_tool_loop(messages: List[Dict[str, Any]], user: dict) -> str:
     return "I wasn't able to find a clear answer — please check the relevant page directly."
 
 
+class AssistantAvailabilityOut(BaseModel):
+    available: bool
+
+
+@router.get("/api/assistant/availability")
+def get_assistant_availability(user: dict = Depends(get_current_user)) -> AssistantAvailabilityOut:
+    """Open to any authenticated user (unlike /api/assistant/settings, which is
+    hr_manager-only) — just enough for the chat widget (static/js/assistant.js)
+    to decide whether to show itself at all, without leaking anything about
+    whether the institution's key is BYOK vs. platform (that distinction stays
+    superadmin-only, see routers/institutions.py's ai_key_status)."""
+    inst_id = need_inst(user)
+    conn = get_db()
+    try:
+        client = get_client_for_institution(conn, inst_id)
+    finally:
+        conn.close()
+    return AssistantAvailabilityOut(available=client is not None)
+
+
 @router.post("/api/assistant/chat")
 async def assistant_chat(body: AssistantChatIn, user: dict = Depends(get_current_user)) -> AssistantChatOut:
     _enforce_chat_rate_limit(user)
@@ -241,6 +285,94 @@ async def assistant_chat(body: AssistantChatIn, user: dict = Depends(get_current
             "relevant page in the sidebar, or contact HR."
         ))
 
+    inst_id = need_inst(user)
+    conn = get_db()
+    try:
+        anthropic_client = get_client_for_institution(conn, inst_id)
+    finally:
+        conn.close()
+    if anthropic_client is None:
+        return AssistantChatOut(reply=(
+            "The AI assistant isn't set up for your organization yet — ask your HR manager to "
+            "configure it under Settings, or contact them directly for now."
+        ))
+
     messages = _build_messages(body.history, body.message)
-    reply = await _run_tool_loop(messages, user)
+    reply = await _run_tool_loop(anthropic_client, messages, user)
     return AssistantChatOut(reply=reply)
+
+
+# ---------------------------------------------------------------------------
+# Settings (BYOK) — see ASSISTANT_SETTINGS_ROLES above for who can call
+# these. Never returns the actual key, before or after it's saved — only
+# whether one is configured and its last 4 characters, matching the
+# device-API-key pattern in routers/attendance.py (shown once at creation
+# time in that case; here, never shown at all, since the caller already
+# has the plaintext in hand when they submit it).
+# ---------------------------------------------------------------------------
+
+def _settings_response(row) -> AssistantSettingsOut:
+    return AssistantSettingsOut(
+        configured=bool(row["anthropic_api_key_encrypted"]) if row else False,
+        key_last4=row["anthropic_api_key_last4"] if row else None,
+        added_at=row["anthropic_api_key_added_at"] if row else None,
+    )
+
+
+@router.get("/api/assistant/settings")
+@db_session
+def get_assistant_settings(conn, user: dict = Depends(require_roles(*ASSISTANT_SETTINGS_ROLES))) -> AssistantSettingsOut:
+    inst_id = need_inst(user)
+    row = conn.execute(
+        "SELECT anthropic_api_key_encrypted, anthropic_api_key_last4, anthropic_api_key_added_at FROM institutions WHERE id=?",
+        (inst_id,),
+    ).fetchone()
+    return _settings_response(row)
+
+
+@router.put("/api/assistant/settings")
+@db_session
+def update_assistant_settings(
+    conn, body: AssistantSettingsIn, user: dict = Depends(require_roles(*ASSISTANT_SETTINGS_ROLES))
+) -> AssistantSettingsOut:
+    """Saves an institution's own Anthropic API key — validated against the
+    real Anthropic API first (a free models.list() call, not a billed chat
+    request) so a typo'd key is caught here, not on the next employee's
+    first chat message."""
+    inst_id = need_inst(user)
+    api_key = body.api_key.strip()
+
+    try:
+        anthropic.Anthropic(api_key=api_key).models.list()
+    except anthropic.AuthenticationError:
+        raise HTTPException(400, detail="That API key was rejected by Anthropic — double-check it and try again.")
+    except anthropic.APIError as e:
+        logger.warning(f"assistant settings: key validation call failed: {e}")
+        raise HTTPException(400, detail="Couldn't verify that API key with Anthropic right now — please try again in a moment.")
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    conn.execute(
+        "UPDATE institutions SET anthropic_api_key_encrypted=?, anthropic_api_key_last4=?, anthropic_api_key_added_at=? WHERE id=?",
+        (encrypt_secret(api_key), api_key[-4:], now, inst_id),
+    )
+    conn.commit()
+    row = conn.execute(
+        "SELECT anthropic_api_key_encrypted, anthropic_api_key_last4, anthropic_api_key_added_at FROM institutions WHERE id=?",
+        (inst_id,),
+    ).fetchone()
+    return _settings_response(row)
+
+
+@router.delete("/api/assistant/settings")
+@db_session
+def delete_assistant_settings(conn, user: dict = Depends(require_roles(*ASSISTANT_SETTINGS_ROLES))) -> AssistantSettingsOut:
+    """Clears the institution's own key — the assistant then falls back to
+    the platform default (ANTHROPIC_API_KEY) if one is configured, or
+    becomes unavailable for this institution if not."""
+    inst_id = need_inst(user)
+    conn.execute(
+        "UPDATE institutions SET anthropic_api_key_encrypted=NULL, anthropic_api_key_last4=NULL, anthropic_api_key_added_at=NULL WHERE id=?",
+        (inst_id,),
+    )
+    conn.commit()
+    return AssistantSettingsOut(configured=False)

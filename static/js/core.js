@@ -24,7 +24,7 @@ const HR_STAFF_ROLES = ['hr_manager','hr_admin'];                  // no superad
 const HR_MANAGER_ONLY_ROLES = ['superadmin','hr_manager'];         // no hr_admin
 const COMPENSATION_STAFF_ROLES = ['hr_manager','payroll_manager','compensation_manager'];
 const BENEFITS_DASHBOARD_ROLES = ['hr_manager','compensation_manager','manager'];
-const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','leave-my','leave-approvals','leave-holidays','resignation-approvals','projects','timesheet-my','timesheet-approvals','overtime-my','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','comp-paygrades','comp-joblevels','comp-jobroles','comp-meritcycles','comp-bonusplans','comp-commissions','comp-equity','comp-totalrewards','comp-payequity','ben-plans','ben-periods','ben-lifeevents','ben-claims','ben-compliance','payroll-runs','payroll-my','payroll-myrewards','payroll-mybenefits','perf-my','perf-team','perf-cycles','perf-calibration','attendance-clock','attendance-review','settings-attendance','settings-approval-workflow','settings-roles','settings-document-types','coming-soon'];
+const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','leave-my','leave-approvals','leave-holidays','resignation-approvals','projects','timesheet-my','timesheet-approvals','overtime-my','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','comp-paygrades','comp-joblevels','comp-jobroles','comp-meritcycles','comp-bonusplans','comp-commissions','comp-equity','comp-totalrewards','comp-payequity','ben-plans','ben-periods','ben-lifeevents','ben-claims','ben-compliance','payroll-runs','payroll-my','payroll-myrewards','payroll-mybenefits','perf-my','perf-team','perf-cycles','perf-calibration','attendance-clock','attendance-review','settings-attendance','settings-approval-workflow','settings-roles','settings-document-types','settings-ai-assistant','coming-soon'];
 
 // ---------------------------------------------------------------------------
 // Global loading indicator
@@ -462,7 +462,11 @@ function applyRoleUI() {
   const canApprovalWorkflow = HR_MANAGE_ROLES.includes(role);
   const canRoles = HR_MANAGE_ROLES.includes(role);
   const canDocTypes = HR_STAFF_ROLES.includes(role);
-  document.getElementById('nav-settings-wrap')?.classList.toggle('hidden', hideEmp || !(canAudit || canUsers || canNotify || canBulkUpload || canLocations || canAttendanceManage || canApprovalWorkflow || canRoles || canDocTypes));
+  // Narrower than the usual HR tiers above — an institution's own Anthropic
+  // key is a real billing-relevant credential, hr_manager only, matching
+  // routers/assistant.py's ASSISTANT_SETTINGS_ROLES exactly.
+  const canAiSettings = role === 'hr_manager';
+  document.getElementById('nav-settings-wrap')?.classList.toggle('hidden', hideEmp || !(canAudit || canUsers || canNotify || canBulkUpload || canLocations || canAttendanceManage || canApprovalWorkflow || canRoles || canDocTypes || canAiSettings));
   document.getElementById('nav-settings-notifications')?.classList.toggle('hidden', !canNotify);
   document.getElementById('nav-bulk-upload')?.classList.toggle('hidden', !canBulkUpload);
   document.getElementById('nav-locations')?.classList.toggle('hidden', !canLocations);
@@ -470,6 +474,7 @@ function applyRoleUI() {
   document.getElementById('nav-approval-workflow')?.classList.toggle('hidden', !canApprovalWorkflow);
   document.getElementById('nav-roles')?.classList.toggle('hidden', !canRoles);
   document.getElementById('nav-document-types')?.classList.toggle('hidden', !canDocTypes);
+  document.getElementById('nav-ai-assistant-settings')?.classList.toggle('hidden', !canAiSettings);
 
   // Compensation: its own top-level menu, visible to HR Manager, Payroll
   // Manager, and the dedicated Compensation Manager role — explicitly
@@ -607,7 +612,8 @@ function showPage(page) {
     'settings-attendance':'Settings — Attendance',
     'settings-approval-workflow':'Settings — Approval Workflows',
     'settings-roles':'Settings — Roles',
-    'settings-document-types':'Settings — Document Types'
+    'settings-document-types':'Settings — Document Types',
+    'settings-ai-assistant':'Settings — AI Assistant'
   };
   document.getElementById('pageTitle').textContent = titles[page] || page;
   if (page === 'dashboard')    renderDashboard();
@@ -664,6 +670,7 @@ function showPage(page) {
   if (page === 'settings-approval-workflow') loadApprovalWorkflowPage();
   if (page === 'settings-roles') loadRolesPage();
   if (page === 'settings-document-types') loadEmployeeDocTypesPage();
+  if (page === 'settings-ai-assistant') loadAiAssistantSettingsPage();
 }
 
 // ---------------------------------------------------------------------------
