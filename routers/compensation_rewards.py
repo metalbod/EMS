@@ -3,7 +3,7 @@ six routers split out of the former single routers/compensation.py."""
 import logging
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
-from db import get_db
+from core.db_session import db_session
 from core.deps import get_current_user
 from core.permission_matrix import require_permission
 from core.compensation_records import get_current as get_current_compensation
@@ -99,7 +99,9 @@ def _build_total_rewards_statement(conn, inst_id: int, employee_id: str, year: i
 
 
 @router.get("/total-rewards/mine")
-async def get_my_total_rewards(
+@db_session
+def get_my_total_rewards(
+    conn,
     year: int = None,
     current_user: dict = Depends(get_current_user),
 ) -> TotalRewardsStatement:
@@ -110,28 +112,22 @@ async def get_my_total_rewards(
     emp_id = current_user.get("employee_id")
     if not emp_id:
         raise HTTPException(404, detail="No employee record linked to this account")
-    conn = get_db()
-    try:
-        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
-        return _build_total_rewards_statement(conn, inst_id, emp_id, year or datetime.utcnow().year)
-    finally:
-        conn.close()
+    inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+    return _build_total_rewards_statement(conn, inst_id, emp_id, year or datetime.utcnow().year)
 
 
 @router.get("/total-rewards/{employee_id}")
-async def get_employee_total_rewards(
+@db_session
+def get_employee_total_rewards(
+    conn,
     employee_id: str,
     year: int = None,
     current_user: dict = Depends(get_current_user),
 ) -> TotalRewardsStatement:
     """HR-facing: total rewards statement for any employee in the institution."""
-    conn = get_db()
-    try:
-        require_permission(conn, current_user, "compensation.view_someone_s_total_rewards_pay_equity_report")
-        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
-        return _build_total_rewards_statement(conn, inst_id, employee_id, year or datetime.utcnow().year)
-    finally:
-        conn.close()
+    require_permission(conn, current_user, "compensation.view_someone_s_total_rewards_pay_equity_report")
+    inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+    return _build_total_rewards_statement(conn, inst_id, employee_id, year or datetime.utcnow().year)
 
 
 # ============================================================================
@@ -139,99 +135,96 @@ async def get_employee_total_rewards(
 # ============================================================================
 
 @router.get("/pay-equity/report")
-async def get_pay_equity_report(
+@db_session
+def get_pay_equity_report(
+    conn,
     current_user: dict = Depends(get_current_user),
 ) -> PayEquityReport:
     """Get comprehensive pay equity analysis report."""
-    conn = get_db()
-    try:
-        require_permission(conn, current_user, "compensation.view_someone_s_total_rewards_pay_equity_report")
-        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
-        analysis_date = datetime.utcnow().isoformat()
+    require_permission(conn, current_user, "compensation.view_someone_s_total_rewards_pay_equity_report")
+    inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+    analysis_date = datetime.utcnow().isoformat()
 
-        # Gender gap analysis
-        gender_data = conn.execute(
-            """
-            SELECT e.gender, COUNT(*) as count, AVG(ec.base_salary) as avg_salary
-            FROM employee_compensation ec
-            JOIN employees e ON ec.employee_id = e.employee_id AND ec.institution_id = e.institution_id
-            WHERE ec.institution_id = ? AND ec.is_current = 1
-            GROUP BY e.gender
-            """,
-            (inst_id,),
-        ).fetchall()
+    # Gender gap analysis
+    gender_data = conn.execute(
+        """
+        SELECT e.gender, COUNT(*) as count, AVG(ec.base_salary) as avg_salary
+        FROM employee_compensation ec
+        JOIN employees e ON ec.employee_id = e.employee_id AND ec.institution_id = e.institution_id
+        WHERE ec.institution_id = ? AND ec.is_current = 1
+        GROUP BY e.gender
+        """,
+        (inst_id,),
+    ).fetchall()
 
-        gender_gap = []
-        if len(gender_data) == 2:
-            g1, g2 = gender_data[0], gender_data[1]
-            gap = ((float(g2["avg_salary"]) - float(g1["avg_salary"])) / float(g1["avg_salary"]) * 100) if g1["avg_salary"] else 0
-            gender_gap = [
-                PayEquityItem(
-                    analysis_type="gender",
-                    category_1=g1["gender"],
-                    category_2=g2["gender"],
-                    count_1=g1["count"],
-                    count_2=g2["count"],
-                    avg_salary_1=float(g1["avg_salary"]),
-                    avg_salary_2=float(g2["avg_salary"]),
-                    pay_gap_percent=gap,
-                    flagged=1 if abs(gap) > 5 else 0,
-                )
-            ]
-
-        # Department gap analysis
-        dept_data = conn.execute(
-            """
-            SELECT e.department, COUNT(*) as count, AVG(ec.base_salary) as avg_salary
-            FROM employee_compensation ec
-            JOIN employees e ON ec.employee_id = e.employee_id AND ec.institution_id = e.institution_id
-            WHERE ec.institution_id = ? AND ec.is_current = 1
-            GROUP BY e.department
-            ORDER BY avg_salary DESC
-            """,
-            (inst_id,),
-        ).fetchall()
-
-        department_gap = [
+    gender_gap = []
+    if len(gender_data) == 2:
+        g1, g2 = gender_data[0], gender_data[1]
+        gap = ((float(g2["avg_salary"]) - float(g1["avg_salary"])) / float(g1["avg_salary"]) * 100) if g1["avg_salary"] else 0
+        gender_gap = [
             PayEquityItem(
-                analysis_type="department",
-                category_1=d["department"],
-                count_1=d["count"],
-                avg_salary_1=float(d["avg_salary"]),
-                flagged=0,
+                analysis_type="gender",
+                category_1=g1["gender"],
+                category_2=g2["gender"],
+                count_1=g1["count"],
+                count_2=g2["count"],
+                avg_salary_1=float(g1["avg_salary"]),
+                avg_salary_2=float(g2["avg_salary"]),
+                pay_gap_percent=gap,
+                flagged=1 if abs(gap) > 5 else 0,
             )
-            for d in dept_data
         ]
 
-        flagged_count = sum(1 for item in gender_gap + department_gap if item.flagged)
+    # Department gap analysis
+    dept_data = conn.execute(
+        """
+        SELECT e.department, COUNT(*) as count, AVG(ec.base_salary) as avg_salary
+        FROM employee_compensation ec
+        JOIN employees e ON ec.employee_id = e.employee_id AND ec.institution_id = e.institution_id
+        WHERE ec.institution_id = ? AND ec.is_current = 1
+        GROUP BY e.department
+        ORDER BY avg_salary DESC
+        """,
+        (inst_id,),
+    ).fetchall()
 
-        # gender_gap/department_gap only cover employees with a current
-        # employee_compensation row (INNER JOIN — correct for the averages,
-        # since a NULL salary would just skew them). Anyone without one is
-        # invisible to those numbers, so surface how many are missing rather
-        # than let the report look complete when it isn't.
-        excluded_count = conn.execute(
-            """
-            SELECT COUNT(*) FROM employees e
-            WHERE e.institution_id = ?
-              AND NOT EXISTS (
-                  SELECT 1 FROM employee_compensation ec
-                  WHERE ec.employee_id = e.employee_id AND ec.institution_id = e.institution_id AND ec.is_current = 1
-              )
-            """,
-            (inst_id,),
-        ).fetchone()[0]
-
-        return PayEquityReport(
-            analysis_date=analysis_date,
-            gender_gap=gender_gap,
-            department_gap=department_gap,
-            flagged_items=flagged_count,
-            excluded_no_compensation_count=excluded_count,
+    department_gap = [
+        PayEquityItem(
+            analysis_type="department",
+            category_1=d["department"],
+            count_1=d["count"],
+            avg_salary_1=float(d["avg_salary"]),
+            flagged=0,
         )
+        for d in dept_data
+    ]
 
-    finally:
-        conn.close()
+    flagged_count = sum(1 for item in gender_gap + department_gap if item.flagged)
+
+    # gender_gap/department_gap only cover employees with a current
+    # employee_compensation row (INNER JOIN — correct for the averages,
+    # since a NULL salary would just skew them). Anyone without one is
+    # invisible to those numbers, so surface how many are missing rather
+    # than let the report look complete when it isn't.
+    excluded_count = conn.execute(
+        """
+        SELECT COUNT(*) FROM employees e
+        WHERE e.institution_id = ?
+          AND NOT EXISTS (
+              SELECT 1 FROM employee_compensation ec
+              WHERE ec.employee_id = e.employee_id AND ec.institution_id = e.institution_id AND ec.is_current = 1
+          )
+        """,
+        (inst_id,),
+    ).fetchone()[0]
+
+    return PayEquityReport(
+        analysis_date=analysis_date,
+        gender_gap=gender_gap,
+        department_gap=department_gap,
+        flagged_items=flagged_count,
+        excluded_no_compensation_count=excluded_count,
+    )
 
 
 logger.info("Compensation router registered with endpoints for pay grades, job levels, salary structures, and equity analysis")

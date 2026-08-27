@@ -10,6 +10,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from db import get_db, set_rls_context
+from core.db_session import db_session
 from core.deps import get_current_user, hash_password, verify_password
 from core.permission_matrix import require_permission
 from core.leave_balance_ops import _consume_balance
@@ -66,101 +67,93 @@ def _shift_response(row) -> ShiftResponse:
 
 
 @router.post("/shifts", status_code=201)
-async def create_shift(
+@db_session
+def create_shift(
+    conn,
     payload: ShiftCreate,
     current_user: dict = Depends(get_current_user),
 ) -> ShiftResponse:
-    conn = get_db()
-    try:
-        require_permission(conn, current_user, "attendance.manage_shifts_assignments_settings")
-        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
-        now = datetime.utcnow().isoformat()
-        start_t = _parse_time(payload.start_time)
-        end_t = _parse_time(payload.end_time)
-        crosses = end_t <= start_t
+    require_permission(conn, current_user, "attendance.manage_shifts_assignments_settings")
+    inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+    now = datetime.utcnow().isoformat()
+    start_t = _parse_time(payload.start_time)
+    end_t = _parse_time(payload.end_time)
+    crosses = end_t <= start_t
 
-        conn.execute(
-            """
-            INSERT INTO shifts
-            (institution_id, name, start_time, end_time, crosses_midnight, grace_period_minutes, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (inst_id, payload.name, payload.start_time, payload.end_time,
-             1 if crosses else 0, payload.grace_period_minutes, now, now),
-        )
-        conn.commit()
-        shift_id = conn._last_id
-        shift = conn.execute("SELECT * FROM shifts WHERE id = ?", (shift_id,)).fetchone()
-        return _shift_response(shift)
-    finally:
-        conn.close()
+    conn.execute(
+        """
+        INSERT INTO shifts
+        (institution_id, name, start_time, end_time, crosses_midnight, grace_period_minutes, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (inst_id, payload.name, payload.start_time, payload.end_time,
+         1 if crosses else 0, payload.grace_period_minutes, now, now),
+    )
+    conn.commit()
+    shift_id = conn._last_id
+    shift = conn.execute("SELECT * FROM shifts WHERE id = ?", (shift_id,)).fetchone()
+    return _shift_response(shift)
 
 
 @router.get("/shifts")
-async def list_shifts(
+@db_session
+def list_shifts(
+    conn,
     current_user: dict = Depends(get_current_user),
 ) -> List[ShiftResponse]:
-    conn = get_db()
-    try:
-        require_permission(conn, current_user, "attendance.manage_shifts_assignments_settings")
-        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
-        rows = conn.execute(
-            "SELECT * FROM shifts WHERE institution_id = ? ORDER BY start_time",
-            (inst_id,),
-        ).fetchall()
-        return [_shift_response(r) for r in rows]
-    finally:
-        conn.close()
+    require_permission(conn, current_user, "attendance.manage_shifts_assignments_settings")
+    inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+    rows = conn.execute(
+        "SELECT * FROM shifts WHERE institution_id = ? ORDER BY start_time",
+        (inst_id,),
+    ).fetchall()
+    return [_shift_response(r) for r in rows]
 
 
 @router.put("/shifts/{shift_id}")
-async def update_shift(
+@db_session
+def update_shift(
+    conn,
     shift_id: int,
     payload: ShiftUpdate,
     current_user: dict = Depends(get_current_user),
 ) -> ShiftResponse:
-    conn = get_db()
-    try:
-        require_permission(conn, current_user, "attendance.manage_shifts_assignments_settings")
-        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
-        shift = conn.execute("SELECT * FROM shifts WHERE id = ? AND institution_id = ?", (shift_id, inst_id)).fetchone()
-        if not shift:
-            raise HTTPException(404, detail="Shift not found")
+    require_permission(conn, current_user, "attendance.manage_shifts_assignments_settings")
+    inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+    shift = conn.execute("SELECT * FROM shifts WHERE id = ? AND institution_id = ?", (shift_id, inst_id)).fetchone()
+    if not shift:
+        raise HTTPException(404, detail="Shift not found")
 
-        name = payload.name if payload.name is not None else shift["name"]
-        start_time = payload.start_time if payload.start_time is not None else str(shift["start_time"])[:5]
-        end_time = payload.end_time if payload.end_time is not None else str(shift["end_time"])[:5]
-        grace = payload.grace_period_minutes if payload.grace_period_minutes is not None else shift["grace_period_minutes"]
-        is_active = payload.is_active if payload.is_active is not None else bool(shift["is_active"])
-        crosses = _parse_time(end_time) <= _parse_time(start_time)
+    name = payload.name if payload.name is not None else shift["name"]
+    start_time = payload.start_time if payload.start_time is not None else str(shift["start_time"])[:5]
+    end_time = payload.end_time if payload.end_time is not None else str(shift["end_time"])[:5]
+    grace = payload.grace_period_minutes if payload.grace_period_minutes is not None else shift["grace_period_minutes"]
+    is_active = payload.is_active if payload.is_active is not None else bool(shift["is_active"])
+    crosses = _parse_time(end_time) <= _parse_time(start_time)
 
-        conn.execute(
-            "UPDATE shifts SET name=?, start_time=?, end_time=?, crosses_midnight=?, grace_period_minutes=?, is_active=? WHERE id=?",
-            (name, start_time, end_time, 1 if crosses else 0, grace, 1 if is_active else 0, shift_id),
-        )
-        conn.commit()
-        updated = conn.execute("SELECT * FROM shifts WHERE id = ?", (shift_id,)).fetchone()
-        return _shift_response(updated)
-    finally:
-        conn.close()
+    conn.execute(
+        "UPDATE shifts SET name=?, start_time=?, end_time=?, crosses_midnight=?, grace_period_minutes=?, is_active=? WHERE id=?",
+        (name, start_time, end_time, 1 if crosses else 0, grace, 1 if is_active else 0, shift_id),
+    )
+    conn.commit()
+    updated = conn.execute("SELECT * FROM shifts WHERE id = ?", (shift_id,)).fetchone()
+    return _shift_response(updated)
 
 
 @router.delete("/shifts/{shift_id}", status_code=204)
-async def delete_shift(
+@db_session
+def delete_shift(
+    conn,
     shift_id: int,
     current_user: dict = Depends(get_current_user),
 ):
-    conn = get_db()
-    try:
-        require_permission(conn, current_user, "attendance.manage_shifts_assignments_settings")
-        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
-        shift = conn.execute("SELECT * FROM shifts WHERE id = ? AND institution_id = ?", (shift_id, inst_id)).fetchone()
-        if not shift:
-            raise HTTPException(404, detail="Shift not found")
-        conn.execute("UPDATE shifts SET is_active = 0 WHERE id = ?", (shift_id,))
-        conn.commit()
-    finally:
-        conn.close()
+    require_permission(conn, current_user, "attendance.manage_shifts_assignments_settings")
+    inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+    shift = conn.execute("SELECT * FROM shifts WHERE id = ? AND institution_id = ?", (shift_id, inst_id)).fetchone()
+    if not shift:
+        raise HTTPException(404, detail="Shift not found")
+    conn.execute("UPDATE shifts SET is_active = 0 WHERE id = ?", (shift_id,))
+    conn.commit()
 
 
 # ============================================================================
@@ -168,105 +161,99 @@ async def delete_shift(
 # ============================================================================
 
 @router.post("/shift-assignments", status_code=201)
-async def create_shift_assignment(
+@db_session
+def create_shift_assignment(
+    conn,
     payload: ShiftAssignmentCreate,
     current_user: dict = Depends(get_current_user),
 ) -> ShiftAssignmentResponse:
-    conn = get_db()
-    try:
-        require_permission(conn, current_user, "attendance.manage_shifts_assignments_settings")
-        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
-        emp = conn.execute("SELECT 1 FROM employees WHERE employee_id=? AND institution_id=?", (payload.employee_id, inst_id)).fetchone()
-        if not emp:
-            raise HTTPException(404, detail="Employee not found")
-        shift = conn.execute("SELECT 1 FROM shifts WHERE id=? AND institution_id=?", (payload.shift_id, inst_id)).fetchone()
-        if not shift:
-            raise HTTPException(404, detail="Shift not found")
+    require_permission(conn, current_user, "attendance.manage_shifts_assignments_settings")
+    inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+    emp = conn.execute("SELECT 1 FROM employees WHERE employee_id=? AND institution_id=?", (payload.employee_id, inst_id)).fetchone()
+    if not emp:
+        raise HTTPException(404, detail="Employee not found")
+    shift = conn.execute("SELECT 1 FROM shifts WHERE id=? AND institution_id=?", (payload.shift_id, inst_id)).fetchone()
+    if not shift:
+        raise HTTPException(404, detail="Shift not found")
 
-        now = datetime.utcnow().isoformat()
-        # Close out any prior open-ended assignment for this employee so
-        # only one shift applies to any given date.
-        conn.execute(
-            "UPDATE employee_shift_assignments SET effective_to = ? WHERE employee_id = ? AND institution_id = ? AND is_active = 1 AND effective_to IS NULL",
-            ((datetime.strptime(payload.effective_from, "%Y-%m-%d").date() - timedelta(days=1)).isoformat(),
-             payload.employee_id, inst_id),
-        )
-        conn.execute(
-            """
-            INSERT INTO employee_shift_assignments
-            (institution_id, employee_id, shift_id, effective_from, effective_to, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (inst_id, payload.employee_id, payload.shift_id, payload.effective_from, payload.effective_to, now, now),
-        )
-        conn.commit()
-        assignment_id = conn._last_id
-        row = conn.execute(
-            "SELECT esa.*, s.name AS shift_name FROM employee_shift_assignments esa JOIN shifts s ON esa.shift_id = s.id WHERE esa.id = ?",
-            (assignment_id,),
-        ).fetchone()
-        d = dict(row)
-        d["is_active"] = bool(d["is_active"])
-        return ShiftAssignmentResponse(**d)
-    finally:
-        conn.close()
+    now = datetime.utcnow().isoformat()
+    # Close out any prior open-ended assignment for this employee so
+    # only one shift applies to any given date.
+    conn.execute(
+        "UPDATE employee_shift_assignments SET effective_to = ? WHERE employee_id = ? AND institution_id = ? AND is_active = 1 AND effective_to IS NULL",
+        ((datetime.strptime(payload.effective_from, "%Y-%m-%d").date() - timedelta(days=1)).isoformat(),
+         payload.employee_id, inst_id),
+    )
+    conn.execute(
+        """
+        INSERT INTO employee_shift_assignments
+        (institution_id, employee_id, shift_id, effective_from, effective_to, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (inst_id, payload.employee_id, payload.shift_id, payload.effective_from, payload.effective_to, now, now),
+    )
+    conn.commit()
+    assignment_id = conn._last_id
+    row = conn.execute(
+        "SELECT esa.*, s.name AS shift_name FROM employee_shift_assignments esa JOIN shifts s ON esa.shift_id = s.id WHERE esa.id = ?",
+        (assignment_id,),
+    ).fetchone()
+    d = dict(row)
+    d["is_active"] = bool(d["is_active"])
+    return ShiftAssignmentResponse(**d)
 
 
 @router.get("/shift-assignments")
-async def list_shift_assignments(
+@db_session
+def list_shift_assignments(
+    conn,
     employee_id: Optional[str] = None,
     current_user: dict = Depends(get_current_user),
 ) -> List[ShiftAssignmentResponse]:
-    conn = get_db()
-    try:
-        require_permission(conn, current_user, "attendance.manage_shifts_assignments_settings")
-        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
-        if employee_id:
-            rows = conn.execute(
-                """
-                SELECT esa.*, s.name AS shift_name FROM employee_shift_assignments esa
-                JOIN shifts s ON esa.shift_id = s.id
-                WHERE esa.institution_id = ? AND esa.employee_id = ? AND esa.is_active = 1
-                ORDER BY esa.effective_from DESC
-                """,
-                (inst_id, employee_id),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                """
-                SELECT esa.*, s.name AS shift_name FROM employee_shift_assignments esa
-                JOIN shifts s ON esa.shift_id = s.id
-                WHERE esa.institution_id = ? AND esa.is_active = 1
-                ORDER BY esa.effective_from DESC
-                """,
-                (inst_id,),
-            ).fetchall()
-        out = []
-        for r in rows:
-            d = dict(r)
-            d["is_active"] = bool(d["is_active"])
-            out.append(ShiftAssignmentResponse(**d))
-        return out
-    finally:
-        conn.close()
+    require_permission(conn, current_user, "attendance.manage_shifts_assignments_settings")
+    inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+    if employee_id:
+        rows = conn.execute(
+            """
+            SELECT esa.*, s.name AS shift_name FROM employee_shift_assignments esa
+            JOIN shifts s ON esa.shift_id = s.id
+            WHERE esa.institution_id = ? AND esa.employee_id = ? AND esa.is_active = 1
+            ORDER BY esa.effective_from DESC
+            """,
+            (inst_id, employee_id),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            """
+            SELECT esa.*, s.name AS shift_name FROM employee_shift_assignments esa
+            JOIN shifts s ON esa.shift_id = s.id
+            WHERE esa.institution_id = ? AND esa.is_active = 1
+            ORDER BY esa.effective_from DESC
+            """,
+            (inst_id,),
+        ).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["is_active"] = bool(d["is_active"])
+        out.append(ShiftAssignmentResponse(**d))
+    return out
 
 
 @router.delete("/shift-assignments/{assignment_id}", status_code=204)
-async def delete_shift_assignment(
+@db_session
+def delete_shift_assignment(
+    conn,
     assignment_id: int,
     current_user: dict = Depends(get_current_user),
 ):
-    conn = get_db()
-    try:
-        require_permission(conn, current_user, "attendance.manage_shifts_assignments_settings")
-        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
-        row = conn.execute("SELECT 1 FROM employee_shift_assignments WHERE id=? AND institution_id=?", (assignment_id, inst_id)).fetchone()
-        if not row:
-            raise HTTPException(404, detail="Assignment not found")
-        conn.execute("UPDATE employee_shift_assignments SET is_active = 0 WHERE id = ?", (assignment_id,))
-        conn.commit()
-    finally:
-        conn.close()
+    require_permission(conn, current_user, "attendance.manage_shifts_assignments_settings")
+    inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+    row = conn.execute("SELECT 1 FROM employee_shift_assignments WHERE id=? AND institution_id=?", (assignment_id, inst_id)).fetchone()
+    if not row:
+        raise HTTPException(404, detail="Assignment not found")
+    conn.execute("UPDATE employee_shift_assignments SET is_active = 0 WHERE id = ?", (assignment_id,))
+    conn.commit()
 
 
 # ============================================================================
@@ -281,124 +268,116 @@ def _setting_response(row) -> AttendanceSettingResponse:
 
 
 @router.post("/settings", status_code=201)
-async def create_attendance_setting(
+@db_session
+def create_attendance_setting(
+    conn,
     payload: AttendanceSettingCreate,
     current_user: dict = Depends(get_current_user),
 ) -> AttendanceSettingResponse:
-    conn = get_db()
-    try:
-        require_permission(conn, current_user, "attendance.manage_shifts_assignments_settings")
-        if not payload.department and not payload.employee_id:
-            raise HTTPException(400, detail="Specify a department or an employee to scope this rule to")
-        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
-        if payload.employee_id:
-            emp = conn.execute("SELECT 1 FROM employees WHERE employee_id=? AND institution_id=?", (payload.employee_id, inst_id)).fetchone()
-            if not emp:
-                raise HTTPException(404, detail="Employee not found")
-        if payload.default_shift_id:
-            shift = conn.execute("SELECT 1 FROM shifts WHERE id=? AND institution_id=?", (payload.default_shift_id, inst_id)).fetchone()
-            if not shift:
-                raise HTTPException(404, detail="Shift not found")
+    require_permission(conn, current_user, "attendance.manage_shifts_assignments_settings")
+    if not payload.department and not payload.employee_id:
+        raise HTTPException(400, detail="Specify a department or an employee to scope this rule to")
+    inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+    if payload.employee_id:
+        emp = conn.execute("SELECT 1 FROM employees WHERE employee_id=? AND institution_id=?", (payload.employee_id, inst_id)).fetchone()
+        if not emp:
+            raise HTTPException(404, detail="Employee not found")
+    if payload.default_shift_id:
+        shift = conn.execute("SELECT 1 FROM shifts WHERE id=? AND institution_id=?", (payload.default_shift_id, inst_id)).fetchone()
+        if not shift:
+            raise HTTPException(404, detail="Shift not found")
 
-        now = datetime.utcnow().isoformat()
-        conn.execute(
-            """
-            INSERT INTO attendance_settings
-            (institution_id, department, employee_id, required, default_shift_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (inst_id, payload.department, payload.employee_id,
-             1 if payload.required else 0, payload.default_shift_id, now, now),
-        )
-        conn.commit()
-        setting_id = conn._last_id
-        row = conn.execute(
-            """
-            SELECT ast.*, s.name AS default_shift_name FROM attendance_settings ast
-            LEFT JOIN shifts s ON ast.default_shift_id = s.id
-            WHERE ast.id = ?
-            """,
-            (setting_id,),
-        ).fetchone()
-        return _setting_response(row)
-    finally:
-        conn.close()
+    now = datetime.utcnow().isoformat()
+    conn.execute(
+        """
+        INSERT INTO attendance_settings
+        (institution_id, department, employee_id, required, default_shift_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (inst_id, payload.department, payload.employee_id,
+         1 if payload.required else 0, payload.default_shift_id, now, now),
+    )
+    conn.commit()
+    setting_id = conn._last_id
+    row = conn.execute(
+        """
+        SELECT ast.*, s.name AS default_shift_name FROM attendance_settings ast
+        LEFT JOIN shifts s ON ast.default_shift_id = s.id
+        WHERE ast.id = ?
+        """,
+        (setting_id,),
+    ).fetchone()
+    return _setting_response(row)
 
 
 @router.get("/settings")
-async def list_attendance_settings(
+@db_session
+def list_attendance_settings(
+    conn,
     current_user: dict = Depends(get_current_user),
 ) -> List[AttendanceSettingResponse]:
-    conn = get_db()
-    try:
-        require_permission(conn, current_user, "attendance.manage_shifts_assignments_settings")
-        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
-        rows = conn.execute(
-            """
-            SELECT ast.*, s.name AS default_shift_name FROM attendance_settings ast
-            LEFT JOIN shifts s ON ast.default_shift_id = s.id
-            WHERE ast.institution_id = ? AND ast.is_active = 1
-            ORDER BY ast.department, ast.employee_id
-            """,
-            (inst_id,),
-        ).fetchall()
-        return [_setting_response(r) for r in rows]
-    finally:
-        conn.close()
+    require_permission(conn, current_user, "attendance.manage_shifts_assignments_settings")
+    inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+    rows = conn.execute(
+        """
+        SELECT ast.*, s.name AS default_shift_name FROM attendance_settings ast
+        LEFT JOIN shifts s ON ast.default_shift_id = s.id
+        WHERE ast.institution_id = ? AND ast.is_active = 1
+        ORDER BY ast.department, ast.employee_id
+        """,
+        (inst_id,),
+    ).fetchall()
+    return [_setting_response(r) for r in rows]
 
 
 @router.put("/settings/{setting_id}")
-async def update_attendance_setting(
+@db_session
+def update_attendance_setting(
+    conn,
     setting_id: int,
     payload: AttendanceSettingUpdate,
     current_user: dict = Depends(get_current_user),
 ) -> AttendanceSettingResponse:
-    conn = get_db()
-    try:
-        require_permission(conn, current_user, "attendance.manage_shifts_assignments_settings")
-        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
-        setting = conn.execute("SELECT * FROM attendance_settings WHERE id=? AND institution_id=?", (setting_id, inst_id)).fetchone()
-        if not setting:
-            raise HTTPException(404, detail="Setting not found")
+    require_permission(conn, current_user, "attendance.manage_shifts_assignments_settings")
+    inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+    setting = conn.execute("SELECT * FROM attendance_settings WHERE id=? AND institution_id=?", (setting_id, inst_id)).fetchone()
+    if not setting:
+        raise HTTPException(404, detail="Setting not found")
 
-        required = payload.required if payload.required is not None else bool(setting["required"])
-        default_shift_id = payload.default_shift_id if payload.default_shift_id is not None else setting["default_shift_id"]
-        is_active = payload.is_active if payload.is_active is not None else bool(setting["is_active"])
+    required = payload.required if payload.required is not None else bool(setting["required"])
+    default_shift_id = payload.default_shift_id if payload.default_shift_id is not None else setting["default_shift_id"]
+    is_active = payload.is_active if payload.is_active is not None else bool(setting["is_active"])
 
-        conn.execute(
-            "UPDATE attendance_settings SET required=?, default_shift_id=?, is_active=? WHERE id=?",
-            (1 if required else 0, default_shift_id, 1 if is_active else 0, setting_id),
-        )
-        conn.commit()
-        row = conn.execute(
-            """
-            SELECT ast.*, s.name AS default_shift_name FROM attendance_settings ast
-            LEFT JOIN shifts s ON ast.default_shift_id = s.id
-            WHERE ast.id = ?
-            """,
-            (setting_id,),
-        ).fetchone()
-        return _setting_response(row)
-    finally:
-        conn.close()
+    conn.execute(
+        "UPDATE attendance_settings SET required=?, default_shift_id=?, is_active=? WHERE id=?",
+        (1 if required else 0, default_shift_id, 1 if is_active else 0, setting_id),
+    )
+    conn.commit()
+    row = conn.execute(
+        """
+        SELECT ast.*, s.name AS default_shift_name FROM attendance_settings ast
+        LEFT JOIN shifts s ON ast.default_shift_id = s.id
+        WHERE ast.id = ?
+        """,
+        (setting_id,),
+    ).fetchone()
+    return _setting_response(row)
 
 
 @router.delete("/settings/{setting_id}", status_code=204)
-async def delete_attendance_setting(
+@db_session
+def delete_attendance_setting(
+    conn,
     setting_id: int,
     current_user: dict = Depends(get_current_user),
 ):
-    conn = get_db()
-    try:
-        require_permission(conn, current_user, "attendance.manage_shifts_assignments_settings")
-        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
-        row = conn.execute("SELECT 1 FROM attendance_settings WHERE id=? AND institution_id=?", (setting_id, inst_id)).fetchone()
-        if not row:
-            raise HTTPException(404, detail="Setting not found")
-        conn.execute("UPDATE attendance_settings SET is_active = 0 WHERE id = ?", (setting_id,))
-        conn.commit()
-    finally:
-        conn.close()
+    require_permission(conn, current_user, "attendance.manage_shifts_assignments_settings")
+    inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+    row = conn.execute("SELECT 1 FROM attendance_settings WHERE id=? AND institution_id=?", (setting_id, inst_id)).fetchone()
+    if not row:
+        raise HTTPException(404, detail="Setting not found")
+    conn.execute("UPDATE attendance_settings SET is_active = 0 WHERE id = ?", (setting_id,))
+    conn.commit()
 
 
 # ============================================================================
@@ -642,61 +621,55 @@ def _do_clock_out(conn, inst_id: int, employee_id: str, lat, lng, client_ip, sou
 
 
 @router.post("/clock-in", status_code=201)
-async def clock_in(
+@db_session
+def clock_in(
+    conn,
     payload: ClockInRequest,
     request: Request,
     current_user: dict = Depends(get_current_user),
 ) -> AttendanceRecordResponse:
     employee_id = _require_employee(current_user)
-    conn = get_db()
-    try:
-        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
-        client_ip = request.client.host if request.client else None
-        rec = _do_clock_in(conn, inst_id, employee_id, payload.lat, payload.lng, client_ip, "web")
-        return _record_response(rec)
-    finally:
-        conn.close()
+    inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+    client_ip = request.client.host if request.client else None
+    rec = _do_clock_in(conn, inst_id, employee_id, payload.lat, payload.lng, client_ip, "web")
+    return _record_response(rec)
 
 
 @router.post("/clock-out")
-async def clock_out(
+@db_session
+def clock_out(
+    conn,
     payload: ClockOutRequest,
     request: Request,
     current_user: dict = Depends(get_current_user),
 ) -> AttendanceRecordResponse:
     employee_id = _require_employee(current_user)
-    conn = get_db()
-    try:
-        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
-        client_ip = request.client.host if request.client else None
-        rec = _do_clock_out(conn, inst_id, employee_id, payload.lat, payload.lng, client_ip, "web")
-        return _record_response(rec)
-    finally:
-        conn.close()
+    inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+    client_ip = request.client.host if request.client else None
+    rec = _do_clock_out(conn, inst_id, employee_id, payload.lat, payload.lng, client_ip, "web")
+    return _record_response(rec)
 
 
 @router.get("/mine")
-async def my_attendance(
+@db_session
+def my_attendance(
+    conn,
     limit: int = 30,
     current_user: dict = Depends(get_current_user),
 ) -> List[AttendanceRecordResponse]:
     employee_id = current_user.get("employee_id")
     if not employee_id:
         return []
-    conn = get_db()
-    try:
-        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
-        rows = conn.execute(
-            """
-            SELECT ar.*, s.name AS shift_name FROM attendance_records ar
-            LEFT JOIN shifts s ON ar.shift_id = s.id
-            WHERE ar.employee_id = ? AND ar.institution_id = ? ORDER BY ar.work_date DESC LIMIT ?
-            """,
-            (employee_id, inst_id, limit),
-        ).fetchall()
-        return [_record_response(r) for r in rows]
-    finally:
-        conn.close()
+    inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+    rows = conn.execute(
+        """
+        SELECT ar.*, s.name AS shift_name FROM attendance_records ar
+        LEFT JOIN shifts s ON ar.shift_id = s.id
+        WHERE ar.employee_id = ? AND ar.institution_id = ? ORDER BY ar.work_date DESC LIMIT ?
+        """,
+        (employee_id, inst_id, limit),
+    ).fetchall()
+    return [_record_response(r) for r in rows]
 
 
 # ============================================================================
@@ -704,105 +677,101 @@ async def my_attendance(
 # ============================================================================
 
 @router.get("/review")
-async def review_queue(
+@db_session
+def review_queue(
+    conn,
     current_user: dict = Depends(get_current_user),
 ) -> List[AttendanceRecordWithEmployee]:
-    conn = get_db()
-    try:
-        require_permission(conn, current_user, "attendance.review_queue_resolve_attendance_record")
-        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
-        _sweep_absences(conn, inst_id)
-        rows = conn.execute(
-            """
-            SELECT ar.*, e.full_name AS employee_name, e.preferred_name AS employee_preferred_name, e.department AS department
-            FROM attendance_records ar
-            JOIN employees e ON ar.employee_id = e.employee_id AND ar.institution_id = e.institution_id
-            WHERE ar.institution_id = ? AND ar.status IN ('Late', 'Absent (Pending Review)')
-            ORDER BY ar.work_date DESC
-            """,
-            (inst_id,),
-        ).fetchall()
-        out = []
-        for r in rows:
-            base = _record_response(r).model_dump()
-            out.append(AttendanceRecordWithEmployee(**base, employee_name=r["employee_name"], employee_preferred_name=r["employee_preferred_name"], department=r["department"]))
-        return out
-    finally:
-        conn.close()
+    require_permission(conn, current_user, "attendance.review_queue_resolve_attendance_record")
+    inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+    _sweep_absences(conn, inst_id)
+    rows = conn.execute(
+        """
+        SELECT ar.*, e.full_name AS employee_name, e.preferred_name AS employee_preferred_name, e.department AS department
+        FROM attendance_records ar
+        JOIN employees e ON ar.employee_id = e.employee_id AND ar.institution_id = e.institution_id
+        WHERE ar.institution_id = ? AND ar.status IN ('Late', 'Absent (Pending Review)')
+        ORDER BY ar.work_date DESC
+        """,
+        (inst_id,),
+    ).fetchall()
+    out = []
+    for r in rows:
+        base = _record_response(r).model_dump()
+        out.append(AttendanceRecordWithEmployee(**base, employee_name=r["employee_name"], employee_preferred_name=r["employee_preferred_name"], department=r["department"]))
+    return out
 
 
 @router.put("/records/{record_id}/resolve")
-async def resolve_attendance_record(
+@db_session
+def resolve_attendance_record(
+    conn,
     record_id: int,
     payload: AttendanceResolve,
     current_user: dict = Depends(get_current_user),
 ) -> AttendanceRecordResponse:
-    conn = get_db()
-    try:
-        require_permission(conn, current_user, "attendance.review_queue_resolve_attendance_record")
-        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
-        rec = conn.execute("SELECT * FROM attendance_records WHERE id = ? AND institution_id = ?", (record_id, inst_id)).fetchone()
-        if not rec:
-            raise HTTPException(404, detail="Attendance record not found")
-        if rec["status"] not in ("Late", "Absent (Pending Review)"):
-            raise HTTPException(400, detail="Only a Late or Absent (Pending Review) record can be resolved")
+    require_permission(conn, current_user, "attendance.review_queue_resolve_attendance_record")
+    inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+    rec = conn.execute("SELECT * FROM attendance_records WHERE id = ? AND institution_id = ?", (record_id, inst_id)).fetchone()
+    if not rec:
+        raise HTTPException(404, detail="Attendance record not found")
+    if rec["status"] not in ("Late", "Absent (Pending Review)"):
+        raise HTTPException(400, detail="Only a Late or Absent (Pending Review) record can be resolved")
 
-        now = datetime.utcnow().isoformat()
-        leave_application_id = None
+    now = datetime.utcnow().isoformat()
+    leave_application_id = None
 
-        if payload.action == "Excuse":
-            new_status = "Excused"
-        elif payload.action == "ConfirmAbsent":
-            new_status = "Confirmed Absent"
-        elif payload.action == "ReclassifyAsLeave":
-            if not payload.leave_type_id:
-                raise HTTPException(400, detail="leave_type_id is required to reclassify as leave")
-            leave_type = conn.execute(
-                "SELECT * FROM leave_types WHERE id = ? AND institution_id = ? AND is_active = 1",
-                (payload.leave_type_id, inst_id),
-            ).fetchone()
-            if not leave_type:
-                raise HTTPException(404, detail="Leave type not found")
+    if payload.action == "Excuse":
+        new_status = "Excused"
+    elif payload.action == "ConfirmAbsent":
+        new_status = "Confirmed Absent"
+    elif payload.action == "ReclassifyAsLeave":
+        if not payload.leave_type_id:
+            raise HTTPException(400, detail="leave_type_id is required to reclassify as leave")
+        leave_type = conn.execute(
+            "SELECT * FROM leave_types WHERE id = ? AND institution_id = ? AND is_active = 1",
+            (payload.leave_type_id, inst_id),
+        ).fetchone()
+        if not leave_type:
+            raise HTTPException(404, detail="Leave type not found")
 
-            days = 0.5 if payload.half_day else 1.0
-            conn.execute(
-                """
-                INSERT INTO leave_applications
-                (institution_id, employee_id, leave_type_id, start_date, end_date, days_count, status, reason, requested_by, approved_by, notes)
-                VALUES (?, ?, ?, ?, ?, ?, 'Approved', ?, ?, ?, ?)
-                """,
-                (inst_id, rec["employee_id"], payload.leave_type_id, rec["work_date"], rec["work_date"], days,
-                 f"Reclassified from attendance record #{record_id} ({rec['status']})",
-                 current_user["username"], current_user["username"], payload.notes),
-            )
-            conn.commit()
-            leave_application_id = conn._last_id
-
-            year = datetime.strptime(rec["work_date"], "%Y-%m-%d").year
-            balance = conn.execute(
-                "SELECT * FROM leave_balances WHERE employee_id = ? AND leave_type_id = ? AND year = ?",
-                (rec["employee_id"], payload.leave_type_id, year),
-            ).fetchone()
-            if balance:
-                _consume_balance(conn, balance, days)
-
-            new_status = "Reclassified as Leave"
-        else:
-            raise HTTPException(400, detail="Unknown action")
-
+        days = 0.5 if payload.half_day else 1.0
         conn.execute(
             """
-            UPDATE attendance_records
-            SET status = ?, reviewed_by_user_id = ?, review_notes = ?, reviewed_at = ?, leave_application_id = ?, updated_at = ?
-            WHERE id = ?
+            INSERT INTO leave_applications
+            (institution_id, employee_id, leave_type_id, start_date, end_date, days_count, status, reason, requested_by, approved_by, notes)
+            VALUES (?, ?, ?, ?, ?, ?, 'Approved', ?, ?, ?, ?)
             """,
-            (new_status, current_user.get("id"), payload.notes, now, leave_application_id, now, record_id),
+            (inst_id, rec["employee_id"], payload.leave_type_id, rec["work_date"], rec["work_date"], days,
+             f"Reclassified from attendance record #{record_id} ({rec['status']})",
+             current_user["username"], current_user["username"], payload.notes),
         )
         conn.commit()
-        updated = conn.execute("SELECT * FROM attendance_records WHERE id = ?", (record_id,)).fetchone()
-        return _record_response(updated)
-    finally:
-        conn.close()
+        leave_application_id = conn._last_id
+
+        year = datetime.strptime(rec["work_date"], "%Y-%m-%d").year
+        balance = conn.execute(
+            "SELECT * FROM leave_balances WHERE employee_id = ? AND leave_type_id = ? AND year = ?",
+            (rec["employee_id"], payload.leave_type_id, year),
+        ).fetchone()
+        if balance:
+            _consume_balance(conn, balance, days)
+
+        new_status = "Reclassified as Leave"
+    else:
+        raise HTTPException(400, detail="Unknown action")
+
+    conn.execute(
+        """
+        UPDATE attendance_records
+        SET status = ?, reviewed_by_user_id = ?, review_notes = ?, reviewed_at = ?, leave_application_id = ?, updated_at = ?
+        WHERE id = ?
+        """,
+        (new_status, current_user.get("id"), payload.notes, now, leave_application_id, now, record_id),
+    )
+    conn.commit()
+    updated = conn.execute("SELECT * FROM attendance_records WHERE id = ?", (record_id,)).fetchone()
+    return _record_response(updated)
 
 
 # ============================================================================
@@ -838,79 +807,73 @@ def _device_response(row) -> DeviceResponse:
 
 
 @router.post("/devices", status_code=201)
-async def create_device(
+@db_session
+def create_device(
+    conn,
     payload: DeviceCreate,
     current_user: dict = Depends(get_current_user),
 ) -> DeviceCreateResponse:
-    conn = get_db()
-    try:
-        require_permission(conn, current_user, "attendance.manage_attendance_devices")
-        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
-        if payload.location_id and not conn.execute(
-            "SELECT 1 FROM locations WHERE id=? AND institution_id=?", (payload.location_id, inst_id)
-        ).fetchone():
-            raise HTTPException(404, detail="Location not found")
+    require_permission(conn, current_user, "attendance.manage_attendance_devices")
+    inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+    if payload.location_id and not conn.execute(
+        "SELECT 1 FROM locations WHERE id=? AND institution_id=?", (payload.location_id, inst_id)
+    ).fetchone():
+        raise HTTPException(404, detail="Location not found")
 
-        prefix, raw_key = _generate_device_api_key()
-        key_hash = hash_password(raw_key)
-        now = datetime.utcnow().isoformat()
-        conn.execute(
-            """
-            INSERT INTO attendance_devices (institution_id, name, location_id, key_prefix, key_hash, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (inst_id, payload.name, payload.location_id, prefix, key_hash, now, now),
-        )
-        conn.commit()
-        device_id = conn._last_id
-        row = conn.execute(
-            "SELECT ad.*, l.name AS location_name FROM attendance_devices ad LEFT JOIN locations l ON ad.location_id = l.id WHERE ad.id = ?",
-            (device_id,),
-        ).fetchone()
-        d = dict(row)
-        d["is_active"] = bool(d["is_active"])
-        return DeviceCreateResponse(**d, api_key=raw_key)
-    finally:
-        conn.close()
+    prefix, raw_key = _generate_device_api_key()
+    key_hash = hash_password(raw_key)
+    now = datetime.utcnow().isoformat()
+    conn.execute(
+        """
+        INSERT INTO attendance_devices (institution_id, name, location_id, key_prefix, key_hash, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (inst_id, payload.name, payload.location_id, prefix, key_hash, now, now),
+    )
+    conn.commit()
+    device_id = conn._last_id
+    row = conn.execute(
+        "SELECT ad.*, l.name AS location_name FROM attendance_devices ad LEFT JOIN locations l ON ad.location_id = l.id WHERE ad.id = ?",
+        (device_id,),
+    ).fetchone()
+    d = dict(row)
+    d["is_active"] = bool(d["is_active"])
+    return DeviceCreateResponse(**d, api_key=raw_key)
 
 
 @router.get("/devices")
-async def list_devices(
+@db_session
+def list_devices(
+    conn,
     current_user: dict = Depends(get_current_user),
 ) -> List[DeviceResponse]:
-    conn = get_db()
-    try:
-        require_permission(conn, current_user, "attendance.manage_attendance_devices")
-        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
-        rows = conn.execute(
-            """
-            SELECT ad.*, l.name AS location_name FROM attendance_devices ad
-            LEFT JOIN locations l ON ad.location_id = l.id
-            WHERE ad.institution_id = ? AND ad.is_active = 1
-            ORDER BY ad.created_at DESC
-            """,
-            (inst_id,),
-        ).fetchall()
-        return [_device_response(r) for r in rows]
-    finally:
-        conn.close()
+    require_permission(conn, current_user, "attendance.manage_attendance_devices")
+    inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+    rows = conn.execute(
+        """
+        SELECT ad.*, l.name AS location_name FROM attendance_devices ad
+        LEFT JOIN locations l ON ad.location_id = l.id
+        WHERE ad.institution_id = ? AND ad.is_active = 1
+        ORDER BY ad.created_at DESC
+        """,
+        (inst_id,),
+    ).fetchall()
+    return [_device_response(r) for r in rows]
 
 
 @router.delete("/devices/{device_id}", status_code=204)
-async def delete_device(
+@db_session
+def delete_device(
+    conn,
     device_id: int,
     current_user: dict = Depends(get_current_user),
 ):
-    conn = get_db()
-    try:
-        require_permission(conn, current_user, "attendance.manage_attendance_devices")
-        inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
-        if not conn.execute("SELECT 1 FROM attendance_devices WHERE id=? AND institution_id=?", (device_id, inst_id)).fetchone():
-            raise HTTPException(404, detail="Device not found")
-        conn.execute("UPDATE attendance_devices SET is_active = 0 WHERE id = ?", (device_id,))
-        conn.commit()
-    finally:
-        conn.close()
+    require_permission(conn, current_user, "attendance.manage_attendance_devices")
+    inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
+    if not conn.execute("SELECT 1 FROM attendance_devices WHERE id=? AND institution_id=?", (device_id, inst_id)).fetchone():
+        raise HTTPException(404, detail="Device not found")
+    conn.execute("UPDATE attendance_devices SET is_active = 0 WHERE id = ?", (device_id,))
+    conn.commit()
 
 
 async def get_device(request: Request) -> dict:
@@ -920,7 +883,14 @@ async def get_device(request: Request) -> dict:
     threadpool) for the same reason get_current_user must be async def —
     see its docstring in core/deps.py: set_rls_context()'s ContextVar.set()
     only propagates to later get_db() calls in THIS request if it happens
-    on the live task, not a copied thread context."""
+    on the live task, not a copied thread context.
+
+    NOT converted to @db_session during the Phase 3/4 db_session rollout —
+    that decorator's plain-sync wrapper would make FastAPI dispatch this to
+    a threadpool like any other sync def, defeating the exact thing this
+    docstring says must not happen. Left as manual get_db()/try/finally on
+    purpose, matching assistant_chat's same deliberate exception in
+    routers/assistant.py."""
     raw_key = request.headers.get("X-Device-Api-Key")
     if not raw_key:
         raise HTTPException(401, detail="X-Device-Api-Key header required")
@@ -945,7 +915,9 @@ async def get_device(request: Request) -> dict:
 
 
 @router.post("/webhook/clock-event", status_code=201)
-async def device_clock_event(
+@db_session
+def device_clock_event(
+    conn,
     payload: DeviceClockEventRequest,
     request: Request,
     device: dict = Depends(get_device),
@@ -954,34 +926,38 @@ async def device_clock_event(
     camera) reports a punch for an employee_id it has already matched
     on-device — this endpoint trusts that match and just records the
     event; the actual face recognition/liveness check is entirely the
-    vendor hardware's responsibility, not this app's."""
-    conn = get_db()
-    try:
-        inst_id = device["institution_id"]
-        if not conn.execute(
-            "SELECT 1 FROM employees WHERE employee_id = ? AND institution_id = ?",
-            (payload.employee_id, inst_id),
-        ).fetchone():
-            raise HTTPException(404, detail="Employee not found for this institution")
+    vendor hardware's responsibility, not this app's.
 
-        lat = lng = None
-        if device.get("location_id"):
-            loc = conn.execute("SELECT latitude, longitude FROM locations WHERE id = ?", (device["location_id"],)).fetchone()
-            if loc and loc["latitude"] is not None and loc["longitude"] is not None:
-                lat, lng = float(loc["latitude"]), float(loc["longitude"])
+    Converted to @db_session as part of the Phase 3/4 rollout (safe:
+    get_device, the dependency that sets the RLS context, is the one that
+    must stay async — see its own docstring; a sync route handler
+    dispatched to FastAPI's threadpool still sees a context already
+    mutated by an earlier async dependency, same reasoning core/deps.py
+    documents for get_current_user) — no behavior change, this endpoint
+    already worked correctly before."""
+    inst_id = device["institution_id"]
+    if not conn.execute(
+        "SELECT 1 FROM employees WHERE employee_id = ? AND institution_id = ?",
+        (payload.employee_id, inst_id),
+    ).fetchone():
+        raise HTTPException(404, detail="Employee not found for this institution")
 
-        event_time = None
-        if payload.event_time:
-            try:
-                event_time = datetime.fromisoformat(payload.event_time.replace("Z", "+00:00")).replace(tzinfo=None)
-            except ValueError:
-                raise HTTPException(400, detail="event_time must be a valid ISO 8601 timestamp")
+    lat = lng = None
+    if device.get("location_id"):
+        loc = conn.execute("SELECT latitude, longitude FROM locations WHERE id = ?", (device["location_id"],)).fetchone()
+        if loc and loc["latitude"] is not None and loc["longitude"] is not None:
+            lat, lng = float(loc["latitude"]), float(loc["longitude"])
 
-        client_ip = request.client.host if request.client else None
-        if payload.event_type == "in":
-            rec = _do_clock_in(conn, inst_id, payload.employee_id, lat, lng, client_ip, "device", device["id"], event_time)
-        else:
-            rec = _do_clock_out(conn, inst_id, payload.employee_id, lat, lng, client_ip, "device", device["id"], event_time)
-        return _record_response(rec)
-    finally:
-        conn.close()
+    event_time = None
+    if payload.event_time:
+        try:
+            event_time = datetime.fromisoformat(payload.event_time.replace("Z", "+00:00")).replace(tzinfo=None)
+        except ValueError:
+            raise HTTPException(400, detail="event_time must be a valid ISO 8601 timestamp")
+
+    client_ip = request.client.host if request.client else None
+    if payload.event_type == "in":
+        rec = _do_clock_in(conn, inst_id, payload.employee_id, lat, lng, client_ip, "device", device["id"], event_time)
+    else:
+        rec = _do_clock_out(conn, inst_id, payload.employee_id, lat, lng, client_ip, "device", device["id"], event_time)
+    return _record_response(rec)
