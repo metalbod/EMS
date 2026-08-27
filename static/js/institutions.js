@@ -103,8 +103,8 @@ function renderInstTable() {
       <td class="px-4 py-3">
         <div class="flex items-center gap-3">
           ${i.logo_url
-            ? `<img src="${i.logo_url}" class="w-9 h-9 rounded-lg object-cover flex-shrink-0"/>`
-            : `<div class="w-9 h-9 bg-blue-100 rounded-lg flex items-center justify-center text-blue-700 text-xs font-bold flex-shrink-0">${esc(i.code.slice(0,2).toUpperCase())}</div>`}
+            ? `<img src="${i.logo_url}" class="w-9 h-9 rounded-lg object-cover shrink-0"/>`
+            : `<div class="w-9 h-9 bg-blue-100 rounded-lg flex items-center justify-center text-blue-700 text-xs font-bold shrink-0">${esc(i.code.slice(0,2).toUpperCase())}</div>`}
           <div>
             <p class="font-medium">${esc(i.name)}</p>
             <p class="text-xs text-slate-400">${esc(i.code)}</p>

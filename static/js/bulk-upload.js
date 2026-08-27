@@ -90,7 +90,7 @@ function renderBulkUploadResults(result) {
     const who=[e.employee_id,e.full_name].filter(Boolean).join(' – ');
     return `
     <div class="flex items-start gap-2 text-sm bg-red-50 border border-red-100 rounded-lg px-3 py-2">
-      <span class="font-semibold text-red-700 flex-shrink-0">Row ${e.row}${who?` (${esc(who)})`:''}</span>
+      <span class="font-semibold text-red-700 shrink-0">Row ${e.row}${who?` (${esc(who)})`:''}</span>
       <span class="text-red-600">${esc(e.reason)}</span>
     </div>`;
   }).join(''):'';

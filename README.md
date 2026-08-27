@@ -96,6 +96,14 @@ for production — no purging, external runtime dependency, unpinned
 version). The compiled, purged `static/css/tailwind.css` is committed to
 the repo, so no build step is required to run or deploy the app.
 
+On Tailwind v4: there's no `tailwind.config.js` — config lives directly
+in `static/css/tailwind-input.css` (`@import "tailwindcss";` plus a
+`@layer base` block that pins the pre-v4 default border color, so
+existing markup didn't need updating for v4's `currentcolor` default).
+Content detection is automatic (v4 scans the project respecting
+`.gitignore`); the build itself needs the separate `@tailwindcss/cli`
+package (v4 split the CLI out of the main `tailwindcss` package).
+
 If you add new Tailwind utility classes to `static/index.html` or any
 `static/js/*.js` file, rebuild the compiled CSS before committing:
 

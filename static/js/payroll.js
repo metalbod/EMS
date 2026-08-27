@@ -159,7 +159,7 @@ async function loadMyPayslips() {
   if(!rows.length){ listEl.innerHTML=''; emptyEl?.classList.remove('hidden'); return; }
   emptyEl?.classList.add('hidden');
   listEl.innerHTML=rows.map(p=>`
-    <div class="bg-white border border-slate-200 rounded-xl p-4 cursor-pointer hover:shadow-sm transition flex items-center justify-between" onclick="viewPayslip(${p.id})">
+    <div class="bg-white border border-slate-200 rounded-xl p-4 cursor-pointer hover:shadow-xs transition flex items-center justify-between" onclick="viewPayslip(${p.id})">
       <div>
         <p class="font-medium text-slate-800">${fmtDate(p.period_start)} → ${fmtDate(p.period_end)}</p>
         <p class="text-xs text-slate-400">Net Pay: ${fmtCurrency(p.net_pay)}</p>

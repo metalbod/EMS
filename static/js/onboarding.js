@@ -71,7 +71,7 @@ function renderObTable(type) {
       <td class="px-4 py-3">
         <div class="flex items-center gap-2">
           <span class="font-medium text-slate-800">${esc(displayName(c.employee_name, c.employee_preferred_name))}</span>
-          ${myPending?`<span class="badge bg-orange-100 text-orange-700 text-xs flex-shrink-0">Action Required</span>`:''}
+          ${myPending?`<span class="badge bg-orange-100 text-orange-700 text-xs shrink-0">Action Required</span>`:''}
         </div>
       </td>
       <td class="px-4 py-3 hidden md:table-cell text-slate-600">${fmtDate(c.start_date)}</td>
@@ -82,7 +82,7 @@ function renderObTable(type) {
       <td class="px-4 py-3">
         <div class="flex items-center gap-2">
           <div class="w-16 bg-slate-100 rounded-full h-1.5"><div class="bg-blue-500 h-1.5 rounded-full" style="width:${pct}%"></div></div>
-          <span class="text-xs text-slate-500 flex-shrink-0">${c.done_items}/${c.total_items}</span>
+          <span class="text-xs text-slate-500 shrink-0">${c.done_items}/${c.total_items}</span>
         </div>
       </td>
       <td class="px-4 py-3"><span class="badge ${c.status==='Completed'?'bg-green-100 text-green-700':'bg-blue-100 text-blue-700'}">${c.status}</span></td>
@@ -193,9 +193,9 @@ async function openObDetail(clId) {
         const isLinked=!!item.linked_ld_course_id;
         const canAct=canComplete(role)&&cl.status==='In Progress'&&!(isLinked&&!isHR);
         return `<div class="flex items-start gap-3 py-2.5 border-b border-slate-100 last:border-0" id="obitem-${item.id}">
-          <div class="mt-0.5 flex-shrink-0">
+          <div class="mt-0.5 shrink-0">
             ${canAct?`<input type="checkbox" class="w-4 h-4 cursor-pointer" ${isDone?'checked':''} onchange="toggleObItem(${clId},${item.id},this.checked)"/>`
-              :`<div class="w-4 h-4 rounded border-2 ${isDone?'bg-blue-500 border-blue-500':'border-slate-300'} flex items-center justify-center">${isDone?'<svg class="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>':''}</div>`}
+              :`<div class="w-4 h-4 rounded-sm border-2 ${isDone?'bg-blue-500 border-blue-500':'border-slate-300'} flex items-center justify-center">${isDone?'<svg class="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>':''}</div>`}
           </div>
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2 flex-wrap">
@@ -209,7 +209,7 @@ async function openObDetail(clId) {
             ${item.notes?`<p class="text-xs text-slate-500 italic mt-0.5">${esc(item.notes)}</p>`:''}
             <div id="obitem-attach-${item.id}" class="hidden mt-1.5 space-y-1"></div>
           </div>
-          <div class="flex items-center gap-1 flex-shrink-0">
+          <div class="flex items-center gap-1 shrink-0">
             ${canAct&&isDone?`<button onclick="toggleObItem(${clId},${item.id},false)" class="text-xs text-slate-400 hover:text-orange-500 px-1">Undo</button>`:''}
             ${canComplete(role)?`<button onclick="toggleObItemAttachments(${clId},${item.id})" class="text-slate-300 hover:text-blue-500 relative" title="Attach proof (optional)">
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.485 8.486L20.5 13"/></svg>
@@ -276,10 +276,10 @@ function renderObItemAttachments(clId, itemId, atts) {
   const wrap = document.getElementById(`obitem-attach-${itemId}`);
   if (wrap) {
     wrap.innerHTML = atts.map(a=>`
-      <div class="flex items-center gap-2 text-xs bg-slate-50 rounded px-2 py-1">
+      <div class="flex items-center gap-2 text-xs bg-slate-50 rounded-sm px-2 py-1">
         <a href="${a.data_url}" download="${esc(a.file_name)}" class="text-blue-600 hover:underline truncate flex-1">${esc(a.file_name)}</a>
-        <span class="text-slate-400 flex-shrink-0">${esc(a.uploaded_by)} · ${fmtDate(a.created_at)}</span>
-        <button onclick="deleteObItemAttachment(${clId},${itemId},${a.id})" class="text-slate-400 hover:text-red-600 flex-shrink-0">✕</button>
+        <span class="text-slate-400 shrink-0">${esc(a.uploaded_by)} · ${fmtDate(a.created_at)}</span>
+        <button onclick="deleteObItemAttachment(${clId},${itemId},${a.id})" class="text-slate-400 hover:text-red-600 shrink-0">✕</button>
       </div>`).join('') +
       `<label class="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline cursor-pointer">
         + Attach photo/document
@@ -656,7 +656,7 @@ function renderObSwimlane(type) {
     const rIdx=rolesOrder.indexOf(item.assigned_role);
     const linkedCourse=obTmplCoursesCache[type].find(c=>c.id===item.linked_ld_course_id);
     html+=`<div style="grid-column:${cIdx+2};grid-row:${rIdx+1}">
-      <div id="${oid(type,'obSwimStep')}_${item.id}" class="${obRoleColor(item.assigned_role)} rounded-lg p-2 h-full flex flex-col shadow-sm border border-black/5">
+      <div id="${oid(type,'obSwimStep')}_${item.id}" class="${obRoleColor(item.assigned_role)} rounded-lg p-2 h-full flex flex-col shadow-xs border border-black/5">
         <div class="flex items-center justify-between gap-1 mb-1">
           <button onclick="moveObTemplate('${type}',${item.id},'up')" ${cIdx===0?'disabled':''} class="opacity-60 hover:opacity-100 disabled:opacity-20" title="Move earlier"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/></svg></button>
           <span class="text-[10px] font-semibold opacity-60">${cIdx+1}</span>
