@@ -764,3 +764,69 @@ def test_capacity_forecast_reflects_planned_leave(client, hr_manager_auth, test_
     assert res.json()["forecast"]["planned_leaves"] == 1
 
     client.patch(f"/api/employees/{emp['employee_id']}/status", headers=hr_manager_auth, json={"status": "Inactive"})
+
+
+# ---------------------------------------------------------------------------
+# location_capacity_snapshots — written by check_and_trigger_capacity_alerts,
+# read by utilization-history/-trends (test_location_phase2.py) and this
+# dashboard's trend_data. See the table's migration docstring for why
+# coverage is opportunistic (no cron jobs anywhere in this stack).
+# ---------------------------------------------------------------------------
+
+def test_capacity_check_writes_a_snapshot(client, setup_location_features, hr_manager_auth):
+    """A capacity check should leave a same-day snapshot behind that the
+    utilization-history endpoint (routers/location_phase2.py) can read."""
+    data = setup_location_features
+    check_res = client.post(
+        f"/api/locations/{data['loc1_id']}/capacity-alerts/check",
+        headers=hr_manager_auth,
+    )
+    assert check_res.status_code == 200, check_res.text
+    checked = check_res.json()
+
+    history_res = client.get(
+        f"/api/locations/{data['loc1_id']}/utilization-history?days=1",
+        headers=hr_manager_auth,
+    )
+    assert history_res.status_code == 200, history_res.text
+    points = history_res.json()
+    assert len(points) == 1, "expected exactly the one snapshot just written, not a fallback/fabricated point"
+    assert points[0]["employee_count"] == checked["current_employees"]
+    assert points[0]["capacity"] == checked["capacity"]
+    assert points[0]["date"] == datetime.utcnow().date().isoformat()
+
+
+def test_capacity_check_same_day_upserts_not_duplicates(client, setup_location_features, hr_manager_auth):
+    """Two checks on the same location on the same day must refresh one
+    row, not accumulate a second — the (institution_id, location_id,
+    snapshot_date) unique constraint plus ON CONFLICT DO UPDATE in
+    check_and_trigger_capacity_alerts."""
+    data = setup_location_features
+    for _ in range(3):
+        res = client.post(
+            f"/api/locations/{data['loc1_id']}/capacity-alerts/check",
+            headers=hr_manager_auth,
+        )
+        assert res.status_code == 200, res.text
+
+    history_res = client.get(
+        f"/api/locations/{data['loc1_id']}/utilization-history?days=1",
+        headers=hr_manager_auth,
+    )
+    assert history_res.status_code == 200, history_res.text
+    assert len(history_res.json()) == 1
+
+
+def test_capacity_dashboard_trend_data_reflects_snapshot(client, setup_location_features, hr_manager_auth):
+    """capacity-dashboard's trend_data (previously permanently []) should
+    surface the same snapshot the check endpoint just wrote."""
+    data = setup_location_features
+    client.post(f"/api/locations/{data['loc1_id']}/capacity-alerts/check", headers=hr_manager_auth)
+
+    dash_res = client.get(f"/api/locations/{data['loc1_id']}/capacity-dashboard", headers=hr_manager_auth)
+    assert dash_res.status_code == 200, dash_res.text
+    trend_data = dash_res.json()["trend_data"]
+    assert len(trend_data) == 1
+    assert trend_data[0]["date"] == datetime.utcnow().date().isoformat()
+
+
