@@ -23,7 +23,7 @@ actually request these fixtures pay that cost.
 """
 import itertools
 import os
-import random
+import secrets
 import sys
 import time
 from pathlib import Path
@@ -225,22 +225,33 @@ def payroll_manager_auth(make_test_user, test_institution):
     }
 
 
-# Salted with PID + high-resolution time per process plus a per-process counter,
-# so IC numbers are unique both within a run and across separate pytest invocations —
-# a prior run's leftover test employees (e.g. from an interrupted run) must never
-# collide with a fresh run's. This mirrors _code_run_salt below, which needed the
-# identical fix after a 4-digit-only salt collided across rapid re-runs (1/10000
-# odds per pair of runs isn't negligible against a shared DB that never gets
-# cleaned up) — that fix was never carried over to this IC salt, and it hit the
-# exact same collision: test_related_contracts_empty_for_unique_ic failed because
-# a fresh employee's IC matched a different run's leftover "ZZ Test Employee".
-# IC numbers must be exactly 12 digits (see validate_ic in routers/employees.py),
-# so unlike _code_run_salt this can't just add more digits freely — instead it
-# splits the same available digits between PID and time salts (1000 combos each,
-# 1,000,000 total vs the old 10,000) while keeping the same 4-digit counter range.
+# Salted with a cryptographically random per-process value plus a per-call
+# counter, so IC numbers are unique both within a run and across separate
+# pytest invocations — a prior run's leftover test employees (e.g. from an
+# interrupted run) must never collide with a fresh run's.
+#
+# This used to be salted with os.getpid() % 1000 and time.time_ns() % 1000
+# instead of secrets.randbelow() — deliberately redesigned away from that
+# (see the Debt Ledger's "Redesign the test-data uniqueness scheme" item).
+# PID and wall-clock time are not independent sources of entropy across
+# concurrent process starts: CI matrix jobs and local `-n auto` xdist
+# workers are launched close together in time (correlated time_ns() low
+# digits) and OS PID allocation is sequential within a short window
+# (correlated getpid() values), so two workers/runs starting near-
+# simultaneously were more likely to land on the same 1000x1000 salt combo
+# than the raw 1,000,000-combo space suggested. That's exactly the failure
+# mode this already hit once (test_related_contracts_empty_for_unique_ic:
+# a fresh employee's IC collided with a different run's leftover "ZZ Test
+# Employee") even after a first attempt to fix it by widening the salt
+# range. secrets.randbelow() draws are independent between processes by
+# construction, so simultaneous starts no longer correlate.
+# IC numbers must be exactly 12 digits (see validate_ic in
+# routers/employees.py), so this can't just add more digits freely —
+# it keeps the same 1000x1000-combo, 4-digit-counter shape as before,
+# only the entropy source changed.
 _ic_counter = itertools.count(1)
-_ic_pid_salt = os.getpid() % 1000
-_ic_time_salt = time.time_ns() % 1000
+_ic_pid_salt = secrets.randbelow(1000)
+_ic_time_salt = secrets.randbelow(1000)
 
 
 def _unique_ic():
@@ -272,13 +283,12 @@ def _valid_employee_payload(**overrides):
 
 
 _code_counter = itertools.count(1)
-# PID + nanosecond timestamp (not just _ic_run_salt's 4-digit modulo, which
-# collided across separate rapid-fire local process invocations — 1/10000
-# odds per pair of runs isn't negligible when the suite gets re-run many
-# times in a short window while debugging) — this has no fixed-width format
-# constraint to respect (unlike IC numbers), so there's no reason to skimp
-# on entropy here.
-_code_run_salt = f"{os.getpid():05d}{time.time_ns() % 100000:05d}"
+# Same redesign as _ic_pid_salt/_ic_time_salt above: a genuinely random
+# per-process salt instead of PID+timestamp, which correlated across
+# rapid-fire/concurrent process starts. No fixed-width format constraint
+# here (unlike IC numbers), so there's no reason to skimp on entropy —
+# 10 random digits, drawn once per process.
+_code_run_salt = f"{secrets.randbelow(10**10):010d}"
 
 
 def _unique_code(prefix="ZZ"):
