@@ -283,6 +283,12 @@ function doLogout() {
   document.getElementById('loginScreen').classList.remove('hidden');
   document.getElementById('appShell').classList.add('hidden');
   document.getElementById('loginPass').value = '';
+  // AI assistant chat history (static/js/assistant.js) is in-memory-only and
+  // was never cleared on logout — a same-tab logout/login as a different
+  // employee could still see the previous employee's chat content (data
+  // privacy). initAssistant() also resets this on the next login as a
+  // second line of defense, but clear it here too so it's gone immediately.
+  resetAssistant();
 }
 
 function toggleRoleSwitcher() {

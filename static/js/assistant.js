@@ -1,12 +1,31 @@
 // ---------------------------------------------------------------------------
 // AI Assistant chatbot — floating widget, all pages. Ephemeral history: kept
-// in memory only, resent (capped) with each request, cleared on reload.
+// in memory only, resent (capped) with each request, never persisted
+// server-side. Cleared on a full page reload AND on logout (see
+// resetAssistant) — the in-memory array/DOM otherwise survive a same-tab
+// logout -> login as a different employee, leaking one employee's chat
+// content (which can include their own leave/payslip/benefits data) into
+// the next employee's view of the same browser tab.
 // ---------------------------------------------------------------------------
 const ASSISTANT_MAX_HISTORY_TURNS = 8;
 let assistantHistory = [];
 let assistantBusy = false;
 
+function resetAssistant() {
+  assistantHistory = [];
+  assistantBusy = false;
+  const list = document.getElementById('assistantMessages');
+  if (list) list.innerHTML = '';
+  document.getElementById('assistantPanel')?.classList.add('hidden');
+  document.getElementById('assistantFab')?.classList.add('hidden');
+}
+
 async function initAssistant() {
+  // Always start from a clean slate before deciding whether to show the FAB
+  // for whoever is logged in now — see resetAssistant's docstring above.
+  // Also called directly from doLogout() (core.js) so the previous user's
+  // chat vanishes immediately at logout, not just at the next login.
+  resetAssistant();
   // Hidden entirely (not just left to fail gracefully in chat) when the
   // institution has neither its own BYOK key nor a platform default — see
   // GET /api/assistant/availability, open to any authenticated user.
