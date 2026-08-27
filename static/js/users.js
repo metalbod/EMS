@@ -12,7 +12,6 @@ function renderUserTable() {
   const empty=document.getElementById('userEmpty');
   if(!users.length){tbody.innerHTML='';empty.classList.remove('hidden');return;}
   empty.classList.add('hidden');
-  const rc={superadmin:'bg-purple-100 text-purple-700',hr_manager:'bg-blue-100 text-blue-700',hr_admin:'bg-cyan-100 text-cyan-700',manager:'bg-amber-100 text-amber-700',payroll_manager:'bg-emerald-100 text-emerald-700',compensation_manager:'bg-pink-100 text-pink-700',employee:'bg-slate-100 text-slate-600'};
   tbody.innerHTML=users.map(u=>`
     <tr class="hover:bg-slate-50 transition">
       <td class="px-4 py-3">
@@ -24,7 +23,7 @@ function renderUserTable() {
           </div>
         </div>
       </td>
-      <td class="px-4 py-3 hidden md:table-cell"><span class="badge ${rc[u.role]||''}">${meta.role_labels?.[u.role]||u.role}</span></td>
+      <td class="px-4 py-3 hidden md:table-cell"><span class="badge ${statusColor(ROLE_BADGE_COLORS, u.role)}">${meta.role_labels?.[u.role]||u.role}</span></td>
       <td class="px-4 py-3 hidden lg:table-cell text-xs text-slate-500">${esc(u.institution_name||u.institution_code||'Platform Admin')}</td>
       <td class="px-4 py-3"><span class="badge ${u.is_active?'bg-emerald-100 text-emerald-700':'bg-slate-100 text-slate-500'}">${u.is_active?'Active':'Inactive'}</span></td>
       <td class="px-4 py-3">

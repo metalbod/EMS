@@ -6,6 +6,19 @@ let jobLevels = [];
 let jobRoles = [];
 let salaryStructures = [];
 
+// Shared with the pay grades / job levels / job roles Active badges below —
+// this file never adopted core.js's statusColor()/*_COLORS map convention
+// used everywhere else in the app, and had the same is_active ternary
+// (`grade.is_active ? '...emerald...' : '...slate...'`) copy-pasted three
+// times, plus a merit-cycle status ternary with no shared map at all
+// (see MERIT_CYCLE_STATUS_COLORS below). is_active is an int (0/1) on the
+// wire, not a bool — see core/compensation_schemas.py.
+const ACTIVE_STATUS_COLORS = {1: 'bg-emerald-100 text-emerald-700', 0: 'bg-slate-100 text-slate-500'};
+const ACTIVE_STATUS_LABELS = {1: 'Active', 0: 'Inactive'};
+// Draft/Active/Closed (core/compensation_schemas.py) — Closed fell through
+// the old ternary's else branch with no explicit color of its own.
+const MERIT_CYCLE_STATUS_COLORS = {Draft: 'bg-slate-100 text-slate-600', Active: 'bg-blue-100 text-blue-700', Closed: 'bg-emerald-100 text-emerald-700'};
+
 // ============================================================================
 // PAY GRADES MANAGEMENT
 // ============================================================================
@@ -50,8 +63,8 @@ function renderPayGradesTable() {
         </div>
       </td>
       <td class="px-4 py-3 text-right">
-        <span class="badge ${grade.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}">
-          ${grade.is_active ? 'Active' : 'Inactive'}
+        <span class="badge ${statusColor(ACTIVE_STATUS_COLORS, grade.is_active)}">
+          ${ACTIVE_STATUS_LABELS[grade.is_active] || 'Inactive'}
         </span>
       </td>
     </tr>
@@ -142,8 +155,8 @@ function renderJobLevelsTable() {
         <span class="inline-block px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-sm">Level ${level.level_order}</span>
       </td>
       <td class="px-4 py-3">
-        <span class="badge ${level.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}">
-          ${level.is_active ? 'Active' : 'Inactive'}
+        <span class="badge ${statusColor(ACTIVE_STATUS_COLORS, level.is_active)}">
+          ${ACTIVE_STATUS_LABELS[level.is_active] || 'Inactive'}
         </span>
       </td>
     </tr>
@@ -216,8 +229,8 @@ function renderJobRolesTable() {
       <td class="px-4 py-3"><p class="text-sm">${role.department ? esc(role.department) : '—'}</p></td>
       <td class="px-4 py-3"><p class="text-sm">${gradesLabel}</p></td>
       <td class="px-4 py-3 text-center">
-        <span class="badge ${role.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}">
-          ${role.is_active ? 'Active' : 'Inactive'}
+        <span class="badge ${statusColor(ACTIVE_STATUS_COLORS, role.is_active)}">
+          ${ACTIVE_STATUS_LABELS[role.is_active] || 'Inactive'}
         </span>
       </td>
     </tr>
@@ -314,7 +327,7 @@ async function loadMeritCycles() {
           ${cycle.budget_pool_amount ? `<p>Budget: ${fmtCurrency(cycle.budget_pool_amount, 0)}</p>` : '<p>—</p>'}
         </td>
         <td class="px-4 py-3">
-          <span class="badge ${cycle.status === 'Active' ? 'bg-blue-100 text-blue-700' : cycle.status === 'Draft' ? 'bg-slate-100 text-slate-600' : 'bg-emerald-100 text-emerald-700'}">
+          <span class="badge ${statusColor(MERIT_CYCLE_STATUS_COLORS, cycle.status)}">
             ${cycle.status}
           </span>
         </td>

@@ -31,6 +31,15 @@ function offerStatusBadge(s) {
     Withdrawn:'bg-slate-200 text-slate-500'};
   return m[s]||'bg-slate-100 text-slate-600';
 }
+// Was two near-identical inline ternaries at the candidate-detail and
+// interviews-list call sites (INTERVIEW_STATUSES, routers/recruitment.py) —
+// one of the two had silently drifted and never gave 'No-Show' its own
+// color, falling through to the same blue as 'Scheduled'.
+function interviewStatusBadge(s) {
+  const m = {Scheduled:'bg-blue-100 text-blue-700',Completed:'bg-green-100 text-green-700',
+    Cancelled:'bg-red-100 text-red-600','No-Show':'bg-slate-200 text-slate-500'};
+  return m[s]||'bg-blue-100 text-blue-700';
+}
 function priorityBadge(p) {
   const m = {Low:'bg-slate-100 text-slate-500',Normal:'bg-blue-50 text-blue-600',
     High:'bg-orange-100 text-orange-700',Urgent:'bg-red-100 text-red-700'};
@@ -430,7 +439,7 @@ async function openCandDetail(candId) {
     <div class="border border-slate-200 rounded-xl p-4 mb-3">
       <div class="flex items-center justify-between mb-2">
         <div><p class="font-medium text-sm">${esc(i.interview_type)} Interview</p><p class="text-xs text-slate-500">${fmtDate(i.scheduled_date)} at ${esc(i.scheduled_time)} · ${i.duration_mins}min</p></div>
-        <span class="badge ${i.status==='Completed'?'bg-green-100 text-green-700':i.status==='Cancelled'?'bg-red-100 text-red-600':'bg-blue-100 text-blue-700'}">${esc(i.status)}</span>
+        <span class="badge ${interviewStatusBadge(i.status)}">${esc(i.status)}</span>
       </div>
       ${i.interviewers?`<p class="text-xs text-slate-500 mb-2">Interviewers: ${esc(i.interviewers)}</p>`:''}
       <div class="flex gap-2 mb-3">
@@ -603,7 +612,7 @@ async function loadInterviews() {
       <td class="px-4 py-3 text-slate-700">${fmtDate(i.scheduled_date)} ${esc(i.scheduled_time)}</td>
       <td class="px-4 py-3 text-slate-500 text-xs hidden lg:table-cell">${esc(i.interviewers||'—')}</td>
       <td class="px-4 py-3 text-center text-slate-700 hidden sm:table-cell">${i.avg_score!=null?parseFloat(i.avg_score).toFixed(1)+'/5':'—'}</td>
-      <td class="px-4 py-3"><span class="badge ${i.status==='Completed'?'bg-green-100 text-green-700':i.status==='Cancelled'?'bg-red-100 text-red-600':i.status==='No-Show'?'bg-slate-200 text-slate-500':'bg-blue-100 text-blue-700'}">${esc(i.status)}</span></td>
+      <td class="px-4 py-3"><span class="badge ${interviewStatusBadge(i.status)}">${esc(i.status)}</span></td>
       <td class="px-4 py-3 text-right flex gap-1 justify-end">
         ${i.status==='Scheduled'?`<button class="btn-ghost text-xs" onclick="markIntStatus(${i.id},'Completed')">Done</button>`:''}
         <button class="btn-ghost text-xs" onclick="openScoreModal(${i.id},'${esc(fmtDate(i.scheduled_date))} — ${esc(i.interview_type)}')">Score</button>

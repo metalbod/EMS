@@ -1,11 +1,13 @@
 // Onboarding / Offboarding
 // ---------------------------------------------------------------------------
 let viewingObId=null, obCurrentType='onboarding', obTemplatesCache={};
-const OB_ROLE_COLORS={employee:'bg-purple-100 text-purple-700',manager:'bg-amber-100 text-amber-700',hr_admin:'bg-cyan-100 text-cyan-700',hr_manager:'bg-blue-100 text-blue-700',payroll_manager:'bg-emerald-100 text-emerald-700',compensation_manager:'bg-rose-100 text-rose-700'};
 const OB_ROLE_LABELS={employee:'Employee',manager:'Manager',hr_admin:'HR Admin',hr_manager:'HR Manager',payroll_manager:'Payroll Manager',compensation_manager:'Compensation Manager'};
 // Custom roles (Settings > Roles) have no fixed color/label above — fall
 // back to a neutral badge and the role's own display_name from rolesCache.
-function obRoleColor(role){ return statusColor(OB_ROLE_COLORS, role); }
+// Colors come from core.js's shared ROLE_BADGE_COLORS, not a local map —
+// see its own comment for why role colors specifically are shared across
+// files rather than kept per-module like the other *_COLORS maps.
+function obRoleColor(role){ return statusColor(ROLE_BADGE_COLORS, role); }
 function obRoleLabel(role){ return OB_ROLE_LABELS[role]||rolesCache.find(r=>r.role_key===role)?.display_name||role; }
 
 // Matches routers/onboarding.py's OB_DUE_DATE_RULES — a template item's

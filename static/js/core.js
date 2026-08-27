@@ -226,6 +226,26 @@ function statusColor(map, value, fallback = 'bg-slate-100 text-slate-600') {
   return map[value] || fallback;
 }
 
+// Unlike the *_COLORS maps above (kept one-per-module on purpose — each
+// domain's statuses are genuinely different data), a role name maps to
+// exactly one color regardless of which page is asking: onboarding.js's
+// assigned-role badge and users.js's user-role badge were each hand-
+// rolling their own near-identical map (independently drifted on
+// employee/compensation_manager's color) instead of sharing this. users.js
+// additionally had a hollowed-out `||''` fallback instead of statusColor()'s
+// safe default — any per-institution custom role (core/roles.py) not in
+// the hardcoded list rendered with no badge styling at all. Built-in roles
+// only; a custom role falls through to statusColor()'s neutral default.
+const ROLE_BADGE_COLORS = {
+  superadmin: 'bg-purple-100 text-purple-700',
+  hr_manager: 'bg-blue-100 text-blue-700',
+  hr_admin: 'bg-cyan-100 text-cyan-700',
+  manager: 'bg-amber-100 text-amber-700',
+  payroll_manager: 'bg-emerald-100 text-emerald-700',
+  compensation_manager: 'bg-pink-100 text-pink-700',
+  employee: 'bg-slate-100 text-slate-600',
+};
+
 // ---------------------------------------------------------------------------
 // API helper
 // ---------------------------------------------------------------------------
