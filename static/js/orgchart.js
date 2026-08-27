@@ -207,19 +207,19 @@ function renderOrgList(nodes) {
     const collapsed=orgCollapsed.has(id);
     const active=n.status==='Active';
     const toggle=hasKids
-      ?`<button onclick="event.stopPropagation();orgToggleCollapse('${id}')" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-slate-400 hover:text-slate-700 rounded hover:bg-slate-100" title="${collapsed?'Expand':'Collapse'}">
+      ?`<button onclick="event.stopPropagation();orgToggleCollapse('${id}')" class="w-5 h-5 shrink-0 flex items-center justify-center text-slate-400 hover:text-slate-700 rounded-sm hover:bg-slate-100" title="${collapsed?'Expand':'Collapse'}">
           <svg class="w-3.5 h-3.5 transition-transform ${collapsed?'':'rotate-90'}" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.21 5.23a.75.75 0 011.06.02l4.5 4.75a.75.75 0 010 1.04l-4.5 4.75a.75.75 0 11-1.08-1.04L11.168 10 7.23 5.79a.75.75 0 01-.02-1.06z" clip-rule="evenodd"/></svg>
         </button>`
-      :`<span class="w-5 h-5 flex-shrink-0"></span>`;
-    const childCount=hasKids?`<span class="text-[10px] text-slate-400 flex-shrink-0">${collapsed?countDescendants(id)+' hidden':kids.length}</span>`:'';
+      :`<span class="w-5 h-5 shrink-0"></span>`;
+    const childCount=hasKids?`<span class="text-[10px] text-slate-400 shrink-0">${collapsed?countDescendants(id)+' hidden':kids.length}</span>`:'';
     const row=`<div class="flex items-center gap-1.5 py-1.5 px-2 rounded-lg hover:bg-slate-50 group">
         ${toggle}
-        <span class="w-2 h-2 rounded-full flex-shrink-0 ${active?'bg-emerald-500':'bg-slate-300'}"></span>
-        <button onclick="orgFocus('${id}')" class="text-sm font-medium text-slate-800 hover:text-blue-600 truncate text-left flex-shrink-0 max-w-[220px]">${esc(displayName(n.full_name,n.preferred_name))}</button>
+        <span class="w-2 h-2 rounded-full shrink-0 ${active?'bg-emerald-500':'bg-slate-300'}"></span>
+        <button onclick="orgFocus('${id}')" class="text-sm font-medium text-slate-800 hover:text-blue-600 truncate text-left shrink-0 max-w-[220px]">${esc(displayName(n.full_name,n.preferred_name))}</button>
         <span class="text-xs text-slate-400 truncate">${esc(n.designation)}</span>
-        <span class="text-[10px] text-slate-400 truncate ml-auto flex-shrink-0 hidden sm:inline">${esc(n.department)}</span>
+        <span class="text-[10px] text-slate-400 truncate ml-auto shrink-0 hidden sm:inline">${esc(n.department)}</span>
         ${childCount}
-        <button onclick="event.stopPropagation();viewEmployee('${id}')" class="opacity-0 group-hover:opacity-100 flex-shrink-0 text-slate-400 hover:text-slate-700" title="View profile">
+        <button onclick="event.stopPropagation();viewEmployee('${id}')" class="opacity-0 group-hover:opacity-100 shrink-0 text-slate-400 hover:text-slate-700" title="View profile">
           <svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z"/><path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/></svg>
         </button>
       </div>`;
@@ -247,8 +247,8 @@ function renderOrgBreadcrumb(byId) {
     const next=byId[cur].reports_to;
     cur=(next&&next!==cur&&byId[next])?next:null;
   }
-  el.innerHTML=`<button onclick="orgFocus(null)" class="text-blue-600 hover:underline flex-shrink-0">All Employees</button>`+
-    chain.map(n=>`<span class="flex-shrink-0">&rsaquo;</span><button onclick="orgFocus('${n.employee_id}')" class="hover:underline flex-shrink-0 ${n.employee_id===orgRootId?'font-semibold text-slate-700':'text-blue-600'}">${esc(displayName(n.full_name,n.preferred_name))}</button>`).join('');
+  el.innerHTML=`<button onclick="orgFocus(null)" class="text-blue-600 hover:underline shrink-0">All Employees</button>`+
+    chain.map(n=>`<span class="shrink-0">&rsaquo;</span><button onclick="orgFocus('${n.employee_id}')" class="hover:underline shrink-0 ${n.employee_id===orgRootId?'font-semibold text-slate-700':'text-blue-600'}">${esc(displayName(n.full_name,n.preferred_name))}</button>`).join('');
 }
 
 // ---------------------------------------------------------------------------

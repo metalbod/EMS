@@ -58,8 +58,11 @@ jobs:
           # environment.
           #
           # This step still confirms the build command itself runs to
-          # completion (catches a broken tailwind.config.js, a missing
-          # content glob, etc.), and now additionally emits a non-blocking
+          # completion (catches a broken static/css/tailwind-input.css
+          # config, a missing @tailwindcss/cli install, etc. — Tailwind v4
+          # has no tailwind.config.js; config lives in tailwind-input.css
+          # and content detection is automatic), and now additionally
+          # emits a non-blocking
           # ::warning:: if the freshly-built output differs from the
           # committed file — a *warning* has no false-positive-failure cost
           # (an occasional spurious nudge is cheap), so it's safe to leave on

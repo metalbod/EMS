@@ -317,7 +317,7 @@ function loadCompensationDash() {
       document.getElementById('bdPlanUtilEmpty')?.classList.toggle('hidden', s.plan_utilization.length > 0);
       planEl.innerHTML = s.plan_utilization.map(p => `
         <tr class="border-t border-slate-100">
-          <td class="py-1.5 text-xs text-slate-600 truncate max-w-[9rem]" title="${esc(p.plan_name)}">${esc(p.plan_name)}</td>
+          <td class="py-1.5 text-xs text-slate-600 truncate max-w-36" title="${esc(p.plan_name)}">${esc(p.plan_name)}</td>
           <td class="py-1.5 text-xs text-slate-700 text-right">${fmtCurrency(p.claims_claimed_ytd)}</td>
           <td class="py-1.5 text-xs text-slate-700 text-right">${fmtCurrency(p.claims_paid_ytd)}</td>
         </tr>`).join('');
@@ -428,7 +428,7 @@ async function loadDashboardTodos() {
     return `
     <div class="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-50 cursor-pointer transition" onclick="${onclick}">
       <span class="text-sm text-slate-700">${esc(t.label)}</span>
-      <svg class="w-4 h-4 text-slate-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+      <svg class="w-4 h-4 text-slate-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
     </div>`;
   }).join('');
 }
@@ -571,7 +571,7 @@ function renderLeaveCalendarGrid(entries, holidays, obItems, docExpiries) {
     const shown = dayItems.slice(0, 3);
     const rest = dayItems.slice(3);
     const holidayChips = dayHolidays.map(h => `
-      <div class="text-xs bg-rose-50 text-rose-700 rounded px-1 py-0.5 truncate font-medium" title="${esc(h.name)}">
+      <div class="text-xs bg-rose-50 text-rose-700 rounded-sm px-1 py-0.5 truncate font-medium" title="${esc(h.name)}">
         ${esc(h.name)}
       </div>`).join('');
     const chipInner = item => {
@@ -593,7 +593,7 @@ function renderLeaveCalendarGrid(entries, holidays, obItems, docExpiries) {
       return item.de.status === 'overdue' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-800';
     };
     const chips = shown.map(item => `
-      <div class="text-xs ${chipClass(item)} rounded px-1 py-0.5 truncate" title="${chipTitle(item)}">
+      <div class="text-xs ${chipClass(item)} rounded-sm px-1 py-0.5 truncate" title="${chipTitle(item)}">
         ${chipInner(item)}
       </div>`).join('');
     const extraLabel = rest.length > 0 ? `
@@ -737,7 +737,7 @@ function renderLeaveDashRanking(containerId, list, barColor) {
   document.getElementById(containerId + 'Empty').classList.toggle('hidden', list.length > 0);
   el.innerHTML = list.map((e, i) => `
     <div class="flex items-center gap-2">
-      <div class="w-5 text-xs text-slate-400 text-right flex-shrink-0">${i + 1}</div>
+      <div class="w-5 text-xs text-slate-400 text-right shrink-0">${i + 1}</div>
       <div class="w-28 text-xs text-slate-700 truncate cursor-default leave-emp-name" title="${esc(displayName(e.full_name,e.preferred_name))}"
            data-breakdown='${JSON.stringify({ name: displayName(e.full_name,e.preferred_name), department: e.department, breakdown: e.breakdown }).replace(/'/g,"&apos;")}'>
         ${esc(displayName(e.full_name,e.preferred_name))}

@@ -110,7 +110,7 @@ function renderEmpColumnsPicker() {
   ensureEmpColumnPrefsLoaded();
   document.getElementById('empColumnsList').innerHTML = empAvailableColumns().map(c => `
     <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer py-0.5">
-      <input type="checkbox" class="rounded" ${empVisibleColumns.has(c.key)?'checked':''} onchange="toggleEmpColumn('${c.key}')"/>
+      <input type="checkbox" class="rounded-sm" ${empVisibleColumns.has(c.key)?'checked':''} onchange="toggleEmpColumn('${c.key}')"/>
       ${esc(c.label)}
     </label>`).join('');
 }
@@ -162,7 +162,7 @@ function renderEmpTable() {
     <tr class="hover:bg-slate-50 transition cursor-pointer" onclick="viewEmployee('${esc(e.employee_id)}')">
       <td class="px-4 py-3">
         <div class="flex items-center gap-3">
-          <div class="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 text-xs font-bold flex-shrink-0">${e.full_name.split(' ').slice(0,2).map(w=>w[0]||'').join('').toUpperCase()}</div>
+          <div class="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 text-xs font-bold shrink-0">${e.full_name.split(' ').slice(0,2).map(w=>w[0]||'').join('').toUpperCase()}</div>
           <p class="font-medium whitespace-nowrap">${esc(combinedName(e.full_name, e.preferred_name))}</p>
         </div>
       </td>
@@ -327,7 +327,7 @@ async function loadRelatedContracts(empId) {
               <p class="text-xs text-slate-500 mt-0.5">${esc(c.designation)} · ${esc(c.department)}</p>
               <p class="text-xs text-slate-400 mt-0.5">${fmtDate(c.start_date)}${c.contract_end_date?' → '+fmtDate(c.contract_end_date):' → present'}</p>
             </div>
-            <svg class="w-4 h-4 text-slate-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+            <svg class="w-4 h-4 text-slate-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
           </div>`).join('')}</div>`
         :`<p class="text-xs text-slate-400">No other contracts on record for this person.</p>${canRehire?'':`<p class="text-xs text-slate-400 mt-1">Contact HR to process a rehire.</p>`}`}
       </div>`;

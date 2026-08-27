@@ -491,7 +491,7 @@ async function loadTimesheetApprovals() {
   if(!rows.length){ listEl.innerHTML=''; emptyEl?.classList.remove('hidden'); return; }
   emptyEl?.classList.add('hidden');
   listEl.innerHTML=rows.map(t=>`
-    <div class="bg-white border border-slate-200 rounded-xl p-4 cursor-pointer hover:shadow-sm transition" onclick="openTimesheetDetail(${t.id})">
+    <div class="bg-white border border-slate-200 rounded-xl p-4 cursor-pointer hover:shadow-xs transition" onclick="openTimesheetDetail(${t.id})">
       <div class="flex items-center justify-between gap-2">
         <div>
           <p class="font-medium text-slate-800">${esc(displayName(t.employee_name,t.employee_preferred_name))}</p>
@@ -545,10 +545,10 @@ async function loadTimesheetDetailOvertime(tsId) {
   wrap.classList.remove('hidden');
   list.innerHTML=records.map(o=>`
     <div class="flex items-center gap-3 bg-slate-50 rounded-lg px-3 py-2">
-      <span class="text-sm text-slate-700 flex-shrink-0">${fmtDate(o.work_date)}</span>
-      <span class="text-xs text-slate-500 flex-shrink-0">${o.logged_hours}h logged, ${o.threshold_hours}h normal</span>
-      <span class="text-sm font-medium text-amber-700 flex-shrink-0">+${o.overtime_hours}h OT</span>
-      <span class="badge ${statusColor(OT_STATUS_COLORS, o.status)} text-xs flex-shrink-0">${o.status}</span>
+      <span class="text-sm text-slate-700 shrink-0">${fmtDate(o.work_date)}</span>
+      <span class="text-xs text-slate-500 shrink-0">${o.logged_hours}h logged, ${o.threshold_hours}h normal</span>
+      <span class="text-sm font-medium text-amber-700 shrink-0">+${o.overtime_hours}h OT</span>
+      <span class="badge ${statusColor(OT_STATUS_COLORS, o.status)} text-xs shrink-0">${o.status}</span>
       <span class="flex-1"></span>
       ${o.status==='Pending'?`
         <button onclick="reviewOvertime(${o.id},${tsId},'Approved')" class="btn-primary text-xs px-2 py-1">Approve</button>

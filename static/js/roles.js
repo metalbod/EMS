@@ -148,13 +148,13 @@ function renderPermissionMatrix() {
           const isOverridden = isEditable && a.access_default && a.access_default[r] !== status;
           if (!isEditable) {
             return `<td class="px-2 py-2.5 text-center align-top">
-              <span class="inline-block text-[10px] font-semibold px-2 py-1 rounded ${style.cls}" title="${esc(labels[r] || r)}: ${style.label}">${style.label}</span>
+              <span class="inline-block text-[10px] font-semibold px-2 py-1 rounded-sm ${style.cls}" title="${esc(labels[r] || r)}: ${style.label}">${style.label}</span>
             </td>`;
           }
           const nextVal = status === 'allow' ? 'deny' : 'allow';
           return `<td class="px-2 py-2.5 text-center align-top">
             <button onclick="matrixSetOverride('${esc(a.key)}','${esc(r)}','${nextVal}')"
-                    class="inline-block text-[10px] font-semibold px-2 py-1 rounded ${style.cls} ring-2 ring-offset-1 ${isOverridden ? 'ring-slate-400' : 'ring-transparent'} hover:ring-slate-300 cursor-pointer"
+                    class="inline-block text-[10px] font-semibold px-2 py-1 rounded-sm ${style.cls} ring-2 ring-offset-1 ${isOverridden ? 'ring-slate-400' : 'ring-transparent'} hover:ring-slate-300 cursor-pointer"
                     title="${esc(labels[r] || r)}: ${style.label} — click to set ${nextVal === 'allow' ? 'Allowed' : 'Denied'}${isOverridden ? ' (customized for this institution)' : ''}">
               ${style.label}
             </button>
@@ -165,7 +165,7 @@ function renderPermissionMatrix() {
     return `
       <div class="border-t border-slate-200 first:border-t-0">
         <button onclick="matrixToggleModule('${esc(mod.module)}')" class="w-full flex items-center gap-2 px-4 py-2.5 bg-slate-50 hover:bg-slate-100 text-left">
-          <svg class="w-3.5 h-3.5 text-slate-400 transition-transform flex-shrink-0 ${expanded ? 'rotate-90' : ''}" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.21 5.23a.75.75 0 011.06.02l4.5 4.75a.75.75 0 010 1.04l-4.5 4.75a.75.75 0 11-1.08-1.04L11.168 10 7.23 5.79a.75.75 0 01-.02-1.06z" clip-rule="evenodd"/></svg>
+          <svg class="w-3.5 h-3.5 text-slate-400 transition-transform shrink-0 ${expanded ? 'rotate-90' : ''}" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.21 5.23a.75.75 0 011.06.02l4.5 4.75a.75.75 0 010 1.04l-4.5 4.75a.75.75 0 11-1.08-1.04L11.168 10 7.23 5.79a.75.75 0 01-.02-1.06z" clip-rule="evenodd"/></svg>
           <span class="text-sm font-semibold text-slate-700">${esc(mod.module)}</span>
           <span class="text-xs text-slate-400">${actions.length} action${actions.length !== 1 ? 's' : ''}</span>
         </button>

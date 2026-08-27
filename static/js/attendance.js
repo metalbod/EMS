@@ -16,7 +16,7 @@ const ATT_STATUS_COLORS = {
 
 function attStatusBadge(status) {
   const cls = statusColor(ATT_STATUS_COLORS, status);
-  return `<span class="px-2 py-0.5 rounded text-xs font-medium ${cls}">${esc(status)}</span>`;
+  return `<span class="px-2 py-0.5 rounded-sm text-xs font-medium ${cls}">${esc(status)}</span>`;
 }
 
 function attCaptureGeo() {

@@ -58,7 +58,7 @@ function renderGoalRow(g, editable) {
         <span class="font-medium text-slate-800 ml-2">${esc(g.title)}</span>
         <span class="text-xs text-slate-400 ml-2">(${g.weight}%)</span>
       </div>
-      ${editable?`<div class="flex gap-2 flex-shrink-0">
+      ${editable?`<div class="flex gap-2 shrink-0">
         <button onclick='openGoalModal(${JSON.stringify(g).replace(/'/g,"&apos;")})' class="text-xs text-blue-600 hover:underline">Edit</button>
         <button onclick="deleteGoal(${g.id})" class="text-xs text-red-600 hover:underline">Delete</button>
       </div>`:''}

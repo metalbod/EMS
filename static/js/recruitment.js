@@ -499,7 +499,7 @@ async function loadCandHistory() {
   el.innerHTML=`<div class="relative pl-6 border-l-2 border-slate-200 space-y-5">
     ${rows.map(r=>`
       <div class="relative">
-        <span class="absolute -left-[1.65rem] top-0.5 text-base">${actionIcon[r.action]||'•'}</span>
+        <span class="absolute left-[-1.65rem] top-0.5 text-base">${actionIcon[r.action]||'•'}</span>
         <p class="text-sm font-medium text-slate-800">${esc(r.action)}</p>
         ${r.detail?`<p class="text-xs text-slate-500 mt-0.5">${esc(r.detail)}</p>`:''}
         <p class="text-xs text-slate-400 mt-1">${esc(r.performed_by)} · ${fmtDateTime(r.created_at)}</p>

@@ -175,20 +175,20 @@ function renderAwSteps() {
   wrap.innerHTML = steps.map((s, idx) => {
     const detail = s.approver_type==='specific_employee' ? empName(s.specific_employee_id) : '';
     const altDetail = s.alt_approver_type ?
-      `<span class="text-xs text-slate-400 flex-shrink-0">OR</span>
-       <span class="badge bg-purple-100 text-purple-700 text-xs flex-shrink-0">${AW_STEP_LABELS[s.alt_approver_type]||s.alt_approver_type}</span>
-       ${s.alt_approver_type==='specific_employee' ? `<span class="text-sm text-slate-600 flex-shrink-0">${empName(s.alt_specific_employee_id)}</span>` : ''}` : '';
+      `<span class="text-xs text-slate-400 shrink-0">OR</span>
+       <span class="badge bg-purple-100 text-purple-700 text-xs shrink-0">${AW_STEP_LABELS[s.alt_approver_type]||s.alt_approver_type}</span>
+       ${s.alt_approver_type==='specific_employee' ? `<span class="text-sm text-slate-600 shrink-0">${empName(s.alt_specific_employee_id)}</span>` : ''}` : '';
     return `<div class="flex items-center gap-3 py-2.5 px-3 border border-slate-100 rounded-lg flex-wrap">
-      <span class="text-xs font-semibold text-slate-400 w-14 flex-shrink-0">Step ${idx+1}</span>
-      <div class="flex flex-col flex-shrink-0">
+      <span class="text-xs font-semibold text-slate-400 w-14 shrink-0">Step ${idx+1}</span>
+      <div class="flex flex-col shrink-0">
         <button onclick="moveAwStep(${s.id},'up')" ${idx===0?'disabled':''} class="text-slate-300 hover:text-blue-500 disabled:opacity-30" title="Move up"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg></button>
         <button onclick="moveAwStep(${s.id},'down')" ${idx===steps.length-1?'disabled':''} class="text-slate-300 hover:text-blue-500 disabled:opacity-30" title="Move down"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg></button>
       </div>
-      <span class="badge bg-indigo-100 text-indigo-700 text-xs flex-shrink-0">${AW_STEP_LABELS[s.approver_type]||s.approver_type}</span>
-      ${detail ? `<span class="text-sm text-slate-600 flex-shrink-0">${detail}</span>` : ''}
+      <span class="badge bg-indigo-100 text-indigo-700 text-xs shrink-0">${AW_STEP_LABELS[s.approver_type]||s.approver_type}</span>
+      ${detail ? `<span class="text-sm text-slate-600 shrink-0">${detail}</span>` : ''}
       ${altDetail}
       <span class="flex-1"></span>
-      <button onclick="deleteAwStep(${s.id})" class="text-slate-300 hover:text-red-500 flex-shrink-0" title="Remove"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>
+      <button onclick="deleteAwStep(${s.id})" class="text-slate-300 hover:text-red-500 shrink-0" title="Remove"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>
     </div>`;
   }).join('');
 }

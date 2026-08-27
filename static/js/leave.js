@@ -67,7 +67,7 @@ async function loadLeaveApplications() {
           ${a.notes?`<p class="text-xs text-slate-500 mt-1">Note: ${esc(a.notes)}</p>`:''}
           ${a.attachment?`<a href="${a.attachment}" target="_blank" class="text-xs text-blue-600 hover:underline mt-1 inline-block">View attachment</a>`:''}
         </div>
-        ${(a.status==='Pending Approval'||a.status==='Approved')?`<button onclick="cancelLeaveApplication(${a.id})" class="text-xs text-red-600 hover:text-red-700 flex-shrink-0">Cancel</button>`:''}
+        ${(a.status==='Pending Approval'||a.status==='Approved')?`<button onclick="cancelLeaveApplication(${a.id})" class="text-xs text-red-600 hover:text-red-700 shrink-0">Cancel</button>`:''}
       </div>
       <p class="text-xs text-slate-400 mt-2">Applied ${fmtDate(a.created_at)}</p>
     </div>`).join('');
