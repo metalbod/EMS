@@ -780,7 +780,15 @@ def upgrade() -> None:
         ("payslips", "eis_employee"), ("payslips", "eis_employer"),
         ("payslips", "pcb"), ("payslips", "net_pay"),
         ("payslips", "overtime_pay"), ("payslips", "bonus_amount"),
-        ("performance_payouts", "amount"),
+        # performance_payouts.amount deliberately NOT here: that table is
+        # created later in this same migration (see below), already with
+        # amount NUMERIC(12,2) from the CREATE TABLE itself, so converting
+        # it here would be redundant on every already-migrated database —
+        # and on a from-scratch bootstrap (empty DB), the table doesn't
+        # exist yet at this point at all, so the ALTER TABLE below would
+        # fail outright (confirmed live: `relation "performance_payouts"
+        # does not exist` is the first error `alembic upgrade head` hits
+        # replaying this chain from empty). Bootstrap-clean fix, part 1/2.
     ]
 
     for tbl, col in _migrate_currency_columns:

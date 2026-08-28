@@ -18,6 +18,20 @@ replaying every historical migration, same situation noted in
 user who had ended an employee_location_assignments row failed with
 psycopg2.errors.ForeignKeyViolation on
 employee_location_assignments_ended_by_user_id_fkey.
+
+Bootstrap-clean fix (2/2, 2026-08-29): the hardcoded drop below assumed
+that same real-DB-only name, so a from-scratch replay of this chain
+against an empty database fails here — a literal replay of
+20260719_0002's own op.create_foreign_key() call really does produce
+'fk_assignment_ended_by_user', confirmed live. Rather than hardcode a
+second, equally environment-specific guess, the drop now looks up
+whatever the actual constraint name is (covers both cases, and any other
+naming this table's history hasn't surfaced yet) and drops that.
+location_capacity_alerts' constraint isn't touched by this fix — it was
+created via an unnamed ForeignKeyConstraint in 20260719_0002, so Postgres's
+default-naming convention already produces the same name
+('location_capacity_alerts_acknowledged_by_user_id_fkey') on a fresh
+bootstrap as on every real database; confirmed live, no drift there.
 """
 from alembic import op
 import sqlalchemy as sa
@@ -31,7 +45,25 @@ depends_on = None
 
 
 def upgrade():
-    op.drop_constraint('employee_location_assignments_ended_by_user_id_fkey', 'employee_location_assignments', type_='foreignkey')
+    op.execute("""
+        DO $$
+        DECLARE
+            cname text;
+        BEGIN
+            SELECT tc.constraint_name INTO cname
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.key_column_usage kcu
+                ON tc.constraint_name = kcu.constraint_name
+                AND tc.table_schema = kcu.table_schema
+            WHERE tc.table_schema = 'public'
+              AND tc.table_name = 'employee_location_assignments'
+              AND tc.constraint_type = 'FOREIGN KEY'
+              AND kcu.column_name = 'ended_by_user_id';
+            IF cname IS NOT NULL THEN
+                EXECUTE format('ALTER TABLE employee_location_assignments DROP CONSTRAINT %I', cname);
+            END IF;
+        END $$;
+    """)
     op.create_foreign_key(
         'employee_location_assignments_ended_by_user_id_fkey', 'employee_location_assignments',
         'users', ['ended_by_user_id'], ['id'], ondelete='SET NULL',
