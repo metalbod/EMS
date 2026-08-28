@@ -23,19 +23,38 @@ const MERIT_CYCLE_STATUS_COLORS = {Draft: 'bg-slate-100 text-slate-600', Active:
 // PAY GRADES MANAGEMENT
 // ============================================================================
 
+const payGradesList = createListState({ sortKey: 'grade_level' });
+
 async function loadPayGrades() {
   const res = await api('/api/compensation/pay-grades');
   if (!res || !res.ok) return;
   payGrades = await res.json();
+  payGradesList.resetPage();
   renderPayGradesTable();
 }
+
+function setPayGradesSort(key) { payGradesList.setSort(key); renderPayGradesTable(); }
+function setPayGradesPageSize(size) { payGradesList.setPageSize(size); renderPayGradesTable(); }
+function payGradesPagePrev() { payGradesList.prevPage(); renderPayGradesTable(); }
+function payGradesPageNext() { payGradesList.nextPage(payGrades.length); renderPayGradesTable(); }
 
 function renderPayGradesTable() {
   const tbody = document.getElementById('payGradesTableBody');
   if (!tbody) return;
   document.getElementById('payGradesEmptyState')?.classList.toggle('hidden', payGrades.length > 0);
+  payGradesList.updateSortArrows('.pay-grades-sort-arrow');
 
-  tbody.innerHTML = payGrades.map(grade => `
+  const pagination = document.getElementById('payGradesPagination');
+  if (!payGrades.length) { pagination?.classList.add('hidden'); tbody.innerHTML = ''; return; }
+  pagination?.classList.remove('hidden');
+  const pageSizeEl = document.getElementById('payGradesPageSize');
+  if (pageSizeEl) pageSizeEl.value = String(payGradesList.pageSize);
+
+  const { pageItems, start, total } = payGradesList.view(payGrades);
+  const pageInfoEl = document.getElementById('payGradesPageInfo');
+  if (pageInfoEl) pageInfoEl.textContent = `${start + 1}-${Math.min(start + payGradesList.pageSize, total)} of ${total}`;
+
+  tbody.innerHTML = pageItems.map(grade => `
     <tr class="hover:bg-slate-50 transition cursor-pointer" onclick="editPayGrade(${grade.id})">
       <td class="px-4 py-3">
         <div>
@@ -131,19 +150,38 @@ function editPayGrade(gradeId) {
 // JOB LEVELS MANAGEMENT
 // ============================================================================
 
+const jobLevelsList = createListState({ sortKey: 'level_order' });
+
 async function loadJobLevels() {
   const res = await api('/api/compensation/job-levels');
   if (!res || !res.ok) return;
   jobLevels = await res.json();
+  jobLevelsList.resetPage();
   renderJobLevelsTable();
 }
+
+function setJobLevelsSort(key) { jobLevelsList.setSort(key); renderJobLevelsTable(); }
+function setJobLevelsPageSize(size) { jobLevelsList.setPageSize(size); renderJobLevelsTable(); }
+function jobLevelsPagePrev() { jobLevelsList.prevPage(); renderJobLevelsTable(); }
+function jobLevelsPageNext() { jobLevelsList.nextPage(jobLevels.length); renderJobLevelsTable(); }
 
 function renderJobLevelsTable() {
   const tbody = document.getElementById('jobLevelsTableBody');
   if (!tbody) return;
   document.getElementById('jobLevelsEmptyState')?.classList.toggle('hidden', jobLevels.length > 0);
+  jobLevelsList.updateSortArrows('.job-levels-sort-arrow');
 
-  tbody.innerHTML = jobLevels.map(level => `
+  const pagination = document.getElementById('jobLevelsPagination');
+  if (!jobLevels.length) { pagination?.classList.add('hidden'); tbody.innerHTML = ''; return; }
+  pagination?.classList.remove('hidden');
+  const pageSizeEl = document.getElementById('jobLevelsPageSize');
+  if (pageSizeEl) pageSizeEl.value = String(jobLevelsList.pageSize);
+
+  const { pageItems, start, total } = jobLevelsList.view(jobLevels);
+  const pageInfoEl = document.getElementById('jobLevelsPageInfo');
+  if (pageInfoEl) pageInfoEl.textContent = `${start + 1}-${Math.min(start + jobLevelsList.pageSize, total)} of ${total}`;
+
+  tbody.innerHTML = pageItems.map(level => `
     <tr class="hover:bg-slate-50 transition">
       <td class="px-4 py-3">
         <p class="font-medium">${esc(level.level_code)}</p>
@@ -201,21 +239,40 @@ function closeJobLevelModal() {
 // JOB ROLES MANAGEMENT
 // ============================================================================
 
+const jobRolesList = createListState({ sortKey: 'role_code' });
+
 async function loadJobRoles() {
   const res = await api('/api/compensation/job-roles');
   if (!res || !res.ok) return;
   jobRoles = await res.json();
+  jobRolesList.resetPage();
   renderJobRolesTable();
 }
+
+function setJobRolesSort(key) { jobRolesList.setSort(key); renderJobRolesTable(); }
+function setJobRolesPageSize(size) { jobRolesList.setPageSize(size); renderJobRolesTable(); }
+function jobRolesPagePrev() { jobRolesList.prevPage(); renderJobRolesTable(); }
+function jobRolesPageNext() { jobRolesList.nextPage(jobRoles.length); renderJobRolesTable(); }
 
 function renderJobRolesTable() {
   const tbody = document.getElementById('jobRolesTableBody');
   if (!tbody) return;
   document.getElementById('jobRolesEmptyState')?.classList.toggle('hidden', jobRoles.length > 0);
+  jobRolesList.updateSortArrows('.job-roles-sort-arrow');
+
+  const pagination = document.getElementById('jobRolesPagination');
+  if (!jobRoles.length) { pagination?.classList.add('hidden'); tbody.innerHTML = ''; return; }
+  pagination?.classList.remove('hidden');
+  const pageSizeEl = document.getElementById('jobRolesPageSize');
+  if (pageSizeEl) pageSizeEl.value = String(jobRolesList.pageSize);
+
+  const { pageItems, start, total } = jobRolesList.view(jobRoles);
+  const pageInfoEl = document.getElementById('jobRolesPageInfo');
+  if (pageInfoEl) pageInfoEl.textContent = `${start + 1}-${Math.min(start + jobRolesList.pageSize, total)} of ${total}`;
 
   // Grade mappings now come embedded in each role from /job-roles itself
   // (see JobRoleListItem on the backend) — no more one request per role.
-  tbody.innerHTML = jobRoles.map(role => {
+  tbody.innerHTML = pageItems.map(role => {
     const level = jobLevels.find(l => l.id === role.job_level_id);
     const grades = role.pay_grades || [];
     const gradesLabel = grades.length
@@ -304,16 +361,37 @@ async function submitJobRoleForm(e) {
 let meritCycles = [];
 let meritRecommendations = [];
 let currentMeritCycleId = null;
+const meritCyclesList = createListState({ sortKey: 'review_year', sortDir: 'desc' });
 
 async function loadMeritCycles() {
   const res = await api('/api/compensation/merit-cycles');
   if (!res || !res.ok) return;
   meritCycles = await res.json();
+  meritCyclesList.resetPage();
+  renderMeritCyclesTable();
+}
 
+function setMeritCyclesSort(key) { meritCyclesList.setSort(key); renderMeritCyclesTable(); }
+function setMeritCyclesPageSize(size) { meritCyclesList.setPageSize(size); renderMeritCyclesTable(); }
+function meritCyclesPagePrev() { meritCyclesList.prevPage(); renderMeritCyclesTable(); }
+function meritCyclesPageNext() { meritCyclesList.nextPage(meritCycles.length); renderMeritCyclesTable(); }
+
+function renderMeritCyclesTable() {
   const tbody = document.getElementById('meritCyclesTableBody');
   document.getElementById('meritCyclesEmptyState')?.classList.toggle('hidden', meritCycles.length > 0);
-  if (tbody) {
-    tbody.innerHTML = meritCycles.map(cycle => `
+  meritCyclesList.updateSortArrows('.merit-cycles-sort-arrow');
+  const pagination = document.getElementById('meritCyclesPagination');
+  if (!tbody) return;
+  if (!meritCycles.length) { pagination?.classList.add('hidden'); tbody.innerHTML = ''; return; }
+  pagination?.classList.remove('hidden');
+  const pageSizeEl = document.getElementById('meritCyclesPageSize');
+  if (pageSizeEl) pageSizeEl.value = String(meritCyclesList.pageSize);
+
+  const { pageItems, start, total } = meritCyclesList.view(meritCycles);
+  const pageInfoEl = document.getElementById('meritCyclesPageInfo');
+  if (pageInfoEl) pageInfoEl.textContent = `${start + 1}-${Math.min(start + meritCyclesList.pageSize, total)} of ${total}`;
+
+  tbody.innerHTML = pageItems.map(cycle => `
       <tr class="hover:bg-slate-50 transition cursor-pointer" onclick="openMeritCycleDetail(${cycle.id})">
         <td class="px-4 py-3">
           <p class="font-medium">${esc(cycle.cycle_name)}</p>
@@ -333,7 +411,6 @@ async function loadMeritCycles() {
         </td>
       </tr>
     `).join('');
-  }
 }
 
 // ============================================================================
@@ -518,17 +595,36 @@ let bonusPlans = [];
 let bonusPayouts = [];
 let currentBonusPlanId = null;
 
+const bonusPlansList = createListState({ sortKey: 'plan_name' });
+
 async function loadBonusPlans() {
   const res = await api('/api/compensation/bonus-plans');
   if (!res || !res.ok) return;
   bonusPlans = await res.json();
+  bonusPlansList.resetPage();
   renderBonusPlansTable();
 }
+
+function setBonusPlansSort(key) { bonusPlansList.setSort(key); renderBonusPlansTable(); }
+function setBonusPlansPageSize(size) { bonusPlansList.setPageSize(size); renderBonusPlansTable(); }
+function bonusPlansPagePrev() { bonusPlansList.prevPage(); renderBonusPlansTable(); }
+function bonusPlansPageNext() { bonusPlansList.nextPage(bonusPlans.length); renderBonusPlansTable(); }
 
 function renderBonusPlansTable() {
   const tbody = document.getElementById('bonusPlansTableBody');
   if (!tbody) return;
   document.getElementById('bonusPlansEmptyState')?.classList.toggle('hidden', bonusPlans.length > 0);
+  bonusPlansList.updateSortArrows('.bonus-plans-sort-arrow');
+
+  const pagination = document.getElementById('bonusPlansPagination');
+  if (!bonusPlans.length) { pagination?.classList.add('hidden'); tbody.innerHTML = ''; return; }
+  pagination?.classList.remove('hidden');
+  const pageSizeEl = document.getElementById('bonusPlansPageSize');
+  if (pageSizeEl) pageSizeEl.value = String(bonusPlansList.pageSize);
+
+  const { pageItems, start, total } = bonusPlansList.view(bonusPlans);
+  const pageInfoEl = document.getElementById('bonusPlansPageInfo');
+  if (pageInfoEl) pageInfoEl.textContent = `${start + 1}-${Math.min(start + bonusPlansList.pageSize, total)} of ${total}`;
 
   const statusBadge = status => {
     if (status === 'Active') return 'bg-blue-100 text-blue-700';
@@ -536,7 +632,7 @@ function renderBonusPlansTable() {
     return 'bg-slate-100 text-slate-600';
   };
 
-  tbody.innerHTML = bonusPlans.map(plan => `
+  tbody.innerHTML = pageItems.map(plan => `
     <tr class="hover:bg-slate-50 transition cursor-pointer" onclick="openBonusPlanDetail(${plan.id})">
       <td class="px-4 py-3">
         <p class="font-medium">${esc(plan.plan_name)}</p>
@@ -741,17 +837,36 @@ let commissionPlans = [];
 let commissionEntries = [];
 let currentCommissionPlanId = null;
 
+const commissionPlansList = createListState({ sortKey: 'plan_name' });
+
 async function loadCommissionPlans() {
   const res = await api('/api/compensation/commission-plans');
   if (!res || !res.ok) return;
   commissionPlans = await res.json();
+  commissionPlansList.resetPage();
   renderCommissionPlansTable();
 }
+
+function setCommissionPlansSort(key) { commissionPlansList.setSort(key); renderCommissionPlansTable(); }
+function setCommissionPlansPageSize(size) { commissionPlansList.setPageSize(size); renderCommissionPlansTable(); }
+function commissionPlansPagePrev() { commissionPlansList.prevPage(); renderCommissionPlansTable(); }
+function commissionPlansPageNext() { commissionPlansList.nextPage(commissionPlans.length); renderCommissionPlansTable(); }
 
 function renderCommissionPlansTable() {
   const tbody = document.getElementById('commissionPlansTableBody');
   if (!tbody) return;
   document.getElementById('commissionPlansEmptyState')?.classList.toggle('hidden', commissionPlans.length > 0);
+  commissionPlansList.updateSortArrows('.commission-plans-sort-arrow');
+
+  const pagination = document.getElementById('commissionPlansPagination');
+  if (!commissionPlans.length) { pagination?.classList.add('hidden'); tbody.innerHTML = ''; return; }
+  pagination?.classList.remove('hidden');
+  const pageSizeEl = document.getElementById('commissionPlansPageSize');
+  if (pageSizeEl) pageSizeEl.value = String(commissionPlansList.pageSize);
+
+  const { pageItems, start, total } = commissionPlansList.view(commissionPlans);
+  const pageInfoEl = document.getElementById('commissionPlansPageInfo');
+  if (pageInfoEl) pageInfoEl.textContent = `${start + 1}-${Math.min(start + commissionPlansList.pageSize, total)} of ${total}`;
 
   const statusBadge = status => {
     if (status === 'Active') return 'bg-blue-100 text-blue-700';
@@ -759,7 +874,7 @@ function renderCommissionPlansTable() {
     return 'bg-slate-100 text-slate-600';
   };
 
-  tbody.innerHTML = commissionPlans.map(plan => `
+  tbody.innerHTML = pageItems.map(plan => `
     <tr class="hover:bg-slate-50 transition cursor-pointer" onclick="openCommissionPlanDetail(${plan.id})">
       <td class="px-4 py-3">
         <p class="font-medium">${esc(plan.plan_name)}</p>
@@ -981,17 +1096,36 @@ let currentEquityGrantFmv = null;
 let currentEquityVestingEvents = [];
 let currentSettleEventId = null;
 
+const equityGrantsList = createListState({ sortKey: 'vesting_start_date', sortDir: 'desc' });
+
 async function loadEquityGrants() {
   const res = await api('/api/compensation/equity-grants');
   if (!res || !res.ok) return;
   equityGrants = await res.json();
+  equityGrantsList.resetPage();
   renderEquityGrantsTable();
 }
+
+function setEquityGrantsSort(key) { equityGrantsList.setSort(key); renderEquityGrantsTable(); }
+function setEquityGrantsPageSize(size) { equityGrantsList.setPageSize(size); renderEquityGrantsTable(); }
+function equityGrantsPagePrev() { equityGrantsList.prevPage(); renderEquityGrantsTable(); }
+function equityGrantsPageNext() { equityGrantsList.nextPage(equityGrants.length); renderEquityGrantsTable(); }
 
 function renderEquityGrantsTable() {
   const tbody = document.getElementById('equityGrantsTableBody');
   if (!tbody) return;
   document.getElementById('equityGrantsEmptyState')?.classList.toggle('hidden', equityGrants.length > 0);
+  equityGrantsList.updateSortArrows('.equity-grants-sort-arrow');
+
+  const pagination = document.getElementById('equityGrantsPagination');
+  if (!equityGrants.length) { pagination?.classList.add('hidden'); tbody.innerHTML = ''; return; }
+  pagination?.classList.remove('hidden');
+  const pageSizeEl = document.getElementById('equityGrantsPageSize');
+  if (pageSizeEl) pageSizeEl.value = String(equityGrantsList.pageSize);
+
+  const { pageItems, start, total } = equityGrantsList.view(equityGrants);
+  const pageInfoEl = document.getElementById('equityGrantsPageInfo');
+  if (pageInfoEl) pageInfoEl.textContent = `${start + 1}-${Math.min(start + equityGrantsList.pageSize, total)} of ${total}`;
 
   const statusBadge = status => {
     if (status === 'Approved') return 'bg-blue-100 text-blue-700';
@@ -1000,7 +1134,7 @@ function renderEquityGrantsTable() {
     return 'bg-amber-100 text-amber-700';
   };
 
-  tbody.innerHTML = equityGrants.map(g => `
+  tbody.innerHTML = pageItems.map(g => `
     <tr class="hover:bg-slate-50 transition cursor-pointer" onclick="openEquityGrantDetail(${g.id})">
       <td class="px-4 py-3">
         <p class="font-medium">${esc(g.employee_name ? displayName(g.employee_name, g.employee_preferred_name) : g.employee_id)}</p>

@@ -3,18 +3,36 @@
 // ============================================================================
 
 let benefitPlans = [];
+const benefitPlansList = createListState({ sortKey: 'plan_name' });
 
 async function loadBenefitPlans() {
   const res = await api('/api/benefits/plans');
   if (!res || !res.ok) return;
   benefitPlans = await res.json();
+  benefitPlansList.resetPage();
   renderBenefitPlansTable();
 }
+
+function setBenefitPlansSort(key) { benefitPlansList.setSort(key); renderBenefitPlansTable(); }
+function setBenefitPlansPageSize(size) { benefitPlansList.setPageSize(size); renderBenefitPlansTable(); }
+function benefitPlansPagePrev() { benefitPlansList.prevPage(); renderBenefitPlansTable(); }
+function benefitPlansPageNext() { benefitPlansList.nextPage(benefitPlans.length); renderBenefitPlansTable(); }
 
 function renderBenefitPlansTable() {
   const tbody = document.getElementById('benefitPlansTableBody');
   if (!tbody) return;
   document.getElementById('benefitPlansEmptyState')?.classList.toggle('hidden', benefitPlans.length > 0);
+  benefitPlansList.updateSortArrows('.benefit-plans-sort-arrow');
+
+  const pagination = document.getElementById('benefitPlansPagination');
+  if (!benefitPlans.length) { pagination?.classList.add('hidden'); tbody.innerHTML = ''; return; }
+  pagination?.classList.remove('hidden');
+  const pageSizeEl = document.getElementById('benefitPlansPageSize');
+  if (pageSizeEl) pageSizeEl.value = String(benefitPlansList.pageSize);
+
+  const { pageItems, start, total } = benefitPlansList.view(benefitPlans);
+  const pageInfoEl = document.getElementById('benefitPlansPageInfo');
+  if (pageInfoEl) pageInfoEl.textContent = `${start + 1}-${Math.min(start + benefitPlansList.pageSize, total)} of ${total}`;
 
   const statusBadge = status => {
     if (status === 'Active') return 'bg-blue-100 text-blue-700';
@@ -29,7 +47,7 @@ function renderBenefitPlansTable() {
     return fmtCurrency(v);
   };
 
-  tbody.innerHTML = benefitPlans.map(p => `
+  tbody.innerHTML = pageItems.map(p => `
     <tr class="hover:bg-slate-50 transition cursor-pointer" onclick="openBenefitPlanForm(${p.id})">
       <td class="px-4 py-3">
         <p class="font-medium">${esc(p.plan_name)}</p>
@@ -223,18 +241,36 @@ async function submitBenefitPlanForm(e) {
 // ============================================================================
 
 let enrollmentPeriods = [];
+const enrollmentPeriodsList = createListState({ sortKey: 'start_date', sortDir: 'desc' });
 
 async function loadEnrollmentPeriods() {
   const res = await api('/api/benefits/enrollment-periods');
   if (!res || !res.ok) return;
   enrollmentPeriods = await res.json();
+  enrollmentPeriodsList.resetPage();
   renderEnrollmentPeriodsTable();
 }
+
+function setEnrollmentPeriodsSort(key) { enrollmentPeriodsList.setSort(key); renderEnrollmentPeriodsTable(); }
+function setEnrollmentPeriodsPageSize(size) { enrollmentPeriodsList.setPageSize(size); renderEnrollmentPeriodsTable(); }
+function enrollmentPeriodsPagePrev() { enrollmentPeriodsList.prevPage(); renderEnrollmentPeriodsTable(); }
+function enrollmentPeriodsPageNext() { enrollmentPeriodsList.nextPage(enrollmentPeriods.length); renderEnrollmentPeriodsTable(); }
 
 function renderEnrollmentPeriodsTable() {
   const tbody = document.getElementById('enrollmentPeriodsTableBody');
   if (!tbody) return;
   document.getElementById('enrollmentPeriodsEmptyState')?.classList.toggle('hidden', enrollmentPeriods.length > 0);
+  enrollmentPeriodsList.updateSortArrows('.enrollment-periods-sort-arrow');
+
+  const pagination = document.getElementById('enrollmentPeriodsPagination');
+  if (!enrollmentPeriods.length) { pagination?.classList.add('hidden'); tbody.innerHTML = ''; return; }
+  pagination?.classList.remove('hidden');
+  const pageSizeEl = document.getElementById('enrollmentPeriodsPageSize');
+  if (pageSizeEl) pageSizeEl.value = String(enrollmentPeriodsList.pageSize);
+
+  const { pageItems, start, total } = enrollmentPeriodsList.view(enrollmentPeriods);
+  const pageInfoEl = document.getElementById('enrollmentPeriodsPageInfo');
+  if (pageInfoEl) pageInfoEl.textContent = `${start + 1}-${Math.min(start + enrollmentPeriodsList.pageSize, total)} of ${total}`;
 
   const statusBadge = status => {
     if (status === 'Open') return 'bg-emerald-100 text-emerald-700';
@@ -242,7 +278,7 @@ function renderEnrollmentPeriodsTable() {
     return 'bg-amber-100 text-amber-700';
   };
 
-  tbody.innerHTML = enrollmentPeriods.map(p => `
+  tbody.innerHTML = pageItems.map(p => `
     <tr>
       <td class="px-4 py-3 font-medium">${esc(p.period_name)}</td>
       <td class="px-4 py-3">${p.plan_year}</td>
@@ -291,16 +327,37 @@ async function changeEnrollmentPeriodStatus(periodId, status) {
 // BENEFITS: LIFE EVENTS (HR-facing review)
 // ============================================================================
 
+let lifeEvents = [];
+const lifeEventsList = createListState({ sortKey: 'event_date', sortDir: 'desc' });
+
 async function loadLifeEvents() {
   const res = await api('/api/benefits/life-events');
   if (!res || !res.ok) return;
-  renderLifeEventsTable(await res.json());
+  lifeEvents = await res.json();
+  lifeEventsList.resetPage();
+  renderLifeEventsTable();
 }
 
-function renderLifeEventsTable(events) {
+function setLifeEventsSort(key) { lifeEventsList.setSort(key); renderLifeEventsTable(); }
+function setLifeEventsPageSize(size) { lifeEventsList.setPageSize(size); renderLifeEventsTable(); }
+function lifeEventsPagePrev() { lifeEventsList.prevPage(); renderLifeEventsTable(); }
+function lifeEventsPageNext() { lifeEventsList.nextPage(lifeEvents.length); renderLifeEventsTable(); }
+
+function renderLifeEventsTable() {
   const tbody = document.getElementById('lifeEventsTableBody');
   if (!tbody) return;
-  document.getElementById('lifeEventsEmptyState')?.classList.toggle('hidden', events.length > 0);
+  document.getElementById('lifeEventsEmptyState')?.classList.toggle('hidden', lifeEvents.length > 0);
+  lifeEventsList.updateSortArrows('.life-events-sort-arrow');
+
+  const pagination = document.getElementById('lifeEventsPagination');
+  if (!lifeEvents.length) { pagination?.classList.add('hidden'); tbody.innerHTML = ''; return; }
+  pagination?.classList.remove('hidden');
+  const pageSizeEl = document.getElementById('lifeEventsPageSize');
+  if (pageSizeEl) pageSizeEl.value = String(lifeEventsList.pageSize);
+
+  const { pageItems, start, total } = lifeEventsList.view(lifeEvents);
+  const pageInfoEl = document.getElementById('lifeEventsPageInfo');
+  if (pageInfoEl) pageInfoEl.textContent = `${start + 1}-${Math.min(start + lifeEventsList.pageSize, total)} of ${total}`;
 
   const statusBadge = status => {
     if (status === 'Approved') return 'bg-blue-100 text-blue-700';
@@ -308,7 +365,7 @@ function renderLifeEventsTable(events) {
     return 'bg-amber-100 text-amber-700';
   };
 
-  tbody.innerHTML = events.map(ev => `
+  tbody.innerHTML = pageItems.map(ev => `
     <tr>
       <td class="px-4 py-3">
         <p class="font-medium">${esc(ev.employee_name ? displayName(ev.employee_name, ev.employee_preferred_name) : ev.employee_id)}</p>
@@ -581,20 +638,38 @@ function claimStatusBadge(status) {
 }
 
 let currentClaims = [];
+const claimsList = createListState({ sortKey: 'claim_date', sortDir: 'desc' });
 
 async function loadClaims() {
   const res = await api('/api/benefits/claims');
   if (!res || !res.ok) return;
   currentClaims = await res.json();
-  renderClaimsTable(currentClaims);
+  claimsList.resetPage();
+  renderClaimsTable();
 }
 
-function renderClaimsTable(claims) {
+function setClaimsSort(key) { claimsList.setSort(key); renderClaimsTable(); }
+function setClaimsPageSize(size) { claimsList.setPageSize(size); renderClaimsTable(); }
+function claimsPagePrev() { claimsList.prevPage(); renderClaimsTable(); }
+function claimsPageNext() { claimsList.nextPage(currentClaims.length); renderClaimsTable(); }
+
+function renderClaimsTable() {
   const tbody = document.getElementById('claimsTableBody');
   if (!tbody) return;
-  document.getElementById('claimsEmptyState')?.classList.toggle('hidden', claims.length > 0);
+  document.getElementById('claimsEmptyState')?.classList.toggle('hidden', currentClaims.length > 0);
+  claimsList.updateSortArrows('.claims-sort-arrow');
 
-  tbody.innerHTML = claims.map(c => `
+  const pagination = document.getElementById('claimsPagination');
+  if (!currentClaims.length) { pagination?.classList.add('hidden'); tbody.innerHTML = ''; return; }
+  pagination?.classList.remove('hidden');
+  const pageSizeEl = document.getElementById('claimsPageSize');
+  if (pageSizeEl) pageSizeEl.value = String(claimsList.pageSize);
+
+  const { pageItems, start, total } = claimsList.view(currentClaims);
+  const pageInfoEl = document.getElementById('claimsPageInfo');
+  if (pageInfoEl) pageInfoEl.textContent = `${start + 1}-${Math.min(start + claimsList.pageSize, total)} of ${total}`;
+
+  tbody.innerHTML = pageItems.map(c => `
     <tr>
       <td class="px-4 py-3">
         <p class="font-medium">${esc(c.employee_name ? displayName(c.employee_name, c.employee_preferred_name) : c.employee_id)}</p>

@@ -2039,17 +2039,32 @@
           <table class="w-full text-sm">
             <thead class="bg-slate-50 border-b border-slate-200">
               <tr>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Grade</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Level</th>
-                <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Min Salary</th>
-                <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Midpoint</th>
-                <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Max Salary</th>
-                <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none" onclick="setPayGradesSort('grade_code')">Grade<span class="pay-grades-sort-arrow" data-sort-key="grade_code"></span></th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none" onclick="setPayGradesSort('grade_level')">Level<span class="pay-grades-sort-arrow" data-sort-key="grade_level"></span></th>
+                <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none" onclick="setPayGradesSort('min_salary')">Min Salary<span class="pay-grades-sort-arrow" data-sort-key="min_salary"></span></th>
+                <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none" onclick="setPayGradesSort('midpoint_salary')">Midpoint<span class="pay-grades-sort-arrow" data-sort-key="midpoint_salary"></span></th>
+                <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none" onclick="setPayGradesSort('max_salary')">Max Salary<span class="pay-grades-sort-arrow" data-sort-key="max_salary"></span></th>
+                <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none" onclick="setPayGradesSort('is_active')">Status<span class="pay-grades-sort-arrow" data-sort-key="is_active"></span></th>
               </tr>
             </thead>
             <tbody id="payGradesTableBody" class="divide-y divide-slate-100"></tbody>
           </table>
           <p id="payGradesEmptyState" class="text-center text-slate-400 text-sm py-12">No pay grades yet.</p>
+          <div id="payGradesPagination" class="hidden flex items-center justify-between px-4 py-3 border-t border-slate-200 text-sm text-slate-500">
+            <div class="flex items-center gap-2">
+              <span>Rows per page:</span>
+              <select id="payGradesPageSize" onchange="setPayGradesPageSize(this.value)" class="border border-slate-200 rounded-lg text-sm px-2 py-1">
+                <option value="10">10</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+            </div>
+            <div class="flex items-center gap-3">
+              <span id="payGradesPageInfo"></span>
+              <button onclick="payGradesPagePrev()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Prev</button>
+              <button onclick="payGradesPageNext()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Next</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -2066,15 +2081,30 @@
           <table class="w-full text-sm">
             <thead class="bg-slate-50 border-b border-slate-200">
               <tr>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Code</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Level Name</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Order</th>
-                <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none" onclick="setJobLevelsSort('level_code')">Code<span class="job-levels-sort-arrow" data-sort-key="level_code"></span></th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none" onclick="setJobLevelsSort('level_name')">Level Name<span class="job-levels-sort-arrow" data-sort-key="level_name"></span></th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none" onclick="setJobLevelsSort('level_order')">Order<span class="job-levels-sort-arrow" data-sort-key="level_order"></span></th>
+                <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none" onclick="setJobLevelsSort('is_active')">Status<span class="job-levels-sort-arrow" data-sort-key="is_active"></span></th>
               </tr>
             </thead>
             <tbody id="jobLevelsTableBody" class="divide-y divide-slate-100"></tbody>
           </table>
           <p id="jobLevelsEmptyState" class="text-center text-slate-400 text-sm py-12">No job levels yet.</p>
+          <div id="jobLevelsPagination" class="hidden flex items-center justify-between px-4 py-3 border-t border-slate-200 text-sm text-slate-500">
+            <div class="flex items-center gap-2">
+              <span>Rows per page:</span>
+              <select id="jobLevelsPageSize" onchange="setJobLevelsPageSize(this.value)" class="border border-slate-200 rounded-lg text-sm px-2 py-1">
+                <option value="10">10</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+            </div>
+            <div class="flex items-center gap-3">
+              <span id="jobLevelsPageInfo"></span>
+              <button onclick="jobLevelsPagePrev()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Prev</button>
+              <button onclick="jobLevelsPageNext()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Next</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -2091,17 +2121,32 @@
           <table class="w-full text-sm">
             <thead class="bg-slate-50 border-b border-slate-200">
               <tr>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Code</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Role Name</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none" onclick="setJobRolesSort('role_code')">Code<span class="job-roles-sort-arrow" data-sort-key="role_code"></span></th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none" onclick="setJobRolesSort('role_name')">Role Name<span class="job-roles-sort-arrow" data-sort-key="role_name"></span></th>
                 <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Level</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Department</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none" onclick="setJobRolesSort('department')">Department<span class="job-roles-sort-arrow" data-sort-key="department"></span></th>
                 <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Pay Grades</th>
-                <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+                <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none" onclick="setJobRolesSort('is_active')">Status<span class="job-roles-sort-arrow" data-sort-key="is_active"></span></th>
               </tr>
             </thead>
             <tbody id="jobRolesTableBody" class="divide-y divide-slate-100"></tbody>
           </table>
           <p id="jobRolesEmptyState" class="text-center text-slate-400 text-sm py-12">No job roles yet.</p>
+          <div id="jobRolesPagination" class="hidden flex items-center justify-between px-4 py-3 border-t border-slate-200 text-sm text-slate-500">
+            <div class="flex items-center gap-2">
+              <span>Rows per page:</span>
+              <select id="jobRolesPageSize" onchange="setJobRolesPageSize(this.value)" class="border border-slate-200 rounded-lg text-sm px-2 py-1">
+                <option value="10">10</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+            </div>
+            <div class="flex items-center gap-3">
+              <span id="jobRolesPageInfo"></span>
+              <button onclick="jobRolesPagePrev()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Prev</button>
+              <button onclick="jobRolesPageNext()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Next</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -2118,15 +2163,30 @@
           <table class="w-full text-sm">
             <thead class="bg-slate-50 border-b border-slate-200">
               <tr>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Cycle Name</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Period</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Budget</th>
-                <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none" onclick="setMeritCyclesSort('cycle_name')">Cycle Name<span class="merit-cycles-sort-arrow" data-sort-key="cycle_name"></span></th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none" onclick="setMeritCyclesSort('cycle_start_date')">Period<span class="merit-cycles-sort-arrow" data-sort-key="cycle_start_date"></span></th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none" onclick="setMeritCyclesSort('budget_pool_amount')">Budget<span class="merit-cycles-sort-arrow" data-sort-key="budget_pool_amount"></span></th>
+                <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none" onclick="setMeritCyclesSort('status')">Status<span class="merit-cycles-sort-arrow" data-sort-key="status"></span></th>
               </tr>
             </thead>
             <tbody id="meritCyclesTableBody" class="divide-y divide-slate-100"></tbody>
           </table>
           <p id="meritCyclesEmptyState" class="text-center text-slate-400 text-sm py-12">No merit cycles yet.</p>
+          <div id="meritCyclesPagination" class="hidden flex items-center justify-between px-4 py-3 border-t border-slate-200 text-sm text-slate-500">
+            <div class="flex items-center gap-2">
+              <span>Rows per page:</span>
+              <select id="meritCyclesPageSize" onchange="setMeritCyclesPageSize(this.value)" class="border border-slate-200 rounded-lg text-sm px-2 py-1">
+                <option value="10">10</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+            </div>
+            <div class="flex items-center gap-3">
+              <span id="meritCyclesPageInfo"></span>
+              <button onclick="meritCyclesPagePrev()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Prev</button>
+              <button onclick="meritCyclesPageNext()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Next</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -2143,16 +2203,29 @@
           <table class="w-full text-sm">
             <thead class="bg-slate-50 border-b border-slate-200">
               <tr>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Plan Name</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Type</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Period</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Budget</th>
-                <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setBonusPlansSort('plan_name')">Plan Name <span class="bonus-plans-sort-arrow" data-sort-key="plan_name"></span></th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setBonusPlansSort('plan_type')">Type <span class="bonus-plans-sort-arrow" data-sort-key="plan_type"></span></th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setBonusPlansSort('period_start')">Period <span class="bonus-plans-sort-arrow" data-sort-key="period_start"></span></th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setBonusPlansSort('budget_pool_amount')">Budget <span class="bonus-plans-sort-arrow" data-sort-key="budget_pool_amount"></span></th>
+                <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setBonusPlansSort('status')">Status <span class="bonus-plans-sort-arrow" data-sort-key="status"></span></th>
               </tr>
             </thead>
             <tbody id="bonusPlansTableBody" class="divide-y divide-slate-100"></tbody>
           </table>
           <p id="bonusPlansEmptyState" class="text-center text-slate-400 text-sm py-12">No bonus plans yet.</p>
+          <div id="bonusPlansPagination" class="hidden flex items-center justify-between px-4 py-3 border-t border-slate-200 text-sm text-slate-500">
+            <div class="flex items-center gap-2">
+              <span>Rows per page:</span>
+              <select id="bonusPlansPageSize" onchange="setBonusPlansPageSize(this.value)" class="border border-slate-200 rounded-lg text-sm px-2 py-1">
+                <option value="10">10</option><option value="50">50</option><option value="100">100</option>
+              </select>
+            </div>
+            <div class="flex items-center gap-3">
+              <span id="bonusPlansPageInfo"></span>
+              <button onclick="bonusPlansPagePrev()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Prev</button>
+              <button onclick="bonusPlansPageNext()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Next</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -2169,16 +2242,29 @@
           <table class="w-full text-sm">
             <thead class="bg-slate-50 border-b border-slate-200">
               <tr>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Plan Name</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Type</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Default Rate</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Period</th>
-                <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setCommissionPlansSort('plan_name')">Plan Name <span class="commission-plans-sort-arrow" data-sort-key="plan_name"></span></th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setCommissionPlansSort('plan_type')">Type <span class="commission-plans-sort-arrow" data-sort-key="plan_type"></span></th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setCommissionPlansSort('default_rate_percent')">Default Rate <span class="commission-plans-sort-arrow" data-sort-key="default_rate_percent"></span></th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setCommissionPlansSort('period_start')">Period <span class="commission-plans-sort-arrow" data-sort-key="period_start"></span></th>
+                <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setCommissionPlansSort('status')">Status <span class="commission-plans-sort-arrow" data-sort-key="status"></span></th>
               </tr>
             </thead>
             <tbody id="commissionPlansTableBody" class="divide-y divide-slate-100"></tbody>
           </table>
           <p id="commissionPlansEmptyState" class="text-center text-slate-400 text-sm py-12">No commission plans yet.</p>
+          <div id="commissionPlansPagination" class="hidden flex items-center justify-between px-4 py-3 border-t border-slate-200 text-sm text-slate-500">
+            <div class="flex items-center gap-2">
+              <span>Rows per page:</span>
+              <select id="commissionPlansPageSize" onchange="setCommissionPlansPageSize(this.value)" class="border border-slate-200 rounded-lg text-sm px-2 py-1">
+                <option value="10">10</option><option value="50">50</option><option value="100">100</option>
+              </select>
+            </div>
+            <div class="flex items-center gap-3">
+              <span id="commissionPlansPageInfo"></span>
+              <button onclick="commissionPlansPagePrev()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Prev</button>
+              <button onclick="commissionPlansPageNext()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Next</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -2195,16 +2281,29 @@
           <table class="w-full text-sm">
             <thead class="bg-slate-50 border-b border-slate-200">
               <tr>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Employee</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Type</th>
-                <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Quantity</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Vesting</th>
-                <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setEquityGrantsSort('employee_id')">Employee <span class="equity-grants-sort-arrow" data-sort-key="employee_id"></span></th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setEquityGrantsSort('grant_type')">Type <span class="equity-grants-sort-arrow" data-sort-key="grant_type"></span></th>
+                <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setEquityGrantsSort('quantity')">Quantity <span class="equity-grants-sort-arrow" data-sort-key="quantity"></span></th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setEquityGrantsSort('vesting_start_date')">Vesting <span class="equity-grants-sort-arrow" data-sort-key="vesting_start_date"></span></th>
+                <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setEquityGrantsSort('status')">Status <span class="equity-grants-sort-arrow" data-sort-key="status"></span></th>
               </tr>
             </thead>
             <tbody id="equityGrantsTableBody" class="divide-y divide-slate-100"></tbody>
           </table>
           <p id="equityGrantsEmptyState" class="text-center text-slate-400 text-sm py-12">No equity grants yet.</p>
+          <div id="equityGrantsPagination" class="hidden flex items-center justify-between px-4 py-3 border-t border-slate-200 text-sm text-slate-500">
+            <div class="flex items-center gap-2">
+              <span>Rows per page:</span>
+              <select id="equityGrantsPageSize" onchange="setEquityGrantsPageSize(this.value)" class="border border-slate-200 rounded-lg text-sm px-2 py-1">
+                <option value="10">10</option><option value="50">50</option><option value="100">100</option>
+              </select>
+            </div>
+            <div class="flex items-center gap-3">
+              <span id="equityGrantsPageInfo"></span>
+              <button onclick="equityGrantsPagePrev()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Prev</button>
+              <button onclick="equityGrantsPageNext()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Next</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -2236,17 +2335,30 @@
           <table class="w-full text-sm">
             <thead class="bg-slate-50 border-b border-slate-200">
               <tr>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Plan Name</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Category</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Contribution</th>
-                <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Employee Cost</th>
-                <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Employer Cost</th>
-                <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setBenefitPlansSort('plan_name')">Plan Name <span class="benefit-plans-sort-arrow" data-sort-key="plan_name"></span></th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setBenefitPlansSort('plan_category')">Category <span class="benefit-plans-sort-arrow" data-sort-key="plan_category"></span></th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setBenefitPlansSort('contribution_type')">Contribution <span class="benefit-plans-sort-arrow" data-sort-key="contribution_type"></span></th>
+                <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setBenefitPlansSort('employee_cost')">Employee Cost <span class="benefit-plans-sort-arrow" data-sort-key="employee_cost"></span></th>
+                <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setBenefitPlansSort('employer_cost')">Employer Cost <span class="benefit-plans-sort-arrow" data-sort-key="employer_cost"></span></th>
+                <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setBenefitPlansSort('status')">Status <span class="benefit-plans-sort-arrow" data-sort-key="status"></span></th>
               </tr>
             </thead>
             <tbody id="benefitPlansTableBody" class="divide-y divide-slate-100"></tbody>
           </table>
           <p id="benefitPlansEmptyState" class="text-center text-slate-400 text-sm py-12">No benefit plans yet.</p>
+          <div id="benefitPlansPagination" class="hidden flex items-center justify-between px-4 py-3 border-t border-slate-200 text-sm text-slate-500">
+            <div class="flex items-center gap-2">
+              <span>Rows per page:</span>
+              <select id="benefitPlansPageSize" onchange="setBenefitPlansPageSize(this.value)" class="border border-slate-200 rounded-lg text-sm px-2 py-1">
+                <option value="10">10</option><option value="50">50</option><option value="100">100</option>
+              </select>
+            </div>
+            <div class="flex items-center gap-3">
+              <span id="benefitPlansPageInfo"></span>
+              <button onclick="benefitPlansPagePrev()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Prev</button>
+              <button onclick="benefitPlansPageNext()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Next</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -2263,16 +2375,29 @@
           <table class="w-full text-sm">
             <thead class="bg-slate-50 border-b border-slate-200">
               <tr>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Period</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Year</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Window</th>
-                <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setEnrollmentPeriodsSort('period_name')">Period <span class="enrollment-periods-sort-arrow" data-sort-key="period_name"></span></th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setEnrollmentPeriodsSort('plan_year')">Year <span class="enrollment-periods-sort-arrow" data-sort-key="plan_year"></span></th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setEnrollmentPeriodsSort('start_date')">Window <span class="enrollment-periods-sort-arrow" data-sort-key="start_date"></span></th>
+                <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setEnrollmentPeriodsSort('status')">Status <span class="enrollment-periods-sort-arrow" data-sort-key="status"></span></th>
                 <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Actions</th>
               </tr>
             </thead>
             <tbody id="enrollmentPeriodsTableBody" class="divide-y divide-slate-100"></tbody>
           </table>
           <p id="enrollmentPeriodsEmptyState" class="text-center text-slate-400 text-sm py-12">No enrollment periods yet.</p>
+          <div id="enrollmentPeriodsPagination" class="hidden flex items-center justify-between px-4 py-3 border-t border-slate-200 text-sm text-slate-500">
+            <div class="flex items-center gap-2">
+              <span>Rows per page:</span>
+              <select id="enrollmentPeriodsPageSize" onchange="setEnrollmentPeriodsPageSize(this.value)" class="border border-slate-200 rounded-lg text-sm px-2 py-1">
+                <option value="10">10</option><option value="50">50</option><option value="100">100</option>
+              </select>
+            </div>
+            <div class="flex items-center gap-3">
+              <span id="enrollmentPeriodsPageInfo"></span>
+              <button onclick="enrollmentPeriodsPagePrev()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Prev</button>
+              <button onclick="enrollmentPeriodsPageNext()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Next</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -2283,16 +2408,29 @@
           <table class="w-full text-sm">
             <thead class="bg-slate-50 border-b border-slate-200">
               <tr>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Employee</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Event</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Date</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setLifeEventsSort('employee_id')">Employee <span class="life-events-sort-arrow" data-sort-key="employee_id"></span></th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setLifeEventsSort('event_type')">Event <span class="life-events-sort-arrow" data-sort-key="event_type"></span></th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setLifeEventsSort('event_date')">Date <span class="life-events-sort-arrow" data-sort-key="event_date"></span></th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setLifeEventsSort('status')">Status <span class="life-events-sort-arrow" data-sort-key="status"></span></th>
                 <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Actions</th>
               </tr>
             </thead>
             <tbody id="lifeEventsTableBody" class="divide-y divide-slate-100"></tbody>
           </table>
           <p id="lifeEventsEmptyState" class="text-center text-slate-400 text-sm py-12">No life events submitted yet.</p>
+          <div id="lifeEventsPagination" class="hidden flex items-center justify-between px-4 py-3 border-t border-slate-200 text-sm text-slate-500">
+            <div class="flex items-center gap-2">
+              <span>Rows per page:</span>
+              <select id="lifeEventsPageSize" onchange="setLifeEventsPageSize(this.value)" class="border border-slate-200 rounded-lg text-sm px-2 py-1">
+                <option value="10">10</option><option value="50">50</option><option value="100">100</option>
+              </select>
+            </div>
+            <div class="flex items-center gap-3">
+              <span id="lifeEventsPageInfo"></span>
+              <button onclick="lifeEventsPagePrev()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Prev</button>
+              <button onclick="lifeEventsPageNext()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Next</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -2303,18 +2441,31 @@
           <table class="w-full text-sm">
             <thead class="bg-slate-50 border-b border-slate-200">
               <tr>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Employee</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Plan</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Date</th>
-                <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Claimed</th>
-                <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Approved</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setClaimsSort('employee_id')">Employee <span class="claims-sort-arrow" data-sort-key="employee_id"></span></th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setClaimsSort('plan_name')">Plan <span class="claims-sort-arrow" data-sort-key="plan_name"></span></th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setClaimsSort('claim_date')">Date <span class="claims-sort-arrow" data-sort-key="claim_date"></span></th>
+                <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setClaimsSort('amount_claimed')">Claimed <span class="claims-sort-arrow" data-sort-key="amount_claimed"></span></th>
+                <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setClaimsSort('amount_approved')">Approved <span class="claims-sort-arrow" data-sort-key="amount_approved"></span></th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setClaimsSort('status')">Status <span class="claims-sort-arrow" data-sort-key="status"></span></th>
                 <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Actions</th>
               </tr>
             </thead>
             <tbody id="claimsTableBody" class="divide-y divide-slate-100"></tbody>
           </table>
           <p id="claimsEmptyState" class="text-center text-slate-400 text-sm py-12">No claims submitted yet.</p>
+          <div id="claimsPagination" class="hidden flex items-center justify-between px-4 py-3 border-t border-slate-200 text-sm text-slate-500">
+            <div class="flex items-center gap-2">
+              <span>Rows per page:</span>
+              <select id="claimsPageSize" onchange="setClaimsPageSize(this.value)" class="border border-slate-200 rounded-lg text-sm px-2 py-1">
+                <option value="10">10</option><option value="50">50</option><option value="100">100</option>
+              </select>
+            </div>
+            <div class="flex items-center gap-3">
+              <span id="claimsPageInfo"></span>
+              <button onclick="claimsPagePrev()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Prev</button>
+              <button onclick="claimsPageNext()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Next</button>
+            </div>
+          </div>
         </div>
       </div>
 
