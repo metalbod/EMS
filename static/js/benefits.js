@@ -401,6 +401,13 @@ let myEligiblePlans = [];
 let myEnrollments = [];
 let myActivePeriod = null;
 let myApprovedWindowEvent = null;
+let myLifeEvents = [];
+let myDependents = [];
+let myClaims = [];
+const myBenefitsPlansList = createListState({ sortKey: 'plan_name' });
+const myLifeEventsList = createListState({ sortKey: 'event_date', sortDir: 'desc' });
+const myDependentsList = createListState({ sortKey: 'full_name' });
+const myClaimsList = createListState({ sortKey: 'claim_date', sortDir: 'desc' });
 
 async function loadMyBenefitsPage() {
   const [plansRes, enrollRes, periodRes, eventsRes, depsRes, claimsRes] = await Promise.all([
@@ -415,18 +422,47 @@ async function loadMyBenefitsPage() {
   myEligiblePlans = (plansRes && plansRes.ok) ? await plansRes.json() : [];
   myEnrollments = (enrollRes && enrollRes.ok) ? await enrollRes.json() : [];
   myActivePeriod = (periodRes && periodRes.ok) ? await periodRes.json() : null;
-  const myEvents = (eventsRes && eventsRes.ok) ? await eventsRes.json() : [];
-  const myDeps = (depsRes && depsRes.ok) ? await depsRes.json() : [];
-  const myClaims = (claimsRes && claimsRes.ok) ? await claimsRes.json() : [];
+  myLifeEvents = (eventsRes && eventsRes.ok) ? await eventsRes.json() : [];
+  myDependents = (depsRes && depsRes.ok) ? await depsRes.json() : [];
+  myClaims = (claimsRes && claimsRes.ok) ? await claimsRes.json() : [];
 
   const today = new Date().toISOString().slice(0, 10);
-  myApprovedWindowEvent = myEvents.find(e => e.status === 'Approved' && e.window_end_date && e.window_end_date >= today) || null;
+  myApprovedWindowEvent = myLifeEvents.find(e => e.status === 'Approved' && e.window_end_date && e.window_end_date >= today) || null;
+
+  myBenefitsPlansList.resetPage();
+  myLifeEventsList.resetPage();
+  myDependentsList.resetPage();
+  myClaimsList.resetPage();
 
   renderMyBenefitsBanner();
   renderMyBenefitsPlansTable();
-  renderMyLifeEventsTable(myEvents);
-  renderMyClaimsTable(myClaims);
-  renderDependentsTable(document.getElementById('myDependentsTableBody'), document.getElementById('myDependentsEmptyState'), myDeps, true);
+  renderMyLifeEventsTable();
+  renderMyClaimsTable();
+  renderMyDependentsTable();
+}
+
+function setMyBenefitsPlansSort(key) { myBenefitsPlansList.setSort(key); renderMyBenefitsPlansTable(); }
+function setMyBenefitsPlansPageSize(size) { myBenefitsPlansList.setPageSize(size); renderMyBenefitsPlansTable(); }
+function myBenefitsPlansPagePrev() { myBenefitsPlansList.prevPage(); renderMyBenefitsPlansTable(); }
+function myBenefitsPlansPageNext() { myBenefitsPlansList.nextPage(myEligiblePlans.length); renderMyBenefitsPlansTable(); }
+
+function setMyLifeEventsSort(key) { myLifeEventsList.setSort(key); renderMyLifeEventsTable(); }
+function setMyLifeEventsPageSize(size) { myLifeEventsList.setPageSize(size); renderMyLifeEventsTable(); }
+function myLifeEventsPagePrev() { myLifeEventsList.prevPage(); renderMyLifeEventsTable(); }
+function myLifeEventsPageNext() { myLifeEventsList.nextPage(myLifeEvents.length); renderMyLifeEventsTable(); }
+
+function setMyClaimsSort(key) { myClaimsList.setSort(key); renderMyClaimsTable(); }
+function setMyClaimsPageSize(size) { myClaimsList.setPageSize(size); renderMyClaimsTable(); }
+function myClaimsPagePrev() { myClaimsList.prevPage(); renderMyClaimsTable(); }
+function myClaimsPageNext() { myClaimsList.nextPage(myClaims.length); renderMyClaimsTable(); }
+
+function setMyDependentsSort(key) { myDependentsList.setSort(key); renderMyDependentsTable(); }
+function setMyDependentsPageSize(size) { myDependentsList.setPageSize(size); renderMyDependentsTable(); }
+function myDependentsPagePrev() { myDependentsList.prevPage(); renderMyDependentsTable(); }
+function myDependentsPageNext() { myDependentsList.nextPage(myDependents.length); renderMyDependentsTable(); }
+
+function renderMyDependentsTable() {
+  renderDependentsTable(document.getElementById('myDependentsTableBody'), document.getElementById('myDependentsEmptyState'), myDependents, true, undefined, undefined, myDependentsList, 'myDependents');
 }
 
 function renderMyBenefitsBanner() {
@@ -448,8 +484,20 @@ function renderMyBenefitsBanner() {
 
 function renderMyBenefitsPlansTable() {
   const tbody = document.getElementById('myBenefitsPlansTableBody');
+  if (!tbody) return;
   document.getElementById('myBenefitsPlansEmptyState')?.classList.toggle('hidden', myEligiblePlans.length > 0);
+  myBenefitsPlansList.updateSortArrows('.my-benefits-plans-sort-arrow');
   const canElect = !!(myActivePeriod || myApprovedWindowEvent);
+
+  const pagination = document.getElementById('myBenefitsPlansPagination');
+  if (!myEligiblePlans.length) { pagination?.classList.add('hidden'); tbody.innerHTML = ''; return; }
+  pagination?.classList.remove('hidden');
+  const pageSizeEl = document.getElementById('myBenefitsPlansPageSize');
+  if (pageSizeEl) pageSizeEl.value = String(myBenefitsPlansList.pageSize);
+
+  const { pageItems, start, total } = myBenefitsPlansList.view(myEligiblePlans);
+  const pageInfoEl = document.getElementById('myBenefitsPlansPageInfo');
+  if (pageInfoEl) pageInfoEl.textContent = `${start + 1}-${Math.min(start + myBenefitsPlansList.pageSize, total)} of ${total}`;
 
   const fmtCost = (v, type) => {
     if (v == null) return '—';
@@ -457,7 +505,7 @@ function renderMyBenefitsPlansTable() {
     return fmtCurrency(v);
   };
 
-  tbody.innerHTML = myEligiblePlans.map(p => {
+  tbody.innerHTML = pageItems.map(p => {
     const enrollment = myEnrollments.find(e => e.benefit_plan_id === p.id);
     const electionBadge = !enrollment ? 'bg-slate-100 text-slate-500'
       : enrollment.status === 'Enrolled' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500';
@@ -479,15 +527,28 @@ function renderMyBenefitsPlansTable() {
   }).join('');
 }
 
-function renderMyLifeEventsTable(events) {
+function renderMyLifeEventsTable() {
   const tbody = document.getElementById('myLifeEventsTableBody');
-  document.getElementById('myLifeEventsEmptyState')?.classList.toggle('hidden', events.length > 0);
+  if (!tbody) return;
+  document.getElementById('myLifeEventsEmptyState')?.classList.toggle('hidden', myLifeEvents.length > 0);
+  myLifeEventsList.updateSortArrows('.my-life-events-sort-arrow');
+
+  const pagination = document.getElementById('myLifeEventsPagination');
+  if (!myLifeEvents.length) { pagination?.classList.add('hidden'); tbody.innerHTML = ''; return; }
+  pagination?.classList.remove('hidden');
+  const pageSizeEl = document.getElementById('myLifeEventsPageSize');
+  if (pageSizeEl) pageSizeEl.value = String(myLifeEventsList.pageSize);
+
+  const { pageItems, start, total } = myLifeEventsList.view(myLifeEvents);
+  const pageInfoEl = document.getElementById('myLifeEventsPageInfo');
+  if (pageInfoEl) pageInfoEl.textContent = `${start + 1}-${Math.min(start + myLifeEventsList.pageSize, total)} of ${total}`;
+
   const statusBadge = status => {
     if (status === 'Approved') return 'bg-blue-100 text-blue-700';
     if (status === 'Rejected') return 'bg-red-100 text-red-700';
     return 'bg-amber-100 text-amber-700';
   };
-  tbody.innerHTML = events.map(ev => `
+  tbody.innerHTML = pageItems.map(ev => `
     <tr>
       <td class="px-4 py-3">${esc(ev.event_type)}</td>
       <td class="px-4 py-3">${fmtDate(ev.event_date)}</td>
@@ -534,9 +595,23 @@ async function submitLifeEventForm(e) {
 let dependentFormContext = 'self'; // 'self' or 'hr'
 let currentDependentsEmployeeId = null;
 
-function renderDependentsTable(tbody, emptyState, deps, showActions, context, employeeId) {
+function renderDependentsTable(tbody, emptyState, deps, showActions, context, employeeId, listState, idPrefix) {
   if (!tbody) return;
   emptyState?.classList.toggle('hidden', deps.length > 0);
+
+  if (listState && idPrefix) {
+    listState.updateSortArrows(`.${idPrefix}-sort-arrow`);
+    const pagination = document.getElementById(`${idPrefix}Pagination`);
+    if (!deps.length) { pagination?.classList.add('hidden'); tbody.innerHTML = ''; return; }
+    pagination?.classList.remove('hidden');
+    const pageSizeEl = document.getElementById(`${idPrefix}PageSize`);
+    if (pageSizeEl) pageSizeEl.value = String(listState.pageSize);
+    const { pageItems, start, total } = listState.view(deps);
+    const pageInfoEl = document.getElementById(`${idPrefix}PageInfo`);
+    if (pageInfoEl) pageInfoEl.textContent = `${start + 1}-${Math.min(start + listState.pageSize, total)} of ${total}`;
+    deps = pageItems;
+  }
+
   tbody.innerHTML = deps.map(d => `
     <tr>
       <td class="px-4 py-3">
@@ -554,10 +629,23 @@ function renderDependentsTable(tbody, emptyState, deps, showActions, context, em
 }
 
 // Edit Employee > Dependents tab (HR-facing, per employee)
+let empDependents = [];
+const empDependentsList = createListState({ sortKey: 'full_name' });
+
 async function loadEmpDependentsTab() {
   const res = await api(`/api/benefits/employees/${currentEmpId}/dependents`);
-  const deps = (res && res.ok) ? await res.json() : [];
-  renderDependentsTable(document.getElementById('empDependentsTableBody'), document.getElementById('empDependentsEmptyState'), deps, true, 'hr', currentEmpId);
+  empDependents = (res && res.ok) ? await res.json() : [];
+  empDependentsList.resetPage();
+  renderEmpDependentsTable();
+}
+
+function setEmpDependentsSort(key) { empDependentsList.setSort(key); renderEmpDependentsTable(); }
+function setEmpDependentsPageSize(size) { empDependentsList.setPageSize(size); renderEmpDependentsTable(); }
+function empDependentsPagePrev() { empDependentsList.prevPage(); renderEmpDependentsTable(); }
+function empDependentsPageNext() { empDependentsList.nextPage(empDependents.length); renderEmpDependentsTable(); }
+
+function renderEmpDependentsTable() {
+  renderDependentsTable(document.getElementById('empDependentsTableBody'), document.getElementById('empDependentsEmptyState'), empDependents, true, 'hr', currentEmpId, empDependentsList, 'empDependents');
 }
 
 function toggleBeneficiaryPercentRow() {
@@ -739,10 +827,23 @@ async function markClaimPaid(claimId) {
   loadClaims();
 }
 
-function renderMyClaimsTable(claims) {
+function renderMyClaimsTable() {
   const tbody = document.getElementById('myClaimsTableBody');
-  document.getElementById('myClaimsEmptyState')?.classList.toggle('hidden', claims.length > 0);
-  tbody.innerHTML = claims.map(c => `
+  if (!tbody) return;
+  document.getElementById('myClaimsEmptyState')?.classList.toggle('hidden', myClaims.length > 0);
+  myClaimsList.updateSortArrows('.my-claims-sort-arrow');
+
+  const pagination = document.getElementById('myClaimsPagination');
+  if (!myClaims.length) { pagination?.classList.add('hidden'); tbody.innerHTML = ''; return; }
+  pagination?.classList.remove('hidden');
+  const pageSizeEl = document.getElementById('myClaimsPageSize');
+  if (pageSizeEl) pageSizeEl.value = String(myClaimsList.pageSize);
+
+  const { pageItems, start, total } = myClaimsList.view(myClaims);
+  const pageInfoEl = document.getElementById('myClaimsPageInfo');
+  if (pageInfoEl) pageInfoEl.textContent = `${start + 1}-${Math.min(start + myClaimsList.pageSize, total)} of ${total}`;
+
+  tbody.innerHTML = pageItems.map(c => `
     <tr>
       <td class="px-4 py-3">${esc(c.plan_name)}</td>
       <td class="px-4 py-3">${fmtDate(c.claim_date)}</td>

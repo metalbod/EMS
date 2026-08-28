@@ -468,17 +468,36 @@ function computeMeritNewSalary() {
   }
 }
 
+const meritRecList = createListState({ sortKey: 'employee_id' });
+
 async function loadMeritRecommendations(cycleId) {
   const res = await api(`/api/compensation/merit-cycles/${cycleId}/recommendations`);
   if (!res || !res.ok) return;
   meritRecommendations = await res.json();
+  meritRecList.resetPage();
   renderMeritRecTable();
 }
+
+function setMeritRecSort(key) { meritRecList.setSort(key); renderMeritRecTable(); }
+function setMeritRecPageSize(size) { meritRecList.setPageSize(size); renderMeritRecTable(); }
+function meritRecPagePrev() { meritRecList.prevPage(); renderMeritRecTable(); }
+function meritRecPageNext() { meritRecList.nextPage(meritRecommendations.length); renderMeritRecTable(); }
 
 function renderMeritRecTable() {
   const tbody = document.getElementById('meritRecTableBody');
   if (!tbody) return;
   document.getElementById('meritRecEmptyState')?.classList.toggle('hidden', meritRecommendations.length > 0);
+  meritRecList.updateSortArrows('.merit-rec-sort-arrow');
+
+  const pagination = document.getElementById('meritRecPagination');
+  if (!meritRecommendations.length) { pagination?.classList.add('hidden'); tbody.innerHTML = ''; return; }
+  pagination?.classList.remove('hidden');
+  const pageSizeEl = document.getElementById('meritRecPageSize');
+  if (pageSizeEl) pageSizeEl.value = String(meritRecList.pageSize);
+
+  const { pageItems, start, total } = meritRecList.view(meritRecommendations);
+  const pageInfoEl = document.getElementById('meritRecPageInfo');
+  if (pageInfoEl) pageInfoEl.textContent = `${start + 1}-${Math.min(start + meritRecList.pageSize, total)} of ${total}`;
 
   const statusBadge = status => {
     if (status === 'Approved') return 'bg-emerald-100 text-emerald-700';
@@ -486,7 +505,7 @@ function renderMeritRecTable() {
     return 'bg-amber-100 text-amber-700';
   };
 
-  tbody.innerHTML = meritRecommendations.map(rec => `
+  tbody.innerHTML = pageItems.map(rec => `
     <tr class="hover:bg-slate-50 transition">
       <td class="px-4 py-3">
         <p class="font-medium">${esc(rec.employee_name ? displayName(rec.employee_name, rec.employee_preferred_name) : rec.employee_id)}</p>
@@ -738,17 +757,36 @@ async function changeBonusPlanStatus() {
   renderBonusPlansTable();
 }
 
+const bonusPayoutList = createListState({ sortKey: 'employee_id' });
+
 async function loadBonusPayouts(planId) {
   const res = await api(`/api/compensation/bonus-plans/${planId}/payouts`);
   if (!res || !res.ok) return;
   bonusPayouts = await res.json();
+  bonusPayoutList.resetPage();
   renderBonusPayoutTable();
 }
+
+function setBonusPayoutSort(key) { bonusPayoutList.setSort(key); renderBonusPayoutTable(); }
+function setBonusPayoutPageSize(size) { bonusPayoutList.setPageSize(size); renderBonusPayoutTable(); }
+function bonusPayoutPagePrev() { bonusPayoutList.prevPage(); renderBonusPayoutTable(); }
+function bonusPayoutPageNext() { bonusPayoutList.nextPage(bonusPayouts.length); renderBonusPayoutTable(); }
 
 function renderBonusPayoutTable() {
   const tbody = document.getElementById('bonusPayoutTableBody');
   if (!tbody) return;
   document.getElementById('bonusPayoutEmptyState')?.classList.toggle('hidden', bonusPayouts.length > 0);
+  bonusPayoutList.updateSortArrows('.bonus-payout-sort-arrow');
+
+  const pagination = document.getElementById('bonusPayoutPagination');
+  if (!bonusPayouts.length) { pagination?.classList.add('hidden'); tbody.innerHTML = ''; return; }
+  pagination?.classList.remove('hidden');
+  const pageSizeEl = document.getElementById('bonusPayoutPageSize');
+  if (pageSizeEl) pageSizeEl.value = String(bonusPayoutList.pageSize);
+
+  const { pageItems, start, total } = bonusPayoutList.view(bonusPayouts);
+  const pageInfoEl = document.getElementById('bonusPayoutPageInfo');
+  if (pageInfoEl) pageInfoEl.textContent = `${start + 1}-${Math.min(start + bonusPayoutList.pageSize, total)} of ${total}`;
 
   const statusBadge = status => {
     if (status === 'Approved') return 'bg-blue-100 text-blue-700';
@@ -757,7 +795,7 @@ function renderBonusPayoutTable() {
     return 'bg-amber-100 text-amber-700';
   };
 
-  tbody.innerHTML = bonusPayouts.map(payout => `
+  tbody.innerHTML = pageItems.map(payout => `
     <tr class="hover:bg-slate-50 transition">
       <td class="px-4 py-3">
         <p class="font-medium">${esc(payout.employee_name ? displayName(payout.employee_name, payout.employee_preferred_name) : payout.employee_id)}</p>
@@ -988,17 +1026,36 @@ async function changeCommissionPlanStatus() {
   renderCommissionPlansTable();
 }
 
+const commissionEntryList = createListState({ sortKey: 'employee_id' });
+
 async function loadCommissionEntries(planId) {
   const res = await api(`/api/compensation/commission-plans/${planId}/entries`);
   if (!res || !res.ok) return;
   commissionEntries = await res.json();
+  commissionEntryList.resetPage();
   renderCommissionEntryTable();
 }
+
+function setCommissionEntrySort(key) { commissionEntryList.setSort(key); renderCommissionEntryTable(); }
+function setCommissionEntryPageSize(size) { commissionEntryList.setPageSize(size); renderCommissionEntryTable(); }
+function commissionEntryPagePrev() { commissionEntryList.prevPage(); renderCommissionEntryTable(); }
+function commissionEntryPageNext() { commissionEntryList.nextPage(commissionEntries.length); renderCommissionEntryTable(); }
 
 function renderCommissionEntryTable() {
   const tbody = document.getElementById('commissionEntryTableBody');
   if (!tbody) return;
   document.getElementById('commissionEntryEmptyState')?.classList.toggle('hidden', commissionEntries.length > 0);
+  commissionEntryList.updateSortArrows('.commission-entry-sort-arrow');
+
+  const pagination = document.getElementById('commissionEntryPagination');
+  if (!commissionEntries.length) { pagination?.classList.add('hidden'); tbody.innerHTML = ''; return; }
+  pagination?.classList.remove('hidden');
+  const pageSizeEl = document.getElementById('commissionEntryPageSize');
+  if (pageSizeEl) pageSizeEl.value = String(commissionEntryList.pageSize);
+
+  const { pageItems, start, total } = commissionEntryList.view(commissionEntries);
+  const pageInfoEl = document.getElementById('commissionEntryPageInfo');
+  if (pageInfoEl) pageInfoEl.textContent = `${start + 1}-${Math.min(start + commissionEntryList.pageSize, total)} of ${total}`;
 
   const statusBadge = status => {
     if (status === 'Approved') return 'bg-blue-100 text-blue-700';
@@ -1007,7 +1064,7 @@ function renderCommissionEntryTable() {
     return 'bg-amber-100 text-amber-700';
   };
 
-  tbody.innerHTML = commissionEntries.map(entry => `
+  tbody.innerHTML = pageItems.map(entry => `
     <tr class="hover:bg-slate-50 transition">
       <td class="px-4 py-3">
         <p class="font-medium">${esc(entry.employee_name ? displayName(entry.employee_name, entry.employee_preferred_name) : entry.employee_id)}</p>
@@ -1097,6 +1154,7 @@ let currentEquityVestingEvents = [];
 let currentSettleEventId = null;
 
 const equityGrantsList = createListState({ sortKey: 'vesting_start_date', sortDir: 'desc' });
+const equityVestingList = createListState({ sortKey: 'vest_date' });
 
 async function loadEquityGrants() {
   const res = await api('/api/compensation/equity-grants');
@@ -1208,9 +1266,15 @@ async function openEquityGrantDetail(grantId) {
   const res = await api(`/api/compensation/equity-grants/${grantId}`);
   if (!res || !res.ok) return;
   const g = await res.json();
+  equityVestingList.resetPage();
   renderEquityGrantDetail(g);
   document.getElementById('compensationEquityDetailModal').classList.remove('hidden');
 }
+
+function setEquityVestingSort(key) { equityVestingList.setSort(key); renderEquityVestingTable(); }
+function setEquityVestingPageSize(size) { equityVestingList.setPageSize(size); renderEquityVestingTable(); }
+function equityVestingPagePrev() { equityVestingList.prevPage(); renderEquityVestingTable(); }
+function equityVestingPageNext() { equityVestingList.nextPage(currentEquityVestingEvents.length); renderEquityVestingTable(); }
 
 function closeEquityDetailModal() {
   document.getElementById('compensationEquityDetailModal').classList.add('hidden');
@@ -1247,16 +1311,33 @@ function renderEquityGrantDetail(g) {
     actions.innerHTML = `<span class="badge bg-slate-100 text-slate-500">${esc(g.status)}</span>`;
   }
 
+  renderEquityVestingTable();
+}
+
+function renderEquityVestingTable() {
   const tbody = document.getElementById('equityVestingTableBody');
-  document.getElementById('equityVestingEmptyState')?.classList.toggle('hidden', g.vesting_events.length > 0);
+  if (!tbody) return;
+  document.getElementById('equityVestingEmptyState')?.classList.toggle('hidden', currentEquityVestingEvents.length > 0);
+  equityVestingList.updateSortArrows('.equity-vesting-sort-arrow');
+
+  const pagination = document.getElementById('equityVestingPagination');
+  if (!currentEquityVestingEvents.length) { pagination?.classList.add('hidden'); tbody.innerHTML = ''; return; }
+  pagination?.classList.remove('hidden');
+  const pageSizeEl = document.getElementById('equityVestingPageSize');
+  if (pageSizeEl) pageSizeEl.value = String(equityVestingList.pageSize);
+
+  const { pageItems, start, total } = equityVestingList.view(currentEquityVestingEvents);
+  const pageInfoEl = document.getElementById('equityVestingPageInfo');
+  if (pageInfoEl) pageInfoEl.textContent = `${start + 1}-${Math.min(start + equityVestingList.pageSize, total)} of ${total}`;
+
   const statusBadge = status => {
     if (status === 'Vested') return 'bg-emerald-100 text-emerald-700';
     if (status === 'Paid') return 'bg-blue-100 text-blue-700';
     if (status === 'Cancelled') return 'bg-slate-100 text-slate-500';
     return 'bg-amber-100 text-amber-700';
   };
-  const isPhantom = g.grant_type === 'Phantom';
-  tbody.innerHTML = g.vesting_events.map(ev => `
+  const isPhantom = currentEquityGrantType === 'Phantom';
+  tbody.innerHTML = pageItems.map(ev => `
     <tr>
       <td class="px-4 py-3">${fmtDate(ev.vest_date)}</td>
       <td class="px-4 py-3 text-right">${Number(ev.quantity_vested).toLocaleString('en-MY')}</td>
