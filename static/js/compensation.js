@@ -125,9 +125,7 @@ async function submitPayGradeForm(e) {
   loadPayGrades();
 }
 
-function closePayGradeModal() {
-  document.getElementById('compensationPayGradeModal').classList.add('hidden');
-}
+function closePayGradeModal() { closeModal('compensationPayGradeModal'); }
 
 function editPayGrade(gradeId) {
   const grade = payGrades.find(g => g.id === gradeId);
@@ -231,9 +229,7 @@ async function submitJobLevelForm(e) {
   loadJobLevels();
 }
 
-function closeJobLevelModal() {
-  document.getElementById('compensationJobLevelModal').classList.add('hidden');
-}
+function closeJobLevelModal() { closeModal('compensationJobLevelModal'); }
 
 // ============================================================================
 // JOB ROLES MANAGEMENT
@@ -315,9 +311,7 @@ function openJobRoleForm() {
   document.getElementById('compensationJobRoleModal').classList.remove('hidden');
 }
 
-function closeJobRoleModal() {
-  document.getElementById('compensationJobRoleModal').classList.add('hidden');
-}
+function closeJobRoleModal() { closeModal('compensationJobRoleModal'); }
 
 async function submitJobRoleForm(e) {
   e.preventDefault();
@@ -440,10 +434,7 @@ async function openMeritCycleDetail(cycleId) {
   document.getElementById('compensationMeritDetailModal').classList.remove('hidden');
 }
 
-function closeMeritDetailModal() {
-  document.getElementById('compensationMeritDetailModal').classList.add('hidden');
-  currentMeritCycleId = null;
-}
+function closeMeritDetailModal() { closeModal('compensationMeritDetailModal', () => currentMeritCycleId = null); }
 
 function toggleMeritRecForm() {
   document.getElementById('meritRecForm').classList.toggle('hidden');
@@ -602,9 +593,7 @@ async function submitMeritCycleForm(e) {
   loadMeritCycles();
 }
 
-function closeMeritModal() {
-  document.getElementById('compensationMeritModal').classList.add('hidden');
-}
+function closeMeritModal() { closeModal('compensationMeritModal'); }
 
 // ============================================================================
 // VARIABLE PAY: BONUS / INCENTIVE PLANS
@@ -676,9 +665,7 @@ function openBonusPlanForm() {
   document.getElementById('compensationBonusPlanModal').classList.remove('hidden');
 }
 
-function closeBonusPlanModal() {
-  document.getElementById('compensationBonusPlanModal').classList.add('hidden');
-}
+function closeBonusPlanModal() { closeModal('compensationBonusPlanModal'); }
 
 async function submitBonusPlanForm(e) {
   e.preventDefault();
@@ -732,10 +719,7 @@ async function openBonusPlanDetail(planId) {
   document.getElementById('compensationBonusDetailModal').classList.remove('hidden');
 }
 
-function closeBonusDetailModal() {
-  document.getElementById('compensationBonusDetailModal').classList.add('hidden');
-  currentBonusPlanId = null;
-}
+function closeBonusDetailModal() { closeModal('compensationBonusDetailModal', () => currentBonusPlanId = null); }
 
 function toggleBonusPayoutForm() {
   document.getElementById('bonusPayoutForm').classList.toggle('hidden');
@@ -935,9 +919,7 @@ function openCommissionPlanForm() {
   document.getElementById('compensationCommissionPlanModal').classList.remove('hidden');
 }
 
-function closeCommissionPlanModal() {
-  document.getElementById('compensationCommissionPlanModal').classList.add('hidden');
-}
+function closeCommissionPlanModal() { closeModal('compensationCommissionPlanModal'); }
 
 async function submitCommissionPlanForm(e) {
   e.preventDefault();
@@ -993,10 +975,7 @@ async function openCommissionPlanDetail(planId) {
   document.getElementById('compensationCommissionDetailModal').classList.remove('hidden');
 }
 
-function closeCommissionDetailModal() {
-  document.getElementById('compensationCommissionDetailModal').classList.add('hidden');
-  currentCommissionPlanId = null;
-}
+function closeCommissionDetailModal() { closeModal('compensationCommissionDetailModal', () => currentCommissionPlanId = null); }
 
 function toggleCommissionEntryForm() {
   document.getElementById('commissionEntryForm').classList.toggle('hidden');
@@ -1226,9 +1205,7 @@ function openEquityGrantForm() {
   document.getElementById('compensationEquityGrantModal').classList.remove('hidden');
 }
 
-function closeEquityGrantModal() {
-  document.getElementById('compensationEquityGrantModal').classList.add('hidden');
-}
+function closeEquityGrantModal() { closeModal('compensationEquityGrantModal'); }
 
 async function submitEquityGrantForm(e) {
   e.preventDefault();
@@ -1276,10 +1253,7 @@ function setEquityVestingPageSize(size) { equityVestingList.setPageSize(size); r
 function equityVestingPagePrev() { equityVestingList.prevPage(); renderEquityVestingTable(); }
 function equityVestingPageNext() { equityVestingList.nextPage(currentEquityVestingEvents.length); renderEquityVestingTable(); }
 
-function closeEquityDetailModal() {
-  document.getElementById('compensationEquityDetailModal').classList.add('hidden');
-  currentEquityGrantId = null;
-}
+function closeEquityDetailModal() { closeModal('compensationEquityDetailModal', () => currentEquityGrantId = null); }
 
 function renderEquityGrantDetail(g) {
   currentEquityGrantType = g.grant_type;
@@ -1400,10 +1374,7 @@ function promptSettleVestingEvent(eventId) {
   document.getElementById('equitySettleModal').classList.remove('hidden');
 }
 
-function closeEquitySettleModal() {
-  document.getElementById('equitySettleModal').classList.add('hidden');
-  currentSettleEventId = null;
-}
+function closeEquitySettleModal() { closeModal('equitySettleModal', () => currentSettleEventId = null); }
 
 function updateEquitySettlePreview() {
   const ev = currentEquityVestingEvents.find(e => e.id === currentSettleEventId);
@@ -1723,9 +1694,7 @@ async function openAssignCompModal(employeeId) {
   document.getElementById('assignCompModal').classList.remove('hidden');
 }
 
-function closeAssignCompModal() {
-  document.getElementById('assignCompModal').classList.add('hidden');
-}
+function closeAssignCompModal() { closeModal('assignCompModal'); }
 
 // Job Role determines Job Level (shown read-only) and narrows the Pay
 // Grade choices to that role's own mapped grades — falls back to every

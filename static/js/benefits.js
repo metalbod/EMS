@@ -191,9 +191,7 @@ async function removeEligibilityRule(ruleId) {
   loadEligibilityRules(currentBenefitPlanId);
 }
 
-function closeBenefitPlanModal() {
-  document.getElementById('benefitPlanModal').classList.add('hidden');
-}
+function closeBenefitPlanModal() { closeModal('benefitPlanModal'); }
 
 async function submitBenefitPlanForm(e) {
   e.preventDefault();
@@ -298,9 +296,7 @@ function openEnrollmentPeriodForm() {
   document.getElementById('enrollmentPeriodModal').classList.remove('hidden');
 }
 
-function closeEnrollmentPeriodModal() {
-  document.getElementById('enrollmentPeriodModal').classList.add('hidden');
-}
+function closeEnrollmentPeriodModal() { closeModal('enrollmentPeriodModal'); }
 
 async function submitEnrollmentPeriodForm(e) {
   e.preventDefault();
@@ -570,9 +566,7 @@ function openLifeEventForm() {
   document.getElementById('lifeEventModal').classList.remove('hidden');
 }
 
-function closeLifeEventModal() {
-  document.getElementById('lifeEventModal').classList.add('hidden');
-}
+function closeLifeEventModal() { closeModal('lifeEventModal'); }
 
 async function submitLifeEventForm(e) {
   e.preventDefault();
@@ -677,9 +671,7 @@ function openDependentForm(existing, context, employeeId) {
   document.getElementById('dependentModal').classList.remove('hidden');
 }
 
-function closeDependentModal() {
-  document.getElementById('dependentModal').classList.add('hidden');
-}
+function closeDependentModal() { closeModal('dependentModal'); }
 
 async function submitDependentForm(e) {
   e.preventDefault();
@@ -804,10 +796,7 @@ function openClaimDecideModal(claimId) {
   document.getElementById('claimDecideModal').classList.remove('hidden');
 }
 
-function closeClaimDecideModal() {
-  document.getElementById('claimDecideModal').classList.add('hidden');
-  currentDecideClaimId = null;
-}
+function closeClaimDecideModal() { closeModal('claimDecideModal', () => currentDecideClaimId = null); }
 
 async function submitClaimDecideForm(e) {
   e.preventDefault();
@@ -876,9 +865,7 @@ async function populateClaimProjectField() {
   wrap.classList.remove('hidden');
 }
 
-function closeClaimModal() {
-  document.getElementById('claimModal').classList.add('hidden');
-}
+function closeClaimModal() { closeModal('claimModal'); }
 
 async function submitClaimForm(e) {
   e.preventDefault();
