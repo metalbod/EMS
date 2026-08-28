@@ -616,18 +616,22 @@ NOT_YET_ENFORCED_MODULES: Dict[str, str] = {
         "PERFORMANCE_MANAGE_ROLES = (\"hr_manager\",) excludes superadmin — "
         "same escalation risk as Payroll (retrofitting would silently grant "
         "superadmin merit-increment/bonus-payout access it doesn't have "
-        "today). Flagged and confirmed with the project owner (2026-08-18) "
-        "to leave out of scope for now — unlike Payroll this isn't "
-        "necessarily permanent, revisit if there's a reason to reconsider."
+        "today). Flagged and confirmed with the project owner (2026-08-18); "
+        "revisited 2026-08-29 with nothing changed — no new reason surfaced "
+        "to grant superadmin this access, and it can't already reach it via "
+        "an institution-context switch either (that only changes "
+        "active_institution_id, not role). Reclassified permanent, same as "
+        "Payroll/Notifications above, for the identical reason."
     ),
     "Timesheets": (
-        "Not a gap, and not provisional like Performance above — every row "
-        "in this module is either NO_RESTRICTION (self-serve), a "
-        "SUBORDINATE/OWN mix ('View timesheets', not override-eligible), "
-        "or CONFIGURABLE ('Approve/reject timesheet', the approval-workflow "
-        "engine). There is genuinely nothing flat-ALLOW/DENY here to "
-        "retrofit — confirmed 2026-08-28, correcting an earlier version of "
-        "this entry that incorrectly described it as 'not yet reached'."
+        "Not a gap, and not a documented-exclusion case like Payroll/"
+        "Notifications/Performance above — every row in this module is "
+        "either NO_RESTRICTION (self-serve), a SUBORDINATE/OWN mix ('View "
+        "timesheets', not override-eligible), or CONFIGURABLE ('Approve/"
+        "reject timesheet', the approval-workflow engine). There is "
+        "genuinely nothing flat-ALLOW/DENY here to retrofit — confirmed "
+        "2026-08-28, correcting an earlier version of this entry that "
+        "incorrectly described it as 'not yet reached'."
     ),
 }
 # Overtime used to be listed here too ("not yet retrofitted, no escalation
