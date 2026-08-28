@@ -425,6 +425,25 @@ ENFORCED_ACTION_KEYS = frozenset({
     # it here would let someone "grant" a role approval rights that the
     # engine would still ignore — never add a CONFIGURABLE-noted action
     # to this set no matter what its access dict looks like structurally.
+    #
+    # Timesheets module: zero keys here, not an oversight — "View
+    # timesheets" mixes SUBORDINATE/OWN into its access dict (not flat
+    # ALLOW/DENY, not override-eligible), "Approve/reject timesheet" is
+    # CONFIGURABLE (approval-workflow engine, same reasoning as Leave's
+    # approve_reject above), and the remaining two rows are NO_RESTRICTION
+    # self-serve actions. Nothing in this module is actually retrofittable
+    # — NOT_YET_ENFORCED_MODULES's old "Timesheets" entry claiming this was
+    # simply unreached is corrected below (removed) rather than left stale.
+    #
+    "overtime.configure_overtime_settings",
+    # NOT overtime.view_overtime_settings or overtime.view_overtime_records
+    # — both NO_RESTRICTION (view is open; records scoped inline by role in
+    # the router body). NOT overtime.approve_reject_overtime — CONFIGURABLE,
+    # same reasoning as every other *.approve_reject_* key above. Only
+    # "Configure overtime settings" is a genuine flat ALLOW/DENY row, and
+    # OVERTIME_SETTINGS_ROLES already includes superadmin (it's literally
+    # LEAVE_MANAGE_ROLES), so retrofitting it carries no escalation risk —
+    # see routers/overtime.py's update_overtime_settings.
     "onboarding_offboarding.manage_template_sets_templates",
     "onboarding_offboarding.start_delete_checklist",
     "onboarding_offboarding.add_edit_delete_checklist_item_hr",
@@ -601,17 +620,25 @@ NOT_YET_ENFORCED_MODULES: Dict[str, str] = {
         "to leave out of scope for now — unlike Payroll this isn't "
         "necessarily permanent, revisit if there's a reason to reconsider."
     ),
-    "Overtime": (
-        "Not yet retrofitted — no escalation risk if/when it is: "
-        "OVERTIME_SETTINGS_ROLES already includes superadmin, so this one "
-        "just hasn't been reached yet, unlike Payroll/Performance above."
-    ),
     "Timesheets": (
-        "Not yet retrofitted — no escalation risk if/when it is: its "
-        "inline role checks already include superadmin, so this one just "
-        "hasn't been reached yet, unlike Payroll/Performance above."
+        "Not a gap, and not provisional like Performance above — every row "
+        "in this module is either NO_RESTRICTION (self-serve), a "
+        "SUBORDINATE/OWN mix ('View timesheets', not override-eligible), "
+        "or CONFIGURABLE ('Approve/reject timesheet', the approval-workflow "
+        "engine). There is genuinely nothing flat-ALLOW/DENY here to "
+        "retrofit — confirmed 2026-08-28, correcting an earlier version of "
+        "this entry that incorrectly described it as 'not yet reached'."
     ),
 }
+# Overtime used to be listed here too ("not yet retrofitted, no escalation
+# risk") — retrofitted 2026-08-28: see
+# ENFORCED_ACTION_KEYS' "overtime.configure_overtime_settings" entry and
+# routers/overtime.py's update_overtime_settings. Its other three MATRIX
+# rows stay unenforced for the same NO_RESTRICTION/CONFIGURABLE reasons as
+# every other module here, documented at the ENFORCED_ACTION_KEYS entry
+# itself rather than repeated in this dict, matching Leave/Timesheets/etc.'s
+# own convention of not needing a NOT_YET_ENFORCED_MODULES row once a
+# module has at least one enforced key.
 
 
 def is_override_eligible(action: Dict[str, Any], role: str) -> bool:

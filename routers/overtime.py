@@ -9,9 +9,11 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 
-from core.deps import get_current_user, need_inst, require_roles
+from core.deps import get_current_user, need_inst
 
 from core.roles import LEAVE_MANAGE_ROLES
+
+from core.permission_matrix import require_permission
 
 from core.approval_workflow import advance_or_finalize, project_ids_for_row
 
@@ -24,7 +26,12 @@ from db import get_db
 router = APIRouter()
 
 # Same role set that already manages Leave Types / Approval Workflows —
-# overtime conversion settings are an HR-configuration concern.
+# overtime conversion settings are an HR-configuration concern. No longer
+# the literal gate (update_overtime_settings below goes through
+# require_permission("overtime.configure_overtime_settings") /
+# core/permission_matrix.py's override system now) — kept as the
+# documented default this action's matrix row represents, same pattern
+# as routers/locations.py's LOCATIONS_MANAGE_ROLES.
 OVERTIME_SETTINGS_ROLES = LEAVE_MANAGE_ROLES
 
 
@@ -59,7 +66,8 @@ def get_overtime_settings(conn, user: dict = Depends(get_current_user)) -> Dict[
 @router.put("/api/overtime/settings")
 @db_session
 def update_overtime_settings(conn, body: OvertimeSettingsIn,
-                             user: dict = Depends(require_roles(*OVERTIME_SETTINGS_ROLES))) -> Dict[str, Any]:
+                             user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    require_permission(conn, user, "overtime.configure_overtime_settings")
     inst_id = need_inst(user)
     if body.overtime_conversion_mode == "leave":
         if not body.overtime_leave_type_id:

@@ -696,3 +696,44 @@ def test_benefits_override_lets_manager_manage_plans(client, hr_manager_auth, ma
     finally:
         client.delete("/api/roles/permission-matrix/override", headers=hr_manager_auth,
                        params={"action_key": "benefits.manage_benefit_plans_eligibility_enrollment_periods", "role": "manager"})
+
+
+# ---------------------------------------------------------------------------
+# Overtime (routers/overtime.py) — configure_overtime_settings only. See
+# permission_matrix.py's ENFORCED_ACTION_KEYS notes on this module: the
+# other three rows (view settings, view records, approve/reject) stay
+# unenforced (NO_RESTRICTION/CONFIGURABLE), same reasoning as every other
+# module's non-enforced rows.
+# ---------------------------------------------------------------------------
+def test_overtime_override_lets_manager_configure_settings(client, hr_manager_auth, make_test_user, test_institution):
+    mgr_token, _ = make_test_user(role="manager")
+    mgr_headers = {"Authorization": f"Bearer {mgr_token}", "X-Institution-Id": str(test_institution["id"])}
+
+    before = client.put("/api/overtime/settings", headers=mgr_headers, json={"overtime_conversion_mode": "pay"})
+    assert before.status_code == 403, before.text
+
+    override = client.put("/api/roles/permission-matrix/override", headers=hr_manager_auth, json={
+        "action_key": "overtime.configure_overtime_settings", "role": "manager", "access_value": "allow",
+    })
+    assert override.status_code == 200, override.text
+    try:
+        after = client.put("/api/overtime/settings", headers=mgr_headers, json={"overtime_conversion_mode": "pay"})
+        assert after.status_code == 200, after.text
+    finally:
+        client.delete("/api/roles/permission-matrix/override", headers=hr_manager_auth,
+                       params={"action_key": "overtime.configure_overtime_settings", "role": "manager"})
+        # Restore the institution's overtime settings to a state later tests
+        # in this shared institution expect, mirroring test_overtime.py's
+        # own cleanup convention for this same endpoint.
+        client.put("/api/overtime/settings", headers=hr_manager_auth, json={"overtime_conversion_mode": "pay"})
+
+
+def test_overtime_approval_action_stays_non_enforced(client, hr_manager_auth):
+    """approve_reject_overtime has a flat-looking access dict but its real
+    gate is the approval-workflow engine — must never be added to
+    ENFORCED_ACTION_KEYS no matter how it looks structurally, same
+    reasoning as every other *.approve_reject_* key in this file."""
+    res = client.put("/api/roles/permission-matrix/override", headers=hr_manager_auth, json={
+        "action_key": "overtime.approve_reject_overtime", "role": "manager", "access_value": "allow",
+    })
+    assert res.status_code == 400, res.text
