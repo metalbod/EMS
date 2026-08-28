@@ -543,27 +543,11 @@ def check_and_trigger_capacity_alerts(
 # EMPLOYEE REPORT ENDPOINTS
 # ============================================================================
 
-@router.post("/reports/location/{location_id}/employees")
-@db_session
-def get_employee_report_by_location(
-    conn,
-    location_id: int,
-    request: EmployeeLocationReportRequest,
-    current_user: dict = Depends(get_current_user),
-) -> LocationEmployeeReport:
-    """Generate employee report for a location."""
-    inst_id = current_user.get("institution_id")
-
-    # Verify location exists
-    location = conn.execute(
-        "SELECT * FROM locations WHERE id = ? AND institution_id = ?",
-        (location_id, inst_id),
-    ).fetchone()
-
-    if not location:
-        raise HTTPException(404, detail="Location not found")
-
-    # Build query
+def _build_location_employee_query(location_id: int, inst_id: int, request: EmployeeLocationReportRequest):
+    """Builds the (query, params) for get_employee_report_by_location's
+    filtered employee list — split out purely because the dynamic
+    WHERE-clause assembly (3 independent optional filters) is a distinct
+    concern from the row/summary building that consumes its result."""
     query = """
         SELECT DISTINCT e.*, ela.assignment_type, ela.is_active
         FROM employee_location_assignments ela
@@ -585,10 +569,16 @@ def get_employee_report_by_location(
         params.extend(request.departments)
 
     query += " ORDER BY e.full_name"
+    return query, params
 
-    employees = conn.execute(query, params).fetchall()
 
-    # Build report rows
+def _build_employee_report_rows(conn, employees, location):
+    """Builds get_employee_report_by_location's per-employee report rows
+    plus the aggregate counts (by department, by status, tenure) the
+    response's summary is computed from — one pass over `employees`,
+    with one extra query per employee for their other location
+    assignments (a location report is already a low-traffic, HR-facing
+    endpoint, not worth batching further)."""
     report_rows = []
     dept_counts = {}
     status_counts = {"Active": 0, "Inactive": 0}
@@ -626,6 +616,34 @@ def get_employee_report_by_location(
             "email": emp["work_email"],
         }
         report_rows.append(row)
+
+    return report_rows, dept_counts, status_counts, tenure_days
+
+
+@router.post("/reports/location/{location_id}/employees")
+@db_session
+def get_employee_report_by_location(
+    conn,
+    location_id: int,
+    request: EmployeeLocationReportRequest,
+    current_user: dict = Depends(get_current_user),
+) -> LocationEmployeeReport:
+    """Generate employee report for a location."""
+    inst_id = current_user.get("institution_id")
+
+    # Verify location exists
+    location = conn.execute(
+        "SELECT * FROM locations WHERE id = ? AND institution_id = ?",
+        (location_id, inst_id),
+    ).fetchone()
+
+    if not location:
+        raise HTTPException(404, detail="Location not found")
+
+    query, params = _build_location_employee_query(location_id, inst_id, request)
+    employees = conn.execute(query, params).fetchall()
+
+    report_rows, dept_counts, status_counts, tenure_days = _build_employee_report_rows(conn, employees, location)
 
     return LocationEmployeeReport(
         location_id=location_id,
@@ -726,6 +744,76 @@ def get_location_capacity_status(
 
 
 
+def _capacity_forecast(conn, inst_id: int, location_id: int, location_name: str, emp_count: int, capacity: int) -> CapacityForecast:
+    """The 30-day-ahead sub-report of get_location_capacity_dashboard:
+    headcount projected to leave via a contract ending in the window,
+    employees already on approved leave overlapping it, and the resulting
+    forecast utilization."""
+    today_iso = date.today().isoformat()
+    forecast_end_iso = (date.today() + timedelta(days=30)).isoformat()
+
+    projected_departures = conn.execute(
+        """
+        SELECT COUNT(*) FROM employee_location_assignments ela
+        JOIN employees e ON e.employee_id = ela.employee_id AND e.institution_id = ela.institution_id
+        WHERE ela.location_id = ? AND ela.institution_id = ? AND ela.is_active = 1
+          AND e.contract_end_date IS NOT NULL AND e.contract_end_date BETWEEN ? AND ?
+        """,
+        (location_id, inst_id, today_iso, forecast_end_iso),
+    ).fetchone()[0]
+
+    planned_leaves = conn.execute(
+        """
+        SELECT COUNT(DISTINCT la.employee_id) FROM leave_applications la
+        JOIN employee_location_assignments ela ON ela.employee_id = la.employee_id AND ela.institution_id = la.institution_id
+        WHERE ela.location_id = ? AND ela.institution_id = ? AND ela.is_active = 1
+          AND la.status = 'Approved' AND la.start_date <= ? AND la.end_date >= ?
+        """,
+        (location_id, inst_id, forecast_end_iso, today_iso),
+    ).fetchone()[0]
+
+    projected_headcount = emp_count - projected_departures
+    forecast_utilization = (projected_headcount / capacity * 100) if capacity > 0 else 0
+
+    return CapacityForecast(
+        location_id=location_id,
+        location_name=location_name,
+        forecast_period="next-30-days",
+        current_headcount=emp_count,
+        projected_departures=projected_departures,
+        planned_leaves=planned_leaves,
+        projected_headcount=projected_headcount,
+        forecast_utilization=round(forecast_utilization, 1),
+        recruitment_needed=0,
+        actions_recommended=[],
+    )
+
+
+def _capacity_trend_data(conn, inst_id: int, location_id: int) -> list:
+    """Real history from location_capacity_snapshots — see that table's
+    migration docstring and check_and_trigger_capacity_alerts (the only
+    writer). Empty list (not a fabricated point) when this location has
+    no snapshots yet — an honest, not faked, absence of data."""
+    trend_rows = conn.execute(
+        """
+        SELECT snapshot_date, employee_count, capacity, utilization_percent
+        FROM location_capacity_snapshots
+        WHERE location_id = ? AND institution_id = ? AND snapshot_date >= ?
+        ORDER BY snapshot_date
+        """,
+        (location_id, inst_id, (date.today() - timedelta(days=30)).isoformat()),
+    ).fetchall()
+    return [
+        {
+            "date": r["snapshot_date"].isoformat() if hasattr(r["snapshot_date"], "isoformat") else r["snapshot_date"],
+            "employee_count": r["employee_count"],
+            "capacity": r["capacity"],
+            "utilization_percent": float(r["utilization_percent"]),
+        }
+        for r in trend_rows
+    ]
+
+
 @router.get("/locations/{location_id}/capacity-dashboard")
 @db_session
 def get_location_capacity_dashboard(
@@ -777,55 +865,8 @@ def get_location_capacity_dashboard(
         (location_id,),
     ).fetchone()
 
-    today_iso = date.today().isoformat()
-    forecast_end_iso = (date.today() + timedelta(days=30)).isoformat()
-
-    projected_departures = conn.execute(
-        """
-        SELECT COUNT(*) FROM employee_location_assignments ela
-        JOIN employees e ON e.employee_id = ela.employee_id AND e.institution_id = ela.institution_id
-        WHERE ela.location_id = ? AND ela.institution_id = ? AND ela.is_active = 1
-          AND e.contract_end_date IS NOT NULL AND e.contract_end_date BETWEEN ? AND ?
-        """,
-        (location_id, inst_id, today_iso, forecast_end_iso),
-    ).fetchone()[0]
-
-    planned_leaves = conn.execute(
-        """
-        SELECT COUNT(DISTINCT la.employee_id) FROM leave_applications la
-        JOIN employee_location_assignments ela ON ela.employee_id = la.employee_id AND ela.institution_id = la.institution_id
-        WHERE ela.location_id = ? AND ela.institution_id = ? AND ela.is_active = 1
-          AND la.status = 'Approved' AND la.start_date <= ? AND la.end_date >= ?
-        """,
-        (location_id, inst_id, forecast_end_iso, today_iso),
-    ).fetchone()[0]
-
-    projected_headcount = emp_count - projected_departures
-    forecast_utilization = (projected_headcount / capacity * 100) if capacity > 0 else 0
-
-    # Real history from location_capacity_snapshots — see that table's
-    # migration docstring and check_and_trigger_capacity_alerts (the only
-    # writer). Empty list (not a fabricated point) when this location has
-    # no snapshots yet — same "honest, not faked" stance as before, now
-    # populated once real data exists instead of permanently empty.
-    trend_rows = conn.execute(
-        """
-        SELECT snapshot_date, employee_count, capacity, utilization_percent
-        FROM location_capacity_snapshots
-        WHERE location_id = ? AND institution_id = ? AND snapshot_date >= ?
-        ORDER BY snapshot_date
-        """,
-        (location_id, inst_id, (date.today() - timedelta(days=30)).isoformat()),
-    ).fetchall()
-    trend_data = [
-        {
-            "date": r["snapshot_date"].isoformat() if hasattr(r["snapshot_date"], "isoformat") else r["snapshot_date"],
-            "employee_count": r["employee_count"],
-            "capacity": r["capacity"],
-            "utilization_percent": float(r["utilization_percent"]),
-        }
-        for r in trend_rows
-    ]
+    forecast = _capacity_forecast(conn, inst_id, location_id, location["name"], emp_count, capacity)
+    trend_data = _capacity_trend_data(conn, inst_id, location_id)
 
     return LocationCapacityDashboard(
         location_id=location_id,
@@ -842,18 +883,7 @@ def get_location_capacity_dashboard(
             alert_triggered=len(alerts) > 0,
             recommendation=None,
         ),
-        forecast=CapacityForecast(
-            location_id=location_id,
-            location_name=location["name"],
-            forecast_period="next-30-days",
-            current_headcount=emp_count,
-            projected_departures=projected_departures,
-            planned_leaves=planned_leaves,
-            projected_headcount=projected_headcount,
-            forecast_utilization=round(forecast_utilization, 1),
-            recruitment_needed=0,
-            actions_recommended=[],
-        ),
+        forecast=forecast,
         recent_alerts=[
             CapacityAlert(
                 id=alert["id"],

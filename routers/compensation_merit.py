@@ -171,6 +171,49 @@ def create_merit_recommendation(
     return MeritRecommendationResponse(**dict(rec))
 
 
+def _apply_merit_salary_increase(conn, inst_id: int, rec, cycle_name: str, user_id, now: str) -> None:
+    """Applies an approved merit recommendation's salary increase for real,
+    not just an HR note about it — supersedes employee_compensation (same
+    is_current handoff as set_employee_compensation), syncs
+    employees.basic_salary (the one source of truth payroll reads — see
+    routers/employees.py), and records a salary_changes audit row, already
+    marked Approved since the merit approval itself *is* the approval — a
+    second manual approval step would be redundant."""
+    effective_date = datetime.utcnow().date().isoformat()
+
+    prev_comp = get_current_compensation(conn, inst_id, rec["employee_id"])
+
+    retire_and_replace_compensation(
+        conn, inst_id, rec["employee_id"],
+        job_role_id=prev_comp["job_role_id"] if prev_comp else None,
+        job_level_id=prev_comp["job_level_id"] if prev_comp else None,
+        pay_grade_id=prev_comp["pay_grade_id"] if prev_comp else None,
+        salary_structure_id=prev_comp["salary_structure_id"] if prev_comp else None,
+        base_salary=rec["recommended_new_salary"], effective_date=effective_date,
+    )
+    conn.execute(
+        "UPDATE employees SET basic_salary=?, updated_at=? WHERE employee_id=? AND institution_id=?",
+        (rec["recommended_new_salary"], now, rec["employee_id"], inst_id),
+    )
+
+    conn.execute(
+        """
+        INSERT INTO salary_changes
+        (institution_id, employee_id, change_type, from_salary, to_salary,
+         from_pay_grade_id, to_pay_grade_id, from_job_level_id, to_job_level_id,
+         effective_date, approved_by_user_id, approval_date, reason, status, created_at)
+        VALUES (?, ?, 'merit_increase', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Approved', ?)
+        """,
+        (inst_id, rec["employee_id"], rec["current_salary"], rec["recommended_new_salary"],
+         prev_comp["pay_grade_id"] if prev_comp else None,
+         prev_comp["pay_grade_id"] if prev_comp else None,
+         prev_comp["job_level_id"] if prev_comp else None,
+         prev_comp["job_level_id"] if prev_comp else None,
+         effective_date, user_id, now,
+         f"Merit recommendation under '{cycle_name}'", now),
+    )
+
+
 @router.put("/merit-recommendations/{recommendation_id}")
 @db_session
 def approve_merit_recommendation(
@@ -213,53 +256,8 @@ def approve_merit_recommendation(
         f"under '{cycle_name}' was {payload.approval_status.lower()} by {current_user['username']}."
     )
 
-    # An "Approved" merit recommendation previously only produced this HR
-    # note — the employee's actual base salary never moved, so
-    # Total Rewards / payroll / pay grades kept reading the stale
-    # figure. Approving now also supersedes employee_compensation (same
-    # is_current handoff as set_employee_compensation) and records a
-    # salary_changes audit row, already marked Approved since the merit
-    # approval itself *is* the approval — a second manual approval step
-    # would be redundant.
     if payload.approval_status == "Approved":
-        effective_date = datetime.utcnow().date().isoformat()
-
-        prev_comp = get_current_compensation(conn, inst_id, rec["employee_id"])
-
-        retire_and_replace_compensation(
-            conn, inst_id, rec["employee_id"],
-            job_role_id=prev_comp["job_role_id"] if prev_comp else None,
-            job_level_id=prev_comp["job_level_id"] if prev_comp else None,
-            pay_grade_id=prev_comp["pay_grade_id"] if prev_comp else None,
-            salary_structure_id=prev_comp["salary_structure_id"] if prev_comp else None,
-            base_salary=rec["recommended_new_salary"], effective_date=effective_date,
-        )
-        # employees.basic_salary is the one source of truth payroll reads
-        # (see routers/employees.py) — a merit approval that only wrote
-        # employee_compensation.base_salary would leave the two figures
-        # out of sync, same drift this whole base_salary/basic_salary
-        # split was meant to eliminate.
-        conn.execute(
-            "UPDATE employees SET basic_salary=?, updated_at=? WHERE employee_id=? AND institution_id=?",
-            (rec["recommended_new_salary"], now, rec["employee_id"], inst_id),
-        )
-
-        conn.execute(
-            """
-            INSERT INTO salary_changes
-            (institution_id, employee_id, change_type, from_salary, to_salary,
-             from_pay_grade_id, to_pay_grade_id, from_job_level_id, to_job_level_id,
-             effective_date, approved_by_user_id, approval_date, reason, status, created_at)
-            VALUES (?, ?, 'merit_increase', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Approved', ?)
-            """,
-            (inst_id, rec["employee_id"], rec["current_salary"], rec["recommended_new_salary"],
-             prev_comp["pay_grade_id"] if prev_comp else None,
-             prev_comp["pay_grade_id"] if prev_comp else None,
-             prev_comp["job_level_id"] if prev_comp else None,
-             prev_comp["job_level_id"] if prev_comp else None,
-             effective_date, user_id, now,
-             f"Merit recommendation under '{cycle_name}'", now),
-        )
+        _apply_merit_salary_increase(conn, inst_id, rec, cycle_name, user_id, now)
 
     _add_hr_note(conn, inst_id, rec["employee_id"], note_body, current_user["username"])
 

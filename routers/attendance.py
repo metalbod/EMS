@@ -426,25 +426,19 @@ def _pick_assignment_shift(assignments, work_date: str):
     return max(candidates, key=lambda a: a["effective_from"])
 
 
-def _sweep_absences(conn, inst_id: int):
-    """Lazy evaluation: run on every load of the review queue / HR
-    dashboard. For each employee with an active required=true rule,
-    walk back over the sweep window and materialize an
-    'Absent (Pending Review)' record for any work day whose clock-in
-    deadline has passed with no attendance_records row at all. Days
-    that already have a row (Present/Late/etc.) are left untouched.
-
-    Batches every lookup (settings, existing records, shift assignments)
-    into one query each up front instead of one (or several) per employee
-    — the previous version queried attendance_settings again for every
-    employee on top of the per-day querying, which is what made the
-    Review screen slow to load even after the per-day fix."""
+def _load_absence_sweep_context(conn, inst_id: int):
+    """Batch-fetches everything _sweep_absences needs into lookup dicts —
+    one query per resource up front instead of one (or several) per
+    employee, which is what made the Review screen slow to load even
+    after an earlier per-day-query fix. Returns None if there's nothing
+    to sweep (no active settings, or no active employees) so the caller
+    can bail out early without unpacking a partial context."""
     settings_rows = conn.execute(
         "SELECT * FROM attendance_settings WHERE institution_id = ? AND is_active = 1",
         (inst_id,),
     ).fetchall()
     if not settings_rows:
-        return
+        return None
     settings_by_emp = {r["employee_id"]: r for r in settings_rows if r["employee_id"]}
     settings_by_dept = {r["department"]: r for r in settings_rows if r["department"] and not r["employee_id"]}
 
@@ -453,7 +447,7 @@ def _sweep_absences(conn, inst_id: int):
         (inst_id,),
     ).fetchall()
     if not employees:
-        return
+        return None
 
     now = datetime.utcnow()
     today = now.date()
@@ -481,6 +475,39 @@ def _sweep_absences(conn, inst_id: int):
 
     shift_rows = conn.execute("SELECT * FROM shifts WHERE institution_id = ? AND is_active = 1", (inst_id,)).fetchall()
     shift_by_id = {s["id"]: s for s in shift_rows}
+
+    return {
+        "settings_by_emp": settings_by_emp,
+        "settings_by_dept": settings_by_dept,
+        "employees": employees,
+        "now": now,
+        "today": today,
+        "window_start": window_start,
+        "existing": existing,
+        "assignments_by_emp": assignments_by_emp,
+        "shift_by_id": shift_by_id,
+    }
+
+
+def _sweep_absences(conn, inst_id: int):
+    """Lazy evaluation: run on every load of the review queue / HR
+    dashboard. For each employee with an active required=true rule,
+    walk back over the sweep window and materialize an
+    'Absent (Pending Review)' record for any work day whose clock-in
+    deadline has passed with no attendance_records row at all. Days
+    that already have a row (Present/Late/etc.) are left untouched."""
+    ctx = _load_absence_sweep_context(conn, inst_id)
+    if ctx is None:
+        return
+    settings_by_emp = ctx["settings_by_emp"]
+    settings_by_dept = ctx["settings_by_dept"]
+    employees = ctx["employees"]
+    now = ctx["now"]
+    today = ctx["today"]
+    window_start = ctx["window_start"]
+    existing = ctx["existing"]
+    assignments_by_emp = ctx["assignments_by_emp"]
+    shift_by_id = ctx["shift_by_id"]
 
     now_iso = now.isoformat()
     for emp in employees:

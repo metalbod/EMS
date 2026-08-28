@@ -1233,6 +1233,49 @@ def list_claims(
     return [ClaimWithDetails(**r) for r in result]
 
 
+def _enforce_reimbursement_cap_or_raise(conn, inst_id: int, claim, claim_id: int, amount_approved: float) -> None:
+    """Reimbursement Cap plans have a finite annual pool — approving past
+    it silently would let the balance shown on the employee's own
+    dashboard go negative with nothing here to stop it. Enforces the same
+    cap math the dashboard displays, not just shows it after the fact.
+    Raises HTTPException(400) if amount_approved would exceed the
+    employee's remaining balance under the plan; a no-op otherwise
+    (including for any plan that isn't a Reimbursement Cap plan)."""
+    plan = conn.execute(
+        "SELECT * FROM benefit_plans WHERE id = ? AND institution_id = ?",
+        (claim["benefit_plan_id"], inst_id),
+    ).fetchone()
+    if not plan or plan["contribution_type"] != "Reimbursement Cap":
+        return
+
+    enrollment = conn.execute(
+        "SELECT * FROM benefit_enrollments WHERE employee_id = ? AND benefit_plan_id = ? AND institution_id = ?",
+        (claim["employee_id"], claim["benefit_plan_id"], inst_id),
+    ).fetchone()
+    annual_cap = float(enrollment["employer_cost_snapshot"]) if enrollment and enrollment["employer_cost_snapshot"] is not None else float(plan["employer_cost"] or 0)
+
+    this_year_prefix = f"{datetime.utcnow().year}-"
+    used_elsewhere = conn.execute(
+        """
+        SELECT COALESCE(SUM(amount_approved), 0) AS total FROM benefit_claims
+        WHERE employee_id = ? AND benefit_plan_id = ? AND institution_id = ?
+          AND status IN ('Approved', 'Paid') AND claim_date LIKE ? AND id != ?
+        """,
+        (claim["employee_id"], claim["benefit_plan_id"], inst_id, this_year_prefix + '%', claim_id),
+    ).fetchone()
+    remaining = annual_cap - float(used_elsewhere["total"])
+    if amount_approved > remaining:
+        raise HTTPException(
+            400,
+            detail=(
+                f"Approved amount RM{amount_approved:,.2f} exceeds the employee's remaining "
+                f"RM{max(0.0, remaining):,.2f} balance under this plan's RM{annual_cap:,.2f} annual cap "
+                f"(RM{float(used_elsewhere['total']):,.2f} already used this year). "
+                f"Approve RM{max(0.0, remaining):,.2f} or less, or reject the claim."
+            ),
+        )
+
+
 @router.put("/claims/{claim_id}/decide")
 @db_session
 def decide_claim(
@@ -1281,43 +1324,8 @@ def decide_claim(
     if payload.status == "Approved" and amount_approved is None:
         amount_approved = float(claim["amount_claimed"])
 
-    # Reimbursement Cap plans have a finite annual pool — approving past
-    # it silently would let the balance shown on the employee's own
-    # dashboard go negative with nothing here to stop it. Enforce the
-    # same cap math the dashboard displays, not just show it after the
-    # fact.
     if payload.status == "Approved":
-        plan = conn.execute(
-            "SELECT * FROM benefit_plans WHERE id = ? AND institution_id = ?",
-            (claim["benefit_plan_id"], inst_id),
-        ).fetchone()
-        if plan and plan["contribution_type"] == "Reimbursement Cap":
-            enrollment = conn.execute(
-                "SELECT * FROM benefit_enrollments WHERE employee_id = ? AND benefit_plan_id = ? AND institution_id = ?",
-                (claim["employee_id"], claim["benefit_plan_id"], inst_id),
-            ).fetchone()
-            annual_cap = float(enrollment["employer_cost_snapshot"]) if enrollment and enrollment["employer_cost_snapshot"] is not None else float(plan["employer_cost"] or 0)
-
-            this_year_prefix = f"{datetime.utcnow().year}-"
-            used_elsewhere = conn.execute(
-                """
-                SELECT COALESCE(SUM(amount_approved), 0) AS total FROM benefit_claims
-                WHERE employee_id = ? AND benefit_plan_id = ? AND institution_id = ?
-                  AND status IN ('Approved', 'Paid') AND claim_date LIKE ? AND id != ?
-                """,
-                (claim["employee_id"], claim["benefit_plan_id"], inst_id, this_year_prefix + '%', claim_id),
-            ).fetchone()
-            remaining = annual_cap - float(used_elsewhere["total"])
-            if amount_approved > remaining:
-                raise HTTPException(
-                    400,
-                    detail=(
-                        f"Approved amount RM{amount_approved:,.2f} exceeds the employee's remaining "
-                        f"RM{max(0.0, remaining):,.2f} balance under this plan's RM{annual_cap:,.2f} annual cap "
-                        f"(RM{float(used_elsewhere['total']):,.2f} already used this year). "
-                        f"Approve RM{max(0.0, remaining):,.2f} or less, or reject the claim."
-                    ),
-                )
+        _enforce_reimbursement_cap_or_raise(conn, inst_id, claim, claim_id, amount_approved)
 
     now = datetime.utcnow().isoformat()
     conn.execute(

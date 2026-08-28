@@ -589,6 +589,55 @@ def get_employee(conn, employee_id: str, user: dict = Depends(get_current_user))
     return result
 
 
+def _pay_grade_range_warning(conn, inst_id: str, employee_id: str, emp: "EmployeeIn"):
+    """basic_salary is the one source of truth payroll actually reads (see
+    routers/compensation.py) — if this employee has a current compensation
+    record with a pay grade assigned, a basic_salary outside that grade's
+    band is flagged as a non-blocking warning (returned to the caller, not
+    raised) rather than rejected outright — per product decision, HR may
+    have a legitimate reason to save it anyway (e.g. an approved exception
+    pending a grade change) and shouldn't be locked out. Looked up by the
+    *original* employee_id since employee_compensation isn't touched by
+    _rename_employee_id_everywhere. Returns None (no warning) for a
+    non-Monthly salary_type or an employee with no pay grade assigned."""
+    if emp.salary_type != "Monthly":
+        return None
+    current_comp = conn.execute(
+        "SELECT pay_grade_id FROM employee_compensation WHERE employee_id=? AND institution_id=? AND is_current=1",
+        (employee_id, inst_id)
+    ).fetchone()
+    if not current_comp or not current_comp["pay_grade_id"]:
+        return None
+    grade = conn.execute(
+        "SELECT grade_name, grade_code, min_salary, max_salary FROM pay_grades WHERE id=?",
+        (current_comp["pay_grade_id"],)
+    ).fetchone()
+    if not grade or float(grade["min_salary"]) <= emp.basic_salary <= float(grade["max_salary"]):
+        return None
+    return (
+        f"RM {emp.basic_salary:,.2f} is outside the '{grade['grade_name']} ({grade['grade_code']})' "
+        f"pay grade range of RM {float(grade['min_salary']):,.2f} – RM {float(grade['max_salary']):,.2f} "
+        f"assigned to this employee. Consider changing their job role, level, or pay grade in the "
+        f"Compensation tab, or revise this Basic Salary to fall within the assigned grade."
+    )
+
+
+def _rename_employee_id_everywhere(conn, inst_id: str, old_id: str, new_id: str) -> None:
+    """employee_id is a soft key referenced (as plain TEXT, no DB-level FK)
+    across many tables — rename it everywhere in one transaction so
+    nothing gets silently orphaned. Caller is responsible for the role
+    check and the duplicate-new_id check before calling this — this
+    function just does the mechanical rename."""
+    conn.execute("UPDATE employees SET employee_id=? WHERE institution_id=? AND employee_id=?", (new_id, inst_id, old_id))
+    conn.execute("UPDATE employees SET reports_to=? WHERE institution_id=? AND reports_to=?", (new_id, inst_id, old_id))
+    conn.execute("UPDATE users SET employee_id=? WHERE institution_id=? AND employee_id=?", (new_id, inst_id, old_id))
+    conn.execute("UPDATE audit_logs SET target_employee_id=? WHERE institution_id=? AND target_employee_id=?", (new_id, inst_id, old_id))
+    for tbl in ("ob_audit_log", "hr_notes", "ob_checklists", "ld_enrollments", "ld_audit_log",
+                "ld_quiz_attempts", "ld_lesson_progress", "leave_balances", "leave_applications",
+                "leave_audit_log", "timesheets", "timesheet_audit_log", "task_assignments"):
+        conn.execute(f"UPDATE {tbl} SET employee_id=? WHERE institution_id=? AND employee_id=?", (new_id, inst_id, old_id))
+
+
 @router.put("/api/employees/{employee_id}", response_model=EmployeeOut)
 @db_session
 def update_employee(conn, employee_id: str, emp: EmployeeIn, request: Request,
@@ -602,33 +651,7 @@ def update_employee(conn, employee_id: str, emp: EmployeeIn, request: Request,
         raise HTTPException(404, "Employee not found")
     old = dict(old_row)
 
-    # basic_salary is the one source of truth payroll actually reads (see
-    # routers/compensation.py) — if this employee has a current compensation
-    # record with a pay grade assigned, a basic_salary outside that grade's
-    # band is flagged as a non-blocking warning (returned to the caller,
-    # not raised) rather than rejected outright — per product decision, HR
-    # may have a legitimate reason to save it anyway (e.g. an approved
-    # exception pending a grade change) and shouldn't be locked out.
-    # Looked up by the *original* employee_id since employee_compensation
-    # isn't touched by the employee_id-rename block below.
-    pay_grade_warning = None
-    if emp.salary_type == "Monthly":
-        current_comp = conn.execute(
-            "SELECT pay_grade_id FROM employee_compensation WHERE employee_id=? AND institution_id=? AND is_current=1",
-            (employee_id, inst_id)
-        ).fetchone()
-        if current_comp and current_comp["pay_grade_id"]:
-            grade = conn.execute(
-                "SELECT grade_name, grade_code, min_salary, max_salary FROM pay_grades WHERE id=?",
-                (current_comp["pay_grade_id"],)
-            ).fetchone()
-            if grade and not (float(grade["min_salary"]) <= emp.basic_salary <= float(grade["max_salary"])):
-                pay_grade_warning = (
-                    f"RM {emp.basic_salary:,.2f} is outside the '{grade['grade_name']} ({grade['grade_code']})' "
-                    f"pay grade range of RM {float(grade['min_salary']):,.2f} – RM {float(grade['max_salary']):,.2f} "
-                    f"assigned to this employee. Consider changing their job role, level, or pay grade in the "
-                    f"Compensation tab, or revise this Basic Salary to fall within the assigned grade."
-                )
+    pay_grade_warning = _pay_grade_range_warning(conn, inst_id, employee_id, emp)
 
     try:
         new_id = employee_id
@@ -640,16 +663,7 @@ def update_employee(conn, employee_id: str, emp: EmployeeIn, request: Request,
                 "SELECT id FROM employees WHERE institution_id=? AND employee_id=?", (inst_id, new_id)
             ).fetchone():
                 raise HTTPException(400, f"Employee ID '{new_id}' is already in use in this institution")
-            # employee_id is a soft key referenced (as plain TEXT, no DB-level FK) across many
-            # tables — rename it everywhere in one transaction so nothing gets silently orphaned.
-            conn.execute("UPDATE employees SET employee_id=? WHERE institution_id=? AND employee_id=?", (new_id, inst_id, employee_id))
-            conn.execute("UPDATE employees SET reports_to=? WHERE institution_id=? AND reports_to=?", (new_id, inst_id, employee_id))
-            conn.execute("UPDATE users SET employee_id=? WHERE institution_id=? AND employee_id=?", (new_id, inst_id, employee_id))
-            conn.execute("UPDATE audit_logs SET target_employee_id=? WHERE institution_id=? AND target_employee_id=?", (new_id, inst_id, employee_id))
-            for tbl in ("ob_audit_log", "hr_notes", "ob_checklists", "ld_enrollments", "ld_audit_log",
-                        "ld_quiz_attempts", "ld_lesson_progress", "leave_balances", "leave_applications",
-                        "leave_audit_log", "timesheets", "timesheet_audit_log", "task_assignments"):
-                conn.execute(f"UPDATE {tbl} SET employee_id=? WHERE institution_id=? AND employee_id=?", (new_id, inst_id, employee_id))
+            _rename_employee_id_everywhere(conn, inst_id, employee_id, new_id)
 
         reports_to = new_id if emp.reports_to == "SELF" else emp.reports_to
         if reports_to and reports_to != new_id:
