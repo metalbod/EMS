@@ -28,7 +28,20 @@ async function loadAiAssistantSettingsPage() {
   badge.className = 'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500';
   document.getElementById('aiAssistantStatusDetail').textContent = '';
   const res = await api('/api/assistant/settings');
-  if (res?.ok) renderAiAssistantStatus(await res.json());
+  if (res?.ok) {
+    renderAiAssistantStatus(await res.json());
+    return;
+  }
+  // Reachable by superadmin (e.g. browser back/forward) even though the nav
+  // item is hidden for that role — ASSISTANT_SETTINGS_ROLES is hr_manager-only
+  // by product decision (routers/assistant.py), so a 403 here is expected,
+  // not a real error. Left "Loading…" forever with nothing shown otherwise.
+  badge.textContent = 'Unavailable';
+  badge.className = 'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500';
+  document.getElementById('aiAssistantStatusDetail').textContent =
+    res?.status === 403
+      ? "Only an institution's HR Manager can view or manage this key."
+      : 'Could not load AI Assistant settings right now.';
 }
 
 const saveAiAssistantKey = guardAsync(async function() {
