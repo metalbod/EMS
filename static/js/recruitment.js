@@ -11,39 +11,39 @@ let candSortBy = 'created_at', candSortDir = 'desc';
 const CAND_SORT_FIELDS = ['full_name','requisition_title','source','created_at','experience_years','last_interview_date','stage'];
 
 function stageBadgeClass(stage) {
-  const m = {New:'bg-slate-100 text-slate-600',Screening:'bg-blue-100 text-blue-700',
-    Interview:'bg-purple-100 text-purple-700','Pending Checks':'bg-orange-100 text-orange-700',
-    Offer:'bg-yellow-100 text-yellow-700',
-    Hired:'bg-green-100 text-green-700','Rejected by Candidate':'bg-red-100 text-red-600',
-    'Rejected by Company':'bg-red-100 text-red-600',
-    Withdrawn:'bg-slate-100 text-slate-500'};
-  return m[stage]||'bg-slate-100 text-slate-600';
+  const m = {New:'status-neutral',Screening:'status-info',
+    Interview:'status-special','Pending Checks':'status-pending',
+    Offer:'status-pending',
+    Hired:'status-positive','Rejected by Candidate':'status-negative',
+    'Rejected by Company':'status-negative',
+    Withdrawn:'status-neutral'};
+  return m[stage]||'status-neutral';
 }
 function reqStatusBadge(s) {
-  const m = {Draft:'bg-slate-100 text-slate-600','Pending Approval':'bg-yellow-100 text-yellow-700',
-    Approved:'bg-green-100 text-green-700',Rejected:'bg-red-100 text-red-600',
-    Closed:'bg-slate-200 text-slate-500',Filled:'bg-blue-100 text-blue-700'};
-  return m[s]||'bg-slate-100 text-slate-600';
+  const m = {Draft:'status-neutral','Pending Approval':'status-pending',
+    Approved:'status-positive',Rejected:'status-negative',
+    Closed:'status-neutral',Filled:'status-info'};
+  return m[s]||'status-neutral';
 }
 function offerStatusBadge(s) {
-  const m = {Draft:'bg-slate-100 text-slate-600',Sent:'bg-blue-100 text-blue-700',
-    Accepted:'bg-green-100 text-green-700',Rejected:'bg-red-100 text-red-600',
-    Withdrawn:'bg-slate-200 text-slate-500'};
-  return m[s]||'bg-slate-100 text-slate-600';
+  const m = {Draft:'status-neutral',Sent:'status-info',
+    Accepted:'status-positive',Rejected:'status-negative',
+    Withdrawn:'status-neutral'};
+  return m[s]||'status-neutral';
 }
 // Was two near-identical inline ternaries at the candidate-detail and
 // interviews-list call sites (INTERVIEW_STATUSES, routers/recruitment.py) —
 // one of the two had silently drifted and never gave 'No-Show' its own
 // color, falling through to the same blue as 'Scheduled'.
 function interviewStatusBadge(s) {
-  const m = {Scheduled:'bg-blue-100 text-blue-700',Completed:'bg-green-100 text-green-700',
-    Cancelled:'bg-red-100 text-red-600','No-Show':'bg-slate-200 text-slate-500'};
-  return m[s]||'bg-blue-100 text-blue-700';
+  const m = {Scheduled:'status-info',Completed:'status-positive',
+    Cancelled:'status-negative','No-Show':'status-neutral'};
+  return m[s]||'status-info';
 }
 function priorityBadge(p) {
-  const m = {Low:'bg-slate-100 text-slate-500',Normal:'bg-blue-50 text-blue-600',
-    High:'bg-orange-100 text-orange-700',Urgent:'bg-red-100 text-red-700'};
-  return m[p]||'bg-slate-100 text-slate-500';
+  const m = {Low:'status-neutral',Normal:'status-info',
+    High:'status-pending',Urgent:'status-negative'};
+  return m[p]||'status-neutral';
 }
 async function loadRecruitMeta() {
   if(recruitMeta.stages) return;
@@ -732,7 +732,7 @@ async function loadOffers() {
     <tr class="hover:bg-slate-50 cursor-pointer" onclick="openOfferView(${o.id})">
       <td class="px-4 py-3 font-medium text-slate-800">${esc(o.candidate_name)}</td>
       <td class="px-4 py-3 text-slate-600 hidden md:table-cell">${esc(o.requisition_title||'—')}</td>
-      <td class="px-4 py-3"><span class="badge ${o.offer_type==='Offer'?'bg-green-100 text-green-700':'bg-red-100 text-red-600'}">${esc(o.offer_type)}</span></td>
+      <td class="px-4 py-3"><span class="badge ${o.offer_type==='Offer'?'status-positive':'status-negative'}">${esc(o.offer_type)}</span></td>
       <td class="px-4 py-3 text-slate-700 hidden lg:table-cell">${fmtCurrency(o.salary_offered)}</td>
       <td class="px-4 py-3"><span class="badge ${offerStatusBadge(o.status)}">${esc(o.status)}</span></td>
       <td class="px-4 py-3 text-right"><button class="btn-ghost text-xs" onclick="event.stopPropagation();openOfferView(${o.id})">View</button></td>

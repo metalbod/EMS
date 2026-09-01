@@ -5,15 +5,15 @@
 // PIP cycles are just performance_cycles rows with cycle_type='pip'.
 // ---------------------------------------------------------------------------
 const PIP_STATUS_COLORS = {
-  PendingApproval: 'bg-amber-100 text-amber-700',
-  Active: 'bg-blue-100 text-blue-700',
-  Rejected: 'bg-red-100 text-red-700',
-  Closed: 'bg-slate-100 text-slate-600',
+  PendingApproval: 'status-pending',
+  Active: 'status-info',
+  Rejected: 'status-negative',
+  Closed: 'status-neutral',
 };
 const PIP_OUTCOME_COLORS = {
-  Successful: 'bg-green-100 text-green-700',
-  Extended: 'bg-amber-100 text-amber-700',
-  Failed: 'bg-red-100 text-red-700',
+  Successful: 'status-positive',
+  Extended: 'status-pending',
+  Failed: 'status-negative',
 };
 
 let pipGoalDraft = [];

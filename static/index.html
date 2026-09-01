@@ -611,31 +611,31 @@
           <!-- Workforce tab: overview stats + composition + locations (always visible, loads immediately) -->
           <div id="dash-workforce" class="dash-tab-panel hidden">
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-              <div class="bg-indigo-50 rounded-xl border border-indigo-100 p-5">
-                <p class="text-xs text-indigo-500 uppercase tracking-wider mb-1">Total</p>
-                <p id="statTotal" class="text-3xl font-bold text-indigo-700">0</p>
-                <p class="text-xs text-indigo-400">Employees</p>
-                <p id="statTotalGender" class="text-xs text-indigo-600 mt-1"></p>
+              <div class="kpi-tile">
+                <p class="kpi-tile-label">Total</p>
+                <p id="statTotal" class="kpi-number mt-1">0</p>
+                <p class="kpi-tile-delta">Employees</p>
+                <p id="statTotalGender" class="kpi-tile-delta"></p>
               </div>
-              <div class="bg-emerald-50 rounded-xl border border-emerald-100 p-5">
-                <div class="flex items-center justify-between mb-1">
-                  <p class="text-xs text-emerald-600 uppercase tracking-wider">Active</p>
-                  <span id="statActivePct" class="text-xs font-semibold bg-emerald-100 text-emerald-700 rounded-full px-2 py-0.5">0%</span>
+              <div class="kpi-tile kpi-tile-accent">
+                <div class="flex items-center justify-between">
+                  <p class="kpi-tile-label">Active</p>
+                  <span id="statActivePct" class="text-xs font-semibold rounded-full px-2 py-0.5" style="background:var(--surface);color:var(--accent-ink)">0%</span>
                 </div>
-                <p id="statActive" class="text-3xl font-bold text-emerald-700">0</p>
-                <p class="text-xs text-emerald-500">Employees</p>
-                <p id="statActiveGender" class="text-xs text-emerald-600 mt-1"></p>
+                <p id="statActive" class="kpi-number mt-1">0</p>
+                <p class="kpi-tile-delta">Employees</p>
+                <p id="statActiveGender" class="kpi-tile-delta"></p>
               </div>
-              <div class="bg-slate-50 rounded-xl border border-slate-200 p-5">
-                <div class="flex items-center justify-between mb-1">
-                  <p class="text-xs text-slate-500 uppercase tracking-wider">Inactive</p>
-                  <span id="statInactivePct" class="text-xs font-semibold bg-slate-200 text-slate-600 rounded-full px-2 py-0.5">0%</span>
+              <div class="kpi-tile">
+                <div class="flex items-center justify-between">
+                  <p class="kpi-tile-label">Inactive</p>
+                  <span id="statInactivePct" class="text-xs font-semibold rounded-full px-2 py-0.5" style="background:var(--surface);color:var(--muted)">0%</span>
                 </div>
-                <p id="statInactive" class="text-3xl font-bold text-slate-400">0</p>
-                <p class="text-xs text-slate-400">Employees</p>
-                <p id="statInactiveGender" class="text-xs text-slate-500 mt-1"></p>
+                <p id="statInactive" class="kpi-number mt-1">0</p>
+                <p class="kpi-tile-delta">Employees</p>
+                <p id="statInactiveGender" class="kpi-tile-delta"></p>
               </div>
-              <div class="bg-violet-50 rounded-xl border border-violet-100 p-5"><p class="text-xs text-violet-500 uppercase tracking-wider mb-1">Depts</p><p id="statDepts" class="text-3xl font-bold text-violet-700">0</p></div>
+              <div class="kpi-tile"><p class="kpi-tile-label">Depts</p><p id="statDepts" class="kpi-number mt-1">0</p></div>
             </div>
             <div class="bg-white rounded-xl border border-slate-200 p-5 mb-4">
               <h3 class="font-semibold mb-4">Workforce Composition</h3>
@@ -661,21 +661,21 @@
                 <h3 class="font-semibold text-slate-700">Locations Overview</h3>
               </div>
               <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
-                <div class="bg-white rounded-xl border border-slate-200 p-4 cursor-pointer hover:border-blue-300 transition" onclick="showPage('settings-locations')">
-                  <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Total Locations</p>
-                  <p id="locStatTotal" class="text-2xl font-bold text-blue-600">0</p>
+                <div class="kpi-tile kpi-tile-accent cursor-pointer" onclick="showPage('settings-locations')">
+                  <p class="kpi-tile-label">Total Locations</p>
+                  <p id="locStatTotal" class="kpi-number mt-1">0</p>
                 </div>
-                <div class="bg-white rounded-xl border border-slate-200 p-4">
-                  <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Avg Utilization</p>
-                  <p id="locStatAvgUtil" class="text-2xl font-bold text-emerald-600">0%</p>
+                <div class="kpi-tile">
+                  <p class="kpi-tile-label">Avg Utilization</p>
+                  <p id="locStatAvgUtil" class="kpi-number mt-1">0%</p>
                 </div>
-                <div class="bg-white rounded-xl border border-slate-200 p-4">
-                  <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Total Employees</p>
-                  <p id="locStatEmpCount" class="text-2xl font-bold text-violet-600">0</p>
+                <div class="kpi-tile">
+                  <p class="kpi-tile-label">Total Employees</p>
+                  <p id="locStatEmpCount" class="kpi-number mt-1">0</p>
                 </div>
-                <div class="bg-white rounded-xl border border-slate-200 p-4">
-                  <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">With Managers</p>
-                  <p id="locStatManaged" class="text-2xl font-bold text-amber-600">0</p>
+                <div class="kpi-tile">
+                  <p class="kpi-tile-label">With Managers</p>
+                  <p id="locStatManaged" class="kpi-number mt-1">0</p>
                 </div>
               </div>
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -695,25 +695,25 @@
           <div id="dash-recruitment" class="dash-tab-panel hidden">
             <div id="recruitDashSection">
               <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
-                <div class="bg-white rounded-xl border border-slate-200 p-4 cursor-pointer hover:border-blue-300 transition" onclick="showPage('requisitions')">
-                  <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Open Requisitions</p>
-                  <p id="rStatOpenReq" class="text-2xl font-bold text-blue-600">0</p>
-                  <p id="rStatPendingApproval" class="text-xs text-amber-600 mt-1"></p>
+                <div class="kpi-tile kpi-tile-accent cursor-pointer" onclick="showPage('requisitions')">
+                  <p class="kpi-tile-label">Open Requisitions</p>
+                  <p id="rStatOpenReq" class="kpi-number mt-1">0</p>
+                  <p id="rStatPendingApproval" class="kpi-tile-delta"></p>
                 </div>
-                <div class="bg-white rounded-xl border border-slate-200 p-4 cursor-pointer hover:border-blue-300 transition" onclick="showPage('candidates')">
-                  <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Total Candidates</p>
-                  <p id="rStatCands" class="text-2xl font-bold text-slate-800">0</p>
-                  <p id="rStatHiredMonth" class="text-xs text-emerald-600 mt-1"></p>
+                <div class="kpi-tile cursor-pointer" onclick="showPage('candidates')">
+                  <p class="kpi-tile-label">Total Candidates</p>
+                  <p id="rStatCands" class="kpi-number mt-1">0</p>
+                  <p id="rStatHiredMonth" class="kpi-tile-delta"></p>
                 </div>
-                <div class="bg-white rounded-xl border border-slate-200 p-4 cursor-pointer hover:border-blue-300 transition" onclick="showPage('interviews')">
-                  <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Upcoming Interviews</p>
-                  <p id="rStatUpcoming" class="text-2xl font-bold text-violet-600">0</p>
-                  <p id="rStatIntMonth" class="text-xs text-slate-400 mt-1"></p>
+                <div class="kpi-tile cursor-pointer" onclick="showPage('interviews')">
+                  <p class="kpi-tile-label">Upcoming Interviews</p>
+                  <p id="rStatUpcoming" class="kpi-number mt-1">0</p>
+                  <p id="rStatIntMonth" class="kpi-tile-delta"></p>
                 </div>
-                <div class="bg-white rounded-xl border border-slate-200 p-4 cursor-pointer hover:border-blue-300 transition" onclick="showPage('offers')">
-                  <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Offers Pending</p>
-                  <p id="rStatOffers" class="text-2xl font-bold text-amber-600">0</p>
-                  <p class="text-xs text-slate-400 mt-1">awaiting response</p>
+                <div class="kpi-tile cursor-pointer" onclick="showPage('offers')">
+                  <p class="kpi-tile-label">Offers Pending</p>
+                  <p id="rStatOffers" class="kpi-number mt-1">0</p>
+                  <p class="kpi-tile-delta">awaiting response</p>
                 </div>
               </div>
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -746,21 +746,21 @@
                 <h3 class="font-semibold text-slate-700">Benefits Cost &amp; Utilization</h3>
               </div>
               <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                <div class="bg-white rounded-xl border border-slate-200 p-4">
-                  <p class="text-xs text-slate-500 uppercase font-semibold">Active Plans</p>
-                  <p id="bdActivePlans" class="text-lg font-bold mt-1">—</p>
+                <div class="kpi-tile">
+                  <p class="kpi-tile-label">Active Plans</p>
+                  <p id="bdActivePlans" class="kpi-number mt-1" style="font-size:24px">—</p>
                 </div>
-                <div class="bg-white rounded-xl border border-slate-200 p-4">
-                  <p class="text-xs text-slate-500 uppercase font-semibold">Enrolled Employees</p>
-                  <p id="bdEnrolledEmployees" class="text-lg font-bold mt-1">—</p>
+                <div class="kpi-tile kpi-tile-accent">
+                  <p class="kpi-tile-label">Enrolled Employees</p>
+                  <p id="bdEnrolledEmployees" class="kpi-number mt-1" style="font-size:24px">—</p>
                 </div>
-                <div class="bg-white rounded-xl border border-slate-200 p-4">
-                  <p class="text-xs text-slate-500 uppercase font-semibold">Monthly Employer Cost</p>
-                  <p id="bdEmployerCost" class="text-lg font-bold mt-1">—</p>
+                <div class="kpi-tile">
+                  <p class="kpi-tile-label">Monthly Employer Cost</p>
+                  <p id="bdEmployerCost" class="kpi-number mt-1" style="font-size:24px">—</p>
                 </div>
-                <div class="bg-white rounded-xl border border-slate-200 p-4">
-                  <p class="text-xs text-slate-500 uppercase font-semibold">Claims Paid (YTD)</p>
-                  <p id="bdClaimsPaid" class="text-lg font-bold mt-1">—</p>
+                <div class="kpi-tile">
+                  <p class="kpi-tile-label">Claims Paid (YTD)</p>
+                  <p id="bdClaimsPaid" class="kpi-number mt-1" style="font-size:24px">—</p>
                 </div>
               </div>
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">

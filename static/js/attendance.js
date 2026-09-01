@@ -6,12 +6,12 @@ let attShiftsCache = [];
 let attCurrentGeo = null; // {lat, lng} captured once per page load
 
 const ATT_STATUS_COLORS = {
-  'Present': 'bg-green-100 text-green-700',
-  'Late': 'bg-amber-100 text-amber-700',
-  'Absent (Pending Review)': 'bg-red-100 text-red-700',
-  'Excused': 'bg-blue-100 text-blue-700',
-  'Reclassified as Leave': 'bg-purple-100 text-purple-700',
-  'Confirmed Absent': 'bg-slate-200 text-slate-600',
+  'Present': 'status-positive',
+  'Late': 'status-pending',
+  'Absent (Pending Review)': 'status-negative',
+  'Excused': 'status-info',
+  'Reclassified as Leave': 'status-special',
+  'Confirmed Absent': 'status-neutral',
 };
 
 function attStatusBadge(status) {

@@ -125,7 +125,7 @@ function renderInstTable() {
         <p class="text-sm font-semibold">${i.employee_count}</p>
         <p class="text-xs text-slate-400">/ ${i.max_employees}</p>
       </td>
-      <td class="px-4 py-3"><span class="badge ${i.status==='Active'?'bg-emerald-100 text-emerald-700':'bg-red-100 text-red-600'}">${i.status}</span></td>
+      <td class="px-4 py-3"><span class="badge ${i.status==='Active'?'status-positive':'status-negative'}">${i.status}</span></td>
       <td class="px-4 py-3"><span class="badge ${aiKeyBadge[i.ai_key_status]?.cls||''}">${aiKeyBadge[i.ai_key_status]?.label||'—'}</span></td>
       <td class="px-4 py-3">
         <p class="text-sm">${fmtDate(i.created_at)}</p>

@@ -56,7 +56,7 @@ const EMP_COLUMNS = [
   { key:'race', label:'Race', sortKey:'race', default:false, render:e=>esc(e.race||'—') },
   { key:'employment_type', label:'Employee Type', sortKey:'employment_type', default:true, render:e=>esc(e.employment_type||'—') },
   { key:'years_of_service', label:'Years of Service', sortKey:'years_of_service', default:true, render:e=>yearsOfServiceLabel(e) },
-  { key:'status', label:'Status', sortKey:'status', default:true, render:e=>`<span class="badge ${e.status==='Active'?'bg-emerald-100 text-emerald-700':'bg-slate-100 text-slate-500'}">${e.status}</span>` },
+  { key:'status', label:'Status', sortKey:'status', default:true, render:e=>`<span class="badge ${e.status==='Active'?'status-positive':'status-neutral'}">${e.status}</span>` },
   { key:'pay_grade', label:'Pay Grade', sortKey:'pay_grade_name', default:false, roles:COMPENSATION_STAFF_ROLES, render:e=>esc(e.pay_grade_name||'—') },
 ];
 const EMP_COLUMNS_STORAGE_KEY = 'empListColumns';
@@ -188,7 +188,7 @@ function viewEmployee(id) {
   document.getElementById('viewMeta').textContent = `${e.employee_id} · ${e.designation} · ${e.department}`;
   const badge = document.getElementById('viewBadge');
   badge.textContent = e.status;
-  badge.className = `badge ${e.status==='Active'?'bg-emerald-100 text-emerald-700':'bg-slate-100 text-slate-500'}`;
+  badge.className = `badge ${e.status==='Active'?'status-positive':'status-neutral'}`;
   document.getElementById('vt-notes-btn').classList.toggle('hidden', !canNotes);
   // Employee document compliance tracking is HR-only end to end (matches
   // routers/employee_documents.py's require_roles("hr_manager","hr_admin")
@@ -285,7 +285,7 @@ async function loadEmployeeLocations(empId) {
                     <p><strong>Type:</strong> ${esc(loc.assignment_type)}</p>
                     <p><strong>Start:</strong> ${fmtDate(loc.start_date)}</p>
                     ${loc.end_date ? `<p><strong>End:</strong> ${fmtDate(loc.end_date)}</p>` : ''}
-                    <p><strong>Status:</strong> <span class="badge ${loc.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}">${loc.is_active ? 'Active' : 'Inactive'}</span></p>
+                    <p><strong>Status:</strong> <span class="badge ${loc.is_active ? 'status-positive' : 'status-neutral'}">${loc.is_active ? 'Active' : 'Inactive'}</span></p>
                   </div>
                 </div>
               </div>
@@ -308,7 +308,7 @@ async function loadRelatedContracts(empId) {
     const r=await api(`/api/employees/${empId}/related-contracts`);
     if(!r.ok){el.innerHTML='';return;}
     const contracts=await r.json();
-    const STATUS_COLOR={'Active':'bg-green-100 text-green-700','Inactive':'bg-slate-100 text-slate-500'};
+    const STATUS_COLOR={'Active':'status-positive','Inactive':'status-neutral'};
     const TYPE_COLOR={'Permanent':'bg-blue-100 text-blue-700','Contract':'bg-orange-100 text-orange-700','Part-Time':'bg-purple-100 text-purple-700','Internship':'bg-yellow-100 text-yellow-700'};
     el.innerHTML=`
       <div class="border-t border-slate-200 pt-5">

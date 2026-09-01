@@ -25,7 +25,7 @@ function renderUserTable() {
       </td>
       <td class="px-4 py-3 hidden md:table-cell"><span class="badge ${statusColor(ROLE_BADGE_COLORS, u.role)}">${meta.role_labels?.[u.role]||u.role}</span></td>
       <td class="px-4 py-3 hidden lg:table-cell text-xs text-slate-500">${esc(u.institution_name||u.institution_code||'Platform Admin')}</td>
-      <td class="px-4 py-3"><span class="badge ${u.is_active?'bg-emerald-100 text-emerald-700':'bg-slate-100 text-slate-500'}">${u.is_active?'Active':'Inactive'}</span></td>
+      <td class="px-4 py-3"><span class="badge ${u.is_active?'status-positive':'status-neutral'}">${u.is_active?'Active':'Inactive'}</span></td>
       <td class="px-4 py-3">
         <div class="flex justify-end gap-1">
           <button onclick="openUserModal(this.dataset.u)" data-u='${JSON.stringify(u).replace(/'/g,"&apos;")}' class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Edit</button>

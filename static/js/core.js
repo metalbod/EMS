@@ -222,7 +222,7 @@ function closeModal(id, resetFn) {
 // unstyled badge — because re-typing the same fallback string by hand at
 // every call site is exactly the kind of thing that's easy to skip once
 // and never notice.
-function statusColor(map, value, fallback = 'bg-slate-100 text-slate-600') {
+function statusColor(map, value, fallback = 'status-neutral') {
   return map[value] || fallback;
 }
 

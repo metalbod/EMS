@@ -35,11 +35,11 @@ function renderBenefitPlansTable() {
   if (pageInfoEl) pageInfoEl.textContent = `${start + 1}-${Math.min(start + benefitPlansList.pageSize, total)} of ${total}`;
 
   const statusBadge = status => {
-    if (status === 'Active') return 'bg-blue-100 text-blue-700';
-    if (status === 'Closed') return 'bg-slate-100 text-slate-500';
-    return 'bg-amber-100 text-amber-700';
+    if (status === 'Active') return 'status-info';
+    if (status === 'Closed') return 'status-neutral';
+    return 'status-pending';
   };
-  const categoryBadge = 'bg-purple-100 text-purple-700';
+  const categoryBadge = 'status-special';
 
   const fmtCost = (v, type) => {
     if (v == null) return '—';
@@ -271,9 +271,9 @@ function renderEnrollmentPeriodsTable() {
   if (pageInfoEl) pageInfoEl.textContent = `${start + 1}-${Math.min(start + enrollmentPeriodsList.pageSize, total)} of ${total}`;
 
   const statusBadge = status => {
-    if (status === 'Open') return 'bg-emerald-100 text-emerald-700';
-    if (status === 'Closed') return 'bg-slate-100 text-slate-500';
-    return 'bg-amber-100 text-amber-700';
+    if (status === 'Open') return 'status-positive';
+    if (status === 'Closed') return 'status-neutral';
+    return 'status-pending';
   };
 
   tbody.innerHTML = pageItems.map(p => `
@@ -356,9 +356,9 @@ function renderLifeEventsTable() {
   if (pageInfoEl) pageInfoEl.textContent = `${start + 1}-${Math.min(start + lifeEventsList.pageSize, total)} of ${total}`;
 
   const statusBadge = status => {
-    if (status === 'Approved') return 'bg-blue-100 text-blue-700';
-    if (status === 'Rejected') return 'bg-red-100 text-red-700';
-    return 'bg-amber-100 text-amber-700';
+    if (status === 'Approved') return 'status-info';
+    if (status === 'Rejected') return 'status-negative';
+    return 'status-pending';
   };
 
   tbody.innerHTML = pageItems.map(ev => `
@@ -503,13 +503,13 @@ function renderMyBenefitsPlansTable() {
 
   tbody.innerHTML = pageItems.map(p => {
     const enrollment = myEnrollments.find(e => e.benefit_plan_id === p.id);
-    const electionBadge = !enrollment ? 'bg-slate-100 text-slate-500'
-      : enrollment.status === 'Enrolled' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500';
+    const electionBadge = !enrollment ? 'status-neutral'
+      : enrollment.status === 'Enrolled' ? 'status-positive' : 'status-neutral';
     const electionLabel = enrollment ? enrollment.status : 'Not elected';
     return `
       <tr>
         <td class="px-4 py-3 font-medium">${esc(p.plan_name)}</td>
-        <td class="px-4 py-3"><span class="badge bg-purple-100 text-purple-700">${esc(p.plan_category)}</span></td>
+        <td class="px-4 py-3"><span class="badge status-special">${esc(p.plan_category)}</span></td>
         <td class="px-4 py-3 text-right">${fmtCost(p.employee_cost, p.contribution_type)}</td>
         <td class="px-4 py-3"><span class="badge ${electionBadge}">${esc(electionLabel)}</span></td>
         <td class="px-4 py-3 text-right">
@@ -540,9 +540,9 @@ function renderMyLifeEventsTable() {
   if (pageInfoEl) pageInfoEl.textContent = `${start + 1}-${Math.min(start + myLifeEventsList.pageSize, total)} of ${total}`;
 
   const statusBadge = status => {
-    if (status === 'Approved') return 'bg-blue-100 text-blue-700';
-    if (status === 'Rejected') return 'bg-red-100 text-red-700';
-    return 'bg-amber-100 text-amber-700';
+    if (status === 'Approved') return 'status-info';
+    if (status === 'Rejected') return 'status-negative';
+    return 'status-pending';
   };
   tbody.innerHTML = pageItems.map(ev => `
     <tr>
@@ -711,10 +711,10 @@ async function submitDependentForm(e) {
 // ============================================================================
 
 function claimStatusBadge(status) {
-  if (status === 'Approved') return 'bg-blue-100 text-blue-700';
-  if (status === 'Paid') return 'bg-emerald-100 text-emerald-700';
-  if (status === 'Rejected') return 'bg-red-100 text-red-700';
-  return 'bg-amber-100 text-amber-700';
+  if (status === 'Approved') return 'status-info';
+  if (status === 'Paid') return 'status-positive';
+  if (status === 'Rejected') return 'status-negative';
+  return 'status-pending';
 }
 
 let currentClaims = [];

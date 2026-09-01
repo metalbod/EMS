@@ -342,10 +342,13 @@ def advance_or_finalize(conn, inst_id: int, module: str, employee_id: str,
     return "advanced", nxt["step_order"]
 
 
-def count_pending_for_approver(conn, inst_id: int, user: dict, module: str) -> int:
-    """How many of this module's pending requests are sitting at a step
-    `user` is eligible to act on right now — powers the Dashboard To-Do
-    integration (see routers/dashboard.py)."""
+def pending_rows_for_approver(conn, inst_id: int, user: dict, module: str) -> List[Dict[str, Any]]:
+    """Which of this module's pending requests are sitting at a step `user`
+    is eligible to act on right now — powers the Dashboard To-Do
+    integration (see routers/dashboard.py), both the aggregate count
+    (count_pending_for_approver below) and the per-item rows it renders
+    one To-Do row per (employee, stage, date) rather than just an "N
+    pending" count."""
     table = MODULE_TABLE[module]
     statuses = MODULE_PENDING_STATUSES[module]
     placeholders = ",".join("?" * len(statuses))
@@ -354,7 +357,7 @@ def count_pending_for_approver(conn, inst_id: int, user: dict, module: str) -> i
         f"AND approval_workflow_id IS NOT NULL AND approval_step IS NOT NULL",
         (inst_id, *statuses)
     ).fetchall()
-    count = 0
+    result = []
     for row in rows:
         steps = get_steps(conn, row["approval_workflow_id"])
         current = next((s for s in steps if s["step_order"] == row["approval_step"]), None)
@@ -365,8 +368,14 @@ def count_pending_for_approver(conn, inst_id: int, user: dict, module: str) -> i
             continue
         project_ids = project_ids_for_row(conn, module, row)
         if is_eligible_approver(conn, inst_id, module, employee_id, current, user, project_ids):
-            count += 1
-    return count
+            result.append(row)
+    return result
+
+
+def count_pending_for_approver(conn, inst_id: int, user: dict, module: str) -> int:
+    """How many of this module's pending requests are sitting at a step
+    `user` is eligible to act on right now."""
+    return len(pending_rows_for_approver(conn, inst_id, user, module))
 
 
 def filter_actionable(conn, inst_id: int, module: str, rows: List[Dict[str, Any]], user: dict) -> List[Dict[str, Any]]:

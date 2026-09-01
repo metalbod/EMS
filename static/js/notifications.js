@@ -31,7 +31,7 @@ function notifStatus(n) {
   if(now > n.end_time) return 'Expired';
   return 'Active';
 }
-const NOTIF_STATUS_COLORS={'Active':'bg-green-100 text-green-700','Scheduled':'bg-amber-100 text-amber-700','Expired':'bg-slate-100 text-slate-500'};
+const NOTIF_STATUS_COLORS={'Active':'status-positive','Scheduled':'status-pending','Expired':'status-neutral'};
 
 async function loadNotificationSettings() {
   const listEl=document.getElementById('notificationList');

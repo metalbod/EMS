@@ -27,6 +27,31 @@
   --success:     #16a34a;
   --warning:     #ea580c;
 
+  /* Status badge palette — distinct from the teal brand accent above:
+     --accent means "primary action / this app's own identity," these mean
+     "this record is in state X." Shared by every *_STATUS_COLORS/
+     *_BADGE_COLORS map across static/js/*.js — see
+     docs/VISUAL_REDESIGN_ROLLOUT_PLAN.md's Phase 1. Values match the
+     Tailwind shade each map already used most often for that state
+     (emerald over the less-common green, slate-100/slate-600 over the
+     less-common slate-200/500 variant) — a deliberate small harmonization
+     while centralizing, not a new color choice per state.
+     --status-special is the rare 5th case (a handful of maps: Calibration,
+     "Reclassified as Leave") that isn't positive/pending/negative/neutral/
+     info — kept separate rather than mis-filed into one of those five. */
+  --status-positive:      #047857;
+  --status-positive-soft: #D1FAE5;
+  --status-pending:       #B45309;
+  --status-pending-soft:  #FEF3C7;
+  --status-negative:      #B91C1C;
+  --status-negative-soft: #FEE2E2;
+  --status-neutral:       #475569;
+  --status-neutral-soft:  #F1F5F9;
+  --status-info:          #1D4ED8;
+  --status-info-soft:     #DBEAFE;
+  --status-special:       #7E22CE;
+  --status-special-soft:  #F3E8FF;
+
   /* Type */
   --font-serif:  "Newsreader", Georgia, serif;
   --font-sans:   "Karla", Helvetica, Arial, sans-serif;
@@ -132,6 +157,12 @@ main.content-shell{
 .note-type-warning{background:#fef9c3;color:#854d0e}
 .note-type-commendation{background:#dcfce7;color:#15803d}
 .badge{display:inline-flex;align-items:center;padding:.125rem .5rem;border-radius:.25rem;font-size:.75rem;font-weight:500}
+.status-positive{background:var(--status-positive-soft);color:var(--status-positive)}
+.status-pending{background:var(--status-pending-soft);color:var(--status-pending)}
+.status-negative{background:var(--status-negative-soft);color:var(--status-negative)}
+.status-neutral{background:var(--status-neutral-soft);color:var(--status-neutral)}
+.status-info{background:var(--status-info-soft);color:var(--status-info)}
+.status-special{background:var(--status-special-soft);color:var(--status-special)}
 
 /* ---------------------------------------------------------------------
    Sidebar nav — Sep 2026 redesign. No per-module colour (see the old

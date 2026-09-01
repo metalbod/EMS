@@ -17,7 +17,7 @@ from core.deps import get_current_user, need_inst
 
 from core.org_queries import subordinates_in_clause
 
-from core.approval_workflow import count_pending_for_approver
+from core.approval_workflow import pending_rows_for_approver
 
 from routers.employee_documents import STATUS_CASE_SQL
 
@@ -26,6 +26,74 @@ from db import get_db
 from core.db_session import db_session
 
 router = APIRouter()
+
+
+def _approval_row_detail(conn, inst_id: int, module: str, row) -> Dict[str, Any]:
+    """Resolve the (employee, stage label, stage type, due date) shown on
+    one per-item To-Do row for a pending approval-workflow request —
+    mirrors the shape the onboarding/offboarding checklist items below
+    already use, rather than the aggregate "N items" count this replaced.
+    One branch per module in MODULE_TABLE (core/approval_workflow.py);
+    each row's own columns differ enough (a leave application isn't shaped
+    like a benefit claim) that a generic renderer would just be a wall of
+    "if this column exists" checks — see docs/adr/0001 on why this
+    codebase doesn't force genuinely different row shapes through one
+    renderer."""
+    if module == "leave":
+        lt = conn.execute("SELECT name FROM leave_types WHERE id=?", (row["leave_type_id"],)).fetchone()
+        return {
+            "employee_id": row["employee_id"],
+            "stage": f"{lt['name'] if lt else 'Leave'}: {row['start_date']} to {row['end_date']}",
+            "stage_type": "Leave", "due_date": row["start_date"],
+        }
+    if module == "claims":
+        p = conn.execute("SELECT plan_name FROM benefit_plans WHERE id=?", (row["benefit_plan_id"],)).fetchone()
+        return {
+            "employee_id": row["employee_id"],
+            "stage": f"{p['plan_name'] if p else 'Benefit'} claim — RM {row['amount_claimed']}",
+            "stage_type": "Benefit Claim", "due_date": row["claim_date"],
+        }
+    if module == "requisition":
+        u = conn.execute(
+            "SELECT employee_id FROM users WHERE username=? AND institution_id=?",
+            (row["created_by"], inst_id)
+        ).fetchone()
+        return {
+            "employee_id": u["employee_id"] if u else None,
+            "stage": f"{row['title']} ({row['department']})",
+            "stage_type": "Job Requisition", "due_date": row["created_at"],
+        }
+    if module == "timesheet":
+        return {
+            "employee_id": row["employee_id"],
+            "stage": f"Week of {row['period_start']}",
+            "stage_type": "Timesheet", "due_date": row["period_start"],
+        }
+    if module == "ld_enrollment":
+        c = conn.execute("SELECT title FROM ld_courses WHERE id=?", (row["course_id"],)).fetchone()
+        return {
+            "employee_id": row["employee_id"],
+            "stage": c["title"] if c else "Training course",
+            "stage_type": "Training Enrollment", "due_date": row["created_at"],
+        }
+    if module == "overtime":
+        return {
+            "employee_id": row["employee_id"],
+            "stage": f"{row['overtime_hours']}h overtime on {row['work_date']}",
+            "stage_type": "Overtime", "due_date": row["work_date"],
+        }
+    if module == "resignation":
+        return {
+            "employee_id": row["employee_id"],
+            "stage": f"Resignation — last day {row['last_working_day']}",
+            "stage_type": "Resignation", "due_date": row["effective_date"],
+        }
+    # pip: performance_cycles row (cycle_type='pip'), see MODULE_TABLE.
+    return {
+        "employee_id": row["employee_id"],
+        "stage": row["name"],
+        "stage_type": "PIP", "due_date": row["created_at"],
+    }
 
 
 @router.get("/api/todos")
@@ -66,25 +134,38 @@ def get_todos(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, An
                 todos.append({"key": "perf-team", "label": f"{cnt} appraisal{'s' if cnt != 1 else ''} awaiting your manager review", "page": "perf-team", "count": cnt})
 
     # Items pending this user's own decision as an approval-workflow
-    # approver — direct/skip-level manager steps naturally resolve to 0 for
-    # users with no linked employee_id, so this is safe to run regardless.
+    # approver — direct/skip-level manager steps naturally resolve to no
+    # rows for users with no linked employee_id, so this is safe to run
+    # regardless. One To-Do row per pending request (not an aggregate
+    # count) so the queue shows what's actually waiting — matching the
+    # onboarding/offboarding checklist items below, which already do this.
     approval_targets = (
-        ("leave", "leave-approvals", "leave application"),
-        ("claims", "ben-claims", "benefit claim"),
-        ("requisition", "requisitions", "job requisition"),
-        ("timesheet", "timesheet-approvals", "timesheet"),
-        ("ld_enrollment", "ld-trainings", "training enrollment"),
-        ("overtime", "timesheet-approvals", "overtime record"),
-        ("resignation", "resignation-approvals", "resignation request"),
-        ("pip", "perf-team", "PIP proposal"),
+        ("leave", "leave-approvals", "Leave"),
+        ("claims", "ben-claims", "Benefit Claim"),
+        ("requisition", "requisitions", "Job Requisition"),
+        ("timesheet", "timesheet-approvals", "Timesheet"),
+        ("ld_enrollment", "ld-trainings", "Training Enrollment"),
+        ("overtime", "timesheet-approvals", "Overtime"),
+        ("resignation", "resignation-approvals", "Resignation"),
+        ("pip", "perf-team", "PIP"),
     )
     for module, page, noun in approval_targets:
-        cnt = count_pending_for_approver(conn, inst_id, user, module)
-        if cnt:
+        rows = pending_rows_for_approver(conn, inst_id, user, module)
+        for row in rows:
+            detail = _approval_row_detail(conn, inst_id, module, row)
+            emp = conn.execute(
+                "SELECT full_name FROM employees WHERE institution_id=? AND employee_id=?",
+                (inst_id, detail["employee_id"])
+            ).fetchone() if detail["employee_id"] else None
+            employee_name = emp["full_name"] if emp else "Unknown"
             todos.append({
-                "key": f"{module}-approvals",
-                "label": f"{cnt} {noun}{'s' if cnt != 1 else ''} awaiting your approval",
-                "page": page, "count": cnt,
+                "key": f"{module}-approval-{row['id']}",
+                "label": f"{detail['stage']} — {employee_name} ({noun.lower()}, awaiting your approval)",
+                "page": page, "count": 1,
+                # Same extra keys the onboarding items below add, for the
+                # Home page To-Do queue's per-item rendering.
+                "employee_name": employee_name, "stage": detail["stage"],
+                "stage_type": detail["stage_type"], "due_date": detail["due_date"],
             })
 
     # Employee document compliance reminders (work permit renewal, passport
@@ -140,11 +221,13 @@ def get_todos(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, An
             "page": r["type"], "count": 1,
             # Extra fields for the redesigned To-Do queue (Home page) to
             # render a real avatar/employee/stage/due-date row instead of
-            # just a title — every other todo source below stays a plain
-            # aggregate count, since there's no single employee/date to
-            # honestly show for e.g. "3 leave applications awaiting
-            # approval". Harmless extra keys for any older client still
-            # reading just label/page/count.
+            # just a title — same shape the approval_targets loop above
+            # now also produces. The two remaining aggregate-count sources
+            # (training courses in progress, employee documents expiring)
+            # stay plain counts: there's no single employee/date to
+            # honestly show for "3 documents expiring soon" the way there
+            # is for one specific pending request. Harmless extra keys for
+            # any older client still reading just label/page/count.
             "employee_name": r["employee_name"], "stage": r["title"],
             "stage_type": type_label, "due_date": r["due_date"],
         })

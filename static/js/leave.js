@@ -1,7 +1,7 @@
 // Leave / Holiday Manager
 // ---------------------------------------------------------------------------
 let leaveTypesCache=[], leaveFilter='', leaveApprovalFilter='Pending Approval', leaveHolidaysCache=[];
-const LEAVE_STATUS_COLORS={'Pending Approval':'bg-amber-100 text-amber-700','Approved':'bg-green-100 text-green-700','Rejected':'bg-red-100 text-red-700','Cancelled':'bg-slate-100 text-slate-500'};
+const LEAVE_STATUS_COLORS={'Pending Approval':'status-pending','Approved':'status-positive','Rejected':'status-negative','Cancelled':'status-neutral'};
 
 function isLeaveManager() {
   return HR_MANAGE_ROLES.includes(currentUser?.role);

@@ -12,9 +12,9 @@ let employeeDocumentsCache = [];
 let employeeDocAttachment = { fileName: null, mimeType: null, dataUrl: null };
 
 const EMPLOYEE_DOC_STATUS_BADGE = {
-  overdue: 'bg-red-100 text-red-700',
-  expiring_soon: 'bg-amber-100 text-amber-700',
-  ok: 'bg-slate-100 text-slate-500',
+  overdue: 'status-negative',
+  expiring_soon: 'status-pending',
+  ok: 'status-neutral',
 };
 const EMPLOYEE_DOC_STATUS_LABEL = {
   overdue: 'Overdue', expiring_soon: 'Expiring soon', ok: 'OK',

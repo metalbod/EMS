@@ -42,7 +42,7 @@ function renderDashboard() {
     document.getElementById('gInstList').innerHTML = institutions.map(i=>`
       <div class="flex items-center justify-between py-2.5 border-b border-slate-100 last:border-0">
         <div class="flex items-center gap-3">
-          <span class="badge ${i.status==='Active'?'bg-emerald-100 text-emerald-700':'bg-red-100 text-red-600'}">${i.status}</span>
+          <span class="badge ${i.status==='Active'?'status-positive':'status-negative'}">${i.status}</span>
           <div>
             <p class="text-sm font-medium">${esc(i.name)}</p>
             <p class="text-xs text-slate-400">${esc(i.code)} · ${i.employee_count} employees</p>
@@ -338,10 +338,10 @@ function loadCompensationDash() {
       const claimsEl = document.getElementById('mdClaimsList');
       document.getElementById('mdClaimsEmpty')?.classList.toggle('hidden', s.recent_claims.length > 0);
       const claimBadge = status => {
-        if (status === 'Approved') return 'bg-blue-100 text-blue-700';
-        if (status === 'Paid') return 'bg-emerald-100 text-emerald-700';
-        if (status === 'Rejected') return 'bg-red-100 text-red-700';
-        return 'bg-amber-100 text-amber-700';
+        if (status === 'Approved') return 'status-info';
+        if (status === 'Paid') return 'status-positive';
+        if (status === 'Rejected') return 'status-negative';
+        return 'status-pending';
       };
       claimsEl.innerHTML = s.recent_claims.map(c => `
         <div class="flex items-center justify-between py-1.5 border-b border-slate-100 last:border-0">
@@ -804,9 +804,9 @@ function loadMyLeaveDash() {
     if (!apps.length) { listEl.innerHTML = ''; emptyEl.classList.remove('hidden'); return; }
     emptyEl.classList.add('hidden');
     const statusBadge = status => {
-      if (status === 'Approved') return 'bg-emerald-100 text-emerald-700';
-      if (status === 'Rejected' || status === 'Cancelled') return 'bg-red-100 text-red-700';
-      return 'bg-amber-100 text-amber-700';
+      if (status === 'Approved') return 'status-positive';
+      if (status === 'Rejected' || status === 'Cancelled') return 'status-negative';
+      return 'status-pending';
     };
     listEl.innerHTML = apps.map(a => `
       <tr class="border-t border-slate-100">

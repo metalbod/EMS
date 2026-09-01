@@ -13,8 +13,8 @@ let currentGoalForForm=null; // full goal object (incl. key_results) when editin
 // employee wants to see their own closed history in My Goals.
 const perfShowClosed = { my: false, team: false, calibration: false };
 
-const PERF_STATUS_COLORS={'Draft':'bg-slate-100 text-slate-600','Active':'bg-blue-100 text-blue-700','Calibration':'bg-amber-100 text-amber-700','Closed':'bg-green-100 text-green-700'};
-const APPR_STATUS_COLORS={'SelfReview':'bg-amber-100 text-amber-700','ManagerReview':'bg-blue-100 text-blue-700','Calibration':'bg-purple-100 text-purple-700','Finalized':'bg-green-100 text-green-700'};
+const PERF_STATUS_COLORS={'Draft':'status-neutral','Active':'status-info','Calibration':'status-pending','Closed':'status-positive'};
+const APPR_STATUS_COLORS={'SelfReview':'status-pending','ManagerReview':'status-info','Calibration':'status-special','Finalized':'status-positive'};
 
 async function loadPerfCyclesCache() {
   const res=await api('/api/performance/cycles');

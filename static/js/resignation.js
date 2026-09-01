@@ -3,8 +3,8 @@
 // and the Resignation Approvals page (manager/HR review).
 // ---------------------------------------------------------------------------
 const RESIGN_STATUS_COLORS = {
-  Pending: 'bg-amber-100 text-amber-700', Approved: 'bg-green-100 text-green-700',
-  Rejected: 'bg-red-100 text-red-700', Withdrawn: 'bg-slate-100 text-slate-500',
+  Pending: 'status-pending', Approved: 'status-positive',
+  Rejected: 'status-negative', Withdrawn: 'status-neutral',
 };
 const RESIGN_ATTACH_MAX_BYTES = 6 * 1024 * 1024;
 

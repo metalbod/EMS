@@ -13,11 +13,11 @@ let salaryStructures = [];
 // times, plus a merit-cycle status ternary with no shared map at all
 // (see MERIT_CYCLE_STATUS_COLORS below). is_active is an int (0/1) on the
 // wire, not a bool — see core/compensation_schemas.py.
-const ACTIVE_STATUS_COLORS = {1: 'bg-emerald-100 text-emerald-700', 0: 'bg-slate-100 text-slate-500'};
+const ACTIVE_STATUS_COLORS = {1: 'status-positive', 0: 'status-neutral'};
 const ACTIVE_STATUS_LABELS = {1: 'Active', 0: 'Inactive'};
 // Draft/Active/Closed (core/compensation_schemas.py) — Closed fell through
 // the old ternary's else branch with no explicit color of its own.
-const MERIT_CYCLE_STATUS_COLORS = {Draft: 'bg-slate-100 text-slate-600', Active: 'bg-blue-100 text-blue-700', Closed: 'bg-emerald-100 text-emerald-700'};
+const MERIT_CYCLE_STATUS_COLORS = {Draft: 'status-neutral', Active: 'status-info', Closed: 'status-positive'};
 
 // ============================================================================
 // PAY GRADES MANAGEMENT
@@ -491,9 +491,9 @@ function renderMeritRecTable() {
   if (pageInfoEl) pageInfoEl.textContent = `${start + 1}-${Math.min(start + meritRecList.pageSize, total)} of ${total}`;
 
   const statusBadge = status => {
-    if (status === 'Approved') return 'bg-emerald-100 text-emerald-700';
-    if (status === 'Rejected') return 'bg-red-100 text-red-700';
-    return 'bg-amber-100 text-amber-700';
+    if (status === 'Approved') return 'status-positive';
+    if (status === 'Rejected') return 'status-negative';
+    return 'status-pending';
   };
 
   tbody.innerHTML = pageItems.map(rec => `
@@ -635,9 +635,9 @@ function renderBonusPlansTable() {
   if (pageInfoEl) pageInfoEl.textContent = `${start + 1}-${Math.min(start + bonusPlansList.pageSize, total)} of ${total}`;
 
   const statusBadge = status => {
-    if (status === 'Active') return 'bg-blue-100 text-blue-700';
-    if (status === 'Closed') return 'bg-emerald-100 text-emerald-700';
-    return 'bg-slate-100 text-slate-600';
+    if (status === 'Active') return 'status-info';
+    if (status === 'Closed') return 'status-positive';
+    return 'status-neutral';
   };
 
   tbody.innerHTML = pageItems.map(plan => `
@@ -773,10 +773,10 @@ function renderBonusPayoutTable() {
   if (pageInfoEl) pageInfoEl.textContent = `${start + 1}-${Math.min(start + bonusPayoutList.pageSize, total)} of ${total}`;
 
   const statusBadge = status => {
-    if (status === 'Approved') return 'bg-blue-100 text-blue-700';
-    if (status === 'Paid') return 'bg-emerald-100 text-emerald-700';
-    if (status === 'Rejected') return 'bg-red-100 text-red-700';
-    return 'bg-amber-100 text-amber-700';
+    if (status === 'Approved') return 'status-info';
+    if (status === 'Paid') return 'status-positive';
+    if (status === 'Rejected') return 'status-negative';
+    return 'status-pending';
   };
 
   tbody.innerHTML = pageItems.map(payout => `
@@ -891,9 +891,9 @@ function renderCommissionPlansTable() {
   if (pageInfoEl) pageInfoEl.textContent = `${start + 1}-${Math.min(start + commissionPlansList.pageSize, total)} of ${total}`;
 
   const statusBadge = status => {
-    if (status === 'Active') return 'bg-blue-100 text-blue-700';
-    if (status === 'Closed') return 'bg-emerald-100 text-emerald-700';
-    return 'bg-slate-100 text-slate-600';
+    if (status === 'Active') return 'status-info';
+    if (status === 'Closed') return 'status-positive';
+    return 'status-neutral';
   };
 
   tbody.innerHTML = pageItems.map(plan => `
@@ -1037,10 +1037,10 @@ function renderCommissionEntryTable() {
   if (pageInfoEl) pageInfoEl.textContent = `${start + 1}-${Math.min(start + commissionEntryList.pageSize, total)} of ${total}`;
 
   const statusBadge = status => {
-    if (status === 'Approved') return 'bg-blue-100 text-blue-700';
-    if (status === 'Paid') return 'bg-emerald-100 text-emerald-700';
-    if (status === 'Rejected') return 'bg-red-100 text-red-700';
-    return 'bg-amber-100 text-amber-700';
+    if (status === 'Approved') return 'status-info';
+    if (status === 'Paid') return 'status-positive';
+    if (status === 'Rejected') return 'status-negative';
+    return 'status-pending';
   };
 
   tbody.innerHTML = pageItems.map(entry => `
@@ -1165,10 +1165,10 @@ function renderEquityGrantsTable() {
   if (pageInfoEl) pageInfoEl.textContent = `${start + 1}-${Math.min(start + equityGrantsList.pageSize, total)} of ${total}`;
 
   const statusBadge = status => {
-    if (status === 'Approved') return 'bg-blue-100 text-blue-700';
-    if (status === 'Rejected') return 'bg-red-100 text-red-700';
-    if (status === 'Cancelled') return 'bg-slate-100 text-slate-500';
-    return 'bg-amber-100 text-amber-700';
+    if (status === 'Approved') return 'status-info';
+    if (status === 'Rejected') return 'status-negative';
+    if (status === 'Cancelled') return 'status-neutral';
+    return 'status-pending';
   };
 
   tbody.innerHTML = pageItems.map(g => `
@@ -1270,7 +1270,7 @@ function renderEquityGrantDetail(g) {
   const actions = document.getElementById('equityDetailActions');
   if (g.status === 'Pending Approval') {
     actions.innerHTML = `
-      <span class="badge bg-amber-100 text-amber-700">Pending Approval</span>
+      <span class="badge status-pending">Pending Approval</span>
       <div class="flex gap-2">
         <button onclick="decideEquityGrant('Approved')" class="btn-primary text-sm">Approve</button>
         <button onclick="decideEquityGrant('Rejected')" class="btn-ghost text-sm text-red-700">Reject</button>
@@ -1278,11 +1278,11 @@ function renderEquityGrantDetail(g) {
     `;
   } else if (g.status === 'Approved') {
     actions.innerHTML = `
-      <span class="badge bg-blue-100 text-blue-700">Approved</span>
+      <span class="badge status-info">Approved</span>
       <button onclick="cancelEquityGrant()" class="btn-ghost text-sm text-red-700">Cancel Grant</button>
     `;
   } else {
-    actions.innerHTML = `<span class="badge bg-slate-100 text-slate-500">${esc(g.status)}</span>`;
+    actions.innerHTML = `<span class="badge status-neutral">${esc(g.status)}</span>`;
   }
 
   renderEquityVestingTable();
@@ -1305,10 +1305,10 @@ function renderEquityVestingTable() {
   if (pageInfoEl) pageInfoEl.textContent = `${start + 1}-${Math.min(start + equityVestingList.pageSize, total)} of ${total}`;
 
   const statusBadge = status => {
-    if (status === 'Vested') return 'bg-emerald-100 text-emerald-700';
-    if (status === 'Paid') return 'bg-blue-100 text-blue-700';
-    if (status === 'Cancelled') return 'bg-slate-100 text-slate-500';
-    return 'bg-amber-100 text-amber-700';
+    if (status === 'Vested') return 'status-positive';
+    if (status === 'Paid') return 'status-info';
+    if (status === 'Cancelled') return 'status-neutral';
+    return 'status-pending';
   };
   const isPhantom = currentEquityGrantType === 'Phantom';
   tbody.innerHTML = pageItems.map(ev => `
@@ -1410,9 +1410,9 @@ async function submitEquitySettleForm(e) {
 
 function renderTotalRewardsStatement(s) {
   const statusBadge = status => {
-    if (status === 'Approved') return 'bg-blue-100 text-blue-700';
-    if (status === 'Rejected') return 'bg-red-100 text-red-700';
-    return 'bg-slate-100 text-slate-600';
+    if (status === 'Approved') return 'status-info';
+    if (status === 'Rejected') return 'status-negative';
+    return 'status-neutral';
   };
 
   const formatChangeType = t => t.split('_').map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
@@ -1571,7 +1571,7 @@ async function loadPayEquityReport() {
         <div class="mt-4">
           <div class="flex items-center gap-2">
             <span class="text-sm font-medium">Pay Gap:</span>
-            <span class="badge ${Math.abs(gap.pay_gap_percent) > 5 ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}">
+            <span class="badge ${Math.abs(gap.pay_gap_percent) > 5 ? 'status-negative' : 'status-positive'}">
               ${gap.pay_gap_percent?.toFixed(2)}%
             </span>
           </div>

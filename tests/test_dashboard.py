@@ -101,6 +101,61 @@ def test_employee_with_draft_timesheet_this_week_gets_todo(
     client.delete(f"/api/users/{user_id}", headers=hr_manager_auth)
 
 
+def test_pending_leave_approval_appears_as_one_per_item_todo(
+    client, hr_manager_auth, test_institution, make_test_employee, make_test_leave_type
+):
+    """A pending approval-workflow request (Leave here, but the same
+    _approval_row_detail branch structure in routers/dashboard.py covers
+    Claims/Requisition/Timesheet/L&D Enrollment/Overtime/Resignation/PIP
+    too) shows up as one real row — employee, stage, due date — not
+    folded into an aggregate "N items awaiting approval" count. Regression
+    coverage for the Phase 2 rollout (see docs/VISUAL_REDESIGN_ROLLOUT_PLAN.md):
+    count_pending_for_approver's count-only query became
+    pending_rows_for_approver, and the dashboard renders one To-Do per row."""
+    emp = make_test_employee()
+    username = f"zzdashleave_{emp['employee_id'].lower()}"
+    password = "ZzPytest@123"
+    user_res = client.post("/api/users", headers=hr_manager_auth, json={
+        "username": username, "full_name": "ZZ Dashboard Leave Employee",
+        "password": password, "role": "employee", "employee_id": emp["employee_id"],
+    })
+    assert user_res.status_code == 201, user_res.text
+    user_id = user_res.json()["id"]
+    login = client.post("/api/auth/login", json={
+        "username": username, "password": password, "institution_code": test_institution["code"],
+    })
+    assert login.status_code == 200
+    emp_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    lt = make_test_leave_type(requires_approval=True, annual_entitlement=14)
+    app = client.post("/api/leave/applications", headers=emp_headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": "2027-04-05", "end_date": "2027-04-06",
+    })
+    assert app.status_code == 201, app.text
+    assert app.json()["status"] == "Pending Approval"
+    app_id = app.json()["id"]
+
+    # This employee has no manager set, so the default workflow's
+    # direct_manager step resolves to nothing and it's immediately at the
+    # hr_manager step — hr_manager_auth (no linked employee_id) is exactly
+    # the "approving someone else's request" case this feature is for.
+    todos = client.get("/api/todos", headers=hr_manager_auth).json()
+    key = f"leave-approval-{app_id}"
+    match = next((t for t in todos if t["key"] == key), None)
+    assert match, f"expected a per-item leave-approval todo, got: {todos}"
+    assert match["page"] == "leave-approvals"
+    assert match["count"] == 1
+    assert match["employee_name"] == emp["full_name"]
+    assert match["stage_type"] == "Leave"
+    assert match["due_date"] == "2027-04-05"
+    assert lt["name"] in match["stage"]
+    assert emp["full_name"] in match["label"]
+    assert "awaiting your approval" in match["label"]
+
+    client.delete(f"/api/users/{user_id}", headers=hr_manager_auth)
+
+
 def test_onboarding_checklist_items_appear_for_assigned_role(client, superadmin_headers):
     """A checklist item's assigned_role determines whose To-Do it shows up
     in — the new hire sees their own 'employee'-assigned items, HR sees

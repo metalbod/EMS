@@ -5,7 +5,7 @@ let currentPayrollRunId=null;
 
 function isPayrollManager() { return currentUser?.role==='payroll_manager'; }
 
-const PAYROLL_STATUS_COLORS={'Draft':'bg-amber-100 text-amber-700','Finalized':'bg-green-100 text-green-700'};
+const PAYROLL_STATUS_COLORS={'Draft':'status-pending','Finalized':'status-positive'};
 
 // ---------------------------------------------------------------------------
 // Payroll Runs (list)

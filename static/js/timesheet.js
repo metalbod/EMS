@@ -6,7 +6,7 @@ let projectsCache=[], myProjectsCache=[], projectFilter='';
 const projectList = createListState({ sortKey: 'name', pageSize: 10000 });
 let tsCurrentWeekStart=null, tsCurrentTimesheet=null;
 let tsApprovalFilter='Submitted';
-const TS_STATUS_COLORS={'Draft':'bg-slate-100 text-slate-600','Submitted':'bg-amber-100 text-amber-700','Approved':'bg-green-100 text-green-700','Rejected':'bg-red-100 text-red-700'};
+const TS_STATUS_COLORS={'Draft':'status-neutral','Submitted':'status-pending','Approved':'status-positive','Rejected':'status-negative'};
 
 function isProjectManager() {
   return HR_MANAGER_ONLY_ROLES.includes(currentUser?.role);
@@ -56,7 +56,7 @@ function setProjectSort(key) {
 
 function renderProjectTable() {
   const listEl=document.getElementById('projectList');
-  const STATUS_COLORS={'Active':'bg-green-100 text-green-700','On Hold':'bg-amber-100 text-amber-700','Completed':'bg-slate-100 text-slate-600'};
+  const STATUS_COLORS={'Active':'status-positive','On Hold':'status-pending','Completed':'status-neutral'};
   const { pageItems: sorted } = projectList.view(projectsCache);
   listEl.innerHTML=sorted.map(p=>`
     <tr class="border-t border-slate-100 cursor-pointer hover:bg-slate-50 transition" onclick="openProjectModal(${p.id})">
@@ -171,7 +171,7 @@ async function deleteProject(projectId) {
 // Project Tasks (HR Manager)
 // ---------------------------------------------------------------------------
 let projectTasksCache=[];
-const TASK_STATUS_COLORS={'Not Started':'bg-slate-100 text-slate-600','In Progress':'bg-blue-100 text-blue-700','Completed':'bg-green-100 text-green-700'};
+const TASK_STATUS_COLORS={'Not Started':'status-neutral','In Progress':'status-info','Completed':'status-positive'};
 
 async function loadProjectTasksForManage(projectId) {
   const res=await api(`/api/projects/${projectId}/tasks`);
@@ -534,7 +534,7 @@ async function openTimesheetDetail(tsId) {
   document.getElementById('timesheetDetailModal').classList.remove('hidden');
 }
 
-const OT_STATUS_COLORS={'Pending':'bg-amber-100 text-amber-700','Approved':'bg-green-100 text-green-700','Rejected':'bg-red-100 text-red-700'};
+const OT_STATUS_COLORS={'Pending':'status-pending','Approved':'status-positive','Rejected':'status-negative'};
 
 async function loadTimesheetDetailOvertime(tsId) {
   const wrap=document.getElementById('timesheetDetailOvertimeWrap');

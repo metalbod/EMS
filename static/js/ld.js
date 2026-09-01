@@ -18,7 +18,7 @@ const LD_ENROLL_COLUMNS = [
 ];
 const LD_CATEGORY_LABELS={mandatory:'Mandatory',professional_development:'Professional Dev',certification:'Certification'};
 const LD_CATEGORY_COLORS={mandatory:'bg-red-100 text-red-700',professional_development:'bg-blue-100 text-blue-700',certification:'bg-purple-100 text-purple-700'};
-const LD_STATUS_COLORS={'Pending Approval':'bg-amber-100 text-amber-700','Approved':'bg-blue-100 text-blue-700','Rejected':'bg-red-100 text-red-700','In Progress':'bg-blue-100 text-blue-700','Completed':'bg-green-100 text-green-700'};
+const LD_STATUS_COLORS={'Pending Approval':'status-pending','Approved':'status-info','Rejected':'status-negative','In Progress':'status-info','Completed':'status-positive'};
 
 async function loadLdCourses() {
   const listEl=document.getElementById('ldCourseList');
@@ -521,9 +521,9 @@ async function openLdViewerModal(courseId, enrollmentId, courseTitle) {
       <div class="flex items-center justify-between gap-2 mb-2">
         <p class="font-medium text-slate-800 text-sm">${esc(m.title)}</p>
         ${m.viewed
-          ?`<span class="badge text-xs bg-green-100 text-green-700">✓ Viewed</span>`
+          ?`<span class="badge text-xs status-positive">✓ Viewed</span>`
           :isOwn?`<button onclick="markLdModuleViewed(${enrollmentId},${m.id},${courseId},'${esc(courseTitle||'').replace(/'/g,"\\'")}')" class="btn-ghost text-xs px-2 py-1 border border-slate-200">Mark as viewed</button>`
-          :`<span class="badge text-xs bg-slate-100 text-slate-500">Not viewed</span>`}
+          :`<span class="badge text-xs status-neutral">Not viewed</span>`}
       </div>
       ${contentHtml}
     </div>`;
