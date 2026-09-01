@@ -469,7 +469,6 @@ function applyRoleUI() {
   document.getElementById('nav-ld-group')?.classList.toggle('hidden', hideEmp);
   document.getElementById('nav-leave-group')?.classList.toggle('hidden', hideEmp);
   document.getElementById('nav-leave-approvals')?.classList.toggle('hidden', !HR_AND_MANAGER_ROLES.includes(role));
-  document.getElementById('nav-leave-holidays')?.classList.toggle('hidden', !canManage);
   document.getElementById('nav-timesheet-group')?.classList.toggle('hidden', hideEmp);
   document.getElementById('nav-timesheet-approvals')?.classList.toggle('hidden', !HR_AND_MANAGER_ROLES.includes(role));
   document.getElementById('nav-projects')?.classList.toggle('hidden', !HR_MANAGER_ONLY_ROLES.includes(role));
@@ -492,10 +491,15 @@ function applyRoleUI() {
   // key is a real billing-relevant credential, hr_manager only, matching
   // routers/assistant.py's ASSISTANT_SETTINGS_ROLES exactly.
   const canAiSettings = role === 'hr_manager';
-  document.getElementById('nav-settings-wrap')?.classList.toggle('hidden', hideEmp || !(canAudit || canUsers || canNotify || canBulkUpload || canLocations || canAttendanceManage || canApprovalWorkflow || canRoles || canDocTypes || canAiSettings));
+  document.getElementById('nav-settings-wrap')?.classList.toggle('hidden', hideEmp || !(canAudit || canUsers || canNotify || canBulkUpload || canLocations || canManage || canAttendanceManage || canApprovalWorkflow || canRoles || canDocTypes || canAiSettings));
   document.getElementById('nav-settings-notifications')?.classList.toggle('hidden', !canNotify);
   document.getElementById('nav-bulk-upload')?.classList.toggle('hidden', !canBulkUpload);
   document.getElementById('nav-locations')?.classList.toggle('hidden', !canLocations);
+  // Holiday Manager is HR Manager/HR Admin-only (canManage, same tier as
+  // Locations/Approval Workflows/Roles above) — moved here from the Leave
+  // nav group since it's institution-wide configuration, not a personal
+  // or team leave-management task like the rest of that group.
+  document.getElementById('nav-leave-holidays')?.classList.toggle('hidden', !canManage);
   document.getElementById('nav-attendance-settings')?.classList.toggle('hidden', !canAttendanceManage);
   document.getElementById('nav-approval-workflow')?.classList.toggle('hidden', !canApprovalWorkflow);
   document.getElementById('nav-roles')?.classList.toggle('hidden', !canRoles);
