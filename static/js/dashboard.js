@@ -16,9 +16,7 @@ window.getLastBenefitsDashboard = () => _lastBenefitsDashboard;
 function switchDashTab(tabId) {
   document.querySelectorAll('.dash-tab-panel').forEach(el => el.classList.toggle('hidden', el.id !== tabId));
   document.querySelectorAll('[data-dashtab]').forEach(btn => {
-    const active = btn.dataset.dashtab === tabId;
-    btn.classList.toggle('view-tab-active', active);
-    btn.classList.toggle('text-slate-500', !active);
+    btn.classList.toggle('pill-tab-active', btn.dataset.dashtab === tabId);
   });
   if (tabId === 'dash-recruitment' && !_dashTabLoaded.recruitment) { _dashTabLoaded.recruitment = true; loadRecruitmentDash(); }
   if (tabId === 'dash-timesheet' && !_dashTabLoaded.timesheet) { _dashTabLoaded.timesheet = true; loadTimesheetDash(); }
@@ -30,8 +28,11 @@ function renderDashboard() {
   checkDashboardSystemNotification();
   checkDashboardNotification();
   loadDashboardTodos();
-  document.getElementById('dashboardQuickActions')?.classList.toggle('hidden', currentUser?.role !== 'employee');
-  if (currentUser?.role === 'employee') refreshResignButtonState();
+  const isEmployee = currentUser?.role === 'employee';
+  document.getElementById('dashboardQuickActions')?.classList.toggle('hidden', !isEmployee);
+  document.getElementById('dashboardResignRow')?.classList.toggle('hidden', !isEmployee);
+  if (isEmployee) refreshResignButtonState();
+  renderDashGreeting();
   if (currentUser.role === 'superadmin' && !currentInstitution) {
     document.getElementById('superadminGlobalDash').classList.remove('hidden');
     document.getElementById('instDash').classList.add('hidden');
@@ -54,6 +55,8 @@ function renderDashboard() {
   }
   document.getElementById('superadminGlobalDash').classList.add('hidden');
   document.getElementById('instDash').classList.remove('hidden');
+  document.getElementById('dashKpiRow')?.classList.remove('hidden');
+  loadDashboardKpis();
   const active = employees.filter(e=>e.status==='Active');
   const inactive = employees.filter(e=>e.status!=='Active');
   const depts = [...new Set(employees.map(e=>e.department))];
@@ -401,6 +404,65 @@ function downloadCsv(rows, filename) {
 // Dashboard To-Do list — computed server-side from live pending-action state.
 // Always visible (per spec) for all roles except superadmin, even when empty.
 // ---------------------------------------------------------------------------
+function renderDashGreeting() {
+  const dateEl = document.getElementById('dashGreetingDate');
+  const greetEl = document.getElementById('dashGreeting');
+  if (!dateEl || !greetEl) return;
+  const now = new Date();
+  dateEl.textContent = `${now.toLocaleDateString('en-MY',{weekday:'short'})}, ${fmtDate(now)}`;
+  const hour = now.getHours();
+  const partOfDay = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
+  const firstName = (currentUser?.full_name || currentUser?.username || '').split(' ')[0] || 'there';
+  greetEl.textContent = `Good ${partOfDay}, ${firstName}`;
+}
+
+// Home KPI tiles: headcount (from the already-loaded employees array —
+// same figure as Workforce tab's statActive), pending approvals (from
+// /api/todos — see loadDashboardTodos, which populates this tile itself
+// once it has the data, to avoid a second fetch), payroll cut-off
+// (computed client-side from the institution's pay_day, no new endpoint),
+// open roles (reuses /api/recruitment/dashboard-stats, same figure
+// loadRecruitmentDash's rStatOpenReq shows). Each is independent and
+// fails soft (leaves the tile at its default "—") rather than blocking
+// the others — a role without recruitment access, for instance, just
+// doesn't get an Open Roles number.
+async function loadDashboardKpis() {
+  const headcountEl = document.getElementById('kpiHeadcount');
+  if (headcountEl) headcountEl.textContent = employees.filter(e => e.status === 'Active').length;
+
+  const inst = currentUser?.role === 'superadmin' ? currentInstitution : currentUser?.institution;
+  const cutoffEl = document.getElementById('kpiPayrollCutoff');
+  if (cutoffEl) {
+    const payDay = inst?.pay_day || 25;
+    const now = new Date();
+    let next = new Date(now.getFullYear(), now.getMonth(), payDay);
+    if (next < now) next = new Date(now.getFullYear(), now.getMonth() + 1, payDay);
+    cutoffEl.textContent = next.toLocaleDateString('en-MY', { day: 'numeric', month: 'short' });
+    const daysAway = Math.ceil((next - now) / 86400000);
+    const deltaEl = document.getElementById('kpiPayrollCutoffDelta');
+    if (deltaEl) deltaEl.textContent = daysAway <= 3 ? `${daysAway}d away` : `in ${daysAway} days`;
+  }
+
+  api('/api/recruitment/dashboard-stats').then(async res => {
+    const openRolesEl = document.getElementById('kpiOpenRoles');
+    if (!openRolesEl) return;
+    if (!res?.ok) { openRolesEl.textContent = '—'; return; }
+    const s = await res.json();
+    openRolesEl.textContent = (s.req_by_status['Approved'] || 0) + (s.req_by_status['Draft'] || 0);
+  }).catch(() => {});
+}
+
+// Picks which single row gets the accent "needs action" treatment: the
+// item with the nearest due date if any todo has one (overdue first,
+// then soonest upcoming), otherwise the item with the highest count,
+// otherwise just the first row — always exactly one row, never zero
+// (matches "Only one row is highlighted at a time" in the redesign brief).
+function _pickUrgentTodo(items) {
+  const dated = items.filter(t => t.due_date);
+  if (dated.length) return dated.slice().sort((a, b) => a.due_date < b.due_date ? -1 : 1)[0];
+  return items.slice().sort((a, b) => (b.count || 0) - (a.count || 0))[0];
+}
+
 async function loadDashboardTodos() {
   const card=document.getElementById('dashboardTodoCard');
   if(!card) return;
@@ -410,12 +472,22 @@ async function loadDashboardTodos() {
   const emptyEl=document.getElementById('dashboardTodoEmpty');
   const res=await api('/api/todos');
   const items=res?.ok?await res.json():[];
+
+  const approvalsEl = document.getElementById('kpiApprovals');
+  if (approvalsEl) {
+    const pending = items.filter(t => t.label.includes('awaiting your approval'))
+      .reduce((sum, t) => sum + (t.count || 0), 0);
+    approvalsEl.textContent = pending;
+  }
+
   if(!items.length){
     listEl.innerHTML='';
     emptyEl.classList.remove('hidden');
     return;
   }
   emptyEl.classList.add('hidden');
+  const today = new Date().toISOString().slice(0, 10);
+  const urgent = _pickUrgentTodo(items);
   listEl.innerHTML=items.map(t=>{
     // A "dash-" page value is a Dashboard sub-tab (e.g. "dash-leave" for
     // the monthly calendar), not a top-level page — showPage() alone
@@ -425,10 +497,26 @@ async function loadDashboardTodos() {
     const onclick = t.page.startsWith('dash-')
       ? `showPage('dashboard');switchDashTab('${t.page}')`
       : `showPage('${t.page}')`;
+    const isUrgent = t === urgent;
+    const overdue = t.due_date && t.due_date < today;
+    const initials = t.employee_name
+      ? t.employee_name.split(' ').slice(0,2).map(w=>w[0]||'').join('').toUpperCase()
+      : String(t.count || '');
+    const metaParts = t.employee_name
+      ? [t.employee_name, t.stage_type, t.due_date ? fmtDate(t.due_date) : null].filter(Boolean)
+      : [];
+    const metaLine = metaParts.length ? metaParts.join(' · ') : '';
+    const action = isUrgent
+      ? `<button onclick="event.stopPropagation();${onclick}" class="pill-btn pill-btn-primary" style="padding:6px 16px;font-size:12.5px">Review</button>`
+      : `<span class="todo-row-open">Open</span>`;
     return `
-    <div class="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-50 cursor-pointer transition" onclick="${onclick}">
-      <span class="text-sm text-slate-700">${esc(t.label)}</span>
-      <svg class="w-4 h-4 text-slate-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+    <div class="todo-row${isUrgent ? ' todo-row-urgent' : ''} cursor-pointer" onclick="${onclick}">
+      <div class="todo-avatar">${esc(initials)}</div>
+      <div class="flex-1 min-w-0">
+        <p class="todo-row-title truncate">${esc(t.label)}</p>
+        ${metaLine ? `<p class="todo-row-meta truncate${overdue ? ' overdue' : ''}">${esc(metaLine)}</p>` : ''}
+      </div>
+      ${action}
     </div>`;
   }).join('');
 }

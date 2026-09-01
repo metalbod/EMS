@@ -7,12 +7,16 @@ from pydantic import BaseModel, Field, ConfigDict
 class InstitutionBrief(BaseModel):
     """The subset of an institution's columns needed for the logged-in-user
     header/branding — not the full InstitutionResponse (institution CRUD
-    returns more than a session needs)."""
+    returns more than a session needs). pay_day is here too, for the Home
+    page's Payroll cut-off KPI tile (see static/js/dashboard.js's
+    loadDashboardKpis) — small enough to fit the "brief" this model is
+    named for."""
     id: int
     name: str
     code: str
     status: str
     logo_url: Optional[str] = None
+    pay_day: Optional[int] = None
 
 
 class CurrentUserOut(BaseModel):

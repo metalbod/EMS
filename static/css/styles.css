@@ -1,74 +1,100 @@
 :root {
-  /* Surface & Background Colors */
-  --bg-main: #f8fafc;
-  --bg-card: #ffffff;
-  --bg-hover: #f1f5f9;
-  --border-color: #e2e8f0;
+  /* Surfaces */
+  --bg:          #F5F6F7;  /* app canvas, sidebar background */
+  --surface:     #FFFFFF;  /* cards, panels, active nav item */
+  --surface-2:   #F5F6F7;  /* KPI tiles, list rows inside a white card */
+  --avatar-bg:   #E7EBED;  /* neutral avatar / placeholder fill */
 
-  /* Typography Colors */
-  --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --text-muted: #94a3b8;
+  /* Text */
+  --ink:         #14181C;  /* headings, primary text */
+  --ink-2:       #3A4348;  /* nav labels, secondary body */
+  --muted:       #667079;  /* meta text, table values, "Open" states */
+  --faint:       #97A4AB;  /* section labels, timestamps, counts */
 
-  /* Branding & Interactive Accents */
-  --color-primary: #4f46e5;
-  --color-primary-hover: #4338ca;
-  --color-accent-light: #e0e7ff;
+  /* Lines */
+  --line:        #E3E6E9;  /* borders, outline buttons */
+  --line-2:      #EEF1F2;  /* internal dividers, row separators */
 
-  /* Status Colors */
-  --color-success: #16a34a;
-  --color-warning: #ea580c;
+  /* Accent (teal) */
+  --accent:      #1F9D8F;  /* primary buttons, brand mark, badges */
+  --accent-ink:  #0F766E;  /* text/links on accent tint */
+  --accent-tint: #D7F0EC;  /* active tab pill, "needs action" row/tile */
+  --accent-deep: #0B4F49;  /* large numeral sitting on accent tint */
 
-  /* UI Element Specifics: Top Bar Navigation */
-  --topbar-bg: #ffffff;
-  --topbar-border: #e2e8f0;
-  --topbar-icon: #64748b;
+  /* Status */
+  --overdue:     #C2410C;  /* the ONLY warm colour on screen */
+  --danger:      #B3261E;  /* destructive actions only */
+  --success:     #16a34a;
+  --warning:     #ea580c;
 
-  /* UI Element Specifics: Left Sidebar Menu */
-  --sidebar-bg: #ffffff;
-  --sidebar-border: #e2e8f0;
-  --sidebar-text: #475569;
-  --sidebar-text-active: #4f46e5;
-  --sidebar-bg-active: #e0e7ff; /* was mistakenly a green tint in the original spec — indigo tint to match --color-accent-light and the "highlight in indigo" intent */
+  /* Type */
+  --font-serif:  "Newsreader", Georgia, serif;
+  --font-sans:   "Karla", Helvetica, Arial, sans-serif;
+
+  /* Shape */
+  --radius-sm:   10px;
+  --radius:      14px;
+  --radius-lg:   18px;
+  --radius-pill: 999px;
+  --shadow:      0 1px 3px rgba(20,24,28,.06);
+  --shadow-sm:   0 1px 2px rgba(20,24,28,.05);
+
+  /* Layout */
+  --space:       4px;    /* scale: 4 / 8 / 14 / 24 / 30 */
+  --sidebar-w:   236px;
+  --sidebar-w-collapsed: 64px;
+
+  /* ---- Deprecated aliases — kept so pages not yet migrated off the old
+     token names (every page outside the shell/Home; see the redesign
+     follow-up plan) keep working unchanged. New code should reach for
+     the tokens above directly, not these. Delete once nothing references
+     them any more. ---- */
+  --bg-main:              var(--bg);
+  --bg-card:               var(--surface);
+  --bg-hover:              var(--surface-2);
+  --border-color:          var(--line);
+  --text-primary:          var(--ink);
+  --text-secondary:        var(--ink-2);
+  --text-muted:            var(--faint);
+  --color-primary:         var(--accent);
+  --color-primary-hover:   var(--accent-ink);
+  --color-accent-light:    var(--accent-tint);
+  --color-success:         var(--success);
+  --color-warning:         var(--warning);
+  --topbar-bg:             var(--bg);
+  --topbar-border:         transparent;
+  --topbar-icon:           var(--muted);
+  --sidebar-bg:            var(--bg);
+  --sidebar-border:        transparent;
+  --sidebar-text:          var(--ink-2);
+  --sidebar-text-active:   var(--accent-ink);
+  --sidebar-bg-active:     var(--accent-tint);
 }
-body{background:var(--bg-main);color:var(--text-primary)}
-.app-topbar{background:var(--topbar-bg);border-bottom:1px solid var(--topbar-border)}
-.app-sidebar{background:var(--sidebar-bg);border-right:1px solid var(--sidebar-border)}
+body{background:var(--bg);color:var(--ink);font-family:var(--font-sans)}
+.app-topbar{background:var(--bg)}
+.app-sidebar{background:var(--bg)}
 
 /* ---------------------------------------------------------------------
-   Diagonal stripe brand background (design review: bold on login, a
-   blurred/lightened version behind the signed-in app so white cards
-   still read as distinct surfaces over dense content).
+   Content shell — single white card holding all page content, per the
+   Sep 2026 visual redesign ("Organic layout, Technical palette"). Floats
+   with a margin from the topbar/sidebar/screen edge rather than
+   spanning edge-to-edge; replaces the old gradient-behind-content
+   treatment (main::before) that used to sit directly on --bg.
 --------------------------------------------------------------------- */
-#loginScreen{
-  background-color:#191a35;
-  background-image:repeating-linear-gradient(-24deg,
-    transparent 0 34px,#ffffff 34px 40px,transparent 40px 70px,
-    #26c6da 70px 100px,transparent 100px 118px,
-    #ec1e79 118px 158px,transparent 158px 210px,
-    #26c6da 210px 226px,transparent 226px 268px,
-    #ec1e79 268px 300px,transparent 300px 360px);
-  background-size:480px 480px;
+main.content-shell{
+  position:relative;
+  margin:22px;
+  padding:22px;
+  background:var(--surface);
+  border-radius:var(--radius-lg);
+  box-shadow:var(--shadow);
 }
-main{position:relative;overflow-x:hidden}
-main::before{
-  content:"";
-  position:absolute;
-  top:-80px;bottom:-80px;left:0;right:0;
-  z-index:-1;
-  background-color:#f3f4f9;
-  background-image:repeating-linear-gradient(-24deg,
-    transparent 0 34px,#ffffff 34px 40px,transparent 40px 70px,
-    #26c6da 70px 100px,transparent 100px 118px,
-    #ec1e79 118px 158px,transparent 158px 210px,
-    #26c6da 210px 226px,transparent 226px 268px,
-    #ec1e79 268px 300px,transparent 300px 360px);
-  background-size:480px 480px;
-  filter:blur(46px);
-  opacity:.3;
+@media (max-width: 640px){
+  main.content-shell{ margin:12px; padding:16px; }
 }
+
 #globalLoadingBar{position:fixed;top:0;left:0;right:0;height:3px;z-index:9999;overflow:hidden;background:transparent;pointer-events:none}
-#globalLoadingBar .bar{position:absolute;top:0;height:100%;width:30%;background:#2563eb;animation:globalLoadingSlide 1s ease-in-out infinite}
+#globalLoadingBar .bar{position:absolute;top:0;height:100%;width:30%;background:var(--accent);animation:globalLoadingSlide 1s ease-in-out infinite}
 @keyframes globalLoadingSlide{0%{left:-30%}100%{left:100%}}
 @media print{
   body *{visibility:hidden}
@@ -78,27 +104,27 @@ main::before{
 }
 .modal-enter{animation:modalIn .18s ease}
 @keyframes modalIn{from{opacity:0;transform:translateY(-16px)}to{opacity:1;transform:none}}
-.inp{display:block;width:100%;border-radius:.5rem;border:1px solid #cbd5e1;padding:.375rem .75rem;font-size:.875rem}
-.lbl{display:block;font-size:.875rem;font-weight:500;color:#374151;margin-bottom:.25rem}
-.inp:focus{outline:none;box-shadow:0 0 0 2px #3b82f6}
-.btn-primary{background:var(--color-primary);color:white;font-size:.875rem;font-weight:500;padding:.375rem 1rem;border-radius:.5rem;transition:background .15s;cursor:pointer}
-.btn-primary:hover{background:var(--color-primary-hover)}
-.btn-ghost{color:var(--text-secondary);font-size:.875rem;padding:.375rem 1rem;border-radius:.5rem;transition:background .15s;cursor:pointer}
-.btn-ghost:hover{background:var(--bg-hover)}
-.view-tab-active{border-bottom:2px solid var(--color-primary);color:var(--color-primary);font-weight:600}
+.inp{display:block;width:100%;border-radius:.5rem;border:1px solid var(--line);padding:.375rem .75rem;font-size:.875rem;font-family:var(--font-sans)}
+.lbl{display:block;font-size:.875rem;font-weight:500;color:var(--ink-2);margin-bottom:.25rem}
+.inp:focus{outline:none;box-shadow:0 0 0 2px var(--accent)}
+.btn-primary{background:var(--accent);color:white;font-size:.875rem;font-weight:600;padding:.375rem 1rem;border-radius:var(--radius-pill);transition:background .15s;cursor:pointer}
+.btn-primary:hover{background:var(--accent-ink)}
+.btn-ghost{color:var(--ink-2);font-size:.875rem;padding:.375rem 1rem;border-radius:var(--radius-pill);transition:background .15s;cursor:pointer}
+.btn-ghost:hover{background:var(--surface-2)}
+.view-tab-active{border-bottom:2px solid var(--accent);color:var(--accent-ink);font-weight:600}
 .view-tab-btn{border-bottom:2px solid transparent;transition:color .15s,border-color .15s}
-.project-tab-btn{border-bottom:2px solid transparent;transition:color .15s,border-color .15s;color:#64748b;cursor:pointer}
-.project-tab-active{border-bottom:2px solid var(--color-primary);color:var(--color-primary)!important;font-weight:600}
-.tab-active{border-bottom:2px solid var(--color-primary);color:var(--color-primary);font-weight:600}
-.ob-filter-active{background:var(--color-accent-light);color:var(--color-primary);border-color:#c7d2fe}
-.ld-cat-filter-active{background:var(--color-accent-light);color:var(--color-primary);border-color:#c7d2fe}
-.ld-enr-filter-active{background:var(--color-accent-light);color:var(--color-primary);border-color:#c7d2fe}
-.leave-filter-active{background:var(--color-accent-light);color:var(--color-primary);border-color:#c7d2fe}
-.leave-appr-filter-active{background:var(--color-accent-light);color:var(--color-primary);border-color:#c7d2fe}
-.resign-appr-filter-active{background:var(--color-accent-light);color:var(--color-primary);border-color:#c7d2fe}
-.project-filter-active{background:var(--color-accent-light);color:var(--color-primary);border-color:#c7d2fe}
-.ts-appr-filter-active{background:var(--color-accent-light);color:var(--color-primary);border-color:#c7d2fe}
-.att-tab-active{background:var(--color-accent-light);color:var(--color-primary);border-color:#c7d2fe}
+.project-tab-btn{border-bottom:2px solid transparent;transition:color .15s,border-color .15s;color:var(--muted);cursor:pointer}
+.project-tab-active{border-bottom:2px solid var(--accent);color:var(--accent-ink)!important;font-weight:600}
+.tab-active{border-bottom:2px solid var(--accent);color:var(--accent-ink);font-weight:600}
+.ob-filter-active{background:var(--accent-tint);color:var(--accent-ink);border-color:var(--accent-tint)}
+.ld-cat-filter-active{background:var(--accent-tint);color:var(--accent-ink);border-color:var(--accent-tint)}
+.ld-enr-filter-active{background:var(--accent-tint);color:var(--accent-ink);border-color:var(--accent-tint)}
+.leave-filter-active{background:var(--accent-tint);color:var(--accent-ink);border-color:var(--accent-tint)}
+.leave-appr-filter-active{background:var(--accent-tint);color:var(--accent-ink);border-color:var(--accent-tint)}
+.resign-appr-filter-active{background:var(--accent-tint);color:var(--accent-ink);border-color:var(--accent-tint)}
+.project-filter-active{background:var(--accent-tint);color:var(--accent-ink);border-color:var(--accent-tint)}
+.ts-appr-filter-active{background:var(--accent-tint);color:var(--accent-ink);border-color:var(--accent-tint)}
+.att-tab-active{background:var(--accent-tint);color:var(--accent-ink);border-color:var(--accent-tint)}
 .tab-btn{border-bottom:2px solid transparent;transition:color .15s,border-color .15s}
 .note-type-general{background:#f1f5f9;color:#475569}
 .note-type-disciplinary{background:#fee2e2;color:#b91c1c}
@@ -106,61 +132,63 @@ main::before{
 .note-type-warning{background:#fef9c3;color:#854d0e}
 .note-type-commendation{background:#dcfce7;color:#15803d}
 .badge{display:inline-flex;align-items:center;padding:.125rem .5rem;border-radius:.25rem;font-size:.75rem;font-weight:500}
-.nav-rail-btn{display:flex;flex-direction:row;align-items:center;gap:.6rem;width:100%;padding:.5rem .6rem;border-radius:.6rem;color:var(--sidebar-text);transition:background .15s,color .15s;cursor:pointer}
-.nav-rail-btn:hover{background:var(--bg-hover);color:var(--text-primary)}
-.nav-rail-btn.active,.nav-rail-btn.group-active{background:var(--sidebar-bg-active);color:var(--sidebar-text-active)}
+
+/* ---------------------------------------------------------------------
+   Sidebar nav — Sep 2026 redesign. No per-module colour (see the old
+   "Segment Color Study" block this replaced, removed along with the
+   nav-icon-chip/nav-icon-* classes and the #nav-*-group.active rules —
+   now one neutral active/hover state for every group, matching the
+   redesign brief). Icons are plain, 20px, inherit currentColor.
+--------------------------------------------------------------------- */
+.nav-rail-btn{display:flex;flex-direction:row;align-items:center;gap:.6rem;width:100%;padding:11px 14px;border-radius:var(--radius);color:var(--ink-2);transition:background .15s,color .15s,box-shadow .15s;cursor:pointer}
+.nav-rail-btn:hover{background:rgba(20,24,28,.04)}
+.nav-rail-btn.active,.nav-rail-btn.group-active{background:var(--surface);box-shadow:var(--shadow-sm);color:var(--ink);font-weight:700}
 .nav-rail-label{font-size:.8125rem;line-height:1.2;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nav-rail-btn.active .nav-rail-label,.nav-rail-btn.group-active .nav-rail-label{font-weight:700}
 .nav-rail-chevron{transition:transform .15s}
 .nav-rail-chevron.rot{transform:rotate(90deg)}
 .nav-submenu{padding-left:1.9rem;padding-top:.15rem;padding-bottom:.25rem}
-.nav-sub-item{display:flex;align-items:center;gap:.5rem;padding:.4rem .6rem;border-radius:.5rem;font-size:.8125rem;color:var(--sidebar-text);white-space:nowrap;cursor:pointer;transition:background .15s,color .15s}
-.nav-sub-item:hover{background:var(--bg-hover);color:var(--text-primary)}
-.nav-sub-item.active{background:var(--sidebar-bg-active);color:var(--sidebar-text-active);font-weight:600}
-.nav-sub-item-disabled{color:#94a3b8;cursor:default}
+.nav-sub-item{display:flex;align-items:center;gap:.5rem;padding:.4rem .6rem;border-radius:var(--radius-sm);font-size:.8125rem;color:var(--ink-2);white-space:nowrap;cursor:pointer;transition:background .15s,color .15s}
+.nav-sub-item:hover{background:rgba(20,24,28,.04)}
+.nav-sub-item.active{background:var(--surface);box-shadow:var(--shadow-sm);color:var(--ink);font-weight:700}
+.nav-sub-item-disabled{color:var(--faint);cursor:default}
 .nav-sub-item-disabled:hover{background:none}
+.nav-icon-chip{width:20px;height:20px;flex-shrink:0;stroke-width:1.5}
+.nav-count-badge{display:inline-flex;align-items:center;justify-content:center;min-width:1.25rem;height:1.25rem;padding:0 .375rem;border-radius:var(--radius-pill);background:var(--accent);color:#fff;font-size:11px;font-weight:600}
 
 /* ---------------------------------------------------------------------
-   Sidebar module segment colors (see the "Segment Color Study" design
-   review — piloted on 6 groups + dashboard, now rolled out to the rest).
-   Icon chips are always on; the active/expanded tint below overrides the
-   global indigo --sidebar-bg-active per module so "you are here" reads
-   in that module's own color instead of one flat hue for every module.
-   Attendance has no top-level group of its own (its pages live inside
-   the Timesheet submenu) so it already inherits Timesheet's cyan.
+   Home page — greeting header, pill tabs, KPI tiles, to-do queue.
 --------------------------------------------------------------------- */
-.nav-icon-chip{border-radius:.44rem;padding:.25rem;box-sizing:content-box;width:1.0625rem;height:1.0625rem;flex-shrink:0}
-.nav-icon-emp{background:#e0e7ff;color:#4f46e5}
-.nav-icon-workforce{background:#ffedd5;color:#c2410c}
-.nav-icon-recruit{background:#ede9fe;color:#7c3aed}
-.nav-icon-ld{background:#ccfbf1;color:#0d9488}
-.nav-icon-leave{background:#e0f2fe;color:#0284c7}
-.nav-icon-timesheet{background:#cffafe;color:#0891b2}
-.nav-icon-payroll{background:#d1fae5;color:#059669}
-.nav-icon-compensation{background:#fef3c7;color:#d97706}
-.nav-icon-benefits{background:#ffe4e6;color:#e11d48}
-.nav-icon-performance{background:#fae8ff;color:#c026d3}
-.nav-icon-settings{background:#f1f5f9;color:#64748b}
+.page-greeting{font-family:var(--font-serif);font-weight:500;font-size:34px;letter-spacing:-.01em;color:var(--ink);line-height:1.15}
+.section-heading{font-family:var(--font-serif);font-weight:600;font-size:22px;color:var(--ink)}
+.kpi-number{font-family:var(--font-serif);font-weight:500;font-size:32px;line-height:1.1;color:var(--ink)}
 
-#nav-emp-group .nav-rail-btn.active,#nav-emp-group .nav-rail-btn.group-active,#nav-emp-group .nav-sub-item.active{background:#e0e7ff;color:#4338ca}
-#nav-workforce-group .nav-rail-btn.active,#nav-workforce-group .nav-rail-btn.group-active,#nav-workforce-group .nav-sub-item.active{background:#ffedd5;color:#c2410c}
-#nav-recruit-group .nav-rail-btn.active,#nav-recruit-group .nav-rail-btn.group-active,#nav-recruit-group .nav-sub-item.active{background:#ede9fe;color:#6d28d9}
-#nav-ld-group .nav-rail-btn.active,#nav-ld-group .nav-rail-btn.group-active,#nav-ld-group .nav-sub-item.active{background:#ccfbf1;color:#0f766e}
-#nav-leave-group .nav-rail-btn.active,#nav-leave-group .nav-rail-btn.group-active,#nav-leave-group .nav-sub-item.active{background:#e0f2fe;color:#0369a1}
-#nav-timesheet-group .nav-rail-btn.active,#nav-timesheet-group .nav-rail-btn.group-active,#nav-timesheet-group .nav-sub-item.active{background:#cffafe;color:#0e7490}
-#nav-payroll-group .nav-rail-btn.active,#nav-payroll-group .nav-rail-btn.group-active,#nav-payroll-group .nav-sub-item.active{background:#d1fae5;color:#047857}
-#nav-compensation-group .nav-rail-btn.active,#nav-compensation-group .nav-rail-btn.group-active,#nav-compensation-group .nav-sub-item.active{background:#fef3c7;color:#b45309}
-#nav-benefits-group .nav-rail-btn.active,#nav-benefits-group .nav-rail-btn.group-active,#nav-benefits-group .nav-sub-item.active{background:#ffe4e6;color:#be123c}
-#nav-performance-group .nav-rail-btn.active,#nav-performance-group .nav-rail-btn.group-active,#nav-performance-group .nav-sub-item.active{background:#fae8ff;color:#a21caf}
-#nav-settings-wrap .nav-rail-btn.active,#nav-settings-wrap .nav-rail-btn.group-active,#nav-settings-wrap .nav-sub-item.active{background:#f1f5f9;color:#475569}
+.pill-tab{font-family:var(--font-sans);font-size:13.5px;font-weight:600;padding:8px 16px;border-radius:var(--radius-pill);color:var(--muted);cursor:pointer;transition:background .15s,color .15s;white-space:nowrap}
+.pill-tab:hover{color:var(--ink-2)}
+.pill-tab.pill-tab-active{background:var(--accent-tint);color:var(--accent-ink);font-weight:700}
 
-#submenu-empMgmt{border-left:2px solid #e0e7ff}
-#submenu-workforce{border-left:2px solid #ffedd5}
-#submenu-recruit{border-left:2px solid #ede9fe}
-#submenu-ld{border-left:2px solid #ccfbf1}
-#submenu-leave{border-left:2px solid #bae6fd}
-#submenu-timesheet{border-left:2px solid #a5f3fc}
-#submenu-payroll{border-left:2px solid #a7f3d0}
-#submenu-compensation{border-left:2px solid #fde68a}
-#submenu-benefits{border-left:2px solid #fecdd3}
-#submenu-performance{border-left:2px solid #f5d0fe}
-#submenu-settings{border-left:2px solid #e2e8f0}
+.pill-btn{font-family:var(--font-sans);font-size:13.5px;font-weight:600;padding:8px 18px;border-radius:var(--radius-pill);cursor:pointer;transition:background .15s,color .15s;display:inline-flex;align-items:center;gap:6px}
+.pill-btn-outline{background:transparent;border:1px solid var(--line);color:var(--ink-2)}
+.pill-btn-outline:hover{background:var(--surface-2)}
+.pill-btn-primary{background:var(--accent);border:1px solid var(--accent);color:#fff}
+.pill-btn-primary:hover{background:var(--accent-ink);border-color:var(--accent-ink)}
+
+.kpi-tile{background:var(--surface-2);border-radius:var(--radius);padding:18px 20px}
+.kpi-tile-accent{background:var(--accent-tint)}
+.kpi-tile-label{font-family:var(--font-sans);font-size:12.5px;font-weight:600;color:var(--muted)}
+.kpi-tile-accent .kpi-tile-label{color:var(--accent-ink)}
+.kpi-tile-accent .kpi-number{color:var(--accent-deep)}
+.kpi-tile-delta{font-family:var(--font-sans);font-size:12.5px;color:var(--muted)}
+.kpi-tile-accent .kpi-tile-delta{color:var(--accent-ink)}
+.kpi-tile-delta.overdue{color:var(--overdue)}
+.kpi-tile-delta.positive{color:var(--accent-ink)}
+
+.todo-row{display:flex;align-items:center;gap:14px;background:var(--surface-2);border-radius:var(--radius);padding:15px 18px}
+.todo-row.todo-row-urgent{background:var(--accent-tint)}
+.todo-row-title{font-family:var(--font-sans);font-size:14.5px;font-weight:700;color:var(--ink)}
+.todo-row-meta{font-family:var(--font-sans);font-size:12.5px;color:var(--muted)}
+.todo-row-urgent .todo-row-meta{color:var(--accent-ink)}
+.todo-row-meta.overdue{color:var(--overdue)}
+.todo-avatar{width:34px;height:34px;border-radius:var(--radius-pill);display:flex;align-items:center;justify-content:center;font-family:var(--font-sans);font-size:12px;font-weight:700;color:var(--muted);background:var(--avatar-bg);flex-shrink:0}
+.todo-row-urgent .todo-avatar{background:var(--accent);color:#fff}
+.todo-row-open{font-family:var(--font-sans);font-size:12.5px;color:var(--muted)}

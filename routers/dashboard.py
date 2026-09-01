@@ -113,7 +113,7 @@ def get_todos(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, An
     # only their subordinates', HR sees institution-wide — matching that
     # endpoint's existing role scoping exactly.
     ob_q = """
-        SELECT i.id, i.title, c.type, c.employee_id, e.full_name AS employee_name
+        SELECT i.id, i.title, i.due_date, c.type, c.employee_id, e.full_name AS employee_name
         FROM ob_checklist_items i
         JOIN ob_checklists c ON c.id = i.checklist_id
         JOIN employees e ON e.employee_id = c.employee_id AND e.institution_id = c.institution_id
@@ -138,6 +138,15 @@ def get_todos(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, An
             "key": f"ob-item-{r['id']}",
             "label": f"{label} ({type_label})",
             "page": r["type"], "count": 1,
+            # Extra fields for the redesigned To-Do queue (Home page) to
+            # render a real avatar/employee/stage/due-date row instead of
+            # just a title — every other todo source below stays a plain
+            # aggregate count, since there's no single employee/date to
+            # honestly show for e.g. "3 leave applications awaiting
+            # approval". Harmless extra keys for any older client still
+            # reading just label/page/count.
+            "employee_name": r["employee_name"], "stage": r["title"],
+            "stage_type": type_label, "due_date": r["due_date"],
         })
 
     return todos

@@ -126,7 +126,7 @@ def build_current_user_out(conn, user: dict, role_override: str = None):
     inst = None
     if user.get("institution_id"):
         inst_row = conn.execute(
-            "SELECT id, name, code, status, logo_url FROM institutions WHERE id=?", (user["institution_id"],)
+            "SELECT id, name, code, status, logo_url, pay_day FROM institutions WHERE id=?", (user["institution_id"],)
         ).fetchone()
         inst = dict(inst_row) if inst_row else None
     return CurrentUserOut(
