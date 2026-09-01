@@ -130,6 +130,22 @@ main.content-shell{
 .modal-enter{animation:modalIn .18s ease}
 @keyframes modalIn{from{opacity:0;transform:translateY(-16px)}to{opacity:1;transform:none}}
 .inp{display:block;width:100%;border-radius:.5rem;border:1px solid var(--line);padding:.375rem .75rem;font-size:.875rem;font-family:var(--font-sans)}
+/* Tailwind v4 puts every utility class (including width utilities like
+   w-40) inside `@layer utilities` — and per the CSS cascade-layers spec,
+   ANY un-layered rule (like .inp above, in this plain, non-Tailwind file)
+   always wins over ANY layered rule, regardless of source order or
+   specificity. So `class="inp w-40"` silently collapsed to .inp's own
+   width:100% instead of the intended 10rem, starving any flex-1 sibling
+   (e.g. a search box) of space it should have gotten. These overrides are
+   themselves un-layered (same file as .inp) with higher specificity
+   (two classes), so they reliably win — one rule per width utility this
+   codebase actually pairs with .inp; add another line here if a new
+   .inp/w-* combo is introduced rather than trusting the bare utility. */
+.inp.w-36{width:9rem}
+.inp.w-40{width:10rem}
+.inp.w-44{width:11rem}
+.inp.w-48{width:12rem}
+.inp.w-64{width:16rem}
 .lbl{display:block;font-size:.875rem;font-weight:500;color:var(--ink-2);margin-bottom:.25rem}
 .inp:focus{outline:none;box-shadow:0 0 0 2px var(--accent)}
 .btn-primary{background:var(--accent);color:white;font-size:.875rem;font-weight:600;padding:.375rem 1rem;border-radius:var(--radius-pill);transition:background .15s;cursor:pointer}
