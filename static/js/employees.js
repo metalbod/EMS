@@ -194,6 +194,40 @@ function viewEmployee(id) {
   // routers/employee_documents.py's require_roles("hr_manager","hr_admin")
   // — narrower than canWrite, which also allows superadmin).
   document.getElementById('vt-documents-btn').classList.toggle('hidden', !HR_STAFF_ROLES.includes(role));
+  // FR (facial-recognition attendance kiosk) consent — same tier as
+  // Activate/Deactivate (canToggle), matching the backend's
+  // employees.manage_recognition_consent permission-matrix entry.
+  document.getElementById('vt-consent-btn').classList.toggle('hidden', !canToggle);
+  document.getElementById('vt-consent').innerHTML = `
+    <div class="max-w-xl">
+      <p class="text-xs text-slate-400 mb-4">Controls what the FR facial-recognition attendance kiosk integration may do with this employee's data. Everything starts off — recognition, greetings, and birthday messages are opt-in only, never assumed.</p>
+      <label class="flex items-start gap-3 py-3 border-b border-slate-100 cursor-pointer">
+        <input type="checkbox" id="consentRecognition" class="mt-1" ${e.consent_recognition?'checked':''}/>
+        <div>
+          <p class="text-sm font-medium text-slate-800">Recognition</p>
+          <p class="text-xs text-slate-500">Allow the FR kiosk to enrol and recognise this employee's face for clock-in/out. Off means FR must not enrol or match them at all.</p>
+        </div>
+      </label>
+      <label class="flex items-start gap-3 py-3 border-b border-slate-100 cursor-pointer">
+        <input type="checkbox" id="consentDisplayName" class="mt-1" ${e.consent_display_name?'checked':''}/>
+        <div>
+          <p class="text-sm font-medium text-slate-800">Display Name Greeting</p>
+          <p class="text-xs text-slate-500">Show a "Hi ${esc(e.preferred_name||e.full_name)}" greeting on the kiosk/TV when they clock in. Off means they clock in silently.</p>
+        </div>
+      </label>
+      <label class="flex items-start gap-3 py-3 cursor-pointer">
+        <input type="checkbox" id="consentDob" class="mt-1" ${e.consent_dob?'checked':''}/>
+        <div>
+          <p class="text-sm font-medium text-slate-800">Birthday Greeting</p>
+          <p class="text-xs text-slate-500">Show a birthday greeting on their birthday, even if a date of birth is on file. Off means no birthday greeting regardless.</p>
+        </div>
+      </label>
+      <div class="mt-5 flex items-center gap-3">
+        <button onclick="saveConsent()" class="btn-primary text-sm">Save Consent Settings</button>
+        <span id="consentSaveStatus" class="text-xs"></span>
+      </div>
+    </div>
+  `;
   document.getElementById('noteForm').classList.toggle('hidden', !canNotes);
   document.getElementById('viewEditBtn').classList.toggle('hidden', !canWrite);
   document.getElementById('viewToggleBtn').classList.toggle('hidden', !canToggle);
@@ -389,6 +423,26 @@ async function toggleStatusFromView() {
     if(idx>=0) employees[idx]=updated;
     closeViewModal(); filterEmployees(); renderDashboard();
   }
+}
+
+async function saveConsent() {
+  const statusEl=document.getElementById('consentSaveStatus');
+  statusEl.textContent='Saving…'; statusEl.className='text-xs text-slate-400';
+  const body={
+    consent_recognition: document.getElementById('consentRecognition').checked,
+    consent_display_name: document.getElementById('consentDisplayName').checked,
+    consent_dob: document.getElementById('consentDob').checked,
+  };
+  const res=await api(`/api/employees/${viewingId}/consent`,{method:'PATCH',body:JSON.stringify(body)});
+  if(!res?.ok){
+    statusEl.textContent='Failed to save'; statusEl.className='text-xs text-red-600';
+    return;
+  }
+  const updated=await res.json();
+  const idx=employees.findIndex(em=>em.employee_id===viewingId);
+  if(idx>=0) employees[idx]={...employees[idx], ...updated};
+  statusEl.textContent='Saved'; statusEl.className='text-xs text-emerald-600';
+  setTimeout(()=>{ if(statusEl.textContent==='Saved') statusEl.textContent=''; }, 2000);
 }
 
 // ---------------------------------------------------------------------------

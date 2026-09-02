@@ -232,6 +232,14 @@ class EmployeeOut(BaseModel):
     # Non-blocking notice from update_employee when basic_salary was saved
     # outside the employee's current pay grade band — None everywhere else.
     pay_grade_warning: Optional[str] = None
+    # Consent flags backing the FR (facial-recognition attendance kiosk)
+    # integration's roster feed — see routers/fr_integration.py and
+    # docs/FR_INTEGRATION.md. All default False; only settable via the
+    # dedicated PATCH .../consent endpoint below, never via the general
+    # PUT (so a routine profile edit can never silently flip these).
+    consent_recognition: bool = False
+    consent_display_name: bool = False
+    consent_dob: bool = False
 
 
 class BulkUploadIn(BaseModel):
@@ -246,6 +254,15 @@ class StatusUpdate(BaseModel):
     def val(cls, v):
         if v not in STATUSES: raise ValueError("Status must be Active or Inactive")
         return v
+
+
+class ConsentUpdate(BaseModel):
+    """Partial update — only the flags actually present in the request body
+    are changed, so a caller can flip just one toggle without needing to
+    know/resend the other two's current values."""
+    consent_recognition: Optional[bool] = None
+    consent_display_name: Optional[bool] = None
+    consent_dob: Optional[bool] = None
 
 
 def gen_employee_id(conn, inst_id: int) -> str:
@@ -746,6 +763,46 @@ def update_status(conn, employee_id: str, body: StatusUpdate, request: Request,
     write_audit(conn, user, inst_id, employee_id, row["full_name"], action,
                 status_change, request.client.host if request.client else None)
     write_employee_change_note(conn, inst_id, employee_id, user, status_change)
+    conn.commit()
+    result = conn.execute(
+        "SELECT * FROM employees WHERE institution_id=? AND employee_id=?", (inst_id, employee_id)
+    ).fetchone()
+    return dict(result)
+
+
+@router.patch("/api/employees/{employee_id}/consent", response_model=EmployeeOut)
+@db_session
+def update_consent(conn, employee_id: str, body: ConsentUpdate, request: Request,
+                   user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    """FR (facial-recognition attendance kiosk) integration consent — see
+    routers/fr_integration.py. Deliberately a separate, narrower-gated
+    endpoint from the general PUT so a routine profile edit can never
+    touch these, and so the audit trail records consent changes as their
+    own distinct action rather than being buried in a generic field diff."""
+    _require_permission(conn, user, "employees.manage_recognition_consent")
+    inst_id = need_inst(user)
+    row = conn.execute(
+        "SELECT * FROM employees WHERE institution_id=? AND employee_id=?", (inst_id, employee_id)
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "Employee not found")
+    old = dict(row)
+
+    fields = body.model_dump(exclude_unset=True)
+    if not fields:
+        return old
+    set_clause = ", ".join(f"{k}=?" for k in fields)
+    conn.execute(
+        f"UPDATE employees SET {set_clause} WHERE institution_id=? AND employee_id=?",
+        (*(1 if v else 0 for v in fields.values()), inst_id, employee_id),
+    )
+    changes = [
+        {"field": k, "label": k.replace("_", " ").title(), "old": bool(old[k]), "new": v}
+        for k, v in fields.items()
+    ]
+    write_audit(conn, user, inst_id, employee_id, row["full_name"], "CONSENT_UPDATE",
+                changes, request.client.host if request.client else None)
+    write_employee_change_note(conn, inst_id, employee_id, user, changes)
     conn.commit()
     result = conn.execute(
         "SELECT * FROM employees WHERE institution_id=? AND employee_id=?", (inst_id, employee_id)

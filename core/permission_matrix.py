@@ -142,6 +142,8 @@ MATRIX: List[Dict[str, Any]] = [
             _action("Edit employee", "PUT /api/employees/{id}", _flat(*_EMPLOYEE_WRITE),
                      note="Some sensitive fields are further restricted to hr_manager only."),
             _action("Activate / deactivate employee", "PATCH /api/employees/{id}/status", _flat(*_EMPLOYEE_TOGGLE)),
+            _action("Manage recognition consent", "PATCH /api/employees/{id}/consent", _flat(*_EMPLOYEE_TOGGLE),
+                     note="Recognition/display-name/DOB-greeting consent flags backing the FR kiosk integration — same tier as activate/deactivate, since these govern biometric-adjacent data sharing."),
             _action("Download bulk-upload template", "GET /api/employees/bulk-template", _flat(*_BULK_UPLOAD)),
             _action("Bulk-upload employees", "POST /api/employees/bulk-upload", _flat(*_BULK_UPLOAD)),
             _action("Rehire prefill", "GET /api/employees/{id}/rehire-prefill", _flat(*_EMPLOYEE_WRITE)),

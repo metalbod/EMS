@@ -45,6 +45,7 @@ from routers.compensation_equity import router as compensation_equity_router
 from routers.compensation_rewards import router as compensation_rewards_router
 from routers.benefits import router as benefits_router
 from routers.attendance import router as attendance_router
+from routers.fr_integration import router as fr_integration_router
 from routers.assistant import router as assistant_router
 from routers.auth import router as auth_router
 from routers.meta import router as meta_router
@@ -148,6 +149,7 @@ app.include_router(compensation_equity_router)
 app.include_router(compensation_rewards_router)
 app.include_router(benefits_router)
 app.include_router(attendance_router)
+app.include_router(fr_integration_router)
 app.include_router(assistant_router)
 app.include_router(auth_router)
 app.include_router(meta_router)
