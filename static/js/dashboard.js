@@ -31,7 +31,7 @@ function renderDashboard() {
   const isEmployee = currentUser?.role === 'employee';
   document.getElementById('dashboardQuickActions')?.classList.toggle('hidden', !isEmployee);
   document.getElementById('dashboardResignRow')?.classList.toggle('hidden', !isEmployee);
-  if (isEmployee) refreshResignButtonState();
+  if (isEmployee) { refreshResignButtonState(); refreshDashClockState(); }
   renderDashGreeting();
   if (currentUser.role === 'superadmin' && !currentInstitution) {
     document.getElementById('superadminGlobalDash').classList.remove('hidden');
@@ -539,6 +539,43 @@ async function dashShortcutSubmitClaim() {
   const res = await api('/api/benefits/eligible-plans/mine');
   myEligiblePlans = (res && res.ok) ? await res.json() : [];
   openClaimForm();
+}
+
+// Clock In/Out shortcut — unlike the two above, this acts immediately in
+// place rather than navigating to a page + opening a modal, so it's a
+// lightweight standalone version of attendanceClockIn/Out (static/js/
+// attendance.js, the page-attendance-clock page) rather than a reuse of
+// those functions directly: those read/write DOM elements (geo note,
+// history table) that only exist on that page, not Home. attCaptureGeo()
+// itself has no such dependency, so it's shared as-is.
+async function refreshDashClockState() {
+  const btn = document.getElementById('dashClockBtn');
+  if (!btn || !currentUser?.employee_id) return;
+  const res = await api('/api/attendance/mine?limit=1');
+  const rows = (res && res.ok) ? await res.json() : [];
+  const open = rows[0] && rows[0].clock_in_at && !rows[0].clock_out_at;
+  btn.textContent = open ? 'Clock Out' : 'Clock In';
+  btn.setAttribute('onclick', open ? 'dashShortcutClockOut()' : 'dashShortcutClockIn()');
+}
+
+async function dashShortcutClockIn() {
+  const geo = await attCaptureGeo();
+  const res = await api('/api/attendance/clock-in', {
+    method: 'POST',
+    body: JSON.stringify({ lat: geo?.lat ?? null, lng: geo?.lng ?? null }),
+  });
+  if (!res || !res.ok) { const d = await res?.json().catch(() => ({})); alert(d?.detail || 'Failed to clock in'); return; }
+  await refreshDashClockState();
+}
+
+async function dashShortcutClockOut() {
+  const geo = await attCaptureGeo();
+  const res = await api('/api/attendance/clock-out', {
+    method: 'POST',
+    body: JSON.stringify({ lat: geo?.lat ?? null, lng: geo?.lng ?? null }),
+  });
+  if (!res || !res.ok) { const d = await res?.json().catch(() => ({})); alert(d?.detail || 'Failed to clock out'); return; }
+  await refreshDashClockState();
 }
 
 // ---------------------------------------------------------------------------
