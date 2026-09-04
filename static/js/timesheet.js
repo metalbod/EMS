@@ -4,6 +4,13 @@ let projectsCache=[], myProjectsCache=[], projectFilter='';
 // pageSize is set well above any realistic project count — this list has no
 // pagination UI, only sorting, so createListState is used sort-only here.
 const projectList = createListState({ sortKey: 'name', pageSize: 10000 });
+// Pivot-table expand state for the Projects list — which project rows are
+// showing their task sub-rows, and each project's own task list once
+// fetched (lazy: only loaded on first expand, not for every project up
+// front). Kept in sync with the Edit Project modal's own task list by
+// loadProjectTasksForManage below, rather than a second independent fetch
+// path, so editing a task there can't leave this cache stale.
+let expandedProjectIds=new Set(), projectTasksByProject={};
 let tsCurrentWeekStart=null, tsCurrentTimesheet=null;
 let tsApprovalFilter='Submitted';
 const TS_STATUS_COLORS={'Draft':'status-neutral','Submitted':'status-pending','Approved':'status-positive','Rejected':'status-negative'};
@@ -58,18 +65,71 @@ function renderProjectTable() {
   const listEl=document.getElementById('projectList');
   const STATUS_COLORS={'Active':'status-positive','On Hold':'status-pending','Completed':'status-neutral'};
   const { pageItems: sorted } = projectList.view(projectsCache);
-  listEl.innerHTML=sorted.map(p=>`
+  listEl.innerHTML=sorted.map(p=>{
+    const expanded=expandedProjectIds.has(p.id);
+    return `
     <tr class="border-t border-slate-100 cursor-pointer hover:bg-slate-50 transition" onclick="openProjectModal(${p.id})">
       <td class="px-4 py-3">
-        <p class="font-medium text-slate-800">${esc(p.name)}</p>
-        <p class="text-xs text-slate-400 line-clamp-1">${esc(p.description||'')}</p>
+        <div class="flex items-center gap-2">
+          <button onclick="event.stopPropagation();toggleProjectExpand(${p.id})" class="shrink-0 p-0.5 text-slate-400 hover:text-slate-600" title="${expanded?'Collapse':'Expand'} tasks">
+            <svg class="w-3.5 h-3.5 transition-transform ${expanded?'rotate-90':''}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+          </button>
+          <div class="min-w-0">
+            <p class="font-medium text-slate-800">${esc(p.name)}</p>
+            <p class="text-xs text-slate-400 line-clamp-1">${esc(p.description||'')}</p>
+          </div>
+        </div>
       </td>
       <td class="px-4 py-3"><span class="badge text-xs ${statusColor(STATUS_COLORS, p.status)}">${p.status}</span></td>
       <td class="px-4 py-3 text-slate-600">${p.task_count}</td>
       <td class="px-4 py-3 text-slate-600">${p.member_count}</td>
       <td class="px-4 py-3 text-slate-600">${p.total_allocated_hours}h</td>
       <td class="px-4 py-3 text-slate-600">${p.total_logged_hours}h</td>
+    </tr>${expanded?projectTaskSubRows(p.id):''}`;
+  }).join('');
+}
+
+// Pivot-table task sub-rows for one project — see toggleProjectExpand.
+// Purely informational (no click handler): task editing stays in the
+// existing Edit Project modal's Tasks tab, not duplicated here.
+function projectTaskSubRows(projectId) {
+  const tasks=projectTasksByProject[projectId];
+  if(tasks===undefined) {
+    return `<tr class="bg-slate-50/60"><td colspan="6" class="pl-12 pr-4 py-2.5 text-xs text-slate-400">Loading tasks…</td></tr>`;
+  }
+  if(!tasks.length) {
+    return `<tr class="bg-slate-50/60"><td colspan="6" class="pl-12 pr-4 py-2.5 text-xs text-slate-400">No tasks yet.</td></tr>`;
+  }
+  return tasks.map(t=>`
+    <tr class="bg-slate-50/60 border-t border-slate-100">
+      <td class="pl-12 pr-4 py-2.5">
+        <div class="flex items-center gap-2 min-w-0">
+          <span class="text-slate-300 shrink-0">↳</span>
+          <span class="text-slate-700 truncate">${esc(t.name)}</span>
+          ${t.open_to_all?'<span class="badge text-xs bg-blue-100 text-blue-700 shrink-0">ALL</span>':''}
+        </div>
+      </td>
+      <td class="px-4 py-2.5"><span class="badge text-xs ${statusColor(TASK_STATUS_COLORS, t.status)}">${t.status}</span></td>
+      <td class="px-4 py-2.5 text-slate-300">—</td>
+      <td class="px-4 py-2.5 text-slate-300">—</td>
+      <td class="px-4 py-2.5 text-slate-500">${t.estimated_hours?t.estimated_hours+'h':'—'}</td>
+      <td class="px-4 py-2.5 text-slate-500">${t.logged_hours}h</td>
     </tr>`).join('');
+}
+
+async function toggleProjectExpand(projectId) {
+  if(expandedProjectIds.has(projectId)) {
+    expandedProjectIds.delete(projectId);
+    renderProjectTable();
+    return;
+  }
+  expandedProjectIds.add(projectId);
+  renderProjectTable();
+  if(!projectTasksByProject[projectId]) {
+    const res=await api(`/api/projects/${projectId}/tasks`);
+    projectTasksByProject[projectId]=res?.ok?await res.json():[];
+    renderProjectTable();
+  }
 }
 
 function setProjectFilter(status) {
@@ -176,6 +236,11 @@ const TASK_STATUS_COLORS={'Not Started':'status-neutral','In Progress':'status-i
 async function loadProjectTasksForManage(projectId) {
   const res=await api(`/api/projects/${projectId}/tasks`);
   projectTasksCache=res?.ok?await res.json():[];
+  // Keep the Projects list's pivot-table sub-rows in sync — this is the
+  // one place task data actually changes, so it's also the one place
+  // that needs to invalidate/refresh that cache (see toggleProjectExpand).
+  projectTasksByProject[projectId]=projectTasksCache;
+  if(expandedProjectIds.has(projectId)) renderProjectTable();
   document.getElementById('projectTaskList').innerHTML=projectTasksCache.length?projectTasksCache.map(t=>`
     <div class="border border-slate-200 rounded-lg p-2 text-sm">
       <div class="flex items-center justify-between gap-2">
