@@ -316,23 +316,30 @@ def test_attendance_override_lets_employee_manage_shifts(client, hr_manager_auth
     assert after_reset.status_code == 403, after_reset.text
 
 
-def test_attendance_override_lets_manager_view_review_queue(client, hr_manager_auth, make_test_user, test_institution):
-    mgr_token, _ = make_test_user(role="manager")
-    mgr_headers = {"Authorization": f"Bearer {mgr_token}", "X-Institution-Id": str(test_institution["id"])}
+def test_attendance_override_lets_employee_view_review_queue(client, hr_manager_auth, make_test_user, test_institution):
+    """manager was this test's original example role, but it's now
+    ALLOW-by-default for this action (a manager reviews their own team's
+    late/absent days — see core/permission_matrix.py's Attendance module
+    and tests/test_attendance.py's manager-scoping coverage), so it no
+    longer demonstrates "override lets a normally-denied role in". employee
+    is still DENY-by-default and override-eligible, so it now plays that
+    role instead."""
+    emp_token, _ = make_test_user(role="employee")
+    emp_headers = {"Authorization": f"Bearer {emp_token}", "X-Institution-Id": str(test_institution["id"])}
 
-    before = client.get("/api/attendance/review", headers=mgr_headers)
+    before = client.get("/api/attendance/review", headers=emp_headers)
     assert before.status_code == 403, before.text
 
     override = client.put("/api/roles/permission-matrix/override", headers=hr_manager_auth, json={
-        "action_key": "attendance.review_queue_resolve_attendance_record", "role": "manager", "access_value": "allow",
+        "action_key": "attendance.review_queue_resolve_attendance_record", "role": "employee", "access_value": "allow",
     })
     assert override.status_code == 200, override.text
     try:
-        after = client.get("/api/attendance/review", headers=mgr_headers)
+        after = client.get("/api/attendance/review", headers=emp_headers)
         assert after.status_code == 200, after.text
     finally:
         client.delete("/api/roles/permission-matrix/override", headers=hr_manager_auth,
-                       params={"action_key": "attendance.review_queue_resolve_attendance_record", "role": "manager"})
+                       params={"action_key": "attendance.review_queue_resolve_attendance_record", "role": "employee"})
 
 
 def test_attendance_override_lets_employee_manage_devices(client, hr_manager_auth, make_test_user, test_institution):

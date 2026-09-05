@@ -554,6 +554,87 @@ def test_resolve_requires_hr_role(client, hr_manager_auth, employee_with_login):
 
 
 # ---------------------------------------------------------------------------
+# Review queue / resolve — manager access (subordinate-scoped, unlike HR's
+# institution-wide view)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def manager_with_login(client, hr_manager_auth, make_test_employee, test_institution):
+    """A manager employee + linked login, no subordinate pre-attached
+    (unlike test_approval_workflow.py's manager_with_report fixture) —
+    each test here attaches its own subordinate(s) via
+    employee_with_login(reports_to=...). Returns (manager_employee, headers)."""
+    mgr_emp = make_test_employee(full_name=_unique_name("ZZ Review Manager"))
+    username = f"zzattmgr_{mgr_emp['employee_id'].lower()}"
+    password = "ZzPytest@123"
+    res = client.post("/api/users", headers=hr_manager_auth, json={
+        "username": username, "full_name": "ZZ Attendance Manager", "password": password,
+        "role": "manager", "employee_id": mgr_emp["employee_id"],
+    })
+    assert res.status_code == 201, f"failed to create manager user: {res.text}"
+    user_id = res.json()["id"]
+    login = client.post("/api/auth/login", json={
+        "username": username, "password": password, "institution_code": test_institution["code"],
+    })
+    assert login.status_code == 200
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    yield mgr_emp, headers
+
+    client.delete(f"/api/users/{user_id}", headers=hr_manager_auth)
+
+
+def _make_late_record_reporting_to(client, hr_manager_auth, employee_with_login, manager_employee_id):
+    """Same as _make_late_record, but the employee's reports_to is set —
+    for subordinate-scoping checks on the manager-accessible endpoints."""
+    emp, headers = employee_with_login(full_name=_unique_name("ZZ Report Late"), reports_to=manager_employee_id)
+    shift = client.post("/api/attendance/shifts", headers=hr_manager_auth, json={
+        "name": _unique_name("ZZ Report Shift"), "start_time": _hhmm(-10), "end_time": _hhmm(600), "grace_period_minutes": 0,
+    }).json()
+    client.post("/api/attendance/settings", headers=hr_manager_auth, json={
+        "employee_id": emp["employee_id"], "required": True, "default_shift_id": shift["id"],
+    })
+    rec = client.post("/api/attendance/clock-in", headers=headers, json={}).json()
+    assert rec["status"] == "Late"
+    return emp, rec
+
+
+def test_review_queue_allows_manager_for_own_subordinate(client, hr_manager_auth, employee_with_login, manager_with_login):
+    mgr_emp, mgr_headers = manager_with_login
+    report_emp, rec = _make_late_record_reporting_to(client, hr_manager_auth, employee_with_login, mgr_emp["employee_id"])
+    res = client.get("/api/attendance/review", headers=mgr_headers)
+    assert res.status_code == 200, res.text
+    assert rec["id"] in [r["id"] for r in res.json()]
+
+
+def test_review_queue_manager_excludes_non_subordinates(client, hr_manager_auth, employee_with_login, manager_with_login):
+    """A late/absent record for an employee who does NOT report to this
+    manager must not leak into their review queue — the whole point of
+    scoping this endpoint by subordinates_in_clause rather than just
+    institution_id once 'manager' was added to its allowed roles."""
+    mgr_emp, mgr_headers = manager_with_login
+    other_emp, other_rec = _make_late_record(client, hr_manager_auth, employee_with_login)
+    res = client.get("/api/attendance/review", headers=mgr_headers)
+    assert res.status_code == 200
+    assert other_rec["id"] not in [r["id"] for r in res.json()]
+
+
+def test_resolve_allows_manager_for_own_subordinate(client, hr_manager_auth, employee_with_login, manager_with_login):
+    mgr_emp, mgr_headers = manager_with_login
+    report_emp, rec = _make_late_record_reporting_to(client, hr_manager_auth, employee_with_login, mgr_emp["employee_id"])
+    res = client.put(f"/api/attendance/records/{rec['id']}/resolve", headers=mgr_headers, json={"action": "Excuse"})
+    assert res.status_code == 200, res.text
+    assert res.json()["status"] == "Excused"
+
+
+def test_resolve_rejects_manager_for_non_subordinate(client, hr_manager_auth, employee_with_login, manager_with_login):
+    mgr_emp, mgr_headers = manager_with_login
+    other_emp, other_rec = _make_late_record(client, hr_manager_auth, employee_with_login)
+    res = client.put(f"/api/attendance/records/{other_rec['id']}/resolve", headers=mgr_headers, json={"action": "Excuse"})
+    assert res.status_code == 404
+
+
+# ---------------------------------------------------------------------------
 # Devices
 # ---------------------------------------------------------------------------
 

@@ -272,7 +272,8 @@ MATRIX: List[Dict[str, Any]] = [
         "actions": [
             _action("Clock in / out, view own attendance", "POST /api/attendance/clock-in|out, GET .../mine", _no_restriction()),
             _action("Manage shifts, assignments, settings", "routers/attendance.py", _flat(*_ATTENDANCE_MANAGE)),
-            _action("Review queue / resolve attendance record", "routers/attendance.py", _flat(*_ATTENDANCE_MANAGE)),
+            _action("Review queue / resolve attendance record", "routers/attendance.py", _flat(*_ATTENDANCE_MANAGE, "manager"),
+                     note="A manager may review/resolve their own team's late or absent days — deliberately its own, wider role set than the shift/device configuration actions above and below it, not a reuse of _ATTENDANCE_MANAGE."),
             _action("Manage attendance devices", "routers/attendance.py", _flat(*_ATTENDANCE_MANAGE)),
             _action("Device webhook (clock event)", "POST /api/attendance/webhook/clock-event", _no_restriction(),
                      note="Not user-role gated at all — authenticated via a per-device API key, not a user session."),

@@ -14,6 +14,7 @@ from core.db_session import db_session
 from core.deps import get_current_user, hash_password, verify_password
 from core.permission_matrix import require_permission
 from core.leave_balance_ops import _consume_balance
+from core.org_queries import subordinates_in_clause, is_self_or_subordinate
 from core.attendance_helpers import parse_time as _parse_time, match_attendance_setting as _match_attendance_setting, resolve_shift as _resolve_shift
 from core.attendance_schemas import (
     ShiftCreate, ShiftUpdate, ShiftResponse,
@@ -712,16 +713,24 @@ def review_queue(
     require_permission(conn, current_user, "attendance.review_queue_resolve_attendance_record")
     inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
     _sweep_absences(conn, inst_id)
-    rows = conn.execute(
-        """
+    q = """
         SELECT ar.*, e.full_name AS employee_name, e.preferred_name AS employee_preferred_name, e.department AS department
         FROM attendance_records ar
         JOIN employees e ON ar.employee_id = e.employee_id AND ar.institution_id = e.institution_id
         WHERE ar.institution_id = ? AND ar.status IN ('Late', 'Absent (Pending Review)')
-        ORDER BY ar.work_date DESC
-        """,
-        (inst_id,),
-    ).fetchall()
+    """
+    params = [inst_id]
+    # A manager (the one non-HR role the permission check above admits)
+    # only reviews their own downstream reporting chain — the HR tier
+    # sees the whole institution. Same "manager sees subordinates, HR
+    # sees all" scoping every other list endpoint in this app applies
+    # (e.g. routers/employees.py's list_employees).
+    if current_user["role"] == "manager":
+        frag, fp = subordinates_in_clause(inst_id, current_user.get("employee_id") or "")
+        q += f" AND ar.employee_id IN {frag}"
+        params.extend(fp)
+    q += " ORDER BY ar.work_date DESC"
+    rows = conn.execute(q, params).fetchall()
     out = []
     for r in rows:
         base = _record_response(r).model_dump()
@@ -741,6 +750,14 @@ def resolve_attendance_record(
     inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
     rec = conn.execute("SELECT * FROM attendance_records WHERE id = ? AND institution_id = ?", (record_id, inst_id)).fetchone()
     if not rec:
+        raise HTTPException(404, detail="Attendance record not found")
+    # Same subordinate scoping as review_queue above — a manager can't
+    # resolve a record outside their own reporting chain just by knowing
+    # or guessing its id. 404, not 403, so as not to confirm a record's
+    # existence to someone outside its scope.
+    if current_user["role"] == "manager" and not is_self_or_subordinate(
+        conn, inst_id, current_user.get("employee_id") or "", rec["employee_id"]
+    ):
         raise HTTPException(404, detail="Attendance record not found")
     if rec["status"] not in ("Late", "Absent (Pending Review)"):
         raise HTTPException(400, detail="Only a Late or Absent (Pending Review) record can be resolved")

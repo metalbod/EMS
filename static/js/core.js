@@ -477,7 +477,13 @@ function applyRoleUI() {
   // toggle here just hides it from superadmin (no employee record at all).
   document.getElementById('nav-attendance-clock')?.classList.toggle('hidden', hideEmp || isSA);
   const canAttendanceManage = HR_MANAGE_ROLES.includes(role);
-  document.getElementById('nav-attendance-review')?.classList.toggle('hidden', !canAttendanceManage);
+  // Attendance Review is HR_AND_MANAGER_ROLES (adds manager on top of the
+  // Attendance Settings tier below) — matches the backend's
+  // attendance.review_queue_resolve_attendance_record permission-matrix
+  // entry, which is deliberately its own role set, not a reuse of
+  // _ATTENDANCE_MANAGE (a manager reviewing their team's late/absent days
+  // shouldn't also gain shift/device configuration access).
+  document.getElementById('nav-attendance-review')?.classList.toggle('hidden', !HR_AND_MANAGER_ROLES.includes(role));
   const canNotify = HR_STAFF_ROLES.includes(role);
   const canBulkUpload = role === 'hr_manager';
   // Matches the backend's LOCATIONS_MANAGE_ROLES (routers/locations.py) —
