@@ -1,119 +1,80 @@
-# Visual redesign rollout plan — extending "Organic layout, Technical palette" beyond Shell + Home
+# Visual redesign rollout — "Organic layout, Technical palette"
 
-**Status:** Shell + Home shipped (see the commit adopting the design brief). This
-document is the plan for everything else — not started, no code changes yet.
+**Status: shipped in full.** Shell + Home landed first; Phases 1-3 below
+(badge/status tokens, per-item To-Do, KPI-tile shell extension) landed
+together in `d9e3743` ("Execute visual redesign rollout plan Phases
+1-3"). This document is now a record of what changed and why, plus the
+handful of gaps that were deliberately left open — not a pending plan.
 
-## What shipped already
+## Shell + Home (first pass)
 
-- Design tokens (`static/css/styles.css` `:root`) — surfaces, text, lines, the
-  teal accent scale, status colors, Newsreader/Karla fonts, shape/shadow scale.
-  Old token names (`--color-primary`, `--text-primary`, `--sidebar-*`, etc.)
-  are kept as **deprecated aliases** pointing at the new tokens, specifically
-  so pages outside this pass keep rendering correctly unchanged — see the
-  comment block above them in `styles.css`.
+- Design tokens (`static/css/styles.css` `:root`) — surfaces, text,
+  lines, the teal accent scale, status colors, Newsreader/Karla fonts,
+  shape/shadow scale. Old token names (`--color-primary`, `--text-primary`,
+  `--sidebar-*`, etc.) are kept as **deprecated aliases** pointing at the
+  new tokens, so any code path not touched by this redesign keeps
+  rendering correctly unchanged — see the comment block above them in
+  `styles.css`. Still present as of this writing; nothing has needed them
+  removed.
 - Shell: flat `--bg` canvas (gradient removed), single white content-card
   (`main.content-shell`), sidebar restyled with one neutral active/hover
   state (the old per-module "Segment Color Study" pilot — 11 pastel icon
-  chips + per-group active colors — removed), new bottom-pinned account
-  panel (from an earlier pass, unrelated to this redesign, left as-is).
+  chips + per-group active colors — removed), bottom-pinned account panel
+  (from an earlier, unrelated pass).
 - Home page: serif greeting header, 4 KPI tiles (Headcount / Pending
-  approvals / Payroll cut-off / Open roles), pill-style dashboard tabs, and
-  the To-Do queue rebuilt to the brief's row spec (avatar, title, meta line,
-  one action, single accent-highlighted "most urgent" row).
+  approvals / Payroll cut-off / Open roles), pill-style dashboard tabs,
+  and the To-Do queue rebuilt to the brief's row spec (avatar, title,
+  meta line, one action, single accent-highlighted "most urgent" row).
 
-**Known gap in what shipped:** the To-Do queue's richer row treatment
-(avatar with real initials, employee · stage · due-date meta line) only
-applies to onboarding/offboarding checklist items, which already carry
-per-item employee/date data. The other 8 todo sources (leave, claims,
-requisition, timesheet, ld_enrollment, overtime, resignation, pip
-approvals, and the employee-document-expiry reminder) are aggregate counts
-— "3 leave applications awaiting your approval" — with no single
-employee/date to honestly show, so they render with the simpler
-title-only + "Open" fallback the brief allows for non-urgent rows. Making
-every todo source per-item (see "Phase 2" below) is what closes this gap
-properly, rather than inventing a fake owner/date for an aggregate.
+## Phases 1-3 (`d9e3743`)
 
-**Also not done:** `pay_day` is only wired into `currentUser.institution`
-(the logged-in user's own institution). Superadmin viewing another
-institution's Payroll cut-off KPI while inside that institution's context
-still falls back to the schema default (25th) — `InstitutionResponse` /
-`GET /api/institutions` doesn't carry `pay_day` today. Low-priority (a
-superadmin managing an institution isn't usually the one running its
-payroll), noted here rather than fixed silently.
+**Phase 1 — badge/status token migration.** Introduced the `--status-*`
+token set in `styles.css` (`positive` / `pending` / `negative` /
+`neutral` / `info` / `special`, each with a `-soft` background pair) and
+migrated every genuine status/lifecycle badge across the app onto them:
+attendance, compensation, ld, leave, notifications, payroll, performance,
+pip, resignation, timesheet, recruitment, benefits, dashboard, employees,
+institutions, users, employee-documents, onboarding, and the shared
+`core.js` helper they all route through. Categorical/identity maps
+(roles, employment types, plan categories, etc.) were deliberately left
+on their own values — they encode identity, not lifecycle state, so
+forcing them onto the status palette would have been the wrong call, not
+a migration gap.
 
-## What's left: every other page's own hardcoded colors
+**Phase 2 — every To-Do source is now per-item.** `count_pending_for_approver`
+(`core/approval_workflow.py`) became `pending_rows_for_approver`, same
+eligibility logic but returning the underlying rows instead of a count;
+a new `_approval_row_detail` (`routers/dashboard.py`) resolves
+employee/stage/due-date per row for all 8 approval types (leave, claims,
+requisition, timesheet, ld_enrollment, overtime, resignation, pip). The
+Home To-Do queue now renders one real row per pending request — same
+avatar/title/meta shape the onboarding checklist items already used —
+instead of an aggregate "N items awaiting approval" count. This closes
+the gap the first pass had left open.
 
-Confirmed by grep, at time of writing: **27 files** (`static/js/*.js` +
-`static/index.html`) use hardcoded Tailwind badge/status classes
-(`bg-blue-100`, `text-emerald-700`, etc.) that don't run through the new
-token system at all — the shell/Home changes don't touch them, by design,
-per the scoping decision behind this pass. Two different patterns exist:
+**Phase 3 — KPI-tile shell extended to more dashboard tabs.** The
+Workforce, Recruitment, and Compensation & Benefits dashboard tabs'
+stat-tile grids moved off the old pastel `bg-{color}-50` cards onto the
+`.kpi-tile`/`.kpi-tile-accent` system built for Home's General tab,
+closing the visual inconsistency between tabs sharing one tab bar. Not
+every tab got this treatment — evaluated case by case, per the original
+plan's own caution against forcing the Home layout everywhere.
 
-1. **Shared color-map helpers** (`static/js/core.js`'s `statusColor()` +
-   per-module `*_STATUS_COLORS`/`*_BADGE_COLORS` objects — 14 files use
-   this pattern: `attendance.js`, `compensation.js`, `core.js`,
-   `dashboard.js`, `employees.js`, `ld.js`, `leave.js`, `notifications.js`,
-   `onboarding.js`, `payroll.js`, `performance.js`, `pip.js`,
-   `resignation.js`, `timesheet.js`, `users.js`). These are the easy case —
-   one map object per concern, update the hex/Tailwind-class values in one
-   place, everything consuming that map picks it up.
-2. **Inline, one-off badge functions** not using the shared helper (e.g.
-   `benefits.js`'s `claimStatusBadge()`, some of `recruitment.js`'s
-   interview/offer status badges). Slightly more files to touch
-   individually since there's no single map to edit.
+## Known gaps (still open, not regressions)
 
-### Recommended approach — don't try to force everything onto one accent
-
-The brief's Section 5 ("any second accent hue... is decoration") is
-written for a simpler app than this one actually is. This app's status
-badges carry real semantic load across many independent lifecycles
-(candidate pipeline stages, leave status, payroll run status, claim
-status, appraisal status...) — collapsing all of them to teal-or-nothing
-would remove information the badges exist to carry, not just decoration.
-The workable interpretation, consistent with the brief's actual intent
-(one brand accent, not one status color): keep semantic status colors
-(success green, warning amber, danger red, etc.) as a **separate, small,
-deliberately-limited palette** distinct from the teal brand accent —
-teal means "this is the primary action / the app's own identity," not
-"this record is in a good state." Concretely:
-
-- Define a small `--status-*` token set (2026 palette, not the old ad hoc
-  hex values scattered per file) — e.g. `--status-positive`,
-  `--status-pending`, `--status-negative`, `--status-neutral` — and route
-  every `*_STATUS_COLORS`/`*_BADGE_COLORS` map through those instead of
-  literal Tailwind classes.
-- Leave `--overdue`/`--danger` as-is (already status-only per the shipped
-  tokens).
-- Audit whether any of the 27 files' badges are actually acting as a
-  second *brand* accent (unlikely, but check `note-type-*` in
-  `styles.css` — those are still on their original hardcoded hex, never
-  migrated) vs. genuinely encoding record state (the vast majority).
-
-### Phasing
-
-**Phase 1 — badge/status token migration (cosmetic only, no data changes).**
-Introduce the `--status-*` tokens, migrate the 14 shared-helper files
-first (highest leverage, one map edit reaches many call sites each), then
-the smaller number of inline one-offs. Verify each module visually after
-migrating it — this touches enough surface area that a single "migrate
-everything then verify once" pass is a bad idea; go module by module.
-
-**Phase 2 — make every To-Do source per-item.** Closes the gap noted
-above. For each of the 8 aggregate approval types, replace the
-`count_pending_for_approver` count-only query with one that returns the
-underlying pending records (employee, stage/type, due or requested date),
-same shape the onboarding items already use. Bigger than Phase 1 — real
-backend work per approval type, not just a template change — and worth
-scoping on its own rather than folding into the badge-color pass.
-
-**Phase 3 — extend the Home-style shell treatment where it makes sense.**
-The greeting-header + KPI-tile + pill-tab pattern built for Home could fit
-a few other high-traffic landing pages (e.g. each module's own overview
-tab) — evaluate case by case; not every page needs it, and forcing it
-everywhere risks the same "simpler app than this one" mismatch noted
-above.
-
-None of these three phases is scheduled — this document exists so the
-next pass has a concrete starting point instead of re-deriving scope from
-scratch, matching how this project's tech-debt ledger tracks other
-deferred work.
+- **`note-type-*` classes** (`static/css/styles.css`, HR notes'
+  general/disciplinary/performance/warning/commendation badges) are still
+  on their original hardcoded hex values, never migrated onto
+  `--status-*`. Flagged during Phase 1's own audit and knowingly deferred
+  — small, low-traffic surface, not worth blocking the rest of the pass.
+- **`pay_day` superadmin gap**: only wired into `currentUser.institution`
+  (the logged-in user's own institution). A superadmin viewing another
+  institution's Payroll cut-off KPI while inside that institution's
+  context still falls back to the schema default (25th) —
+  `InstitutionResponse` / `GET /api/institutions` doesn't carry `pay_day`
+  today. Low-priority (a superadmin managing an institution isn't usually
+  the one running its payroll), noted rather than fixed silently.
+- **Deprecated token aliases** (`--color-primary`, `--sidebar-*`, etc.)
+  are unused as far as the migrated call sites go, but were never audited
+  for removal — some other file may still reference them directly.
+  Removing them is a small, separate cleanup, not attempted here.
