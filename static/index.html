@@ -1525,8 +1525,38 @@
           <button onclick="setLeaveApprovalFilter('Pending Approval')" class="btn-ghost text-xs leave-appr-filter-btn leave-appr-filter-active">Pending</button>
           <button onclick="setLeaveApprovalFilter('')" class="btn-ghost text-xs leave-appr-filter-btn">All</button>
         </div>
-        <div id="leaveApprovalList" class="space-y-3"></div>
-        <p id="leaveApprovalEmpty" class="hidden text-center text-slate-400 text-sm py-12">No leave applications to review.</p>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setLeaveApprovalSort('employee_name')">Employee <span class="leave-appr-sort-arrow" data-sort-key="employee_name"></span></th>
+                  <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setLeaveApprovalSort('leave_type_name')">Leave Type <span class="leave-appr-sort-arrow" data-sort-key="leave_type_name"></span></th>
+                  <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setLeaveApprovalSort('start_date')">Dates <span class="leave-appr-sort-arrow" data-sort-key="start_date"></span></th>
+                  <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setLeaveApprovalSort('days_count')">Days <span class="leave-appr-sort-arrow" data-sort-key="days_count"></span></th>
+                  <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setLeaveApprovalSort('status')">Status <span class="leave-appr-sort-arrow" data-sort-key="status"></span></th>
+                  <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setLeaveApprovalSort('created_at')">Applied <span class="leave-appr-sort-arrow" data-sort-key="created_at"></span></th>
+                  <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="leaveApprovalTableBody" class="divide-y divide-slate-100"></tbody>
+            </table>
+          </div>
+          <p id="leaveApprovalEmpty" class="hidden text-center text-slate-400 text-sm py-12">No leave applications to review.</p>
+          <div id="leaveApprovalPagination" class="hidden flex items-center justify-between px-4 py-3 border-t border-slate-200 text-sm text-slate-500">
+            <div class="flex items-center gap-2">
+              <span>Rows per page:</span>
+              <select id="leaveApprovalPageSize" onchange="setLeaveApprovalPageSize(this.value)" class="border border-slate-200 rounded-lg text-sm px-2 py-1">
+                <option value="10">10</option><option value="50">50</option><option value="100">100</option>
+              </select>
+            </div>
+            <div class="flex items-center gap-3">
+              <span id="leaveApprovalPageInfo"></span>
+              <button onclick="leaveApprovalPagePrev()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Prev</button>
+              <button onclick="leaveApprovalPageNext()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Next</button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- RESIGNATION APPROVALS -->
@@ -1535,8 +1565,37 @@
           <button onclick="setResignationApprovalFilter('Pending')" class="btn-ghost text-xs resign-appr-filter-btn resign-appr-filter-active">Pending</button>
           <button onclick="setResignationApprovalFilter('')" class="btn-ghost text-xs resign-appr-filter-btn">All</button>
         </div>
-        <div id="resignationApprovalList" class="space-y-3"></div>
-        <p id="resignationApprovalEmpty" class="hidden text-center text-slate-400 text-sm py-12">No resignation requests to review.</p>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setResignationApprovalSort('employee_name')">Employee <span class="resign-appr-sort-arrow" data-sort-key="employee_name"></span></th>
+                  <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setResignationApprovalSort('effective_date')">Effective / Last Day <span class="resign-appr-sort-arrow" data-sort-key="effective_date"></span></th>
+                  <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Reason</th>
+                  <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setResignationApprovalSort('status')">Status <span class="resign-appr-sort-arrow" data-sort-key="status"></span></th>
+                  <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setResignationApprovalSort('created_at')">Submitted <span class="resign-appr-sort-arrow" data-sort-key="created_at"></span></th>
+                  <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="resignationApprovalTableBody" class="divide-y divide-slate-100"></tbody>
+            </table>
+          </div>
+          <p id="resignationApprovalEmpty" class="hidden text-center text-slate-400 text-sm py-12">No resignation requests to review.</p>
+          <div id="resignationApprovalPagination" class="hidden flex items-center justify-between px-4 py-3 border-t border-slate-200 text-sm text-slate-500">
+            <div class="flex items-center gap-2">
+              <span>Rows per page:</span>
+              <select id="resignationApprovalPageSize" onchange="setResignationApprovalPageSize(this.value)" class="border border-slate-200 rounded-lg text-sm px-2 py-1">
+                <option value="10">10</option><option value="50">50</option><option value="100">100</option>
+              </select>
+            </div>
+            <div class="flex items-center gap-3">
+              <span id="resignationApprovalPageInfo"></span>
+              <button onclick="resignationApprovalPagePrev()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Prev</button>
+              <button onclick="resignationApprovalPageNext()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Next</button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- HOLIDAY MANAGER -->
@@ -1648,8 +1707,35 @@
           <button onclick="setTimesheetApprovalFilter('Submitted')" class="btn-ghost text-xs ts-appr-filter-btn ts-appr-filter-active">Pending</button>
           <button onclick="setTimesheetApprovalFilter('')" class="btn-ghost text-xs ts-appr-filter-btn">All</button>
         </div>
-        <div id="timesheetApprovalList" class="space-y-3"></div>
-        <p id="timesheetApprovalEmpty" class="hidden text-center text-slate-400 text-sm py-12">No timesheets to review.</p>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setTimesheetApprovalSort('employee_name')">Employee <span class="ts-appr-sort-arrow" data-sort-key="employee_name"></span></th>
+                  <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setTimesheetApprovalSort('period_start')">Period <span class="ts-appr-sort-arrow" data-sort-key="period_start"></span></th>
+                  <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setTimesheetApprovalSort('total_hours')">Hours <span class="ts-appr-sort-arrow" data-sort-key="total_hours"></span></th>
+                  <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setTimesheetApprovalSort('status')">Status <span class="ts-appr-sort-arrow" data-sort-key="status"></span></th>
+                </tr>
+              </thead>
+              <tbody id="timesheetApprovalTableBody" class="divide-y divide-slate-100"></tbody>
+            </table>
+          </div>
+          <p id="timesheetApprovalEmpty" class="hidden text-center text-slate-400 text-sm py-12">No timesheets to review.</p>
+          <div id="timesheetApprovalPagination" class="hidden flex items-center justify-between px-4 py-3 border-t border-slate-200 text-sm text-slate-500">
+            <div class="flex items-center gap-2">
+              <span>Rows per page:</span>
+              <select id="timesheetApprovalPageSize" onchange="setTimesheetApprovalPageSize(this.value)" class="border border-slate-200 rounded-lg text-sm px-2 py-1">
+                <option value="10">10</option><option value="50">50</option><option value="100">100</option>
+              </select>
+            </div>
+            <div class="flex items-center gap-3">
+              <span id="timesheetApprovalPageInfo"></span>
+              <button onclick="timesheetApprovalPagePrev()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Prev</button>
+              <button onclick="timesheetApprovalPageNext()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Next</button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- MY OVERTIME -->

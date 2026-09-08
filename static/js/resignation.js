@@ -10,6 +10,8 @@ const RESIGN_ATTACH_MAX_BYTES = 6 * 1024 * 1024;
 
 let _resignAttachment = null;
 let resignApprovalFilter = 'Pending';
+let resignApprovalRowsCache = [];
+const resignApprovalList = createListState({ sortKey: 'created_at', sortDir: 'desc' });
 
 function todayStr() { return new Date().toISOString().slice(0, 10); }
 
@@ -112,36 +114,61 @@ async function withdrawMyResignation(id) {
 // Resignation Approvals (manager / HR)
 // ---------------------------------------------------------------------------
 async function loadResignationApprovals() {
-  const listEl = document.getElementById('resignationApprovalList');
-  const emptyEl = document.getElementById('resignationApprovalEmpty');
-  listEl.innerHTML = '<p class="text-slate-400 text-sm text-center py-8">Loading…</p>';
+  const tbody = document.getElementById('resignationApprovalTableBody');
+  tbody.innerHTML = '<tr><td colspan="6" class="text-slate-400 text-sm text-center py-8">Loading…</td></tr>';
   let url = '/api/resignations';
   if (resignApprovalFilter) url += `?status=${encodeURIComponent(resignApprovalFilter)}`;
   const res = await api(url);
-  if (!res?.ok) { listEl.innerHTML = ''; return; }
-  const rows = await res.json();
-  if (!rows.length) { listEl.innerHTML = ''; emptyEl?.classList.remove('hidden'); return; }
+  if (!res?.ok) { tbody.innerHTML = ''; return; }
+  resignApprovalRowsCache = await res.json();
+  resignApprovalList.resetPage();
+  renderResignationApprovalTable();
+}
+
+function setResignationApprovalSort(key) { resignApprovalList.setSort(key); renderResignationApprovalTable(); }
+function setResignationApprovalPageSize(size) { resignApprovalList.setPageSize(size); renderResignationApprovalTable(); }
+function resignationApprovalPagePrev() { resignApprovalList.prevPage(); renderResignationApprovalTable(); }
+function resignationApprovalPageNext() { resignApprovalList.nextPage(resignApprovalRowsCache.length); renderResignationApprovalTable(); }
+
+function renderResignationApprovalTable() {
+  const tbody = document.getElementById('resignationApprovalTableBody');
+  const emptyEl = document.getElementById('resignationApprovalEmpty');
+  const pagination = document.getElementById('resignationApprovalPagination');
+  resignApprovalList.updateSortArrows('.resign-appr-sort-arrow');
+
+  if (!resignApprovalRowsCache.length) { tbody.innerHTML = ''; emptyEl?.classList.remove('hidden'); pagination?.classList.add('hidden'); return; }
   emptyEl?.classList.add('hidden');
-  listEl.innerHTML = rows.map(r => `
-    <div class="bg-white border border-slate-200 rounded-xl p-4">
-      <div class="flex items-start justify-between gap-3">
-        <div class="flex-1 min-w-0">
-          <div class="flex items-center gap-2 mb-0.5 flex-wrap">
-            <p class="font-medium text-slate-800">${esc(displayName(r.employee_name, r.employee_preferred_name))}</p>
-            <span class="badge ${statusColor(RESIGN_STATUS_COLORS, r.status)} text-xs">${r.status}</span>
-          </div>
-          <p class="text-xs text-slate-500">Effective ${fmtDate(r.effective_date)} · Last working day ${fmtDate(r.last_working_day)}</p>
-          <p class="text-xs text-slate-400">${esc(r.department || '')}${r.designation ? ' · ' + esc(r.designation) : ''}</p>
-          <p class="text-xs text-slate-400 italic mt-1">${esc(r.reason)}</p>
-          ${r.attachment_data_url ? `<a href="${r.attachment_data_url}" target="_blank" class="text-xs text-blue-600 hover:underline mt-1 inline-block">${esc(r.attachment_file_name || 'View attachment')}</a>` : ''}
-        </div>
-      </div>
-      ${r.status === 'Pending' ? (r.is_actionable ? `<div class="mt-3 flex gap-2">
-        <button onclick="reviewResignationRequest(${r.id},'Approved')" class="btn-primary text-xs px-3 py-1.5">Approve</button>
-        <button onclick="reviewResignationRequest(${r.id},'Rejected')" class="btn-ghost text-xs px-3 py-1.5 text-red-600">Reject</button>
-      </div>` : `<p class="text-xs text-slate-400 mt-3">Pending with: ${esc(r.pending_with||'—')}</p>`) : ''}
-      <p class="text-xs text-slate-400 mt-2">Submitted ${fmtDate(r.created_at)} by ${esc(r.submitted_by)}</p>
-    </div>`).join('');
+  pagination?.classList.remove('hidden');
+  const pageSizeEl = document.getElementById('resignationApprovalPageSize');
+  if (pageSizeEl) pageSizeEl.value = String(resignApprovalList.pageSize);
+
+  const { pageItems, start, total } = resignApprovalList.view(resignApprovalRowsCache);
+  const pageInfoEl = document.getElementById('resignationApprovalPageInfo');
+  if (pageInfoEl) pageInfoEl.textContent = `${start + 1}-${Math.min(start + resignApprovalList.pageSize, total)} of ${total}`;
+
+  tbody.innerHTML = pageItems.map(r => `
+    <tr>
+      <td class="px-4 py-3">
+        <p class="font-medium">${esc(displayName(r.employee_name, r.employee_preferred_name))}</p>
+        <p class="text-xs text-slate-500">${esc(r.department || '')}${r.designation ? ' · ' + esc(r.designation) : ''}</p>
+      </td>
+      <td class="px-4 py-3 text-slate-600">Eff ${fmtDate(r.effective_date)} · Last ${fmtDate(r.last_working_day)}</td>
+      <td class="px-4 py-3">
+        <p class="text-slate-600 italic line-clamp-1">${esc(r.reason)}</p>
+        ${r.attachment_data_url ? `<a href="${r.attachment_data_url}" target="_blank" class="text-xs text-blue-600 hover:underline">${esc(r.attachment_file_name || 'View attachment')}</a>` : ''}
+      </td>
+      <td class="px-4 py-3"><span class="badge ${statusColor(RESIGN_STATUS_COLORS, r.status)} text-xs">${r.status}</span></td>
+      <td class="px-4 py-3">
+        <p class="text-slate-500">${fmtDate(r.created_at)}</p>
+        <p class="text-xs text-slate-400">by ${esc(r.submitted_by)}</p>
+      </td>
+      <td class="px-4 py-3 text-right">
+        ${r.status === 'Pending' ? (r.is_actionable ? `
+          <button onclick="reviewResignationRequest(${r.id},'Approved')" class="text-xs text-emerald-700 hover:underline mr-3">Approve</button>
+          <button onclick="reviewResignationRequest(${r.id},'Rejected')" class="text-xs text-red-700 hover:underline">Reject</button>
+        ` : `<span class="text-xs text-slate-400">Pending: ${esc(r.pending_with||'—')}</span>`) : '<span class="text-xs text-slate-400">—</span>'}
+      </td>
+    </tr>`).join('');
 }
 
 function setResignationApprovalFilter(status) {

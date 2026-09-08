@@ -1,6 +1,8 @@
 // Leave / Holiday Manager
 // ---------------------------------------------------------------------------
 let leaveTypesCache=[], leaveFilter='', leaveApprovalFilter='Pending Approval', leaveHolidaysCache=[];
+let leaveApprovalRowsCache=[];
+const leaveApprovalList=createListState({sortKey:'created_at', sortDir:'desc'});
 const LEAVE_STATUS_COLORS={'Pending Approval':'status-pending','Approved':'status-positive','Rejected':'status-negative','Cancelled':'status-neutral'};
 
 function isLeaveManager() {
@@ -312,36 +314,60 @@ async function submitLeaveApplication(e) {
 // Leave Approvals (manager / HR)
 // ---------------------------------------------------------------------------
 async function loadLeaveApprovals() {
-  const listEl=document.getElementById('leaveApprovalList');
-  const emptyEl=document.getElementById('leaveApprovalEmpty');
-  listEl.innerHTML='<p class="text-slate-400 text-sm text-center py-8">Loading…</p>';
+  const tbody=document.getElementById('leaveApprovalTableBody');
+  tbody.innerHTML='<tr><td colspan="7" class="text-slate-400 text-sm text-center py-8">Loading…</td></tr>';
   let url='/api/leave/applications';
   if(leaveApprovalFilter) url+=`?status=${encodeURIComponent(leaveApprovalFilter)}`;
   const res=await api(url);
-  if(!res?.ok){ listEl.innerHTML=''; return; }
-  const rows=await res.json();
-  if(!rows.length){ listEl.innerHTML=''; emptyEl?.classList.remove('hidden'); return; }
+  if(!res?.ok){ tbody.innerHTML=''; return; }
+  leaveApprovalRowsCache=await res.json();
+  leaveApprovalList.resetPage();
+  renderLeaveApprovalTable();
+}
+
+function setLeaveApprovalSort(key) { leaveApprovalList.setSort(key); renderLeaveApprovalTable(); }
+function setLeaveApprovalPageSize(size) { leaveApprovalList.setPageSize(size); renderLeaveApprovalTable(); }
+function leaveApprovalPagePrev() { leaveApprovalList.prevPage(); renderLeaveApprovalTable(); }
+function leaveApprovalPageNext() { leaveApprovalList.nextPage(leaveApprovalRowsCache.length); renderLeaveApprovalTable(); }
+
+function renderLeaveApprovalTable() {
+  const tbody=document.getElementById('leaveApprovalTableBody');
+  const emptyEl=document.getElementById('leaveApprovalEmpty');
+  const pagination=document.getElementById('leaveApprovalPagination');
+  leaveApprovalList.updateSortArrows('.leave-appr-sort-arrow');
+
+  if(!leaveApprovalRowsCache.length){ tbody.innerHTML=''; emptyEl?.classList.remove('hidden'); pagination?.classList.add('hidden'); return; }
   emptyEl?.classList.add('hidden');
-  listEl.innerHTML=rows.map(a=>`
-    <div class="bg-white border border-slate-200 rounded-xl p-4">
-      <div class="flex items-start justify-between gap-3">
-        <div class="flex-1 min-w-0">
-          <div class="flex items-center gap-2 mb-0.5 flex-wrap">
-            <p class="font-medium text-slate-800">${esc(displayName(a.employee_name, a.employee_preferred_name))}</p>
-            <span class="badge ${statusColor(LEAVE_STATUS_COLORS, a.status)} text-xs">${a.status}</span>
-          </div>
-          <p class="text-xs text-slate-500">${esc(a.leave_type_name)} · ${fmtDate(a.start_date)} → ${fmtDate(a.end_date)} · ${a.days_count} day(s)${ldHalfDaySuffix(a)}</p>
-          <p class="text-xs text-slate-400">${esc(a.department||'')}${a.designation?' · '+esc(a.designation):''}</p>
-          ${a.reason?`<p class="text-xs text-slate-400 italic mt-1">${esc(a.reason)}</p>`:''}
-          ${a.attachment?`<a href="${a.attachment}" target="_blank" class="text-xs text-blue-600 hover:underline mt-1 inline-block">View attachment</a>`:''}
-        </div>
-      </div>
-      ${a.status==='Pending Approval'?(a.is_actionable?`<div class="mt-3 flex gap-2">
-        <button onclick="reviewLeaveApplication(${a.id},'Approved')" class="btn-primary text-xs px-3 py-1.5">Approve</button>
-        <button onclick="reviewLeaveApplication(${a.id},'Rejected')" class="btn-ghost text-xs px-3 py-1.5 text-red-600">Reject</button>
-      </div>`:`<p class="text-xs text-slate-400 mt-3">Pending with: ${esc(a.pending_with||'—')}</p>`):''}
-      <p class="text-xs text-slate-400 mt-2">Applied ${fmtDate(a.created_at)}</p>
-    </div>`).join('');
+  pagination?.classList.remove('hidden');
+  const pageSizeEl=document.getElementById('leaveApprovalPageSize');
+  if(pageSizeEl) pageSizeEl.value=String(leaveApprovalList.pageSize);
+
+  const { pageItems, start, total }=leaveApprovalList.view(leaveApprovalRowsCache);
+  const pageInfoEl=document.getElementById('leaveApprovalPageInfo');
+  if(pageInfoEl) pageInfoEl.textContent=`${start+1}-${Math.min(start+leaveApprovalList.pageSize, total)} of ${total}`;
+
+  tbody.innerHTML=pageItems.map(a=>`
+    <tr>
+      <td class="px-4 py-3">
+        <p class="font-medium">${esc(displayName(a.employee_name, a.employee_preferred_name))}</p>
+        <p class="text-xs text-slate-500">${esc(a.department||'')}${a.designation?' · '+esc(a.designation):''}</p>
+      </td>
+      <td class="px-4 py-3">
+        <p>${esc(a.leave_type_name)}</p>
+        ${a.reason?`<p class="text-xs text-slate-400 italic mt-0.5 line-clamp-1">${esc(a.reason)}</p>`:''}
+        ${a.attachment?`<a href="${a.attachment}" target="_blank" class="text-xs text-blue-600 hover:underline">View attachment</a>`:''}
+      </td>
+      <td class="px-4 py-3 text-slate-600">${fmtDate(a.start_date)} → ${fmtDate(a.end_date)}</td>
+      <td class="px-4 py-3 text-right text-slate-600">${a.days_count}${ldHalfDaySuffix(a)}</td>
+      <td class="px-4 py-3"><span class="badge ${statusColor(LEAVE_STATUS_COLORS, a.status)} text-xs">${a.status}</span></td>
+      <td class="px-4 py-3 text-slate-500">${fmtDate(a.created_at)}</td>
+      <td class="px-4 py-3 text-right">
+        ${a.status==='Pending Approval'?(a.is_actionable?`
+          <button onclick="reviewLeaveApplication(${a.id},'Approved')" class="text-xs text-emerald-700 hover:underline mr-3">Approve</button>
+          <button onclick="reviewLeaveApplication(${a.id},'Rejected')" class="text-xs text-red-700 hover:underline">Reject</button>
+        `:`<span class="text-xs text-slate-400">Pending: ${esc(a.pending_with||'—')}</span>`):'<span class="text-xs text-slate-400">—</span>'}
+      </td>
+    </tr>`).join('');
 }
 
 function setLeaveApprovalFilter(status) {

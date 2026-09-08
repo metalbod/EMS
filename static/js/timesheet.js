@@ -545,33 +545,54 @@ const submitTimesheet = guardAsync(async function() {
 // Timesheet Approvals (manager / HR)
 // ---------------------------------------------------------------------------
 let tsApprovalRowsCache=[];
+const tsApprovalList=createListState({sortKey:'period_start', sortDir:'desc'});
 
 async function loadTimesheetApprovals() {
-  const listEl=document.getElementById('timesheetApprovalList');
-  const emptyEl=document.getElementById('timesheetApprovalEmpty');
-  listEl.innerHTML='<p class="text-slate-400 text-sm text-center py-8">Loading…</p>';
+  const tbody=document.getElementById('timesheetApprovalTableBody');
+  tbody.innerHTML='<tr><td colspan="4" class="text-slate-400 text-sm text-center py-8">Loading…</td></tr>';
   let url='/api/timesheets';
   if(tsApprovalFilter) url+=`?status=${encodeURIComponent(tsApprovalFilter)}`;
   const res=await api(url);
-  if(!res?.ok){ listEl.innerHTML=''; return; }
-  const rows=await res.json();
-  tsApprovalRowsCache=rows;
-  if(!rows.length){ listEl.innerHTML=''; emptyEl?.classList.remove('hidden'); return; }
+  if(!res?.ok){ tbody.innerHTML=''; return; }
+  tsApprovalRowsCache=await res.json();
+  tsApprovalList.resetPage();
+  renderTimesheetApprovalTable();
+}
+
+function setTimesheetApprovalSort(key) { tsApprovalList.setSort(key); renderTimesheetApprovalTable(); }
+function setTimesheetApprovalPageSize(size) { tsApprovalList.setPageSize(size); renderTimesheetApprovalTable(); }
+function timesheetApprovalPagePrev() { tsApprovalList.prevPage(); renderTimesheetApprovalTable(); }
+function timesheetApprovalPageNext() { tsApprovalList.nextPage(tsApprovalRowsCache.length); renderTimesheetApprovalTable(); }
+
+function renderTimesheetApprovalTable() {
+  const tbody=document.getElementById('timesheetApprovalTableBody');
+  const emptyEl=document.getElementById('timesheetApprovalEmpty');
+  const pagination=document.getElementById('timesheetApprovalPagination');
+  tsApprovalList.updateSortArrows('.ts-appr-sort-arrow');
+
+  if(!tsApprovalRowsCache.length){ tbody.innerHTML=''; emptyEl?.classList.remove('hidden'); pagination?.classList.add('hidden'); return; }
   emptyEl?.classList.add('hidden');
-  listEl.innerHTML=rows.map(t=>`
-    <div class="bg-white border border-slate-200 rounded-xl p-4 cursor-pointer hover:shadow-xs transition" onclick="openTimesheetDetail(${t.id})">
-      <div class="flex items-center justify-between gap-2">
-        <div>
-          <p class="font-medium text-slate-800">${esc(displayName(t.employee_name,t.employee_preferred_name))}</p>
-          <p class="text-xs text-slate-500">${esc(t.department||'')}${t.designation?' · '+esc(t.designation):''} · ${fmtDate(t.period_start)} → ${fmtDate(t.period_end)}</p>
-          ${t.status==='Submitted' && !t.is_actionable ? `<p class="text-xs text-slate-400 mt-1">Pending with: ${esc(t.pending_with||'—')}</p>` : ''}
-        </div>
-        <div class="text-right">
-          <span class="badge ${statusColor(TS_STATUS_COLORS, t.status)} text-xs">${t.status}</span>
-          <p class="text-xs text-slate-400 mt-1">${t.total_hours} hrs</p>
-        </div>
-      </div>
-    </div>`).join('');
+  pagination?.classList.remove('hidden');
+  const pageSizeEl=document.getElementById('timesheetApprovalPageSize');
+  if(pageSizeEl) pageSizeEl.value=String(tsApprovalList.pageSize);
+
+  const { pageItems, start, total }=tsApprovalList.view(tsApprovalRowsCache);
+  const pageInfoEl=document.getElementById('timesheetApprovalPageInfo');
+  if(pageInfoEl) pageInfoEl.textContent=`${start+1}-${Math.min(start+tsApprovalList.pageSize, total)} of ${total}`;
+
+  tbody.innerHTML=pageItems.map(t=>`
+    <tr class="cursor-pointer hover:bg-slate-50 transition" onclick="openTimesheetDetail(${t.id})">
+      <td class="px-4 py-3">
+        <p class="font-medium">${esc(displayName(t.employee_name,t.employee_preferred_name))}</p>
+        <p class="text-xs text-slate-500">${esc(t.department||'')}${t.designation?' · '+esc(t.designation):''}</p>
+      </td>
+      <td class="px-4 py-3 text-slate-600">
+        ${fmtDate(t.period_start)} → ${fmtDate(t.period_end)}
+        ${t.status==='Submitted' && !t.is_actionable ? `<p class="text-xs text-slate-400 mt-0.5">Pending with: ${esc(t.pending_with||'—')}</p>` : ''}
+      </td>
+      <td class="px-4 py-3 text-right text-slate-600">${t.total_hours} hrs</td>
+      <td class="px-4 py-3"><span class="badge ${statusColor(TS_STATUS_COLORS, t.status)} text-xs">${t.status}</span></td>
+    </tr>`).join('');
 }
 
 function setTimesheetApprovalFilter(status) {
