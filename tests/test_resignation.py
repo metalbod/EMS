@@ -47,6 +47,34 @@ def test_hr_can_file_resignation_on_employees_behalf(client, hr_manager_auth, ma
     client.patch(f"/api/resignations/{body['id']}", headers=hr_manager_auth, json={"status": "Rejected"})
 
 
+def test_hr_sees_resignation_pending_with_direct_manager_by_name(client, hr_manager_auth, make_test_employee):
+    """Unlike this file's other tests, this one deliberately sets
+    reports_to so the request lands on the direct_manager step instead of
+    auto-skipping to HR. Mirrors leave/claims/timesheet's equivalent
+    coverage — GET /api/resignations must still show the request to HR,
+    read-only, labeled with the manager's actual name, instead of
+    dropping it (the old filter_actionable behavior) just because HR
+    isn't eligible yet."""
+    mgr_emp = make_test_employee(full_name="ZZ Resign Escalation Manager")
+    report_emp = make_test_employee(full_name="ZZ Resign Escalation Report", reports_to=mgr_emp["employee_id"])
+    res = client.post("/api/resignations", headers=hr_manager_auth, json={
+        "employee_id": report_emp["employee_id"], "reason": "Verbal resignation, documented by HR",
+        "effective_date": "2027-06-01", "last_working_day": "2027-06-15",
+    })
+    assert res.status_code == 201, res.text
+    body = res.json()
+
+    hr_list = client.get("/api/resignations", headers=hr_manager_auth).json()
+    row = next(r for r in hr_list if r["id"] == body["id"])
+    assert row["is_actionable"] is False
+    assert row["pending_with"] == f"{mgr_emp['full_name']} (Direct Manager)"
+    # Left Pending: HR isn't eligible to act on the direct_manager step
+    # (advance_or_finalize would 403, matching is_actionable above), and
+    # resignation_requests has no delete endpoint to clean up with anyway
+    # — same "disposable data accumulates in the test institution" norm
+    # this file's other tests already accept.
+
+
 def test_plain_employee_cannot_file_on_someone_elses_behalf(client, employee_with_login, make_test_employee):
     _, headers = employee_with_login(full_name="ZZ Resign NotHR")
     other = make_test_employee(full_name="ZZ Resign Victim")

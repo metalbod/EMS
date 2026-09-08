@@ -271,6 +271,12 @@ class ClaimWithDetails(ClaimResponse):
     employee_preferred_name: Optional[str] = None
     plan_name: Optional[str] = None
     plan_category: Optional[str] = None
+    # Set by core.approval_workflow.annotate_actionability on the HR/manager
+    # list endpoint only — the employee-facing "my claims" endpoint never
+    # calls it, so these stay at their defaults (actionable, no one to name)
+    # there rather than being wired up for a screen with no action buttons.
+    is_actionable: bool = True
+    pending_with: Optional[str] = None
 
 
 # ============================================================================

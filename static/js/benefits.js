@@ -767,10 +767,10 @@ function renderClaimsTable() {
         ${c.payout_date ? `<p class="text-xs text-slate-400 mt-1">Paid ${fmtDate(c.payout_date)}</p>` : ''}
       </td>
       <td class="px-4 py-3 text-right">
-        ${(c.status === 'Submitted' || c.status === 'Under Review') ? `
+        ${(c.status === 'Submitted' || c.status === 'Under Review') ? (c.is_actionable ? `
           <button onclick="openClaimDecideModal(${c.id})" class="text-xs text-emerald-700 hover:underline mr-3">Approve</button>
           <button onclick="rejectClaim(${c.id})" class="text-xs text-red-700 hover:underline">Reject</button>
-        ` : c.status === 'Approved' ? `
+        ` : `<span class="text-xs text-slate-400">Pending: ${esc(c.pending_with || '—')}</span>`) : c.status === 'Approved' ? `
           <button onclick="markClaimPaid(${c.id})" class="text-xs text-blue-700 hover:underline">Mark Paid</button>
         ` : '<span class="text-xs text-slate-400">—</span>'}
       </td>

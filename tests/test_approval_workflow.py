@@ -81,15 +81,17 @@ def test_hr_cannot_skip_direct_manager_step(client, hr_manager_auth, manager_wit
     assert final.json()["approval_step"] is None
 
 
-def test_manager_list_excludes_request_once_advanced_past_their_step(client, hr_manager_auth, manager_with_report,
-                                                                       make_test_leave_type):
+def test_manager_list_shows_advanced_request_as_non_actionable(client, hr_manager_auth, manager_with_report,
+                                                                 make_test_leave_type):
     """A request the manager's already cleared (now sitting at the next
-    step, e.g. HR) must not appear in their leave-applications list once
-    it's no longer theirs to act on — GET /api/leave/applications only
-    ever checked "is this my subordinate," never re-checked the request's
-    *current* step, so it kept showing up there with live Approve/Reject
-    buttons that 403'd on click (core/approval_workflow.py's
-    filter_actionable closes this; see its docstring)."""
+    step, e.g. HR) must still appear in their leave-applications list —
+    so they can see who it's actually waiting on and escalate — but
+    without action buttons, since it's no longer theirs to act on.
+    GET /api/leave/applications only checks "is this my subordinate,"
+    never the request's *current* step; core/approval_workflow.py's
+    annotate_actionability (formerly filter_actionable, which dropped
+    these rows outright) is what adds the is_actionable/pending_with
+    annotation instead; see its docstring."""
     report_emp, mgr_headers = manager_with_report
     lt = make_test_leave_type(requires_approval=True)
     start = "2027-04-19"  # Monday
@@ -100,7 +102,8 @@ def test_manager_list_excludes_request_once_advanced_past_their_step(client, hr_
     assert app["approval_step"] == 1
 
     before = client.get("/api/leave/applications", headers=mgr_headers).json()
-    assert any(a["id"] == app["id"] for a in before), "manager should see it while it's actionable at their step"
+    mine = next(a for a in before if a["id"] == app["id"])
+    assert mine["is_actionable"] is True, "manager should be able to act while it's at their step"
 
     advanced = client.patch(f"/api/leave/applications/{app['id']}/status", headers=mgr_headers,
                              json={"status": "Approved"})
@@ -108,12 +111,15 @@ def test_manager_list_excludes_request_once_advanced_past_their_step(client, hr_
     assert advanced.json()["approval_step"] == 2
 
     after = client.get("/api/leave/applications", headers=mgr_headers).json()
-    assert not any(a["id"] == app["id"] for a in after), \
-        "manager must not see it anymore once it's advanced past their step"
+    still_there = next((a for a in after if a["id"] == app["id"]), None)
+    assert still_there is not None, "manager should still see it, now read-only, once it's advanced past their step"
+    assert still_there["is_actionable"] is False
+    assert still_there["pending_with"] == "HR Manager"
 
     still_pending = client.get("/api/leave/applications", headers=hr_manager_auth).json()
-    assert any(a["id"] == app["id"] and a["status"] == "Pending Approval" for a in still_pending), \
-        "HR (who IS eligible at step 2) should still see it as Pending Approval"
+    hr_view = next(a for a in still_pending if a["id"] == app["id"])
+    assert hr_view["status"] == "Pending Approval"
+    assert hr_view["is_actionable"] is True, "HR (who IS eligible at step 2) should be able to act on it"
 
 
 def test_manager_own_balance_view_excludes_subordinates_balances(client, hr_manager_auth, manager_with_report,
@@ -342,17 +348,15 @@ def test_employee_with_no_manager_auto_skips_to_hr(client, hr_manager_auth, make
     assert res.json()["status"] == "Approved"
 
 
-def test_hr_manager_list_excludes_their_own_pending_request(client, hr_manager_auth, make_test_employee,
+def test_hr_manager_list_shows_own_pending_request_as_non_actionable(client, hr_manager_auth, make_test_employee,
                                                               make_test_user, test_institution, make_test_leave_type):
     """An hr_manager whose OWN linked employee record applies for leave
     (auto-skipped straight to the hr_manager step, no direct manager on
-    file) must not see their own request in their own leave-applications
-    list — is_eligible_approver already blocks self-approval regardless
-    of role match (a self-approving hr_manager would still 403 if they
-    tried), but before filter_actionable the list endpoint never
-    re-checked eligibility at all, so their own pending request showed up
-    there anyway with live Approve/Reject buttons. A second, unrelated
-    hr_manager must still see it as normal."""
+    file) must still see their own request in their own leave-applications
+    list — for visibility — but without Approve/Reject, since
+    is_eligible_approver blocks self-approval regardless of role match (a
+    self-approving hr_manager would still 403 if they tried). A second,
+    unrelated hr_manager must still see it as fully actionable."""
     self_emp = make_test_employee(full_name="ZZ Self-Approving HR Manager")
     username = f"zzselfhr_{self_emp['employee_id'].lower()}"
     password = "ZzPytest@123"
@@ -381,14 +385,43 @@ def test_hr_manager_list_excludes_their_own_pending_request(client, hr_manager_a
     assert denied.status_code == 403, denied.text
 
     own_list = client.get("/api/leave/applications", headers=self_headers).json()
-    assert not any(a["id"] == app["id"] for a in own_list), \
-        "hr_manager must not see their own pending request in their own list"
+    own_row = next((a for a in own_list if a["id"] == app["id"]), None)
+    assert own_row is not None, "hr_manager should still see their own pending request, read-only"
+    assert own_row["is_actionable"] is False
+    assert own_row["pending_with"] == "HR Manager"
 
     other_hr_list = client.get("/api/leave/applications", headers=hr_manager_auth).json()
-    assert any(a["id"] == app["id"] and a["status"] == "Pending Approval" for a in other_hr_list), \
-        "a different hr_manager (who IS eligible) should still see it as Pending Approval"
+    other_hr_view = next(a for a in other_hr_list if a["id"] == app["id"])
+    assert other_hr_view["status"] == "Pending Approval"
+    assert other_hr_view["is_actionable"] is True, "a different hr_manager (who IS eligible) should be able to act on it"
 
     client.delete(f"/api/users/{user_id}", headers=hr_manager_auth)
+
+
+def test_hr_sees_request_pending_with_direct_manager_by_name(client, hr_manager_auth, make_test_employee,
+                                                               make_test_leave_type):
+    """HR applying leave on an employee's behalf doesn't skip the
+    employee's own approval chain — if they have a direct manager on
+    file, the request starts at that manager's step same as if the
+    employee had applied themselves. HR should still see the request in
+    their own list (for visibility/escalation), read-only, labeled with
+    the actual manager's name — not just the generic step-type label —
+    so HR knows exactly who to follow up with."""
+    mgr = make_test_employee(full_name="ZZ Escalation Target Manager")
+    report_emp = make_test_employee(full_name="ZZ Escalation Report", reports_to=mgr["employee_id"])
+    lt = make_test_leave_type(requires_approval=True)
+    start = "2027-05-03"  # Monday
+    app = client.post("/api/leave/applications", headers=hr_manager_auth, json={
+        "employee_id": report_emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": start, "end_date": start,
+    }).json()
+    assert app["status"] == "Pending Approval"
+    assert app["approval_step"] == 1
+
+    hr_list = client.get("/api/leave/applications", headers=hr_manager_auth).json()
+    row = next(a for a in hr_list if a["id"] == app["id"])
+    assert row["is_actionable"] is False, "HR isn't eligible at the direct-manager step, even though they applied it"
+    assert row["pending_with"] == f"{mgr['full_name']} (Direct Manager)"
 
 
 # ---------------------------------------------------------------------------

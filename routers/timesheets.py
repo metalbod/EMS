@@ -8,7 +8,7 @@ from core.deps import get_current_user, need_inst
 
 from core.org_queries import subordinates_in_clause
 
-from core.approval_workflow import start_workflow, advance_or_finalize, project_ids_for_row, filter_actionable
+from core.approval_workflow import start_workflow, advance_or_finalize, project_ids_for_row, annotate_actionability
 
 from core.overtime import generate_overtime_records
 
@@ -71,7 +71,7 @@ def list_timesheets(conn, status: Optional[str] = None, user: dict = Depends(get
     rows = conn.execute(q, params).fetchall()
     result = [dict(r) for r in rows]
     if user["role"] != "employee":
-        result = filter_actionable(conn, inst_id, "timesheet", result, user)
+        result = annotate_actionability(conn, inst_id, "timesheet", result, user)
     return result
 
 

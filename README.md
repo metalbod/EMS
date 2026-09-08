@@ -623,6 +623,20 @@ differently). Rejecting is terminal from any step. A legacy row with no
 `approval_workflow_id` (predates this engine) falls back to each module's
 original blanket role check rather than getting stuck.
 
+**List-screen visibility**: `annotate_actionability`
+(`core/approval_workflow.py`) tags every pending row a list endpoint
+returns (Leave/Claims/Timesheet/Resignation's approval screens) with
+`is_actionable` and, when `false`, `pending_with` — a human-readable
+"who's holding this up" (e.g. `"Suwarto (Direct Manager)"`, or just `"HR
+Manager"` for a role-based step). This lets HR and a manager see every
+in-scope request, not just the ones sitting at their own step, so they
+know who to escalate to instead of a request silently vanishing from
+their screen once it moves on. The underlying eligibility check
+(`is_eligible_approver`) is unchanged — this only changes what a list
+does with a "not eligible" result: label it, don't hide it. Requisition,
+L&D Enrollment, and PIP's list endpoints don't call this yet (a known,
+separate gap, not part of this pass).
+
 **Dashboard integration**: `count_pending_for_approver`
 (`core/approval_workflow.py`) powers new items in the Dashboard To-Do
 list (`routers/dashboard.py`) — "N leave applications awaiting your

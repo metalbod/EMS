@@ -199,6 +199,65 @@ def _project_managers_for(conn, inst_id: int, project_ids) -> FrozenSet[str]:
     return frozenset(r["employee_id"] for r in rows)
 
 
+# Human-readable labels for APPROVER_TYPES, matching
+# static/js/approval-workflow.js's AW_STEP_LABELS — kept as a separate
+# copy since that one labels a step *type* in the Settings screen, while
+# describe_current_step below resolves a type to an actual person for one
+# specific request.
+_STEP_TYPE_LABELS = {
+    "direct_manager": "Direct Manager",
+    "skip_level_manager": "Skip-Level Manager",
+    "hr_manager": "HR Manager",
+    "specific_employee": "Specific Employee",
+    "project_manager": "Project Manager",
+}
+
+
+def _employee_display_name(conn, inst_id: int, employee_id: Optional[str]) -> Optional[str]:
+    if not employee_id:
+        return None
+    row = conn.execute(
+        "SELECT full_name FROM employees WHERE employee_id=? AND institution_id=?",
+        (employee_id, inst_id)
+    ).fetchone()
+    return row["full_name"] if row else None
+
+
+def _describe_approver_type(conn, inst_id: int, employee_id: str, approver_type: Optional[str],
+                            specific_employee_id: Optional[str], project_ids: Optional[Set[int]]) -> str:
+    label = _STEP_TYPE_LABELS.get(approver_type, approver_type or "")
+    name = None
+    if approver_type == "direct_manager":
+        name = _employee_display_name(conn, inst_id, _direct_manager_id(conn, inst_id, employee_id))
+    elif approver_type == "skip_level_manager":
+        name = _employee_display_name(conn, inst_id, _skip_level_manager_id(conn, inst_id, employee_id))
+    elif approver_type == "specific_employee":
+        name = _employee_display_name(conn, inst_id, specific_employee_id)
+    elif approver_type == "project_manager":
+        names = sorted(n for n in (
+            _employee_display_name(conn, inst_id, eid) for eid in _project_managers_for(conn, inst_id, project_ids)
+        ) if n)
+        name = " / ".join(names) if names else None
+    return f"{name} ({label})" if name else label
+
+
+def describe_current_step(conn, inst_id: int, employee_id: str, step,
+                          project_ids: Optional[Set[int]] = None) -> str:
+    """Human-readable "who's holding this up right now" for a request
+    sitting at this step — e.g. "Suwarto (Direct Manager)" or "HR
+    Manager", joined with " or " when the step has an OR alternative.
+    Used by annotate_actionability so a list screen has something to show
+    in place of the Approve/Reject buttons once a viewer isn't (or isn't
+    yet) the eligible approver."""
+    primary = _describe_approver_type(conn, inst_id, employee_id, step["approver_type"],
+                                      step["specific_employee_id"], project_ids)
+    if step.get("alt_approver_type"):
+        alt = _describe_approver_type(conn, inst_id, employee_id, step["alt_approver_type"],
+                                      step.get("alt_specific_employee_id"), project_ids)
+        return f"{primary} or {alt}"
+    return primary
+
+
 def _hr_pool_has_other(conn, inst_id: int, module: str, employee_id: str) -> bool:
     """Whether some HR-role user besides the requester themselves exists —
     a staff-only HR account with no linked employee record (employee_id
@@ -378,43 +437,48 @@ def count_pending_for_approver(conn, inst_id: int, user: dict, module: str) -> i
     return len(pending_rows_for_approver(conn, inst_id, user, module))
 
 
-def filter_actionable(conn, inst_id: int, module: str, rows: List[Dict[str, Any]], user: dict) -> List[Dict[str, Any]]:
+def annotate_actionability(conn, inst_id: int, module: str, rows: List[Dict[str, Any]], user: dict) -> List[Dict[str, Any]]:
     """For a list endpoint's already role-scoped rows (e.g. a manager sees
-    only their subordinates' requests), additionally drop any row sitting
-    at a pending status whose *current step* this user isn't eligible to
-    act on right now.
+    only their subordinates' requests), tag each row with whether THIS
+    user can act on it right now (`is_actionable`) and, if not, who
+    currently holds it (`pending_with`) — so a list screen can show every
+    in-scope request for visibility/escalation while only offering
+    Approve/Reject on the ones actually actionable.
 
-    Without this, a request that's already cleared a manager's step and
-    moved on (e.g. to HR) still showed up in that manager's "pending
-    approval" list — still their subordinate, still Pending Approval — with
-    live Approve/Reject buttons that 403 on click. The list query only
-    ever checked "is this my subordinate," never re-checked eligibility
-    against the request's current step, unlike the approve/reject action
-    itself (advance_or_finalize) or the Dashboard's
-    count_pending_for_approver above, whose loop this mirrors.
+    Was `filter_actionable` (dropped non-actionable rows outright) until a
+    request that's already cleared a manager's step and moved on (e.g. to
+    HR) — or one sitting at a step the viewer never reaches, like HR
+    viewing a request still with the direct manager — simply vanished
+    from that viewer's screen instead of showing who it's actually
+    waiting on. The eligibility check itself (`is_eligible_approver`) is
+    unchanged and still the source of truth the actual approve/reject
+    action (`advance_or_finalize`) and the Dashboard's
+    `count_pending_for_approver` both rely on — this only changes what a
+    list screen does with a "not eligible" result: label it, don't hide
+    it.
 
-    A row is always kept (never hidden) if it's not at a pending status
-    for this module, or has no workflow/step recorded — those carry no
-    action buttons, or (a legacy pre-engine row) are gated by that
-    module's own blanket role-based fallback instead of this engine, so
-    hiding them here would be wrong.
+    A row always gets `is_actionable=True`, `pending_with=None` if it's
+    not at a pending status for this module, or has no workflow/step
+    recorded — those carry no action buttons anyway, or (a legacy
+    pre-engine row) are gated by that module's own blanket role-based
+    fallback instead of this engine, so labeling them here would be
+    wrong.
     """
     pending = set(MODULE_PENDING_STATUSES[module])
-    result = []
     for row in rows:
+        row["is_actionable"] = True
+        row["pending_with"] = None
         if row["status"] not in pending or row["approval_workflow_id"] is None or row["approval_step"] is None:
-            result.append(row)
             continue
         steps = get_steps(conn, row["approval_workflow_id"])
         current = next((s for s in steps if s["step_order"] == row["approval_step"]), None)
         if not current:
-            result.append(row)
             continue
         employee_id = _requester_employee_id(conn, inst_id, module, row)
         if not employee_id:
-            result.append(row)
             continue
         project_ids = project_ids_for_row(conn, module, row)
-        if is_eligible_approver(conn, inst_id, module, employee_id, current, user, project_ids):
-            result.append(row)
-    return result
+        row["is_actionable"] = is_eligible_approver(conn, inst_id, module, employee_id, current, user, project_ids)
+        if not row["is_actionable"]:
+            row["pending_with"] = describe_current_step(conn, inst_id, employee_id, current, project_ids)
+    return rows

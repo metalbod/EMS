@@ -17,7 +17,7 @@ from core.org_queries import subordinates_in_clause
 
 from core.validators import validate_document_data_url
 
-from core.approval_workflow import advance_or_finalize, filter_actionable
+from core.approval_workflow import advance_or_finalize, annotate_actionability
 
 from core.resignation import file_resignation, apply_resignation_outcome
 
@@ -120,7 +120,7 @@ def list_resignations(conn, status: Optional[str] = None, user: dict = Depends(g
     rows = conn.execute(q, p).fetchall()
     result = [dict(r) for r in rows]
     if user["role"] != "employee":
-        result = filter_actionable(conn, inst_id, "resignation", result, user)
+        result = annotate_actionability(conn, inst_id, "resignation", result, user)
     return result
 
 

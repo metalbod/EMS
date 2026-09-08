@@ -626,6 +626,31 @@ def test_decide_claim_via_manager_workflow_approve(client, hr_manager_auth, make
     assert body["amount_approved"] == 90
 
 
+def test_hr_sees_claim_pending_with_direct_manager_by_name(client, hr_manager_auth, make_test_employee, employee_with_login):
+    """Mirrors leave's equivalent coverage (test_approval_workflow.py) for
+    the claims list — GET /api/benefits/claims must still show a claim
+    sitting at the direct_manager step to HR, read-only, labeled with the
+    manager's actual name, instead of dropping it (the old
+    filter_actionable behavior) just because HR isn't eligible yet."""
+    mgr_emp, _ = employee_with_login(full_name=_unique_name("ZZ Claims Escalation Manager"))
+    users = client.get("/api/users", headers=hr_manager_auth).json()
+    mgr_user = next(u for u in users if u["employee_id"] == mgr_emp["employee_id"])
+    client.put(f"/api/users/{mgr_user['id']}", headers=hr_manager_auth, json={
+        "full_name": mgr_user["full_name"], "role": "manager", "employee_id": mgr_emp["employee_id"], "is_active": True,
+    })
+    report_emp = make_test_employee(full_name="ZZ Claims Escalation Report", reports_to=mgr_emp["employee_id"])
+    plan = _make_active_plan(client, hr_manager_auth)
+    claim = client.post(f"/api/benefits/employees/{report_emp['employee_id']}/claims", headers=hr_manager_auth, json={
+        "benefit_plan_id": plan["id"], "claim_date": "2026-08-07", "amount_claimed": 90,
+    }).json()
+    assert claim["status"] == "Submitted"
+
+    hr_list = client.get("/api/benefits/claims", headers=hr_manager_auth).json()
+    row = next(c for c in hr_list if c["id"] == claim["id"])
+    assert row["is_actionable"] is False
+    assert row["pending_with"] == f"{mgr_emp['full_name']} (Direct Manager)"
+
+
 def test_decide_claim_by_ineligible_approver_403(client, hr_manager_auth, make_test_employee, employee_with_login):
     mgr_emp, _ = employee_with_login(full_name=_unique_name("ZZ Decide Wrong Manager"))
     users = client.get("/api/users", headers=hr_manager_auth).json()

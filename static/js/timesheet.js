@@ -544,6 +544,8 @@ const submitTimesheet = guardAsync(async function() {
 // ---------------------------------------------------------------------------
 // Timesheet Approvals (manager / HR)
 // ---------------------------------------------------------------------------
+let tsApprovalRowsCache=[];
+
 async function loadTimesheetApprovals() {
   const listEl=document.getElementById('timesheetApprovalList');
   const emptyEl=document.getElementById('timesheetApprovalEmpty');
@@ -553,6 +555,7 @@ async function loadTimesheetApprovals() {
   const res=await api(url);
   if(!res?.ok){ listEl.innerHTML=''; return; }
   const rows=await res.json();
+  tsApprovalRowsCache=rows;
   if(!rows.length){ listEl.innerHTML=''; emptyEl?.classList.remove('hidden'); return; }
   emptyEl?.classList.add('hidden');
   listEl.innerHTML=rows.map(t=>`
@@ -561,6 +564,7 @@ async function loadTimesheetApprovals() {
         <div>
           <p class="font-medium text-slate-800">${esc(displayName(t.employee_name,t.employee_preferred_name))}</p>
           <p class="text-xs text-slate-500">${esc(t.department||'')}${t.designation?' · '+esc(t.designation):''} · ${fmtDate(t.period_start)} → ${fmtDate(t.period_end)}</p>
+          ${t.status==='Submitted' && !t.is_actionable ? `<p class="text-xs text-slate-400 mt-1">Pending with: ${esc(t.pending_with||'—')}</p>` : ''}
         </div>
         <div class="text-right">
           <span class="badge ${statusColor(TS_STATUS_COLORS, t.status)} text-xs">${t.status}</span>
@@ -591,10 +595,11 @@ async function openTimesheetDetail(tsId) {
     </tr>`).join('');
   document.getElementById('timesheetDetailTotal').textContent=`Total: ${ts.total_hours} hours`;
   const actions=document.getElementById('timesheetDetailActions');
-  actions.innerHTML=ts.status==='Submitted'?`
+  const cached=tsApprovalRowsCache.find(r=>r.id===ts.id);
+  actions.innerHTML=ts.status!=='Submitted'?'':(!cached||cached.is_actionable)?`
     <button onclick="reviewTimesheet(${ts.id},'Approved')" class="btn-primary text-sm">Approve</button>
     <button onclick="reviewTimesheet(${ts.id},'Rejected')" class="btn-ghost text-sm text-red-600">Reject</button>
-  `:'';
+  `:`<p class="text-xs text-slate-400">Pending with: ${esc(cached.pending_with||'—')}</p>`;
   await loadTimesheetDetailOvertime(tsId);
   document.getElementById('timesheetDetailModal').classList.remove('hidden');
 }

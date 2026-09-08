@@ -19,7 +19,7 @@ from core.leave_balance_ops import (
     _sweep_expired_carry_forward,
 )
 
-from core.approval_workflow import start_workflow, advance_or_finalize, filter_actionable
+from core.approval_workflow import start_workflow, advance_or_finalize, annotate_actionability
 
 from db import get_db
 
@@ -542,7 +542,7 @@ def list_leave_applications(conn, status: Optional[str] = None, user: dict = Dep
     rows = conn.execute(q, p).fetchall()
     result = [dict(r) for r in rows]
     if user["role"] != "employee":
-        result = filter_actionable(conn, inst_id, "leave", result, user)
+        result = annotate_actionability(conn, inst_id, "leave", result, user)
     return result
 
 

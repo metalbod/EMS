@@ -316,3 +316,44 @@ def test_list_timesheets_includes_created(client, hr_manager_auth, employee_with
     res = client.get("/api/timesheets", headers=hr_manager_auth)
     assert res.status_code == 200
     assert ts["id"] in [t["id"] for t in res.json()]
+
+
+def test_hr_sees_timesheet_pending_with_direct_manager_by_name(client, hr_manager_auth, make_test_employee,
+                                                                 test_institution, open_task):
+    """Mirrors leave/claims' equivalent coverage — GET /api/timesheets must
+    still show a Submitted timesheet sitting at the direct_manager step to
+    HR, read-only, labeled with the manager's actual name, instead of
+    dropping it (the old filter_actionable behavior) just because HR
+    isn't eligible yet."""
+    mgr_emp = make_test_employee(full_name="ZZ Timesheet Escalation Manager")
+    report_emp = make_test_employee(full_name="ZZ Timesheet Escalation Report", reports_to=mgr_emp["employee_id"])
+    username = f"zztsesc_{report_emp['employee_id'].lower()}"
+    password = "ZzPytest@123"
+    res = client.post("/api/users", headers=hr_manager_auth, json={
+        "username": username, "full_name": "ZZ Timesheet Escalation Report", "password": password,
+        "role": "employee", "employee_id": report_emp["employee_id"],
+    })
+    assert res.status_code == 201, f"failed to create employee-linked user: {res.text}"
+    user_id = res.json()["id"]
+    login = client.post("/api/auth/login", json={
+        "username": username, "password": password, "institution_code": test_institution["code"],
+    })
+    assert login.status_code == 200
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    ts = client.post("/api/timesheets", headers=headers, json={
+        "employee_id": report_emp["employee_id"], "period_start": PERIOD_START, "period_end": PERIOD_END,
+    }).json()
+    project, task = open_task
+    client.post(f"/api/timesheets/{ts['id']}/entries", headers=headers, json={
+        "project_id": project["id"], "task_id": task["id"], "date": ENTRY_DATE, "hours": 8,
+    })
+    submit = client.patch(f"/api/timesheets/{ts['id']}/status", headers=headers, json={"status": "Submitted"})
+    assert submit.status_code == 200
+
+    hr_list = client.get("/api/timesheets", headers=hr_manager_auth).json()
+    row = next(t for t in hr_list if t["id"] == ts["id"])
+    assert row["is_actionable"] is False
+    assert row["pending_with"] == f"{mgr_emp['full_name']} (Direct Manager)"
+
+    client.delete(f"/api/users/{user_id}", headers=hr_manager_auth)

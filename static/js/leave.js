@@ -336,10 +336,10 @@ async function loadLeaveApprovals() {
           ${a.attachment?`<a href="${a.attachment}" target="_blank" class="text-xs text-blue-600 hover:underline mt-1 inline-block">View attachment</a>`:''}
         </div>
       </div>
-      ${a.status==='Pending Approval'?`<div class="mt-3 flex gap-2">
+      ${a.status==='Pending Approval'?(a.is_actionable?`<div class="mt-3 flex gap-2">
         <button onclick="reviewLeaveApplication(${a.id},'Approved')" class="btn-primary text-xs px-3 py-1.5">Approve</button>
         <button onclick="reviewLeaveApplication(${a.id},'Rejected')" class="btn-ghost text-xs px-3 py-1.5 text-red-600">Reject</button>
-      </div>`:''}
+      </div>`:`<p class="text-xs text-slate-400 mt-3">Pending with: ${esc(a.pending_with||'—')}</p>`):''}
       <p class="text-xs text-slate-400 mt-2">Applied ${fmtDate(a.created_at)}</p>
     </div>`).join('');
 }

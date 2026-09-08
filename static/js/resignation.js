@@ -136,10 +136,10 @@ async function loadResignationApprovals() {
           ${r.attachment_data_url ? `<a href="${r.attachment_data_url}" target="_blank" class="text-xs text-blue-600 hover:underline mt-1 inline-block">${esc(r.attachment_file_name || 'View attachment')}</a>` : ''}
         </div>
       </div>
-      ${r.status === 'Pending' ? `<div class="mt-3 flex gap-2">
+      ${r.status === 'Pending' ? (r.is_actionable ? `<div class="mt-3 flex gap-2">
         <button onclick="reviewResignationRequest(${r.id},'Approved')" class="btn-primary text-xs px-3 py-1.5">Approve</button>
         <button onclick="reviewResignationRequest(${r.id},'Rejected')" class="btn-ghost text-xs px-3 py-1.5 text-red-600">Reject</button>
-      </div>` : ''}
+      </div>` : `<p class="text-xs text-slate-400 mt-3">Pending with: ${esc(r.pending_with||'—')}</p>`) : ''}
       <p class="text-xs text-slate-400 mt-2">Submitted ${fmtDate(r.created_at)} by ${esc(r.submitted_by)}</p>
     </div>`).join('');
 }
