@@ -202,6 +202,11 @@ def test_role_scoped_visibility(client, employee_with_login, hr_manager_auth):
 
 
 def test_dashboard_todo_surfaces_pending_resignation_for_hr(client, employee_with_login, hr_manager_auth):
+    """The To-Do queue's key is per-item — f"{module}-approval-{row_id}"
+    (routers/dashboard.py's get_todos), matching test_dashboard.py's
+    equivalent leave-approval coverage — not the module's approvals *page*
+    id ("resignation-approvals", used for `page`/navigation), which this
+    test originally checked against and could never match."""
     emp, headers = employee_with_login(full_name="ZZ Resign Todo")
     submit = client.post("/api/resignations", headers=headers, json={
         "reason": "Todo check", "effective_date": "2027-06-01", "last_working_day": "2027-06-01",
@@ -209,6 +214,10 @@ def test_dashboard_todo_surfaces_pending_resignation_for_hr(client, employee_wit
     req_id = submit.json()["id"]
 
     todos = client.get("/api/todos", headers=hr_manager_auth).json()
-    assert any(t["key"] == "resignation-approvals" for t in todos)
+    key = f"resignation-approval-{req_id}"
+    match = next((t for t in todos if t["key"] == key), None)
+    assert match, f"expected a per-item resignation-approval todo, got: {todos}"
+    assert match["page"] == "resignation-approvals"
+    assert match["employee_name"] == emp["full_name"]
 
     client.patch(f"/api/resignations/{req_id}", headers=hr_manager_auth, json={"status": "Rejected"})
