@@ -222,6 +222,9 @@ MATRIX: List[Dict[str, Any]] = [
             _action("View candidate audit log", "GET /api/recruitment/candidates/{id}/audit", _flat(*_RECRUIT_WRITE)),
             _action("View candidate stage timing", "GET /api/recruitment/candidates/{id}/stage-history", _flat(*_RECRUIT_WRITE, "manager"),
                      note="Deliberately broader than the audit log above — manager included so a hiring manager can see how long their own candidates have sat in each stage."),
+            _action("Manage offer letter templates", "routers/recruitment.py offer-letter-templates CRUD", _flat(*_RECRUIT_WRITE)),
+            _action("Delete offer / letter", "DELETE /api/recruitment/offers/{id}", _flat(*_RECRUIT_WRITE),
+                     note="Same tier as creating one; blocked at the endpoint (not here) for an Accepted offer specifically, a finalized record."),
         ],
     },
     {

@@ -1,5 +1,6 @@
 """Recruitment module: Job Requisitions, Candidates/ATS, Interviews, and Offers."""
 from datetime import datetime
+from string import Template
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -130,10 +131,21 @@ class OfferIn(BaseModel):
     start_date: Optional[str] = None
     expiry_date: Optional[str] = None
     letter_content: Optional[str] = None
+    # Which offer_letter_templates row to render from — the offer_type's
+    # own default template (creating it lazily if none exists yet) when
+    # omitted. Ignored if letter_content is explicitly provided.
+    template_id: Optional[int] = None
 
 
 class OfferStatusIn(BaseModel):
     status: str
+
+
+class OfferLetterTemplateIn(BaseModel):
+    offer_type: str
+    name: str
+    body: str
+    is_default: bool = False
 
 
 def _log_candidate(conn, inst_id: int, cand_id: int, action: str, detail: str, by: str):
@@ -190,40 +202,36 @@ def _requisition_requester_employee_id(conn, inst_id, req):
     return u["employee_id"] if u else None
 
 
-def _gen_offer_letter(cand, req, offer):
-    today = datetime.now().strftime("%d %B %Y")
-    if offer["offer_type"] == "Offer":
-        salary_line = f"Basic Salary: RM {offer['salary_offered']:,.2f} per month" if offer.get("salary_offered") else ""
-        start_line  = f"Commencement Date: {offer['start_date']}" if offer.get("start_date") else ""
-        expiry_line = f"This offer is valid until {offer['expiry_date']}." if offer.get("expiry_date") else ""
-        req_title   = req.get("title","") if req else ""
-        req_dept    = req.get("department","") if req else ""
-        emp_type    = req.get("employment_type","") if req else ""
-        return f"""[COMPANY LETTERHEAD]
+# Institutions get one of each lazily (see _get_or_create_default_offer_template)
+# rather than being seeded up front — same resolve-or-create-default pattern
+# as get_or_create_default_workflow (core/approval_workflow.py) and onboarding's
+# template sets. Wording here is exactly what the old hardcoded
+# _gen_offer_letter f-strings produced, just parameterized.
+_DEFAULT_OFFER_LETTER_TEMPLATE_BODY = """[COMPANY LETTERHEAD]
 
-{today}
+${today}
 
-{cand['full_name']}
-{cand.get('email','') or ''}
+${candidate_name}
+${candidate_email}
 
-Dear {cand['full_name']},
+Dear ${candidate_name},
 
-LETTER OF OFFER — {req_title.upper()}
+LETTER OF OFFER — ${position}
 
-We are pleased to offer you the position of {req_title} in the {req_dept} department on the following terms and conditions:
+We are pleased to offer you the position of ${position} in the ${department} department on the following terms and conditions:
 
-Position        : {req_title}
-Department      : {req_dept}
-Employment Type : {emp_type}
-{salary_line}
-{start_line}
+Position         : ${position}
+Department       : ${department}
+Employment Type  : ${employment_type}
+Basic Salary     : ${salary_offered}
+Commencement Date: ${start_date}
 
 Your appointment will be subject to:
 1. Satisfactory completion of our pre-employment medical examination.
 2. Submission of all required original documents for verification.
 3. Compliance with the Company's policies, rules and regulations.
 
-{expiry_line}
+This offer is valid until ${expiry_date}.
 
 To accept this offer, please sign and return one copy of this letter by the expiry date stated above.
 
@@ -237,22 +245,21 @@ Human Resources
 [Company Name]
 
 
-I, {cand['full_name']}, hereby accept the above offer of employment.
+I, ${candidate_name}, hereby accept the above offer of employment.
 
 Signature: _______________________    Date: _______________
 """
-    else:
-        req_title = req.get("title","the position") if req else "the position"
-        return f"""[COMPANY LETTERHEAD]
 
-{today}
+_DEFAULT_DECLINE_LETTER_TEMPLATE_BODY = """[COMPANY LETTERHEAD]
 
-{cand['full_name']}
-{cand.get('email','') or ''}
+${today}
 
-Dear {cand['full_name']},
+${candidate_name}
+${candidate_email}
 
-RE: Application for {req_title}
+Dear ${candidate_name},
+
+RE: Application for ${position}
 
 Thank you for your interest in the above position and for the time you invested in our recruitment process.
 
@@ -269,6 +276,52 @@ _______________________
 Human Resources
 [Company Name]
 """
+
+
+def _offer_letter_context(cand, req, offer) -> Dict[str, str]:
+    """Placeholder values ($name / ${name} in a template body — see
+    string.Template) available to every offer letter template, regardless
+    of offer_type. Unused placeholders are simply left as literal text by
+    safe_substitute, and unknown/extra dict keys are ignored, so templates
+    don't need to reference every key here."""
+    salary = offer.get("salary_offered")
+    return {
+        "candidate_name": cand["full_name"],
+        "candidate_email": cand.get("email", "") or "",
+        "today": datetime.now().strftime("%d %B %Y"),
+        "position": (req.get("title") if req else None) or "the position",
+        "department": (req.get("department") if req else None) or "",
+        "employment_type": (req.get("employment_type") if req else None) or "",
+        "salary_offered": f"RM {salary:,.2f} per month" if salary else "",
+        "start_date": offer.get("start_date") or "",
+        "expiry_date": offer.get("expiry_date") or "",
+        "offer_type": offer.get("offer_type", ""),
+    }
+
+
+def _render_offer_letter(template_body: str, cand, req, offer) -> str:
+    return Template(template_body).safe_substitute(_offer_letter_context(cand, req, offer))
+
+
+def _get_or_create_default_offer_template(conn, inst_id: int, offer_type: str) -> Dict[str, Any]:
+    """This institution's default template for offer_type, creating one
+    (seeded from the wording _gen_offer_letter used to hardcode) the first
+    time it's needed."""
+    row = conn.execute(
+        "SELECT * FROM offer_letter_templates WHERE institution_id=? AND offer_type=? "
+        "ORDER BY is_default DESC, id LIMIT 1",
+        (inst_id, offer_type)
+    ).fetchone()
+    if row:
+        return dict(row)
+    body = _DEFAULT_OFFER_LETTER_TEMPLATE_BODY if offer_type == "Offer" else _DEFAULT_DECLINE_LETTER_TEMPLATE_BODY
+    conn.execute(
+        "INSERT INTO offer_letter_templates (institution_id,offer_type,name,body,is_default) VALUES (?,?,?,?,1)",
+        (inst_id, offer_type, f"Default {offer_type} Letter", body)
+    )
+    tid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.commit()
+    return dict(conn.execute("SELECT * FROM offer_letter_templates WHERE id=?", (tid,)).fetchone())
 
 
 # ---------------------------------------------------------------------------
@@ -826,8 +879,23 @@ def create_offer(conn, body: OfferIn, user: dict = Depends(get_current_user)) ->
     if body.requisition_id:
         r = conn.execute("SELECT * FROM job_requisitions WHERE id=?", (body.requisition_id,)).fetchone()
         req = dict(r) if r else None
-    # Auto-generate letter if not provided
-    letter = body.letter_content or _gen_offer_letter(cand, req, body.model_dump())
+    # Auto-generate letter if not provided, from the requested template (or
+    # this offer_type's default, created lazily if this is the first offer
+    # of its type for the institution).
+    if body.letter_content:
+        letter = body.letter_content
+    else:
+        if body.template_id:
+            tmpl = conn.execute(
+                "SELECT * FROM offer_letter_templates WHERE id=? AND institution_id=? AND offer_type=?",
+                (body.template_id, inst_id, body.offer_type)
+            ).fetchone()
+            if not tmpl:
+                raise HTTPException(404, "Template not found")
+            tmpl = dict(tmpl)
+        else:
+            tmpl = _get_or_create_default_offer_template(conn, inst_id, body.offer_type)
+        letter = _render_offer_letter(tmpl["body"], cand, req, body.model_dump())
     conn.execute("""
         INSERT INTO offers (institution_id,candidate_id,requisition_id,offer_type,
             salary_offered,start_date,expiry_date,letter_content,created_by)
@@ -860,6 +928,27 @@ def get_offer(conn, offer_id: int, user: dict = Depends(get_current_user)) -> Op
     ).fetchone()
     if not row: raise HTTPException(404, "Offer not found")
     return dict(row)
+
+
+@router.delete("/api/recruitment/offers/{offer_id}", status_code=204)
+@db_session
+def delete_offer(conn, offer_id: int, user: dict = Depends(get_current_user)) -> None:
+    require_permission(conn, user, "recruitment.delete_offer_letter")
+    inst_id = need_inst(user)
+    row = conn.execute("SELECT * FROM offers WHERE id=? AND institution_id=?", (offer_id, inst_id)).fetchone()
+    if not row:
+        raise HTTPException(404, "Offer not found")
+    # Accepted is a finalized, legally-significant outcome (the candidate's
+    # signed acceptance) — deletable statuses are everything before or
+    # instead of that (Draft/Sent/Rejected/Withdrawn). Doesn't touch the
+    # candidate's stage either way; this is record cleanup, not an
+    # undo of whatever stage transition creating it caused.
+    if row["status"] == "Accepted":
+        raise HTTPException(400, "Cannot delete an accepted offer — it's a finalized record.")
+    conn.execute("DELETE FROM offers WHERE id=?", (offer_id,))
+    _log_candidate(conn, inst_id, row["candidate_id"], "Offer Deleted",
+                   f"{row['offer_type']} letter deleted (was {row['status']})", user["username"])
+    conn.commit()
 
 
 @router.patch("/api/recruitment/offers/{offer_id}/status")
@@ -899,10 +988,103 @@ def generate_letter(conn, offer_id: int, user: dict = Depends(get_current_user))
     if offer.get("requisition_id"):
         r = conn.execute("SELECT * FROM job_requisitions WHERE id=?", (offer["requisition_id"],)).fetchone()
         req = dict(r) if r else None
-    letter = _gen_offer_letter(cand, req, offer)
+    tmpl = _get_or_create_default_offer_template(conn, inst_id, offer["offer_type"])
+    letter = _render_offer_letter(tmpl["body"], cand, req, offer)
     conn.execute("UPDATE offers SET letter_content=? WHERE id=?", (letter, offer_id))
     conn.commit()
     return {"letter_content": letter}
+
+
+# ---------------------------------------------------------------------------
+# Recruitment — Offer Letter Templates
+# ---------------------------------------------------------------------------
+@router.get("/api/recruitment/offer-letter-templates")
+@db_session
+def list_offer_letter_templates(conn, offer_type: Optional[str] = None,
+                                 user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
+    require_permission(conn, user, "recruitment.manage_offer_letter_templates")
+    inst_id = need_inst(user)
+    q = "SELECT * FROM offer_letter_templates WHERE institution_id=?"
+    p: list = [inst_id]
+    if offer_type:
+        q += " AND offer_type=?"; p.append(offer_type)
+    q += " ORDER BY offer_type, is_default DESC, name"
+    rows = conn.execute(q, p).fetchall()
+    return [dict(r) for r in rows]
+
+
+def _validate_offer_letter_template(body: OfferLetterTemplateIn):
+    if body.offer_type not in OFFER_TYPES:
+        raise HTTPException(400, f"offer_type must be one of: {', '.join(OFFER_TYPES)}")
+    if not body.name.strip():
+        raise HTTPException(400, "name is required")
+    if not body.body.strip():
+        raise HTTPException(400, "body is required")
+
+
+@router.post("/api/recruitment/offer-letter-templates", status_code=201)
+@db_session
+def create_offer_letter_template(conn, body: OfferLetterTemplateIn,
+                                  user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    require_permission(conn, user, "recruitment.manage_offer_letter_templates")
+    _validate_offer_letter_template(body)
+    inst_id = need_inst(user)
+    if body.is_default:
+        conn.execute("UPDATE offer_letter_templates SET is_default=0 WHERE institution_id=? AND offer_type=?",
+                     (inst_id, body.offer_type))
+    conn.execute(
+        "INSERT INTO offer_letter_templates (institution_id,offer_type,name,body,is_default) VALUES (?,?,?,?,?)",
+        (inst_id, body.offer_type, body.name.strip(), body.body, 1 if body.is_default else 0)
+    )
+    tid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.commit()
+    return dict(conn.execute("SELECT * FROM offer_letter_templates WHERE id=?", (tid,)).fetchone())
+
+
+@router.put("/api/recruitment/offer-letter-templates/{tmpl_id}")
+@db_session
+def update_offer_letter_template(conn, tmpl_id: int, body: OfferLetterTemplateIn,
+                                  user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    require_permission(conn, user, "recruitment.manage_offer_letter_templates")
+    _validate_offer_letter_template(body)
+    inst_id = need_inst(user)
+    tmpl = conn.execute("SELECT * FROM offer_letter_templates WHERE id=? AND institution_id=?",
+                         (tmpl_id, inst_id)).fetchone()
+    if not tmpl:
+        raise HTTPException(404, "Template not found")
+    if body.is_default:
+        conn.execute("UPDATE offer_letter_templates SET is_default=0 WHERE institution_id=? AND offer_type=? AND id<>?",
+                     (inst_id, body.offer_type, tmpl_id))
+    conn.execute(
+        "UPDATE offer_letter_templates SET offer_type=?,name=?,body=?,is_default=?,"
+        "updated_at=to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS') WHERE id=?",
+        (body.offer_type, body.name.strip(), body.body, 1 if body.is_default else 0, tmpl_id)
+    )
+    conn.commit()
+    return dict(conn.execute("SELECT * FROM offer_letter_templates WHERE id=?", (tmpl_id,)).fetchone())
+
+
+@router.delete("/api/recruitment/offer-letter-templates/{tmpl_id}", status_code=204)
+@db_session
+def delete_offer_letter_template(conn, tmpl_id: int, user: dict = Depends(get_current_user)) -> None:
+    require_permission(conn, user, "recruitment.manage_offer_letter_templates")
+    inst_id = need_inst(user)
+    tmpl = conn.execute("SELECT * FROM offer_letter_templates WHERE id=? AND institution_id=?",
+                         (tmpl_id, inst_id)).fetchone()
+    if not tmpl:
+        raise HTTPException(404, "Template not found")
+    conn.execute("DELETE FROM offer_letter_templates WHERE id=?", (tmpl_id,))
+    # Promote another template of the same type to default, if one exists,
+    # so _get_or_create_default_offer_template's ORDER BY is_default DESC
+    # still resolves to something sensible rather than an arbitrary row.
+    if tmpl["is_default"]:
+        other = conn.execute(
+            "SELECT id FROM offer_letter_templates WHERE institution_id=? AND offer_type=? AND id<>? ORDER BY id LIMIT 1",
+            (inst_id, tmpl["offer_type"], tmpl_id)
+        ).fetchone()
+        if other:
+            conn.execute("UPDATE offer_letter_templates SET is_default=1 WHERE id=?", (other["id"],))
+    conn.commit()
 
 
 @router.get("/api/recruitment/candidates/{cand_id}/convert-prefill")

@@ -661,6 +661,144 @@ def test_generate_letter_not_found_returns_404(client, hr_manager_auth):
     assert res.status_code == 404
 
 
+def test_delete_offer_removes_it(client, hr_manager_auth):
+    cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
+                        json={"full_name": "ZZ Delete Offer Candidate"}).json()
+    offer = client.post("/api/recruitment/offers", headers=hr_manager_auth,
+                         json={"candidate_id": cand["id"]}).json()
+    res = client.delete(f"/api/recruitment/offers/{offer['id']}", headers=hr_manager_auth)
+    assert res.status_code == 204, res.text
+    assert client.get(f"/api/recruitment/offers/{offer['id']}", headers=hr_manager_auth).status_code == 404
+
+
+def test_delete_offer_not_found_returns_404(client, hr_manager_auth):
+    res = client.delete("/api/recruitment/offers/999999999", headers=hr_manager_auth)
+    assert res.status_code == 404
+
+
+def test_delete_accepted_offer_rejected(client, hr_manager_auth):
+    """An Accepted offer is a finalized record — deletable statuses are
+    everything before/instead of that (Draft/Sent/Rejected/Withdrawn)."""
+    cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
+                        json={"full_name": "ZZ Accepted Offer Candidate"}).json()
+    offer = client.post("/api/recruitment/offers", headers=hr_manager_auth,
+                         json={"candidate_id": cand["id"]}).json()
+    client.patch(f"/api/recruitment/offers/{offer['id']}/status", headers=hr_manager_auth,
+                 json={"status": "Accepted"})
+    res = client.delete(f"/api/recruitment/offers/{offer['id']}", headers=hr_manager_auth)
+    assert res.status_code == 400, res.text
+
+
+def test_delete_offer_requires_write_role(client, hr_manager_auth, make_test_user, test_institution):
+    cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
+                        json={"full_name": "ZZ Offer Delete Role Candidate"}).json()
+    offer = client.post("/api/recruitment/offers", headers=hr_manager_auth,
+                         json={"candidate_id": cand["id"]}).json()
+    token, _ = make_test_user(role="employee")
+    headers = {"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}
+    res = client.delete(f"/api/recruitment/offers/{offer['id']}", headers=headers)
+    assert res.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Offer Letter Templates
+# ---------------------------------------------------------------------------
+def test_offer_letter_templates_require_write_role(client, make_test_user, test_institution):
+    token, _ = make_test_user(role="employee")
+    headers = {"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}
+    assert client.get("/api/recruitment/offer-letter-templates", headers=headers).status_code == 403
+    assert client.post("/api/recruitment/offer-letter-templates", headers=headers,
+                        json={"offer_type": "Offer", "name": "X", "body": "Y"}).status_code == 403
+
+
+def test_create_offer_using_custom_template(client, hr_manager_auth):
+    """A custom template picked via template_id is what actually renders —
+    not the built-in default — and its placeholders are substituted."""
+    tmpl = client.post("/api/recruitment/offer-letter-templates", headers=hr_manager_auth, json={
+        "offer_type": "Offer", "name": "ZZ Custom Offer Template",
+        "body": "Hello ${candidate_name}, welcome to ${department}! Salary: ${salary_offered}",
+    }).json()
+    cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
+                        json={"full_name": "ZZ Custom Template Candidate"}).json()
+    req = client.post("/api/recruitment/requisitions", headers=hr_manager_auth,
+                       json={"title": _unique_title(), "department": "Finance"}).json()
+    offer = client.post("/api/recruitment/offers", headers=hr_manager_auth, json={
+        "candidate_id": cand["id"], "requisition_id": req["id"], "template_id": tmpl["id"],
+        "salary_offered": 5500.0,
+    }).json()
+    assert offer["letter_content"] == "Hello ZZ Custom Template Candidate, welcome to Finance! Salary: RM 5,500.00 per month"
+
+
+def test_create_offer_with_mismatched_template_type_404s(client, hr_manager_auth):
+    tmpl = client.post("/api/recruitment/offer-letter-templates", headers=hr_manager_auth, json={
+        "offer_type": "Decline", "name": "ZZ Decline Only Template", "body": "Sorry ${candidate_name}",
+    }).json()
+    cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
+                        json={"full_name": "ZZ Mismatch Candidate"}).json()
+    res = client.post("/api/recruitment/offers", headers=hr_manager_auth,
+                       json={"candidate_id": cand["id"], "offer_type": "Offer", "template_id": tmpl["id"]})
+    assert res.status_code == 404
+
+
+def test_offer_letter_template_crud_and_default_promotion(client, hr_manager_auth):
+    t1 = client.post("/api/recruitment/offer-letter-templates", headers=hr_manager_auth, json={
+        "offer_type": "Offer", "name": "ZZ Template One", "body": "Body one", "is_default": True,
+    }).json()
+    assert t1["is_default"] == 1
+
+    t2 = client.post("/api/recruitment/offer-letter-templates", headers=hr_manager_auth, json={
+        "offer_type": "Offer", "name": "ZZ Template Two", "body": "Body two", "is_default": True,
+    }).json()
+    assert t2["is_default"] == 1
+
+    # Setting t2 as default must have unset t1's.
+    listed = {t["id"]: t for t in client.get("/api/recruitment/offer-letter-templates",
+                                              headers=hr_manager_auth).json()}
+    assert listed[t1["id"]]["is_default"] == 0
+    assert listed[t2["id"]]["is_default"] == 1
+
+    updated = client.put(f"/api/recruitment/offer-letter-templates/{t1['id']}", headers=hr_manager_auth, json={
+        "offer_type": "Offer", "name": "ZZ Template One Renamed", "body": "Body one v2", "is_default": False,
+    }).json()
+    assert updated["name"] == "ZZ Template One Renamed"
+
+    # Deleting the current default (t2) must promote some other Offer-type
+    # template to default — asserting an *exact* winner (rather than "some
+    # other template becomes default, so the type is never left with zero")
+    # would be order-dependent: test_institution is session-scoped, so an
+    # earlier test in this same run may already have lazily created that
+    # type's built-in default template (_get_or_create_default_offer_template)
+    # with a lower id than t1, which is what the delete's own
+    # `ORDER BY id LIMIT 1` promotion picks — see CLAUDE.md's note on
+    # session-scoped test_institution pollution.
+    res = client.delete(f"/api/recruitment/offer-letter-templates/{t2['id']}", headers=hr_manager_auth)
+    assert res.status_code == 204
+    listed_after = client.get("/api/recruitment/offer-letter-templates", headers=hr_manager_auth).json()
+    offer_rows_after = [t for t in listed_after if t["offer_type"] == "Offer"]
+    assert t2["id"] not in {t["id"] for t in listed_after}
+    assert sum(t["is_default"] for t in offer_rows_after) == 1, \
+        "exactly one Offer-type template must be default after deleting the old one"
+
+    client.delete(f"/api/recruitment/offer-letter-templates/{t1['id']}", headers=hr_manager_auth)
+
+
+def test_offer_letter_template_invalid_offer_type_rejected(client, hr_manager_auth):
+    res = client.post("/api/recruitment/offer-letter-templates", headers=hr_manager_auth,
+                       json={"offer_type": "Bogus", "name": "X", "body": "Y"})
+    assert res.status_code == 400
+
+
+def test_update_offer_letter_template_not_found_returns_404(client, hr_manager_auth):
+    res = client.put("/api/recruitment/offer-letter-templates/999999999", headers=hr_manager_auth,
+                      json={"offer_type": "Offer", "name": "X", "body": "Y"})
+    assert res.status_code == 404
+
+
+def test_delete_offer_letter_template_not_found_returns_404(client, hr_manager_auth):
+    res = client.delete("/api/recruitment/offer-letter-templates/999999999", headers=hr_manager_auth)
+    assert res.status_code == 404
+
+
 # ---------------------------------------------------------------------------
 # Convert-to-employee prefill, meta, dashboard stats
 # ---------------------------------------------------------------------------

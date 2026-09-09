@@ -717,6 +717,14 @@ async function submitScore(e) {
 // ---------------------------------------------------------------------------
 // Recruitment — Offers & Letters
 // ---------------------------------------------------------------------------
+function switchOffersSubTab(tab) {
+  document.getElementById('offersSubTab_letters').classList.toggle('view-tab-active', tab==='letters');
+  document.getElementById('offersSubTab_templates').classList.toggle('view-tab-active', tab==='templates');
+  document.getElementById('offersSubPanel_letters').classList.toggle('hidden', tab!=='letters');
+  document.getElementById('offersSubPanel_templates').classList.toggle('hidden', tab!=='templates');
+  if(tab==='templates') loadOfferTemplates();
+}
+
 async function loadOffers() {
   await loadRecruitMeta();
   const res=await api('/api/recruitment/offers');
@@ -735,8 +743,31 @@ async function loadOffers() {
       <td class="px-4 py-3"><span class="badge ${o.offer_type==='Offer'?'status-positive':'status-negative'}">${esc(o.offer_type)}</span></td>
       <td class="px-4 py-3 text-slate-700 hidden lg:table-cell">${fmtCurrency(o.salary_offered)}</td>
       <td class="px-4 py-3"><span class="badge ${offerStatusBadge(o.status)}">${esc(o.status)}</span></td>
-      <td class="px-4 py-3 text-right"><button class="btn-ghost text-xs" onclick="event.stopPropagation();openOfferView(${o.id})">View</button></td>
+      <td class="px-4 py-3 text-right whitespace-nowrap">
+        <button class="btn-ghost text-xs" onclick="event.stopPropagation();openOfferView(${o.id})">View</button>
+        ${canManage && o.status!=='Accepted' ? `<button class="btn-ghost text-xs text-red-600" onclick="event.stopPropagation();deleteOffer(${o.id})">Delete</button>` : ''}
+      </td>
     </tr>`).join('');
+}
+
+async function deleteOffer(offerId) {
+  if(!confirm('Delete this letter? This cannot be undone.')) return;
+  const res=await api(`/api/recruitment/offers/${offerId}`,{method:'DELETE'});
+  if(!res||!res.ok){const d=await res?.json().catch(()=>({}));alert(d?.detail||'Failed to delete');return;}
+  loadOffers();
+}
+
+// Populates the Template select for the currently-chosen letter type,
+// defaulting to that type's default template (or the built-in fallback,
+// created lazily server-side, when the institution hasn't added any yet).
+async function populateOfferTemplateSelect(offerType, selectedId=null) {
+  const sel=document.getElementById('offerTemplateId');
+  if(!offerTemplatesLoaded) await loadOfferTemplatesCache();
+  const opts=offerTemplatesCache.filter(t=>t.offer_type===offerType);
+  sel.innerHTML=opts.length
+    ? opts.map(t=>`<option value="${t.id}">${esc(t.name)}${t.is_default?' (Default)':''}</option>`).join('')
+    : `<option value="">Built-in default</option>`;
+  if(selectedId!=null) sel.value=String(selectedId);
 }
 
 async function openOfferModal(offerId=null, preCandId=null) {
@@ -757,7 +788,7 @@ async function openOfferModal(offerId=null, preCandId=null) {
   document.getElementById('offerStart').value='';
   document.getElementById('offerExpiry').value='';
   document.getElementById('offerLetterContent').value='';
-  toggleOfferFields();
+  await onOfferTypeChange();
   document.getElementById('offerFormErr').classList.add('hidden');
   document.getElementById('offerModal').classList.remove('hidden');
 }
@@ -766,15 +797,20 @@ function toggleOfferFields() {
   const isOffer=document.getElementById('offerType').value==='Offer';
   ['offerSalaryWrap','offerStartWrap','offerExpiryWrap'].forEach(id=>document.getElementById(id).classList.toggle('hidden',!isOffer));
 }
+async function onOfferTypeChange() {
+  toggleOfferFields();
+  await populateOfferTemplateSelect(document.getElementById('offerType').value);
+}
 async function previewLetter() {
   const candId=parseInt(document.getElementById('offerCandId').value);
   const offerType=document.getElementById('offerType').value;
   const reqId=parseInt(document.getElementById('offerReqId').value)||null;
+  const templateId=parseInt(document.getElementById('offerTemplateId').value)||null;
   const salary=parseFloat(document.getElementById('offerSalary').value)||null;
   const start=document.getElementById('offerStart').value||null;
   const expiry=document.getElementById('offerExpiry').value||null;
   if(!candId){alert('Select a candidate first');return;}
-  const body={candidate_id:candId,offer_type:offerType,requisition_id:reqId,
+  const body={candidate_id:candId,offer_type:offerType,requisition_id:reqId,template_id:templateId,
     salary_offered:salary,start_date:start,expiry_date:expiry,letter_content:''};
   const res=await api('/api/recruitment/offers',{method:'POST',body:JSON.stringify(body)});
   if(!res||!res.ok){const d=await res?.json();alert(d?.detail||'Failed to generate letter');return;}
@@ -795,6 +831,7 @@ async function submitOfferForm(e) {
     candidate_id:parseInt(document.getElementById('offerCandId').value),
     offer_type:document.getElementById('offerType').value,
     requisition_id:parseInt(document.getElementById('offerReqId').value)||null,
+    template_id:parseInt(document.getElementById('offerTemplateId').value)||null,
     salary_offered:parseFloat(document.getElementById('offerSalary').value)||null,
     start_date:document.getElementById('offerStart').value||null,
     expiry_date:document.getElementById('offerExpiry').value||null,
@@ -804,6 +841,74 @@ async function submitOfferForm(e) {
   const res=await api('/api/recruitment/offers',{method:'POST',body:JSON.stringify(body)});
   if(!res||!res.ok){const d=await res?.json();err.textContent=d?.detail||'Failed';err.classList.remove('hidden');return;}
   closeOfferModal(); loadOffers();
+}
+
+// ---------------------------------------------------------------------------
+// Recruitment — Offer Letter Templates (Manage Templates tab)
+// ---------------------------------------------------------------------------
+let offerTemplatesCache=[], offerTemplatesLoaded=false;
+
+async function loadOfferTemplatesCache() {
+  const res=await api('/api/recruitment/offer-letter-templates');
+  offerTemplatesCache=res?.ok?await res.json():[];
+  offerTemplatesLoaded=true;
+}
+
+async function loadOfferTemplates() {
+  await loadOfferTemplatesCache();
+  const body=document.getElementById('offerTemplateTableBody');
+  const empty=document.getElementById('offerTemplateEmpty');
+  if(!offerTemplatesCache.length){body.innerHTML='';empty?.classList.remove('hidden');return;}
+  empty?.classList.add('hidden');
+  body.innerHTML=offerTemplatesCache.map(t=>`
+    <tr class="hover:bg-slate-50">
+      <td class="px-4 py-3 font-medium text-slate-800">${esc(t.name)}</td>
+      <td class="px-4 py-3"><span class="badge ${t.offer_type==='Offer'?'status-positive':'status-negative'}">${esc(t.offer_type)}</span></td>
+      <td class="px-4 py-3">${t.is_default?'<span class="badge status-info">Default</span>':''}</td>
+      <td class="px-4 py-3 text-right whitespace-nowrap">
+        <button class="btn-ghost text-xs" onclick="openOfferTemplateModal(${t.id})">Edit</button>
+        <button class="btn-ghost text-xs text-red-600" onclick="deleteOfferTemplateRow(${t.id})">Delete</button>
+      </td>
+    </tr>`).join('');
+}
+
+function openOfferTemplateModal(tmplId=null) {
+  const t=tmplId?offerTemplatesCache.find(x=>x.id===tmplId):null;
+  document.getElementById('offerTemplateModalTitle').textContent=t?'Edit Letter Template':'Add Letter Template';
+  document.getElementById('offerTemplateId').value=t?t.id:'';
+  document.getElementById('offerTemplateType').value=t?t.offer_type:'Offer';
+  document.getElementById('offerTemplateName').value=t?t.name:'';
+  document.getElementById('offerTemplateBody').value=t?t.body:'';
+  document.getElementById('offerTemplateDefault').checked=!!t?.is_default;
+  document.getElementById('offerTemplateFormErr').classList.add('hidden');
+  document.getElementById('offerTemplateModal').classList.remove('hidden');
+}
+function closeOfferTemplateModal(){closeModal('offerTemplateModal');}
+
+async function submitOfferTemplateForm(e) {
+  e.preventDefault();
+  const err=document.getElementById('offerTemplateFormErr');
+  err.classList.add('hidden');
+  const id=document.getElementById('offerTemplateId').value;
+  const body={
+    offer_type:document.getElementById('offerTemplateType').value,
+    name:document.getElementById('offerTemplateName').value.trim(),
+    body:document.getElementById('offerTemplateBody').value,
+    is_default:document.getElementById('offerTemplateDefault').checked,
+  };
+  const res=id
+    ? await api(`/api/recruitment/offer-letter-templates/${id}`,{method:'PUT',body:JSON.stringify(body)})
+    : await api('/api/recruitment/offer-letter-templates',{method:'POST',body:JSON.stringify(body)});
+  if(!res||!res.ok){const d=await res?.json();err.textContent=d?.detail||'Failed to save template';err.classList.remove('hidden');return;}
+  closeOfferTemplateModal();
+  loadOfferTemplates();
+}
+
+async function deleteOfferTemplateRow(tmplId) {
+  if(!confirm('Delete this letter template?')) return;
+  const res=await api(`/api/recruitment/offer-letter-templates/${tmplId}`,{method:'DELETE'});
+  if(!res||!res.ok){const d=await res?.json().catch(()=>({}));alert(d?.detail||'Failed to delete');return;}
+  loadOfferTemplates();
 }
 
 async function openOfferView(offerId) {
