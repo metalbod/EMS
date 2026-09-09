@@ -24,7 +24,7 @@ const HR_STAFF_ROLES = ['hr_manager','hr_admin'];                  // no superad
 const HR_MANAGER_ONLY_ROLES = ['superadmin','hr_manager'];         // no hr_admin
 const COMPENSATION_STAFF_ROLES = ['hr_manager','payroll_manager','compensation_manager'];
 const BENEFITS_DASHBOARD_ROLES = ['hr_manager','compensation_manager','manager'];
-const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','leave-my','leave-approvals','leave-holidays','resignation-approvals','projects','timesheet-my','timesheet-approvals','overtime-my','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','comp-paygrades','comp-joblevels','comp-jobroles','comp-meritcycles','comp-bonusplans','comp-commissions','comp-equity','comp-totalrewards','comp-payequity','ben-plans','ben-periods','ben-lifeevents','ben-claims','ben-compliance','payroll-runs','payroll-my','payroll-myrewards','payroll-mybenefits','perf-my','perf-team','perf-cycles','perf-calibration','attendance-clock','attendance-review','settings-attendance','settings-approval-workflow','settings-roles','settings-document-types','settings-ai-assistant','coming-soon'];
+const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','leave-my','leave-approvals','leave-holidays','resignation-approvals','projects','timesheet-my','timesheet-approvals','overtime-my','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','comp-paygrades','comp-joblevels','comp-jobroles','comp-meritcycles','comp-bonusplans','comp-commissions','comp-equity','comp-totalrewards','comp-payequity','ben-plans','ben-periods','ben-lifeevents','ben-claims','ben-compliance','payroll-runs','payroll-my','payroll-myrewards','payroll-mybenefits','perf-my','perf-team','perf-cycles','perf-calibration','attendance-clock','attendance-review','settings-attendance','settings-approval-workflow','settings-roles','settings-document-types','settings-offer-letter-templates','settings-ai-assistant','coming-soon'];
 
 // ---------------------------------------------------------------------------
 // Global loading indicator
@@ -510,6 +510,7 @@ function applyRoleUI() {
   document.getElementById('nav-approval-workflow')?.classList.toggle('hidden', !canApprovalWorkflow);
   document.getElementById('nav-roles')?.classList.toggle('hidden', !canRoles);
   document.getElementById('nav-document-types')?.classList.toggle('hidden', !canDocTypes);
+  document.getElementById('nav-offer-letter-templates')?.classList.toggle('hidden', !canManage);
   document.getElementById('nav-ai-assistant-settings')?.classList.toggle('hidden', !canAiSettings);
 
   // Compensation: its own top-level menu, visible to HR Manager, Payroll
@@ -544,7 +545,6 @@ function applyRoleUI() {
   document.getElementById('startOffboardingBtn')?.classList.toggle('hidden',!canManageOb);
   document.getElementById('obSubTab_onboarding_templates')?.classList.toggle('hidden',!canManageOb);
   document.getElementById('obSubTab_offboarding_templates')?.classList.toggle('hidden',!canManageOb);
-  document.getElementById('offersSubTab_templates')?.classList.toggle('hidden',!canManageOb);
   // LD buttons
   document.getElementById('ldAddCourseBtn')?.classList.toggle('hidden',!canManageOb);
   // Role switcher — show if user has more than one assigned role
@@ -617,7 +617,7 @@ function showPage(page) {
     dashboard: currentUser?.role === 'superadmin' ? 'Dashboard' : 'Home',
     institutions:'Institutions', employees:'Employee List',
     orgchart:'Org Chart', audit:'Audit Log', users:'User Management', 'coming-soon':'Coming Soon',
-    requisitions:'Job Requisitions', candidates:'Candidate Bank', interviews:'Interviews', offers:'Offers & Letters',
+    requisitions:'Job Requisitions', candidates:'Candidate Bank', interviews:'Interviews', offers:'Stationery',
     onboarding:'Onboarding', offboarding:'Offboarding',
     'ld-catalog':'Course Catalog', 'ld-trainings':'My Trainings',
     'leave-my':'My Leave', 'leave-approvals':'Leave Approvals', 'leave-holidays':'Holiday Manager',
@@ -650,6 +650,7 @@ function showPage(page) {
     'settings-approval-workflow':'Settings — Approval Workflows',
     'settings-roles':'Settings — Roles',
     'settings-document-types':'Settings — Document Types',
+    'settings-offer-letter-templates':'Settings — Letter Templates',
     'settings-ai-assistant':'Settings — AI Assistant'
   };
   document.getElementById('pageTitle').textContent = titles[page] || page;
@@ -707,6 +708,7 @@ function showPage(page) {
   if (page === 'settings-approval-workflow') loadApprovalWorkflowPage();
   if (page === 'settings-roles') loadRolesPage();
   if (page === 'settings-document-types') loadEmployeeDocTypesPage();
+  if (page === 'settings-offer-letter-templates') loadOfferTemplates();
   if (page === 'settings-ai-assistant') loadAiAssistantSettingsPage();
 }
 

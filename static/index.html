@@ -178,7 +178,7 @@
           </div>
           <div class="nav-sub-item" onclick="showPage('offers');closeBurgerMenu();" data-page="offers">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
-            Offers &amp; Letters
+            Stationery
           </div>
         </div>
       </div>
@@ -325,6 +325,10 @@
           <div id="nav-document-types" class="hidden nav-sub-item" onclick="showPage('settings-document-types');closeBurgerMenu();" data-page="settings-document-types">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
             Document Types
+          </div>
+          <div id="nav-offer-letter-templates" class="hidden nav-sub-item" onclick="showPage('settings-offer-letter-templates');closeBurgerMenu();" data-page="settings-offer-letter-templates">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+            Letter Templates
           </div>
           <div id="nav-ai-assistant-settings" class="hidden nav-sub-item" onclick="showPage('settings-ai-assistant');closeBurgerMenu();" data-page="settings-ai-assistant">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
@@ -1223,57 +1227,27 @@
 
       <!-- OFFERS & LETTERS -->
       <div id="page-offers" class="hidden">
-        <div class="flex items-center gap-1 mb-5 border-b border-slate-200">
-          <button id="offersSubTab_letters" class="view-tab-btn view-tab-active px-4 py-3 text-sm" onclick="switchOffersSubTab('letters')">Letters</button>
-          <button id="offersSubTab_templates" class="view-tab-btn hidden px-4 py-3 text-sm" onclick="switchOffersSubTab('templates')">Manage Templates</button>
+        <div class="flex justify-end mb-5">
+          <button id="addOfferBtn" onclick="openOfferModal()" class="btn-primary hidden flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Generate Letter
+          </button>
         </div>
-
-        <div id="offersSubPanel_letters">
-          <div class="flex justify-end mb-5">
-            <button id="addOfferBtn" onclick="openOfferModal()" class="btn-primary hidden flex items-center gap-2">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-              Generate Letter
-            </button>
-          </div>
-          <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
-            <table class="w-full text-sm">
-              <thead class="bg-slate-50 border-b border-slate-200">
-                <tr>
-                  <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Candidate</th>
-                  <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase hidden md:table-cell">Position</th>
-                  <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Type</th>
-                  <th class="text-left px-4 py-3 text-xs font-semibond text-slate-500 uppercase hidden lg:table-cell">Salary</th>
-                  <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
-                  <th class="px-4 py-3"></th>
-                </tr>
-              </thead>
-              <tbody id="offerTableBody" class="divide-y divide-slate-100"></tbody>
-            </table>
-            <p id="offerEmpty" class="hidden text-center text-slate-400 text-sm py-12">No offers or letters yet.</p>
-          </div>
-        </div>
-
-        <div id="offersSubPanel_templates" class="hidden">
-          <div class="flex justify-end mb-5">
-            <button onclick="openOfferTemplateModal()" class="btn-primary flex items-center gap-2">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-              Add Template
-            </button>
-          </div>
-          <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
-            <table class="w-full text-sm">
-              <thead class="bg-slate-50 border-b border-slate-200">
-                <tr>
-                  <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Name</th>
-                  <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Type</th>
-                  <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Default</th>
-                  <th class="px-4 py-3"></th>
-                </tr>
-              </thead>
-              <tbody id="offerTemplateTableBody" class="divide-y divide-slate-100"></tbody>
-            </table>
-            <p id="offerTemplateEmpty" class="hidden text-center text-slate-400 text-sm py-12">No letter templates yet — offers will use a built-in default until you add one.</p>
-          </div>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Recipient</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase hidden md:table-cell">Role</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Type</th>
+                <th class="text-left px-4 py-3 text-xs font-semibond text-slate-500 uppercase hidden lg:table-cell">Salary</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+                <th class="px-4 py-3"></th>
+              </tr>
+            </thead>
+            <tbody id="offerTableBody" class="divide-y divide-slate-100"></tbody>
+          </table>
+          <p id="offerEmpty" class="hidden text-center text-slate-400 text-sm py-12">No offers or letters yet.</p>
         </div>
       </div>
 
@@ -2162,6 +2136,31 @@
         </div>
         <div id="employeeDocTypeList" class="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100 px-4"></div>
         <p id="employeeDocTypeEmpty" class="hidden text-sm text-slate-400 text-center py-8">No document types yet.</p>
+      </div>
+
+      <!-- SETTINGS: Letter Templates (Offer / Decline / Confirmation) -->
+      <div id="page-settings-offer-letter-templates" class="hidden">
+        <div class="flex justify-between items-center mb-4">
+          <p class="text-xs text-slate-400 max-w-2xl">Wording used when HR generates an Offer, Decline, or Confirmation letter — see Recruitment &gt; Stationery, and the Employee detail page's "Confirm Probation" action. One default template per letter type; letters use a built-in default until you add one.</p>
+          <button onclick="openOfferTemplateModal()" class="btn-primary shrink-0 flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Add Template
+          </button>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Name</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Type</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Default</th>
+                <th class="px-4 py-3"></th>
+              </tr>
+            </thead>
+            <tbody id="offerTemplateTableBody" class="divide-y divide-slate-100"></tbody>
+          </table>
+          <p id="offerTemplateEmpty" class="hidden text-center text-slate-400 text-sm py-12">No letter templates yet — offers will use a built-in default until you add one.</p>
+        </div>
       </div>
 
       <!-- SETTINGS: AI Assistant (hr_manager only — BYOK Anthropic key) -->
@@ -3576,6 +3575,7 @@
     <div class="flex gap-2 px-6 py-4 border-t border-slate-200">
       <button id="viewEditBtn" onclick="editFromView()" class="btn-primary hidden">Edit</button>
       <button id="viewToggleBtn" onclick="toggleStatusFromView()" class="btn-ghost hidden"></button>
+      <button id="viewConfirmProbationBtn" onclick="confirmProbationFromView()" class="btn-ghost hidden">Confirm Probation</button>
       <button id="viewFileResignBtn" onclick="fileResignationFromView()" class="btn-ghost hidden text-red-600">File Resignation</button>
       <div class="flex-1"></div>
       <button onclick="closeViewModal()" class="btn-ghost">Close</button>
@@ -4563,11 +4563,13 @@
     <form onsubmit="submitOfferForm(event)" class="p-6 space-y-4">
       <input type="hidden" id="offerId"/>
       <div class="grid grid-cols-2 gap-4">
-        <div class="col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1">Candidate <span class="text-red-500">*</span></label><select id="offerCandId" class="inp" required onchange="onOfferCandChange()"></select></div>
+        <div id="offerCandWrap" class="col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1">Candidate <span class="text-red-500">*</span></label><select id="offerCandId" class="inp" required onchange="onOfferCandChange()"></select></div>
+        <div id="offerEmpWrap" class="col-span-2 hidden"><label class="block text-sm font-medium text-slate-700 mb-1">Employee <span class="text-red-500">*</span></label><select id="offerEmpId" class="inp"></select></div>
         <div><label class="block text-sm font-medium text-slate-700 mb-1">Letter Type</label>
           <select id="offerType" class="inp" onchange="onOfferTypeChange()">
             <option value="Offer">Offer Letter</option>
             <option value="Decline">Decline Letter</option>
+            <option value="Confirmation">Confirmation Letter</option>
           </select>
         </div>
         <div class="col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1">Template</label><select id="offerTemplateId" class="inp"></select></div>
@@ -4631,6 +4633,7 @@
           <select id="offerTemplateType" class="inp" required>
             <option value="Offer">Offer Letter</option>
             <option value="Decline">Decline Letter</option>
+            <option value="Confirmation">Confirmation Letter</option>
           </select>
         </div>
         <div><label class="block text-sm font-medium text-slate-700 mb-1">Name <span class="text-red-500">*</span></label><input id="offerTemplateName" type="text" class="inp" placeholder="e.g. Standard Offer Letter" required/></div>
@@ -4638,7 +4641,7 @@
       <div>
         <label class="block text-sm font-medium text-slate-700 mb-1">Letter Body <span class="text-red-500">*</span></label>
         <textarea id="offerTemplateBody" class="inp font-mono text-xs" style="height:16rem;resize:vertical" required></textarea>
-        <p class="text-xs text-slate-400 mt-1">Placeholders: <code>${candidate_name}</code> <code>${candidate_email}</code> <code>${position}</code> <code>${department}</code> <code>${employment_type}</code> <code>${salary_offered}</code> <code>${start_date}</code> <code>${expiry_date}</code> <code>${today}</code> — left as-is in the letter if unused or left blank.</p>
+        <p class="text-xs text-slate-400 mt-1">Placeholders: <code>${recipient_name}</code> <code>${recipient_email}</code> <code>${position}</code> <code>${department}</code> <code>${employment_type}</code> <code>${salary_offered}</code> <code>${start_date}</code> <code>${expiry_date}</code> <code>${probation_end_date}</code> <code>${today}</code> — left as-is in the letter if unused or left blank. Offer/Decline templates may also use <code>${candidate_name}</code>/<code>${candidate_email}</code>, kept as aliases of recipient_name/recipient_email.</p>
       </div>
       <label class="flex items-center gap-2 text-sm text-slate-700">
         <input type="checkbox" id="offerTemplateDefault"/> Make this the default template for this letter type

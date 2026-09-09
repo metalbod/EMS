@@ -715,15 +715,9 @@ async function submitScore(e) {
 }
 
 // ---------------------------------------------------------------------------
-// Recruitment — Offers & Letters
+// Recruitment — Stationery (Offer / Decline / Confirmation letters)
 // ---------------------------------------------------------------------------
-function switchOffersSubTab(tab) {
-  document.getElementById('offersSubTab_letters').classList.toggle('view-tab-active', tab==='letters');
-  document.getElementById('offersSubTab_templates').classList.toggle('view-tab-active', tab==='templates');
-  document.getElementById('offersSubPanel_letters').classList.toggle('hidden', tab!=='letters');
-  document.getElementById('offersSubPanel_templates').classList.toggle('hidden', tab!=='templates');
-  if(tab==='templates') loadOfferTemplates();
-}
+const OFFER_TYPE_BADGE = { Offer: 'status-positive', Confirmation: 'status-info', Decline: 'status-negative' };
 
 async function loadOffers() {
   await loadRecruitMeta();
@@ -738,9 +732,9 @@ async function loadOffers() {
   empty?.classList.add('hidden');
   body.innerHTML=rows.map(o=>`
     <tr class="hover:bg-slate-50 cursor-pointer" onclick="openOfferView(${o.id})">
-      <td class="px-4 py-3 font-medium text-slate-800">${esc(o.candidate_name)}</td>
-      <td class="px-4 py-3 text-slate-600 hidden md:table-cell">${esc(o.requisition_title||'—')}</td>
-      <td class="px-4 py-3"><span class="badge ${o.offer_type==='Offer'?'status-positive':'status-negative'}">${esc(o.offer_type)}</span></td>
+      <td class="px-4 py-3 font-medium text-slate-800">${esc(o.recipient_name)}</td>
+      <td class="px-4 py-3 text-slate-600 hidden md:table-cell">${esc(o.recipient_role||'—')}</td>
+      <td class="px-4 py-3"><span class="badge ${OFFER_TYPE_BADGE[o.offer_type]||'status-neutral'}">${esc(o.offer_type)}</span></td>
       <td class="px-4 py-3 text-slate-700 hidden lg:table-cell">${fmtCurrency(o.salary_offered)}</td>
       <td class="px-4 py-3"><span class="badge ${offerStatusBadge(o.status)}">${esc(o.status)}</span></td>
       <td class="px-4 py-3 text-right whitespace-nowrap">
@@ -770,7 +764,16 @@ async function populateOfferTemplateSelect(offerType, selectedId=null) {
   if(selectedId!=null) sel.value=String(selectedId);
 }
 
-async function openOfferModal(offerId=null, preCandId=null) {
+// Triggered from the Employee detail view's "Confirm Probation" button
+// (static/js/employees.js's viewEmployee sets that button's visibility) —
+// mirrors resignation.js's fileResignationFromView for the same "act on
+// the employee currently open in the view modal" pattern.
+function confirmProbationFromView() {
+  if (!viewingId) return;
+  openOfferModal(null, null, viewingId);
+}
+
+async function openOfferModal(offerId=null, preCandId=null, preEmpId=null) {
   await loadRecruitMeta();
   document.getElementById('offerId').value=offerId||'';
   let cands=recruitCandidates;
@@ -778,12 +781,18 @@ async function openOfferModal(offerId=null, preCandId=null) {
   const cs=document.getElementById('offerCandId');
   cs.innerHTML='<option value="">Select candidate…</option>';
   cands.forEach(c=>{const o=document.createElement('option');o.value=c.id;o.textContent=`${esc(c.full_name)} [${esc(c.stage)}]`;if(preCandId&&c.id===preCandId)o.selected=true;cs.appendChild(o);});
+  // Populate active employees (for a Confirmation letter)
+  let emps=employees;
+  if(!emps?.length){const r=await api('/api/employees');if(r&&r.ok){emps=await r.json();}}
+  const es=document.getElementById('offerEmpId');
+  es.innerHTML='<option value="">Select employee…</option>';
+  (emps||[]).filter(e=>e.status==='Active').forEach(e=>{const o=document.createElement('option');o.value=e.employee_id;o.textContent=`${esc(displayName(e.full_name,e.preferred_name))} [${esc(e.employee_id)}]`;if(preEmpId&&e.employee_id===preEmpId)o.selected=true;es.appendChild(o);});
   // Populate reqs
   const rs=document.getElementById('offerReqId');
   rs.innerHTML='<option value="">None</option>';
   const rr=await api('/api/recruitment/requisitions?status=Approved');
   if(rr&&rr.ok){const reqs=await rr.json();reqs.forEach(r=>{const o=document.createElement('option');o.value=r.id;o.textContent=`${esc(r.title)}`;rs.appendChild(o);});}
-  document.getElementById('offerType').value='Offer';
+  document.getElementById('offerType').value=preEmpId?'Confirmation':'Offer';
   document.getElementById('offerSalary').value='';
   document.getElementById('offerStart').value='';
   document.getElementById('offerExpiry').value='';
@@ -798,19 +807,28 @@ function toggleOfferFields() {
   ['offerSalaryWrap','offerStartWrap','offerExpiryWrap'].forEach(id=>document.getElementById(id).classList.toggle('hidden',!isOffer));
 }
 async function onOfferTypeChange() {
+  const type=document.getElementById('offerType').value;
+  const isConfirmation=type==='Confirmation';
+  document.getElementById('offerCandWrap').classList.toggle('hidden', isConfirmation);
+  document.getElementById('offerCandId').required=!isConfirmation;
+  document.getElementById('offerEmpWrap').classList.toggle('hidden', !isConfirmation);
+  document.getElementById('offerEmpId').required=isConfirmation;
+  document.getElementById('offerReqWrap').classList.toggle('hidden', isConfirmation);
   toggleOfferFields();
-  await populateOfferTemplateSelect(document.getElementById('offerType').value);
+  await populateOfferTemplateSelect(type);
 }
 async function previewLetter() {
-  const candId=parseInt(document.getElementById('offerCandId').value);
   const offerType=document.getElementById('offerType').value;
+  const isConfirmation=offerType==='Confirmation';
+  const candId=isConfirmation?null:parseInt(document.getElementById('offerCandId').value);
+  const empId=isConfirmation?(document.getElementById('offerEmpId').value||null):null;
   const reqId=parseInt(document.getElementById('offerReqId').value)||null;
   const templateId=parseInt(document.getElementById('offerTemplateId').value)||null;
   const salary=parseFloat(document.getElementById('offerSalary').value)||null;
   const start=document.getElementById('offerStart').value||null;
   const expiry=document.getElementById('offerExpiry').value||null;
-  if(!candId){alert('Select a candidate first');return;}
-  const body={candidate_id:candId,offer_type:offerType,requisition_id:reqId,template_id:templateId,
+  if(isConfirmation ? !empId : !candId){alert(isConfirmation?'Select an employee first':'Select a candidate first');return;}
+  const body={candidate_id:candId,employee_id:empId,offer_type:offerType,requisition_id:reqId,template_id:templateId,
     salary_offered:salary,start_date:start,expiry_date:expiry,letter_content:''};
   const res=await api('/api/recruitment/offers',{method:'POST',body:JSON.stringify(body)});
   if(!res||!res.ok){const d=await res?.json();alert(d?.detail||'Failed to generate letter');return;}
@@ -827,9 +845,12 @@ async function submitOfferForm(e) {
   const existingId=document.getElementById('offerId').value;
   // If already saved via preview, just close
   if(existingId){closeOfferModal();loadOffers();return;}
+  const offerType=document.getElementById('offerType').value;
+  const isConfirmation=offerType==='Confirmation';
   const body={
-    candidate_id:parseInt(document.getElementById('offerCandId').value),
-    offer_type:document.getElementById('offerType').value,
+    candidate_id:isConfirmation?null:(parseInt(document.getElementById('offerCandId').value)||null),
+    employee_id:isConfirmation?(document.getElementById('offerEmpId').value||null):null,
+    offer_type:offerType,
     requisition_id:parseInt(document.getElementById('offerReqId').value)||null,
     template_id:parseInt(document.getElementById('offerTemplateId').value)||null,
     salary_offered:parseFloat(document.getElementById('offerSalary').value)||null,
@@ -837,7 +858,9 @@ async function submitOfferForm(e) {
     expiry_date:document.getElementById('offerExpiry').value||null,
     letter_content:document.getElementById('offerLetterContent').value||'',
   };
-  if(!body.candidate_id){err.textContent='Select a candidate';err.classList.remove('hidden');return;}
+  if(isConfirmation ? !body.employee_id : !body.candidate_id){
+    err.textContent=isConfirmation?'Select an employee':'Select a candidate';err.classList.remove('hidden');return;
+  }
   const res=await api('/api/recruitment/offers',{method:'POST',body:JSON.stringify(body)});
   if(!res||!res.ok){const d=await res?.json();err.textContent=d?.detail||'Failed';err.classList.remove('hidden');return;}
   closeOfferModal(); loadOffers();

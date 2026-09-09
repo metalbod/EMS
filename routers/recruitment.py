@@ -22,7 +22,7 @@ router = APIRouter()
 
 CANDIDATE_STAGES  = ["New","Screening","Interview","Pending Checks","Offer","Hired","Rejected by Candidate","Rejected by Company","Withdrawn"]
 INTERVIEW_TYPES   = ["Phone","Video","In-Person","Technical","Panel"]
-OFFER_TYPES       = ["Offer","Decline"]
+OFFER_TYPES       = ["Offer","Decline","Confirmation"]
 OFFER_STATUSES    = ["Draft","Sent","Accepted","Rejected","Withdrawn"]
 INTERVIEW_STATUSES= ["Scheduled","Completed","Cancelled","No-Show"]
 REQ_STATUSES      = ["Draft","Pending Approval","Approved","Rejected","Closed","Filled"]
@@ -124,7 +124,11 @@ class ScoreIn(BaseModel):
 
 
 class OfferIn(BaseModel):
-    candidate_id: int
+    # Exactly one of candidate_id/employee_id, per offer_type: Offer/Decline
+    # are about a recruitment candidate; Confirmation (probation passed) is
+    # about an existing employee — see offers.employee_id's migration.
+    candidate_id: Optional[int] = None
+    employee_id: Optional[str] = None
     requisition_id: Optional[int] = None
     offer_type: str = "Offer"
     salary_offered: Optional[float] = None
@@ -152,6 +156,17 @@ def _log_candidate(conn, inst_id: int, cand_id: int, action: str, detail: str, b
     conn.execute(
         "INSERT INTO candidate_audit_log (institution_id,candidate_id,action,detail,performed_by) VALUES (?,?,?,?,?)",
         (inst_id, cand_id, action, detail, by)
+    )
+
+
+def _log_employee_note(conn, inst_id: int, employee_id: str, body: str, by: str):
+    """Confirmation letters are about an employee, not a candidate — there's
+    no candidate_audit_log to write to, so this uses hr_notes instead,
+    same table/shape routers/employees.py already uses for its own
+    system-generated "Employee record created/updated" entries."""
+    conn.execute(
+        "INSERT INTO hr_notes (institution_id, employee_id, note_type, body, created_by) VALUES (?,?,?,?,?)",
+        (inst_id, employee_id, "general", body, by)
     )
 
 
@@ -187,6 +202,14 @@ def _get_req(conn, inst_id, req_id):
         "SELECT * FROM job_requisitions WHERE id=? AND institution_id=?", (req_id, inst_id)
     ).fetchone()
     if not row: raise HTTPException(404, "Requisition not found")
+    return dict(row)
+
+
+def _get_employee_for_letter(conn, inst_id, employee_id):
+    row = conn.execute(
+        "SELECT * FROM employees WHERE employee_id=? AND institution_id=?", (employee_id, inst_id)
+    ).fetchone()
+    if not row: raise HTTPException(404, "Employee not found")
     return dict(row)
 
 
@@ -277,30 +300,90 @@ Human Resources
 [Company Name]
 """
 
+# Confirmation: sent to an existing *employee* once HR decides they've
+# passed probation (Employee detail page's "Confirm Probation" action) —
+# unlike Offer/Decline, there's no candidate/requisition behind it, so it
+# renders from the employee's own record instead (see _offer_letter_context).
+_DEFAULT_CONFIRMATION_LETTER_TEMPLATE_BODY = """[COMPANY LETTERHEAD]
 
-def _offer_letter_context(cand, req, offer) -> Dict[str, str]:
+${today}
+
+${recipient_name}
+${recipient_email}
+
+Dear ${recipient_name},
+
+RE: Confirmation of Employment — ${position}
+
+We are pleased to inform you that, following the successful completion of your probationary period (ended ${probation_end_date}), your employment as ${position} in the ${department} department has been confirmed with effect from ${today}.
+
+All other terms and conditions of your employment remain unchanged.
+
+We look forward to your continued contribution to the team.
+
+Yours sincerely,
+
+
+_______________________
+Human Resources
+[Company Name]
+"""
+
+
+def _offer_letter_context(cand, req, offer, emp=None) -> Dict[str, str]:
     """Placeholder values ($name / ${name} in a template body — see
-    string.Template) available to every offer letter template, regardless
-    of offer_type. Unused placeholders are simply left as literal text by
+    string.Template) available to every letter template, regardless of
+    offer_type. Unused placeholders are simply left as literal text by
     safe_substitute, and unknown/extra dict keys are ignored, so templates
-    don't need to reference every key here."""
+    don't need to reference every key here.
+
+    emp is set instead of cand for a Confirmation letter (about an existing
+    employee, not a recruitment candidate) — recipient_name/recipient_email
+    are the type-agnostic names for who the letter addresses; candidate_name/
+    candidate_email are kept as aliases pointing at the same values so
+    Offer/Decline templates written before this existed keep working
+    unchanged."""
     salary = offer.get("salary_offered")
+    if emp:
+        name = emp["full_name"]
+        email = emp.get("work_email") or emp.get("personal_email") or ""
+        position = emp.get("designation") or "your role"
+        department = emp.get("department") or ""
+        employment_type = emp.get("employment_type") or ""
+        start_date = offer.get("start_date") or emp.get("start_date") or ""
+    else:
+        name = cand["full_name"]
+        email = cand.get("email", "") or ""
+        position = (req.get("title") if req else None) or "the position"
+        department = (req.get("department") if req else None) or ""
+        employment_type = (req.get("employment_type") if req else None) or ""
+        start_date = offer.get("start_date") or ""
     return {
-        "candidate_name": cand["full_name"],
-        "candidate_email": cand.get("email", "") or "",
+        "recipient_name": name,
+        "recipient_email": email,
+        "candidate_name": name,
+        "candidate_email": email,
         "today": datetime.now().strftime("%d %B %Y"),
-        "position": (req.get("title") if req else None) or "the position",
-        "department": (req.get("department") if req else None) or "",
-        "employment_type": (req.get("employment_type") if req else None) or "",
+        "position": position,
+        "department": department,
+        "employment_type": employment_type,
         "salary_offered": f"RM {salary:,.2f} per month" if salary else "",
-        "start_date": offer.get("start_date") or "",
+        "start_date": start_date,
         "expiry_date": offer.get("expiry_date") or "",
         "offer_type": offer.get("offer_type", ""),
+        "probation_end_date": (emp.get("probation_end_date") if emp else None) or "",
     }
 
 
-def _render_offer_letter(template_body: str, cand, req, offer) -> str:
-    return Template(template_body).safe_substitute(_offer_letter_context(cand, req, offer))
+def _render_offer_letter(template_body: str, cand, req, offer, emp=None) -> str:
+    return Template(template_body).safe_substitute(_offer_letter_context(cand, req, offer, emp))
+
+
+_DEFAULT_LETTER_TEMPLATE_BODIES = {
+    "Offer": _DEFAULT_OFFER_LETTER_TEMPLATE_BODY,
+    "Decline": _DEFAULT_DECLINE_LETTER_TEMPLATE_BODY,
+    "Confirmation": _DEFAULT_CONFIRMATION_LETTER_TEMPLATE_BODY,
+}
 
 
 def _get_or_create_default_offer_template(conn, inst_id: int, offer_type: str) -> Dict[str, Any]:
@@ -314,7 +397,7 @@ def _get_or_create_default_offer_template(conn, inst_id: int, offer_type: str) -
     ).fetchone()
     if row:
         return dict(row)
-    body = _DEFAULT_OFFER_LETTER_TEMPLATE_BODY if offer_type == "Offer" else _DEFAULT_DECLINE_LETTER_TEMPLATE_BODY
+    body = _DEFAULT_LETTER_TEMPLATE_BODIES[offer_type]
     conn.execute(
         "INSERT INTO offer_letter_templates (institution_id,offer_type,name,body,is_default) VALUES (?,?,?,?,1)",
         (inst_id, offer_type, f"Default {offer_type} Letter", body)
@@ -856,9 +939,18 @@ def list_offers(conn,
 ):
     require_permission(conn, user, "recruitment.create_edit_requisition_candidate_interview_offer")
     inst_id = need_inst(user)
-    q = """SELECT o.*, c.full_name AS candidate_name, r.title AS requisition_title
+    # candidate_id/employee_id are mutually exclusive per row (see
+    # offers.employee_id's migration) — LEFT JOIN both and coalesce a
+    # display name/designation so Confirmation letters (employee_id set,
+    # no candidate/requisition) render in the same list as Offer/Decline
+    # letters (candidate_id set) rather than needing a separate screen.
+    q = """SELECT o.*,
+                  COALESCE(c.full_name, e.full_name) AS recipient_name,
+                  COALESCE(r.title, e.designation) AS recipient_role,
+                  c.full_name AS candidate_name, r.title AS requisition_title
            FROM offers o
-           JOIN candidates c ON c.id = o.candidate_id
+           LEFT JOIN candidates c ON c.id = o.candidate_id
+           LEFT JOIN employees e ON e.employee_id = o.employee_id AND e.institution_id = o.institution_id
            LEFT JOIN job_requisitions r ON r.id = o.requisition_id
            WHERE o.institution_id=?"""
     p = [inst_id]
@@ -874,11 +966,22 @@ def list_offers(conn,
 def create_offer(conn, body: OfferIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     require_permission(conn, user, "recruitment.create_edit_requisition_candidate_interview_offer")
     inst_id = need_inst(user)
-    cand = _get_candidate(conn, inst_id, body.candidate_id)
-    req = None
-    if body.requisition_id:
-        r = conn.execute("SELECT * FROM job_requisitions WHERE id=?", (body.requisition_id,)).fetchone()
-        req = dict(r) if r else None
+    if body.offer_type not in OFFER_TYPES:
+        raise HTTPException(400, f"offer_type must be one of: {', '.join(OFFER_TYPES)}")
+
+    cand, req, emp = None, None, None
+    if body.offer_type == "Confirmation":
+        if not body.employee_id:
+            raise HTTPException(400, "employee_id is required for a Confirmation letter")
+        emp = _get_employee_for_letter(conn, inst_id, body.employee_id)
+    else:
+        if not body.candidate_id:
+            raise HTTPException(400, "candidate_id is required")
+        cand = _get_candidate(conn, inst_id, body.candidate_id)
+        if body.requisition_id:
+            r = conn.execute("SELECT * FROM job_requisitions WHERE id=?", (body.requisition_id,)).fetchone()
+            req = dict(r) if r else None
+
     # Auto-generate letter if not provided, from the requested template (or
     # this offer_type's default, created lazily if this is the first offer
     # of its type for the institution).
@@ -895,23 +998,29 @@ def create_offer(conn, body: OfferIn, user: dict = Depends(get_current_user)) ->
             tmpl = dict(tmpl)
         else:
             tmpl = _get_or_create_default_offer_template(conn, inst_id, body.offer_type)
-        letter = _render_offer_letter(tmpl["body"], cand, req, body.model_dump())
+        letter = _render_offer_letter(tmpl["body"], cand, req, body.model_dump(), emp)
     conn.execute("""
-        INSERT INTO offers (institution_id,candidate_id,requisition_id,offer_type,
+        INSERT INTO offers (institution_id,candidate_id,employee_id,requisition_id,offer_type,
             salary_offered,start_date,expiry_date,letter_content,created_by)
-        VALUES (?,?,?,?,?,?,?,?,?)
-    """, (inst_id, body.candidate_id, body.requisition_id, body.offer_type,
+        VALUES (?,?,?,?,?,?,?,?,?,?)
+    """, (inst_id, body.candidate_id, body.employee_id, body.requisition_id, body.offer_type,
           body.salary_offered, body.start_date, body.expiry_date, letter, user["username"]))
     oid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-    # Move candidate stage. A "Decline" letter is HR sending a regret
-    # letter (company-initiated), so it maps to Rejected by Company —
-    # distinct from a candidate declining/withdrawing themselves.
-    new_stage = "Offer" if body.offer_type == "Offer" else "Rejected by Company"
-    _transition_candidate_stage(conn, inst_id, body.candidate_id, new_stage)
-    sal = f"RM {body.salary_offered:,.0f}" if body.salary_offered else "—"
-    _log_candidate(conn, inst_id, body.candidate_id, f"{body.offer_type} Letter Generated",
-        f"{body.offer_type} letter created" + (f" | Salary: {sal}" if body.offer_type == "Offer" else ""),
-        user["username"])
+    if cand:
+        # Move candidate stage. A "Decline" letter is HR sending a regret
+        # letter (company-initiated), so it maps to Rejected by Company —
+        # distinct from a candidate declining/withdrawing themselves.
+        new_stage = "Offer" if body.offer_type == "Offer" else "Rejected by Company"
+        _transition_candidate_stage(conn, inst_id, body.candidate_id, new_stage)
+        sal = f"RM {body.salary_offered:,.0f}" if body.salary_offered else "—"
+        _log_candidate(conn, inst_id, body.candidate_id, f"{body.offer_type} Letter Generated",
+            f"{body.offer_type} letter created" + (f" | Salary: {sal}" if body.offer_type == "Offer" else ""),
+            user["username"])
+    else:
+        # Confirmation: no candidate stage to move — logged against the
+        # employee's own record instead (see _log_employee_note).
+        _log_employee_note(conn, inst_id, body.employee_id,
+            "Confirmation letter generated (probation passed).", user["username"])
     conn.commit()
     row = conn.execute("SELECT * FROM offers WHERE id=?", (oid,)).fetchone()
     return dict(row)
@@ -922,10 +1031,13 @@ def create_offer(conn, body: OfferIn, user: dict = Depends(get_current_user)) ->
 def get_offer(conn, offer_id: int, user: dict = Depends(get_current_user)) -> Optional[Dict[str, Any]]:
     require_permission(conn, user, "recruitment.create_edit_requisition_candidate_interview_offer")
     inst_id = need_inst(user)
-    row = conn.execute(
-        "SELECT o.*, c.full_name AS candidate_name FROM offers o JOIN candidates c ON c.id=o.candidate_id WHERE o.id=? AND o.institution_id=?",
-        (offer_id, inst_id)
-    ).fetchone()
+    row = conn.execute("""
+        SELECT o.*, COALESCE(c.full_name, e.full_name) AS candidate_name
+        FROM offers o
+        LEFT JOIN candidates c ON c.id = o.candidate_id
+        LEFT JOIN employees e ON e.employee_id = o.employee_id AND e.institution_id = o.institution_id
+        WHERE o.id=? AND o.institution_id=?
+    """, (offer_id, inst_id)).fetchone()
     if not row: raise HTTPException(404, "Offer not found")
     return dict(row)
 
@@ -946,8 +1058,11 @@ def delete_offer(conn, offer_id: int, user: dict = Depends(get_current_user)) ->
     if row["status"] == "Accepted":
         raise HTTPException(400, "Cannot delete an accepted offer — it's a finalized record.")
     conn.execute("DELETE FROM offers WHERE id=?", (offer_id,))
-    _log_candidate(conn, inst_id, row["candidate_id"], "Offer Deleted",
-                   f"{row['offer_type']} letter deleted (was {row['status']})", user["username"])
+    detail = f"{row['offer_type']} letter deleted (was {row['status']})"
+    if row["candidate_id"]:
+        _log_candidate(conn, inst_id, row["candidate_id"], "Offer Deleted", detail, user["username"])
+    else:
+        _log_employee_note(conn, inst_id, row["employee_id"], detail, user["username"])
     conn.commit()
 
 
@@ -968,8 +1083,11 @@ def update_offer_status(conn, offer_id: int, body: OfferStatusIn,
                                 (row["candidate_id"], inst_id)).fetchone()
         if cand_row and cand_row["stage"] != "Offer":
             _transition_candidate_stage(conn, inst_id, row["candidate_id"], "Offer")
-    _log_candidate(conn, inst_id, row["candidate_id"], "Offer Status Updated",
-        f"{row['offer_type']} letter status changed to '{body.status}'", user["username"])
+    detail = f"{row['offer_type']} letter status changed to '{body.status}'"
+    if row["candidate_id"]:
+        _log_candidate(conn, inst_id, row["candidate_id"], "Offer Status Updated", detail, user["username"])
+    else:
+        _log_employee_note(conn, inst_id, row["employee_id"], detail, user["username"])
     conn.commit()
     return {"ok": True, "status": body.status}
 
@@ -983,13 +1101,16 @@ def generate_letter(conn, offer_id: int, user: dict = Depends(get_current_user))
     row = conn.execute("SELECT * FROM offers WHERE id=? AND institution_id=?", (offer_id, inst_id)).fetchone()
     if not row: raise HTTPException(404, "Offer not found")
     offer = dict(row)
-    cand = _get_candidate(conn, inst_id, offer["candidate_id"])
-    req = None
-    if offer.get("requisition_id"):
-        r = conn.execute("SELECT * FROM job_requisitions WHERE id=?", (offer["requisition_id"],)).fetchone()
-        req = dict(r) if r else None
+    cand, req, emp = None, None, None
+    if offer.get("employee_id"):
+        emp = _get_employee_for_letter(conn, inst_id, offer["employee_id"])
+    else:
+        cand = _get_candidate(conn, inst_id, offer["candidate_id"])
+        if offer.get("requisition_id"):
+            r = conn.execute("SELECT * FROM job_requisitions WHERE id=?", (offer["requisition_id"],)).fetchone()
+            req = dict(r) if r else None
     tmpl = _get_or_create_default_offer_template(conn, inst_id, offer["offer_type"])
-    letter = _render_offer_letter(tmpl["body"], cand, req, offer)
+    letter = _render_offer_letter(tmpl["body"], cand, req, offer, emp)
     conn.execute("UPDATE offers SET letter_content=? WHERE id=?", (letter, offer_id))
     conn.commit()
     return {"letter_content": letter}

@@ -232,6 +232,12 @@ function viewEmployee(id) {
   document.getElementById('viewEditBtn').classList.toggle('hidden', !canWrite);
   document.getElementById('viewToggleBtn').classList.toggle('hidden', !canToggle);
   document.getElementById('viewFileResignBtn').classList.toggle('hidden', !canWrite || e.status !== 'Active');
+  // Shown once a probation end date is on file at all — HR's own signal
+  // that this employee is (or was) on probation; not gated on the date
+  // having passed, since confirming is an explicit HR decision, not
+  // something this app infers automatically (no cron jobs — see CLAUDE.md).
+  document.getElementById('viewConfirmProbationBtn')?.classList.toggle('hidden',
+    !canWrite || e.status !== 'Active' || !e.probation_end_date);
   const tb = document.getElementById('viewToggleBtn');
   tb.textContent = e.status==='Active' ? 'Deactivate' : 'Activate';
   tb.style.color = e.status==='Active' ? '#dc2626' : '#059669';

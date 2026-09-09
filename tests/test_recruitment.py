@@ -800,6 +800,73 @@ def test_delete_offer_letter_template_not_found_returns_404(client, hr_manager_a
 
 
 # ---------------------------------------------------------------------------
+# Confirmation letters (probation passed) — offers.employee_id, no candidate
+# ---------------------------------------------------------------------------
+def test_create_confirmation_letter_for_employee(client, hr_manager_auth, make_test_employee):
+    emp = make_test_employee(full_name="ZZ Confirmation Candidate", designation="Analyst",
+                              department="Finance", probation_end_date="2026-09-01")
+    offer = client.post("/api/recruitment/offers", headers=hr_manager_auth, json={
+        "offer_type": "Confirmation", "employee_id": emp["employee_id"],
+    }).json()
+    assert offer["employee_id"] == emp["employee_id"]
+    assert offer["candidate_id"] is None
+    assert "Confirmation of Employment" in offer["letter_content"]
+    assert "ZZ Confirmation Candidate" in offer["letter_content"]
+    assert "2026-09-01" in offer["letter_content"]
+
+    notes = client.get(f"/api/employees/{emp['employee_id']}/notes", headers=hr_manager_auth)
+    assert notes.status_code == 200, notes.text
+    assert any("Confirmation letter generated" in n["body"] for n in notes.json())
+
+
+def test_confirmation_letter_requires_employee_id(client, hr_manager_auth):
+    res = client.post("/api/recruitment/offers", headers=hr_manager_auth, json={"offer_type": "Confirmation"})
+    assert res.status_code == 400
+
+
+def test_confirmation_letter_unknown_employee_404s(client, hr_manager_auth):
+    res = client.post("/api/recruitment/offers", headers=hr_manager_auth,
+                       json={"offer_type": "Confirmation", "employee_id": "NOPE0000"})
+    assert res.status_code == 404
+
+
+def test_offer_requires_candidate_id(client, hr_manager_auth):
+    res = client.post("/api/recruitment/offers", headers=hr_manager_auth, json={"offer_type": "Offer"})
+    assert res.status_code == 400
+
+
+def test_list_offers_includes_confirmation_with_recipient_name(client, hr_manager_auth, make_test_employee):
+    emp = make_test_employee(full_name="ZZ Recipient List Candidate", designation="Engineer")
+    offer = client.post("/api/recruitment/offers", headers=hr_manager_auth,
+                         json={"offer_type": "Confirmation", "employee_id": emp["employee_id"]}).json()
+    listing = client.get("/api/recruitment/offers", headers=hr_manager_auth).json()
+    row = next(r for r in listing if r["id"] == offer["id"])
+    assert row["recipient_name"] == "ZZ Recipient List Candidate"
+    assert row["recipient_role"] == "Engineer"
+
+
+def test_delete_confirmation_letter(client, hr_manager_auth, make_test_employee):
+    emp = make_test_employee(full_name="ZZ Delete Confirmation Candidate")
+    offer = client.post("/api/recruitment/offers", headers=hr_manager_auth,
+                         json={"offer_type": "Confirmation", "employee_id": emp["employee_id"]}).json()
+    res = client.delete(f"/api/recruitment/offers/{offer['id']}", headers=hr_manager_auth)
+    assert res.status_code == 204, res.text
+    assert client.get(f"/api/recruitment/offers/{offer['id']}", headers=hr_manager_auth).status_code == 404
+
+
+def test_confirmation_letter_via_custom_template(client, hr_manager_auth, make_test_employee):
+    tmpl = client.post("/api/recruitment/offer-letter-templates", headers=hr_manager_auth, json={
+        "offer_type": "Confirmation", "name": "ZZ Custom Confirmation Template",
+        "body": "Congrats ${recipient_name}, confirmed as ${position} on ${today}.",
+    }).json()
+    emp = make_test_employee(full_name="ZZ Custom Confirm Candidate", designation="Consultant")
+    offer = client.post("/api/recruitment/offers", headers=hr_manager_auth, json={
+        "offer_type": "Confirmation", "employee_id": emp["employee_id"], "template_id": tmpl["id"],
+    }).json()
+    assert offer["letter_content"].startswith("Congrats ZZ Custom Confirm Candidate, confirmed as Consultant on ")
+
+
+# ---------------------------------------------------------------------------
 # Convert-to-employee prefill, meta, dashboard stats
 # ---------------------------------------------------------------------------
 def test_convert_prefill_pulls_accepted_offer_details(client, hr_manager_auth):
