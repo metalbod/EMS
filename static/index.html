@@ -3466,63 +3466,83 @@
 
 <!-- Employee View Modal -->
 <div id="viewModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-3xl">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-4xl">
     <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-      <div>
-        <h2 id="viewName" class="text-base font-semibold">—</h2>
-        <p id="viewMeta" class="text-xs text-slate-500 mt-0.5">—</p>
+      <div class="flex items-center gap-3 min-w-0">
+        <!-- Sections menu toggle — mobile/narrow only; the sidebar to the
+             left is always visible at sm: and up (see viewTabDrawer below). -->
+        <button onclick="toggleViewTabMenu()" class="sm:hidden shrink-0 -ml-1 p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition" title="Sections">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+        <div class="min-w-0">
+          <h2 id="viewName" class="text-base font-semibold truncate">—</h2>
+          <p id="viewMeta" class="text-xs text-slate-500 mt-0.5 truncate">—</p>
+        </div>
       </div>
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-2 shrink-0">
         <span id="viewBadge" class="badge"></span>
         <button onclick="closeViewModal()" class="text-slate-400 hover:text-slate-600">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
         </button>
       </div>
     </div>
-    <div class="flex border-b border-slate-200 px-6 gap-1">
-      <button class="view-tab-btn view-tab-active px-4 py-3 text-sm" data-vtab="vt-personal" onclick="switchViewTab('vt-personal')">Personal Info</button>
-      <button class="view-tab-btn px-4 py-3 text-sm text-slate-500" data-vtab="vt-employment" onclick="switchViewTab('vt-employment')">Employment</button>
-      <button class="view-tab-btn px-4 py-3 text-sm text-slate-500" data-vtab="vt-locations" onclick="switchViewTab('vt-locations')">Locations</button>
-      <button class="view-tab-btn px-4 py-3 text-sm text-slate-500" data-vtab="vt-statutory" onclick="switchViewTab('vt-statutory')">Statutory &amp; Payroll</button>
-      <button id="vt-compensation-btn" class="view-tab-btn px-4 py-3 text-sm text-slate-500 hidden" data-vtab="vt-compensation" onclick="switchViewTab('vt-compensation')">Compensation</button>
-      <button id="vt-notes-btn" class="view-tab-btn px-4 py-3 text-sm text-slate-500 hidden" data-vtab="vt-notes" onclick="switchViewTab('vt-notes')">HR Notes 🔒</button>
-      <button id="vt-documents-btn" class="view-tab-btn px-4 py-3 text-sm text-slate-500 hidden" data-vtab="vt-documents" onclick="switchViewTab('vt-documents')">Documents</button>
-      <button id="vt-consent-btn" class="view-tab-btn px-4 py-3 text-sm text-slate-500 hidden" data-vtab="vt-consent" onclick="switchViewTab('vt-consent')">FR Consent</button>
-    </div>
-    <div id="vt-personal" class="view-tab-panel p-6"></div>
-    <div id="vt-employment" class="view-tab-panel p-6 hidden"></div>
-    <div id="vt-locations" class="view-tab-panel p-6 hidden"></div>
-    <div id="vt-statutory" class="view-tab-panel p-6 hidden"></div>
-    <div id="vt-compensation" class="view-tab-panel p-6 hidden"></div>
-    <div id="vt-consent" class="view-tab-panel p-6 hidden"></div>
-    <div id="vt-documents" class="view-tab-panel p-6 hidden">
-      <div class="flex justify-between items-center mb-4">
-        <p class="text-xs text-slate-400">Track time-sensitive documents for this employee — e.g. Work Permit, Passport.</p>
-        <button onclick="openEmployeeDocumentForm()" class="btn-primary text-sm flex items-center gap-2">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-          Add Document
-        </button>
-      </div>
-      <div id="employeeDocumentList" class="space-y-2"></div>
-      <p id="employeeDocumentEmpty" class="hidden text-sm text-slate-400 text-center py-8">No documents tracked yet.</p>
-    </div>
-    <div id="vt-notes" class="view-tab-panel p-6 hidden">
-      <div id="noteForm" class="mb-5 bg-slate-50 border border-slate-200 rounded-xl p-4">
-        <div class="flex gap-3 mb-3">
-          <select id="noteType" class="inp flex-1" style="font-size:.875rem">
-            <option value="general">General Note</option>
-            <option value="disciplinary">Disciplinary</option>
-            <option value="performance">Performance</option>
-            <option value="warning">Warning</option>
-            <option value="commendation">Commendation</option>
-          </select>
-          <button onclick="submitNote()" class="btn-primary">Add Note</button>
+
+    <!-- Sections drawer overlay — mobile/narrow only, mirrors the main
+         shell's own navOverlay/burgerDrawer pattern (core.js's
+         toggleBurgerMenu). Fixed (not absolute) so it doesn't depend on
+         this modal card's own auto height. -->
+    <div id="viewTabOverlay" class="hidden fixed inset-0 bg-slate-900/30 z-[60] sm:hidden" onclick="closeViewTabMenu()"></div>
+
+    <div class="flex flex-col sm:flex-row">
+      <nav id="viewTabDrawer" class="fixed inset-y-0 left-0 z-[61] w-64 bg-white flex flex-col gap-0.5 py-3 px-3 -translate-x-full transition-transform duration-200 ease-out shadow-xl overflow-y-auto sm:shadow-none sm:static sm:translate-x-0 sm:z-auto sm:w-44 sm:shrink-0 sm:border-r sm:border-slate-200">
+        <button class="nav-sub-item active w-full text-left" data-vtab="vt-personal" onclick="switchViewTab('vt-personal')">Personal Info</button>
+        <button class="nav-sub-item w-full text-left" data-vtab="vt-employment" onclick="switchViewTab('vt-employment')">Employment</button>
+        <button class="nav-sub-item w-full text-left" data-vtab="vt-locations" onclick="switchViewTab('vt-locations')">Locations</button>
+        <button class="nav-sub-item w-full text-left" data-vtab="vt-statutory" onclick="switchViewTab('vt-statutory')">Statutory &amp; Payroll</button>
+        <button id="vt-compensation-btn" class="nav-sub-item w-full text-left hidden" data-vtab="vt-compensation" onclick="switchViewTab('vt-compensation')">Compensation</button>
+        <button id="vt-notes-btn" class="nav-sub-item w-full text-left hidden" data-vtab="vt-notes" onclick="switchViewTab('vt-notes')">HR Notes 🔒</button>
+        <button id="vt-documents-btn" class="nav-sub-item w-full text-left hidden" data-vtab="vt-documents" onclick="switchViewTab('vt-documents')">Documents</button>
+        <button id="vt-consent-btn" class="nav-sub-item w-full text-left hidden" data-vtab="vt-consent" onclick="switchViewTab('vt-consent')">FR Consent</button>
+      </nav>
+
+      <div class="flex-1 min-w-0">
+        <div id="vt-personal" class="view-tab-panel p-6"></div>
+        <div id="vt-employment" class="view-tab-panel p-6 hidden"></div>
+        <div id="vt-locations" class="view-tab-panel p-6 hidden"></div>
+        <div id="vt-statutory" class="view-tab-panel p-6 hidden"></div>
+        <div id="vt-compensation" class="view-tab-panel p-6 hidden"></div>
+        <div id="vt-consent" class="view-tab-panel p-6 hidden"></div>
+        <div id="vt-documents" class="view-tab-panel p-6 hidden">
+          <div class="flex justify-between items-center mb-4">
+            <p class="text-xs text-slate-400">Track time-sensitive documents for this employee — e.g. Work Permit, Passport.</p>
+            <button onclick="openEmployeeDocumentForm()" class="btn-primary text-sm flex items-center gap-2">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+              Add Document
+            </button>
+          </div>
+          <div id="employeeDocumentList" class="space-y-2"></div>
+          <p id="employeeDocumentEmpty" class="hidden text-sm text-slate-400 text-center py-8">No documents tracked yet.</p>
         </div>
-        <textarea id="noteBody" class="inp" style="height:5rem;resize:none;font-size:.875rem" placeholder="Write note here…"></textarea>
-        <p id="noteError" class="hidden text-xs text-red-600 mt-1"></p>
+        <div id="vt-notes" class="view-tab-panel p-6 hidden">
+          <div id="noteForm" class="mb-5 bg-slate-50 border border-slate-200 rounded-xl p-4">
+            <div class="flex gap-3 mb-3">
+              <select id="noteType" class="inp flex-1" style="font-size:.875rem">
+                <option value="general">General Note</option>
+                <option value="disciplinary">Disciplinary</option>
+                <option value="performance">Performance</option>
+                <option value="warning">Warning</option>
+                <option value="commendation">Commendation</option>
+              </select>
+              <button onclick="submitNote()" class="btn-primary">Add Note</button>
+            </div>
+            <textarea id="noteBody" class="inp" style="height:5rem;resize:none;font-size:.875rem" placeholder="Write note here…"></textarea>
+            <p id="noteError" class="hidden text-xs text-red-600 mt-1"></p>
+          </div>
+          <div id="notesList" class="space-y-3"></div>
+        </div>
       </div>
-      <div id="notesList" class="space-y-3"></div>
     </div>
+
     <div class="flex gap-2 px-6 py-4 border-t border-slate-200">
       <button id="viewEditBtn" onclick="editFromView()" class="btn-primary hidden">Edit</button>
       <button id="viewToggleBtn" onclick="toggleStatusFromView()" class="btn-ghost hidden"></button>

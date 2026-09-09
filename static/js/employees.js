@@ -280,13 +280,31 @@ function switchViewTab(name) {
   VIEW_TABS.forEach(t=>{
     document.getElementById(t)?.classList.toggle('hidden',t!==name);
     const btn=document.querySelector(`[data-vtab="${t}"]`);
-    if(btn){btn.classList.toggle('view-tab-active',t===name);btn.classList.toggle('text-slate-500',t!==name);}
+    if(btn) btn.classList.toggle('active',t===name);
   });
   if(name==='vt-notes') loadNotes();
   if(name==='vt-documents') loadEmployeeDocuments(viewingId);
+  closeViewTabMenu();
 }
 
-function closeViewModal() { closeModal('viewModal', () => viewingId=null); }
+// Sections drawer (mobile/narrow only) — mirrors app-init.js's
+// openBurgerMenu/closeBurgerMenu/toggleBurgerMenu for the main shell's
+// sidebar, scoped to this modal's own drawer/overlay instead.
+function openViewTabMenu() {
+  document.getElementById('viewTabDrawer')?.classList.remove('-translate-x-full');
+  document.getElementById('viewTabOverlay')?.classList.remove('hidden');
+}
+function closeViewTabMenu() {
+  if (window.innerWidth >= 640) return;
+  document.getElementById('viewTabDrawer')?.classList.add('-translate-x-full');
+  document.getElementById('viewTabOverlay')?.classList.add('hidden');
+}
+function toggleViewTabMenu() {
+  const isOpen = !document.getElementById('viewTabDrawer')?.classList.contains('-translate-x-full');
+  if (isOpen) closeViewTabMenu(); else openViewTabMenu();
+}
+
+function closeViewModal() { closeModal('viewModal', () => { viewingId=null; closeViewTabMenu(); }); }
 
 async function loadEmployeeLocations(empId) {
   const el = document.getElementById('vt-locations');
