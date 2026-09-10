@@ -142,6 +142,60 @@ describe('Edit Project — Project Manager(s) search + checkbox list', () => {
 // regardless of their own role. A previously-assigned manager who no
 // longer qualifies is still shown (never silently dropped by an unrelated
 // save), just not offered to newly pick.
+// Mirrors timesheet.js's loadProjectManagerEligibility — computing the
+// eligible employee_id set from raw /api/users rows. Must check u.roles
+// (every capability checkbox on the account — Settings > Users' "Roles"
+// checklist), not u.role (only whichever one is currently their "Active /
+// Primary Role", the landing view Switch Active Role toggles between): a
+// real production case surfaced this — a user with Manager among their
+// checked Roles but Employee set as their Active/Primary Role was wrongly
+// excluded when only u.role was checked.
+describe('Edit Project — Project Manager(s) eligibility computation from /api/users', () => {
+  const PROJECT_MANAGER_ELIGIBLE_ROLES = ['manager','hr_manager','hr_admin'];
+
+  function eligibleIdsFrom(users) {
+    return new Set(
+      users.filter(u=>u.is_active && u.employee_id && (u.roles||[u.role]).some(r=>PROJECT_MANAGER_ELIGIBLE_ROLES.includes(r)))
+        .map(u=>u.employee_id)
+    );
+  }
+
+  it('includes a user whose Active/Primary Role is Employee but who also holds Manager among their Roles', () => {
+    const ids = eligibleIdsFrom([
+      { employee_id: 'A042', role: 'employee', roles: ['manager','employee'], is_active: true },
+    ]);
+    expect(ids.has('A042')).toBe(true);
+  });
+
+  it('excludes a user whose Roles hold only Employee', () => {
+    const ids = eligibleIdsFrom([
+      { employee_id: 'A026', role: 'employee', roles: ['employee'], is_active: true },
+    ]);
+    expect(ids.has('A026')).toBe(false);
+  });
+
+  it('falls back to the single role field when roles is absent (older/minimal user rows)', () => {
+    const ids = eligibleIdsFrom([
+      { employee_id: 'A005', role: 'hr_manager', roles: undefined, is_active: true },
+    ]);
+    expect(ids.has('A005')).toBe(true);
+  });
+
+  it('excludes an inactive user account even if Manager is one of their Roles', () => {
+    const ids = eligibleIdsFrom([
+      { employee_id: 'A099', role: 'employee', roles: ['manager','employee'], is_active: false },
+    ]);
+    expect(ids.has('A099')).toBe(false);
+  });
+
+  it('excludes a user with no linked employee_id', () => {
+    const ids = eligibleIdsFrom([
+      { employee_id: null, role: 'manager', roles: ['manager'], is_active: true },
+    ]);
+    expect(ids.size).toBe(0);
+  });
+});
+
 describe('Edit Project — Project Manager(s) eligibility filter', () => {
   const employees = [
     { employee_id: 'A028', full_name: 'Cheah Wui Keat', status: 'Active' },   // manager

@@ -166,11 +166,21 @@ function switchProjectTab(name) {
 // Project modal (nav-projects is HR_MANAGER_ONLY_ROLES-gated), which is
 // exactly who /api/users' own role gate (_USER_MANAGE = superadmin,
 // hr_manager) already allows — no new backend permission needed.
+//
+// Checks u.roles (the full set of capability checkboxes on their user
+// account — Settings > Users' "Roles" checklist), NOT u.role (just
+// whichever one is currently their "Active / Primary Role", the landing
+// view Switch Active Role toggles between). A user can hold Manager
+// alongside Employee and default to Employee as their day-to-day view —
+// they still hold real Manager-tier capability, so they still belong in
+// this picker. Checking only the single active role wrongly excluded
+// exactly that case.
 async function loadProjectManagerEligibility() {
   const res=await api('/api/users');
   const list=res?.ok?await res.json():[];
   projectManagerEligibleIds=new Set(
-    list.filter(u=>u.is_active && PROJECT_MANAGER_ELIGIBLE_ROLES.includes(u.role) && u.employee_id).map(u=>u.employee_id)
+    list.filter(u=>u.is_active && u.employee_id && (u.roles||[u.role]).some(r=>PROJECT_MANAGER_ELIGIBLE_ROLES.includes(r)))
+      .map(u=>u.employee_id)
   );
 }
 
