@@ -150,22 +150,55 @@ function switchProjectTab(name) {
 function renderProjectManagersChecklist(selectedIds) {
   const wrap=document.getElementById('projectManagersList');
   const active=(employees||[]).filter(e=>e.status==='Active');
-  wrap.innerHTML=active.map(e=>`
-    <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 cursor-pointer">
+  wrap.innerHTML=active.map(e=>{
+    const label=`${displayName(e.full_name,e.preferred_name)} (${e.employee_id})`;
+    return `
+    <label class="project-manager-option flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 cursor-pointer" data-label="${esc(label)}">
       <input type="checkbox" class="project-manager-checkbox" value="${e.employee_id}" ${selectedIds.includes(e.employee_id)?'checked':''} onchange="syncProjectManagersSelectAll()"/>
-      ${esc(displayName(e.full_name,e.preferred_name))} (${esc(e.employee_id)})
-    </label>`).join('');
+      ${esc(label)}
+    </label>`;
+  }).join('') + `<div id="projectManagersNoMatch" class="hidden text-center text-xs text-slate-400 py-3">No matches</div>`;
+  const searchEl=document.getElementById('projectManagersSearch');
+  if(searchEl) searchEl.value='';
   syncProjectManagersSelectAll();
 }
 
+// Filters the checklist by name/ID as the user types, without re-rendering
+// (so checked state — including for options scrolled out of view — is never
+// lost). Reuses employee-picker.js's filterEmployeeOptions (same
+// substring/case-insensitive match already used by every searchable
+// employee <select> in the app) rather than a second hand-rolled matcher.
+// "Select All" only ever acts on what's currently visible, so it composes
+// with an active search instead of fighting it.
+function filterProjectManagerOptions() {
+  const q=document.getElementById('projectManagersSearch')?.value||'';
+  const opts=[...document.querySelectorAll('.project-manager-option')];
+  const matched=new Set(filterEmployeeOptions(
+    opts.map(el=>({value: el.querySelector('.project-manager-checkbox').value, label: el.dataset.label})),
+    q
+  ).map(o=>o.value));
+  let visibleCount=0;
+  opts.forEach(opt=>{
+    const match=matched.has(opt.querySelector('.project-manager-checkbox').value);
+    opt.classList.toggle('hidden', !match);
+    if(match) visibleCount++;
+  });
+  document.getElementById('projectManagersNoMatch')?.classList.toggle('hidden', visibleCount>0);
+  syncProjectManagersSelectAll();
+}
+
+function visibleProjectManagerCheckboxes() {
+  return [...document.querySelectorAll('.project-manager-option:not(.hidden) .project-manager-checkbox')];
+}
+
 function syncProjectManagersSelectAll() {
-  const boxes=[...document.querySelectorAll('.project-manager-checkbox')];
+  const boxes=visibleProjectManagerCheckboxes();
   document.getElementById('projectManagersSelectAll').checked = boxes.length>0 && boxes.every(b=>b.checked);
 }
 
 function toggleAllProjectManagers() {
   const checked=document.getElementById('projectManagersSelectAll').checked;
-  document.querySelectorAll('.project-manager-checkbox').forEach(b=>b.checked=checked);
+  visibleProjectManagerCheckboxes().forEach(b=>b.checked=checked);
 }
 
 async function openProjectModal(projectId) {

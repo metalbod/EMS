@@ -4162,11 +4162,14 @@
         </div>
         <div>
           <label class="lbl">Project Manager(s)</label>
-          <div class="border border-slate-200 rounded-lg max-h-40 overflow-y-auto">
+          <div class="border border-slate-200 rounded-lg overflow-hidden">
+            <div class="px-2 py-1.5 border-b border-slate-100">
+              <input type="text" id="projectManagersSearch" class="inp text-sm" placeholder="Search name or ID…" oninput="filterProjectManagerOptions()"/>
+            </div>
             <label class="flex items-center gap-2 px-3 py-2 border-b border-slate-100 bg-slate-50 text-sm font-medium cursor-pointer">
               <input type="checkbox" id="projectManagersSelectAll" onchange="toggleAllProjectManagers()"/> Select All
             </label>
-            <div id="projectManagersList" class="text-sm"></div>
+            <div id="projectManagersList" class="text-sm max-h-40 overflow-y-auto"></div>
           </div>
         </div>
         <div class="flex gap-2">
