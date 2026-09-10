@@ -527,7 +527,12 @@ async function loadCurrentTimesheet() {
   const start=tsFmt(tsCurrentWeekStart);
   const end=new Date(tsCurrentWeekStart); end.setDate(end.getDate()+6);
   const endStr=tsFmt(end);
-  document.getElementById('timesheetWeekLabel').textContent=`${start} → ${endStr}`;
+  // fmtDate() here (not the raw ISO start/endStr, which the API call below
+  // needs as-is) — matches every other date-range label in the app
+  // (Payroll runs, Leave, PIP/Performance cycles, Employee contract dates
+  // all render `${fmtDate(a)} → ${fmtDate(b)}`); this was the one place
+  // that had been left showing the raw "YYYY-MM-DD" string instead.
+  document.getElementById('timesheetWeekLabel').textContent=`${fmtDate(start)} → ${fmtDate(endStr)}`;
 
   const empId=currentUser?.employee_id;
   if(!empId){

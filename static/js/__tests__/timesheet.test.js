@@ -176,3 +176,30 @@ describe('Edit Project — Project Manager(s) eligibility filter', () => {
     expect(withLegacyAssignment.sort()).toEqual(['A026', 'A028', 'A032', 'A109']);
   });
 });
+
+// Mirrors core.js's fmtDate and timesheet.js's loadCurrentTimesheet week
+// label — every other date-range display in the app (Payroll runs, Leave,
+// PIP/Performance cycles, Employee contract dates) renders
+// `${fmtDate(a)} → ${fmtDate(b)}`; the My Timesheet week nav was the one
+// place still showing the raw "YYYY-MM-DD" string it also sends the API.
+describe('My Timesheet — week label date format', () => {
+  const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function fmtDate(value) {
+    if (!value) return '—';
+    const m = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return String(value);
+    const [y, mo, d] = m.slice(1).map(Number);
+    return `${String(d).padStart(2,'0')}-${MONTH_ABBR[mo-1]}-${String(y).slice(-2)}`;
+  }
+  function weekLabel(startIso, endIso) {
+    return `${fmtDate(startIso)} → ${fmtDate(endIso)}`;
+  }
+
+  it('renders both ends of the week range in dd-MMM-yy, not the raw ISO string', () => {
+    expect(weekLabel('2026-09-08', '2026-09-14')).toBe('08-Sep-26 → 14-Sep-26');
+  });
+
+  it('handles a week that crosses a month boundary', () => {
+    expect(weekLabel('2026-08-31', '2026-09-06')).toBe('31-Aug-26 → 06-Sep-26');
+  });
+});

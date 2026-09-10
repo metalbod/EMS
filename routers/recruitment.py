@@ -330,6 +330,25 @@ Human Resources
 """
 
 
+def _fmt_letter_date(value: Optional[str]) -> str:
+    """Formats a "YYYY-MM-DD..." date value for display inside a letter
+    body, matching ${today}'s own "10 September 2026" style — every date
+    placeholder in a letter should read the same way. Before this, only
+    ${today} was ever formatted; ${start_date}/${expiry_date}/
+    ${probation_end_date} were passed through as raw DB strings, so a
+    printed letter read inconsistently within itself (a nicely-written
+    date up top, then "Commencement Date: 2026-09-10" further down).
+    Returns "" for a missing value, matching every other optional
+    placeholder in _offer_letter_context — safe_substitute then just
+    leaves that spot blank rather than printing "None"."""
+    if not value:
+        return ""
+    try:
+        return datetime.strptime(str(value)[:10], "%Y-%m-%d").strftime("%d %B %Y")
+    except ValueError:
+        return str(value)  # not a recognizable date — pass through, don't mangle
+
+
 def _offer_letter_context(cand, req, offer, emp=None) -> Dict[str, str]:
     """Placeholder values ($name / ${name} in a template body — see
     string.Template) available to every letter template, regardless of
@@ -368,10 +387,10 @@ def _offer_letter_context(cand, req, offer, emp=None) -> Dict[str, str]:
         "department": department,
         "employment_type": employment_type,
         "salary_offered": f"RM {salary:,.2f} per month" if salary else "",
-        "start_date": start_date,
-        "expiry_date": offer.get("expiry_date") or "",
+        "start_date": _fmt_letter_date(start_date),
+        "expiry_date": _fmt_letter_date(offer.get("expiry_date")),
         "offer_type": offer.get("offer_type", ""),
-        "probation_end_date": (emp.get("probation_end_date") if emp else None) or "",
+        "probation_end_date": _fmt_letter_date(emp.get("probation_end_date") if emp else None),
     }
 
 

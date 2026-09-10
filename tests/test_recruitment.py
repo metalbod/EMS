@@ -598,6 +598,25 @@ def test_create_offer_auto_generates_letter_and_moves_stage(client, hr_manager_a
     assert cand_check["stage"] == "Offer"
 
 
+def test_offer_letter_dates_render_in_same_style_as_today(client, hr_manager_auth):
+    """${start_date}/${expiry_date} used to be passed through as raw
+    "YYYY-MM-DD" DB values while ${today} alone was formatted — a printed
+    letter read inconsistently within itself. All date placeholders now
+    render in the same "10 September 2026" style (see _fmt_letter_date)."""
+    req = client.post("/api/recruitment/requisitions", headers=hr_manager_auth,
+                       json={"title": _unique_title(), "department": "Engineering"}).json()
+    cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
+                        json={"full_name": "ZZ Offer Date Format Candidate", "requisition_id": req["id"]}).json()
+    offer = client.post("/api/recruitment/offers", headers=hr_manager_auth, json={
+        "candidate_id": cand["id"], "requisition_id": req["id"], "offer_type": "Offer",
+        "salary_offered": 6000.0, "start_date": "2030-01-15", "expiry_date": "2030-02-01",
+    }).json()
+    assert "15 January 2030" in offer["letter_content"]
+    assert "01 February 2030" in offer["letter_content"]
+    assert "2030-01-15" not in offer["letter_content"]
+    assert "2030-02-01" not in offer["letter_content"]
+
+
 def test_create_decline_offer_moves_candidate_to_rejected_by_company(client, hr_manager_auth):
     """A regret letter is HR/company-initiated, so it must map to
     'Rejected by Company', not the ambiguous bare 'Rejected' or
@@ -812,7 +831,11 @@ def test_create_confirmation_letter_for_employee(client, hr_manager_auth, make_t
     assert offer["candidate_id"] is None
     assert "Confirmation of Employment" in offer["letter_content"]
     assert "ZZ Confirmation Candidate" in offer["letter_content"]
-    assert "2026-09-01" in offer["letter_content"]
+    # probation_end_date is rendered in the same "10 September 2026" style
+    # as ${today} (see _fmt_letter_date), not the raw "2026-09-01" stored
+    # on the employee record.
+    assert "01 September 2026" in offer["letter_content"]
+    assert "2026-09-01" not in offer["letter_content"]
 
     notes = client.get(f"/api/employees/{emp['employee_id']}/notes", headers=hr_manager_auth)
     assert notes.status_code == 200, notes.text
