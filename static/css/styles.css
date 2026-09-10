@@ -239,3 +239,24 @@ main.content-shell{
 .todo-avatar{width:34px;height:34px;border-radius:var(--radius-pill);display:flex;align-items:center;justify-content:center;font-family:var(--font-sans);font-size:12px;font-weight:700;color:var(--muted);background:var(--avatar-bg);flex-shrink:0}
 .todo-row-urgent .todo-avatar{background:var(--accent);color:#fff}
 .todo-row-open{font-family:var(--font-sans);font-size:12.5px;color:var(--muted)}
+
+/* Must win, always, over every plain `display:` rule above (.nav-sub-item,
+   .inp, .lbl, .badge, .pill-btn, .todo-row, .todo-avatar, .nav-count-badge
+   included) whenever both classes land on the same element — e.g. every
+   role-gated nav-sub-item across the sidebar (Approvals/Projects/
+   Attendance Review under Timesheet, Leave/Resignation Approvals, Payroll
+   Runs, etc.), toggled by classList.toggle('hidden', ...) in core.js's
+   applyRoleUI(). Tailwind's own .hidden lives inside its `@layer
+   utilities`, and CSS cascade layers rank ANY unlayered rule (everything
+   in this file, since it isn't wrapped in @layer) above EVERY layered
+   rule, regardless of specificity or which stylesheet loads later — so
+   this file loading before tailwind.css was never enough on its own to
+   let tailwind.css's later, equal-specificity .hidden win. Redeclaring it
+   here, unlayered, same specificity, last in this file, makes it win the
+   ordinary way instead. Keep this the last rule in the file — a rule
+   added after it would beat it the same way it beats everything above.
+   Confirmed via visual regression: a "manager"-account session with a
+   role-switch to "employee" still showed Approvals/Projects/Attendance
+   Review under Timesheet, despite core.js correctly adding the .hidden
+   class — this is why. */
+.hidden{display:none}
