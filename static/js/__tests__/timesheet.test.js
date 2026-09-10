@@ -133,3 +133,46 @@ describe('Edit Project — Project Manager(s) search + checkbox list', () => {
     expect(document.getElementById('projectManagersSelectAll').checked).toBe(true);
   });
 });
+
+// Mirrors timesheet.js's renderProjectManagersChecklist eligibility
+// filter — only employees currently holding a manager-tier login role
+// (PROJECT_MANAGER_ELIGIBLE_ROLES) are offered as Project Manager
+// candidates, since core/approval_workflow.py's project_manager approver
+// type grants approval power to anyone in a project's manager_ids
+// regardless of their own role. A previously-assigned manager who no
+// longer qualifies is still shown (never silently dropped by an unrelated
+// save), just not offered to newly pick.
+describe('Edit Project — Project Manager(s) eligibility filter', () => {
+  const employees = [
+    { employee_id: 'A028', full_name: 'Cheah Wui Keat', status: 'Active' },   // manager
+    { employee_id: 'A026', full_name: 'Mohamad Syafiq', status: 'Active' },   // employee — not eligible
+    { employee_id: 'A032', full_name: 'Raj Saraiya', status: 'Active' },      // hr_admin
+    { employee_id: 'A109', full_name: 'Richie Teoh', status: 'Active' },      // hr_manager
+    { employee_id: 'A050', full_name: 'Inactive Ida', status: 'Inactive' },   // manager, but inactive employee
+  ];
+  const eligibleIds = new Set(['A028', 'A032', 'A109']); // manager / hr_admin / hr_manager, active users
+
+  function eligibleForPicker(selectedIds) {
+    return employees
+      .filter(e => e.status === 'Active' && (eligibleIds.has(e.employee_id) || selectedIds.includes(e.employee_id)))
+      .map(e => e.employee_id);
+  }
+
+  it('offers only active employees holding a manager-tier role', () => {
+    expect(eligibleForPicker([]).sort()).toEqual(['A028', 'A032', 'A109']);
+  });
+
+  it('excludes a plain "employee"-role employee even if active', () => {
+    expect(eligibleForPicker([])).not.toContain('A026');
+  });
+
+  it('excludes a manager-tier employee whose employee record is Inactive', () => {
+    expect(eligibleForPicker([])).not.toContain('A050');
+  });
+
+  it('still shows an already-assigned manager who no longer qualifies, so an unrelated save can\'t silently drop them', () => {
+    const withLegacyAssignment = eligibleForPicker(['A026']);
+    expect(withLegacyAssignment).toContain('A026');
+    expect(withLegacyAssignment.sort()).toEqual(['A026', 'A028', 'A032', 'A109']);
+  });
+});

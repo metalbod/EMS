@@ -15,6 +15,19 @@ let tsCurrentWeekStart=null, tsCurrentTimesheet=null;
 let tsApprovalFilter='Submitted';
 const TS_STATUS_COLORS={'Draft':'status-neutral','Submitted':'status-pending','Approved':'status-positive','Rejected':'status-negative'};
 
+// Login roles eligible to be picked as a Project Manager. Matters beyond
+// the picker itself: core/approval_workflow.py's "project_manager"
+// approver type lets anyone listed in a project's manager_ids approve
+// that project's timesheets, regardless of their own login role — so
+// this list is what keeps that approval power aligned with roles that
+// could plausibly hold it through any other path in the app. Frontend-
+// only for now (POST/PUT /api/projects still accepts any employee_id),
+// so this narrows the picker but doesn't by itself close that off.
+const PROJECT_MANAGER_ELIGIBLE_ROLES=['manager','hr_manager','hr_admin'];
+// employee_ids currently holding one of those roles — populated by
+// loadProjectManagerEligibility() each time the Edit Project modal opens.
+let projectManagerEligibleIds=new Set();
+
 function isProjectManager() {
   return HR_MANAGER_ONLY_ROLES.includes(currentUser?.role);
 }
@@ -147,9 +160,28 @@ function switchProjectTab(name) {
   });
 }
 
+// Fetches which employees currently hold a manager-tier login role
+// (PROJECT_MANAGER_ELIGIBLE_ROLES), for renderProjectManagersChecklist to
+// filter against. Reachable only by whoever can already open the Edit
+// Project modal (nav-projects is HR_MANAGER_ONLY_ROLES-gated), which is
+// exactly who /api/users' own role gate (_USER_MANAGE = superadmin,
+// hr_manager) already allows — no new backend permission needed.
+async function loadProjectManagerEligibility() {
+  const res=await api('/api/users');
+  const list=res?.ok?await res.json():[];
+  projectManagerEligibleIds=new Set(
+    list.filter(u=>u.is_active && PROJECT_MANAGER_ELIGIBLE_ROLES.includes(u.role) && u.employee_id).map(u=>u.employee_id)
+  );
+}
+
 function renderProjectManagersChecklist(selectedIds) {
   const wrap=document.getElementById('projectManagersList');
-  const active=(employees||[]).filter(e=>e.status==='Active');
+  // Limited to manager-tier employees (see PROJECT_MANAGER_ELIGIBLE_ROLES)
+  // — plus anyone already assigned, even if their role no longer
+  // qualifies, so re-saving an existing project without touching this
+  // field can't silently drop a legacy assignment the picker itself
+  // wouldn't offer anymore.
+  const active=(employees||[]).filter(e=>e.status==='Active' && (projectManagerEligibleIds.has(e.employee_id) || selectedIds.includes(e.employee_id)));
   wrap.innerHTML=active.map(e=>{
     const label=`${displayName(e.full_name,e.preferred_name)} (${e.employee_id})`;
     return `
@@ -160,7 +192,10 @@ function renderProjectManagersChecklist(selectedIds) {
   }).join('') + `<div id="projectManagersNoMatch" class="hidden text-center text-xs text-slate-400 py-3">No matches</div>`;
   const searchEl=document.getElementById('projectManagersSearch');
   if(searchEl) searchEl.value='';
-  syncProjectManagersSelectAll();
+  // Also handles the "nobody eligible at all" empty state and syncs
+  // Select All — same computation filterProjectManagerOptions does for a
+  // live search, run here once against the just-rendered, unfiltered list.
+  filterProjectManagerOptions();
 }
 
 // Filters the checklist by name/ID as the user types, without re-rendering
@@ -207,6 +242,7 @@ async function openProjectModal(projectId) {
   const tasksBtn=document.getElementById('projectTabTasksBtn');
   switchProjectTab('details');
   if(!employees || !employees.length) await loadEmployees();
+  await loadProjectManagerEligibility();
   if(projectId){
     const p=projectsCache.find(x=>x.id===projectId);
     document.getElementById('projectName').value=p?.name||'';
