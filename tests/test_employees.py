@@ -120,6 +120,59 @@ def test_list_employees_pay_grade_name_only_for_compensation_roles(
 
 
 # ---------------------------------------------------------------------------
+# Workforce stats — deliberately NOT scoped like List employees above (see
+# get_workforce_stats' own docstring-equivalent comment in routers/
+# employees.py): aggregate counts only, so every role — including
+# "employee", who List employees restricts to just their own record — sees
+# the same institution-wide totals.
+# ---------------------------------------------------------------------------
+def test_workforce_stats_requires_auth(client):
+    res = client.get("/api/employees/workforce-stats")
+    assert res.status_code in (401, 403)
+
+
+def test_workforce_stats_reflects_created_data(client, hr_manager_auth, make_test_employee):
+    """Before/after snapshot (test_institution is session-scoped and shared
+    across the whole test run — see conftest.py's own documented gotcha —
+    so an exact absolute total can't be asserted)."""
+    before = client.get("/api/employees/workforce-stats", headers=hr_manager_auth)
+    assert before.status_code == 200
+    b = before.json()
+
+    emp = make_test_employee(department="ZZWorkforceStatsDept", gender="Female", race="Chinese", employment_type="Contract")
+
+    after = client.get("/api/employees/workforce-stats", headers=hr_manager_auth).json()
+    assert after["total"] == b["total"] + 1
+    assert after["active"] == b["active"] + 1
+    assert after["dept_breakdown"]["ZZWorkforceStatsDept"] == b["dept_breakdown"].get("ZZWorkforceStatsDept", 0) + 1
+    assert after["employment_type_breakdown"]["Contract"] == b["employment_type_breakdown"].get("Contract", 0) + 1
+    assert after["race_breakdown"]["Chinese"] == b["race_breakdown"].get("Chinese", 0) + 1
+    assert after["total_gender"]["Female"] == b["total_gender"]["Female"] + 1
+    assert after["local_count"] == b["local_count"] + 1  # nationality defaults to "Malaysian"
+
+    client.patch(f"/api/employees/{emp['employee_id']}/status", headers=hr_manager_auth, json={"status": "Inactive"})
+
+
+def test_workforce_stats_is_institution_wide_for_employee_role(client, hr_manager_auth, make_test_user, test_institution, make_test_employee):
+    """The actual regression this endpoint exists to fix: an 'employee'-role
+    login must see the SAME institution-wide totals HR does, not just
+    themselves (or zero) — unlike GET /api/employees, which intentionally
+    collapses to their own single record for that role."""
+    make_test_employee()  # ensure there's at least one row to count
+
+    hr_stats = client.get("/api/employees/workforce-stats", headers=hr_manager_auth).json()
+
+    emp_token, _ = make_test_user(role="employee")
+    emp_headers = {"Authorization": f"Bearer {emp_token}", "X-Institution-Id": str(test_institution["id"])}
+    emp_res = client.get("/api/employees/workforce-stats", headers=emp_headers)
+    assert emp_res.status_code == 200
+    emp_stats = emp_res.json()
+
+    assert emp_stats["total"] == hr_stats["total"]
+    assert emp_stats["total"] > 1  # would be <= 1 if this were wrongly scoped to "self" like List employees
+
+
+# ---------------------------------------------------------------------------
 # Update
 # ---------------------------------------------------------------------------
 def test_update_employee_success(client, hr_manager_auth, make_test_employee):

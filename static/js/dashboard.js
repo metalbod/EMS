@@ -57,76 +57,7 @@ function renderDashboard() {
   document.getElementById('instDash').classList.remove('hidden');
   document.getElementById('dashKpiRow')?.classList.remove('hidden');
   loadDashboardKpis();
-  const active = employees.filter(e=>e.status==='Active');
-  const inactive = employees.filter(e=>e.status!=='Active');
-  const depts = [...new Set(employees.map(e=>e.department))];
-  const total = employees.length || 1;
-  document.getElementById('statTotal').textContent = employees.length;
-  document.getElementById('statActive').textContent = active.length;
-  document.getElementById('statInactive').textContent = inactive.length;
-  document.getElementById('statDepts').textContent = depts.length;
-  const genderLabel = arr => arr.length
-    ? `${arr.filter(e=>e.gender==='Male').length} Male · ${arr.filter(e=>e.gender==='Female').length} Female` : '—';
-  document.getElementById('statTotalGender').textContent = genderLabel(employees);
-  document.getElementById('statActiveGender').textContent = genderLabel(active);
-  document.getElementById('statInactiveGender').textContent = genderLabel(inactive);
-  document.getElementById('statActivePct').textContent = `${Math.round(active.length/total*100)}%`;
-  document.getElementById('statInactivePct').textContent = `${Math.round(inactive.length/total*100)}%`;
-  const deptCounts = {};
-  employees.forEach(e=>{ deptCounts[e.department]=(deptCounts[e.department]||0)+1; });
-  document.getElementById('deptBreakdown').innerHTML = Object.entries(deptCounts)
-    .sort((a,b)=>b[1]-a[1]).map(([d,c])=>`
-      <div class="flex items-center gap-2">
-        <div class="w-28 text-xs text-slate-600 truncate">${esc(d)}</div>
-        <div class="flex-1 bg-slate-100 rounded-full h-2">
-          <div class="bg-blue-500 h-2 rounded-full" style="width:${Math.round(c/employees.length*100)}%"></div>
-        </div>
-        <div class="text-xs text-slate-500 w-5 text-right">${c}</div>
-      </div>`).join('') || '<p class="text-slate-400 text-sm">No data.</p>';
-  const typeCounts = {};
-  employees.forEach(e=>{ typeCounts[e.employment_type]=(typeCounts[e.employment_type]||0)+1; });
-  document.getElementById('empTypeBreakdown').innerHTML = Object.entries(typeCounts)
-    .sort((a,b)=>b[1]-a[1]).map(([t,c])=>`
-      <div class="flex items-center gap-2">
-        <div class="w-24 text-xs text-slate-600">${esc(t)}</div>
-        <div class="flex-1 bg-slate-100 rounded-full h-2">
-          <div class="bg-violet-500 h-2 rounded-full" style="width:${Math.round(c/employees.length*100)}%"></div>
-        </div>
-        <div class="text-xs text-slate-500 w-5 text-right">${c}</div>
-      </div>`).join('') || '<p class="text-slate-400 text-sm">No data.</p>';
-
-  // Workforce Composition — Nationality (Local/Foreigner) and Race, as
-  // proportional segmented bars. Nationality is free text in this app (see
-  // core/constants.py — there's no NATIONALITIES enum), so "Local" is a
-  // nationality==='Malaysian' heuristic, not a validated field; anything
-  // else (including typos/inconsistent entries) counts as "Foreigner".
-  // Race IS a validated, required 7-value enum (core/constants.py's
-  // RACES) — every employee always has one, so there's no "Undefined"
-  // bucket to design for, unlike a generic HR system might need.
-  const segmentedBar = (containerId, legendId, segments) => {
-    const shown = segments.filter(s => s.count > 0);
-    document.getElementById(containerId).innerHTML = shown.map(s =>
-      `<div class="${s.color}" style="width:${Math.round(s.count/total*100)}%" title="${esc(s.label)}: ${s.count}"></div>`
-    ).join('');
-    document.getElementById(legendId).innerHTML = shown.map(s =>
-      `<span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full ${s.color} inline-block"></span>${esc(s.label)} ${s.count}</span>`
-    ).join('') || '<span class="text-slate-400">No data.</span>';
-  };
-  const localCount = employees.filter(e=>e.nationality==='Malaysian').length;
-  segmentedBar('nationalityBar', 'nationalityLegend', [
-    { label:'Local', count:localCount, color:'bg-blue-700' },
-    { label:'Foreigner', count:employees.length-localCount, color:'bg-blue-300' },
-  ]);
-  const RACE_COLORS = {
-    'Malay':'bg-blue-600', 'Chinese':'bg-emerald-500', 'Indian':'bg-amber-500',
-    'Bumiputera Sabah':'bg-rose-500', 'Bumiputera Sarawak':'bg-violet-500',
-    'Orang Asli':'bg-cyan-500', 'Others':'bg-slate-400',
-  };
-  const raceCounts = {};
-  employees.forEach(e=>{ raceCounts[e.race]=(raceCounts[e.race]||0)+1; });
-  segmentedBar('raceBar', 'raceLegend',
-    Object.entries(raceCounts).sort((a,b)=>b[1]-a[1])
-      .map(([race,count])=>({ label:race, count, color:RACE_COLORS[race]||'bg-slate-400' })));
+  loadWorkforceStats();
 
   // Locations overview (Workforce tab, HR Manager / HR Admin only) — the one
   // section besides base stats that still fetches immediately, since it's
@@ -151,6 +82,82 @@ function renderDashboard() {
   document.getElementById('dash-tab-compensation-btn').classList.toggle('hidden', !(canViewBenefitsDash || hasEmployeeRecord));
   document.getElementById('dash-tab-leave-btn').classList.toggle('hidden', !(canViewLeaveDash || hasEmployeeRecord));
   switchDashTab('dash-general');
+}
+
+// Home KPI Headcount tile + the whole Workforce tab (Total/Active/
+// Inactive/Depts, Nationality/Race composition, Department/Employment
+// Type breakdown). Backed by GET /api/employees/workforce-stats —
+// aggregate counts only, deliberately NOT the role-scoped `employees[]`
+// array (list_employees restricts "employee" to their own record and
+// "manager" to their reporting chain, to protect individual PII) — every
+// role sees the same institution-wide totals here, since a count is never
+// an individual record. Independent of loadDashboardKpis' other tiles
+// and fails soft (leaves everything at its default "—"/0) rather than
+// blocking the rest of the dashboard.
+async function loadWorkforceStats() {
+  const res = await api('/api/employees/workforce-stats');
+  if (!res?.ok) return;
+  const s = await res.json();
+
+  const headcountEl = document.getElementById('kpiHeadcount');
+  if (headcountEl) headcountEl.textContent = s.active;
+
+  const total = s.total || 1;
+  document.getElementById('statTotal').textContent = s.total;
+  document.getElementById('statActive').textContent = s.active;
+  document.getElementById('statInactive').textContent = s.inactive;
+  document.getElementById('statDepts').textContent = s.departments;
+  const genderLabel = g => (g.Male || g.Female) ? `${g.Male || 0} Male · ${g.Female || 0} Female` : '—';
+  document.getElementById('statTotalGender').textContent = genderLabel(s.total_gender);
+  document.getElementById('statActiveGender').textContent = genderLabel(s.active_gender);
+  document.getElementById('statInactiveGender').textContent = genderLabel(s.inactive_gender);
+  document.getElementById('statActivePct').textContent = `${Math.round(s.active/total*100)}%`;
+  document.getElementById('statInactivePct').textContent = `${Math.round(s.inactive/total*100)}%`;
+
+  const breakdownBar = (containerId, counts, barColor) => {
+    const entries = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+    document.getElementById(containerId).innerHTML = entries.map(([label,c])=>`
+      <div class="flex items-center gap-2">
+        <div class="w-28 text-xs text-slate-600 truncate">${esc(label)}</div>
+        <div class="flex-1 bg-slate-100 rounded-full h-2">
+          <div class="${barColor} h-2 rounded-full" style="width:${Math.round(c/total*100)}%"></div>
+        </div>
+        <div class="text-xs text-slate-500 w-5 text-right">${c}</div>
+      </div>`).join('') || '<p class="text-slate-400 text-sm">No data.</p>';
+  };
+  breakdownBar('deptBreakdown', s.dept_breakdown, 'bg-blue-500');
+  breakdownBar('empTypeBreakdown', s.employment_type_breakdown, 'bg-violet-500');
+
+  // Workforce Composition — Nationality (Local/Foreigner) and Race, as
+  // proportional segmented bars. Nationality is free text in this app (see
+  // core/constants.py — there's no NATIONALITIES enum), so "Local" is a
+  // nationality==='Malaysian' heuristic, not a validated field; anything
+  // else (including typos/inconsistent entries) counts as "Foreigner" —
+  // computed server-side now (see get_workforce_stats), same heuristic.
+  // Race IS a validated, required 7-value enum (core/constants.py's
+  // RACES) — every employee always has one, so there's no "Undefined"
+  // bucket to design for, unlike a generic HR system might need.
+  const segmentedBar = (containerId, legendId, segments) => {
+    const shown = segments.filter(s => s.count > 0);
+    document.getElementById(containerId).innerHTML = shown.map(s =>
+      `<div class="${s.color}" style="width:${Math.round(s.count/total*100)}%" title="${esc(s.label)}: ${s.count}"></div>`
+    ).join('');
+    document.getElementById(legendId).innerHTML = shown.map(s =>
+      `<span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full ${s.color} inline-block"></span>${esc(s.label)} ${s.count}</span>`
+    ).join('') || '<span class="text-slate-400">No data.</span>';
+  };
+  segmentedBar('nationalityBar', 'nationalityLegend', [
+    { label:'Local', count:s.local_count, color:'bg-blue-700' },
+    { label:'Foreigner', count:s.foreign_count, color:'bg-blue-300' },
+  ]);
+  const RACE_COLORS = {
+    'Malay':'bg-blue-600', 'Chinese':'bg-emerald-500', 'Indian':'bg-amber-500',
+    'Bumiputera Sabah':'bg-rose-500', 'Bumiputera Sarawak':'bg-violet-500',
+    'Orang Asli':'bg-cyan-500', 'Others':'bg-slate-400',
+  };
+  segmentedBar('raceBar', 'raceLegend',
+    Object.entries(s.race_breakdown).sort((a,b)=>b[1]-a[1])
+      .map(([race,count])=>({ label:race, count, color:RACE_COLORS[race]||'bg-slate-400' })));
 }
 
 function loadLocationsOverviewDash() {
@@ -416,20 +423,17 @@ function renderDashGreeting() {
   greetEl.textContent = `Good ${partOfDay}, ${firstName}`;
 }
 
-// Home KPI tiles: headcount (from the already-loaded employees array —
-// same figure as Workforce tab's statActive), pending approvals (from
-// /api/todos — see loadDashboardTodos, which populates this tile itself
-// once it has the data, to avoid a second fetch), payroll cut-off
-// (computed client-side from the institution's pay_day, no new endpoint),
-// open roles (reuses /api/recruitment/dashboard-stats, same figure
-// loadRecruitmentDash's rStatOpenReq shows). Each is independent and
-// fails soft (leaves the tile at its default "—") rather than blocking
-// the others — a role without recruitment access, for instance, just
-// doesn't get an Open Roles number.
+// Home KPI tiles: headcount (populated by loadWorkforceStats instead — see
+// that function — same figure as Workforce tab's statActive), pending
+// approvals (from /api/todos — see loadDashboardTodos, which populates
+// this tile itself once it has the data, to avoid a second fetch),
+// payroll cut-off (computed client-side from the institution's pay_day,
+// no new endpoint), open roles (reuses /api/recruitment/dashboard-stats,
+// same figure loadRecruitmentDash's rStatOpenReq shows). Each is
+// independent and fails soft (leaves the tile at its default "—") rather
+// than blocking the others — a role without recruitment access, for
+// instance, just doesn't get an Open Roles number.
 async function loadDashboardKpis() {
-  const headcountEl = document.getElementById('kpiHeadcount');
-  if (headcountEl) headcountEl.textContent = employees.filter(e => e.status === 'Active').length;
-
   const inst = currentUser?.role === 'superadmin' ? currentInstitution : currentUser?.institution;
   const cutoffEl = document.getElementById('kpiPayrollCutoff');
   if (cutoffEl) {

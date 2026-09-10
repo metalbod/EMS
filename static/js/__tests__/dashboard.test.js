@@ -57,58 +57,68 @@ describe('Recruitment dashboard candidate pipeline', () => {
   });
 });
 
-// Matches dashboard.js's renderDashboard() Workforce tab additions —
-// gender breakdown on the Total/Active/Inactive stat cards, and the
-// Nationality/Race segmented bars under "Workforce Composition". Race is
-// a validated required 7-value enum (core/constants.py's RACES) so every
-// employee always has one — no "Undefined" bucket. Nationality is free
-// text with no enum, so "Local" is a nationality==='Malaysian' heuristic.
+// Matches dashboard.js's loadWorkforceStats() — the Home dashboard's
+// Headcount tile and Workforce tab (gender breakdown on the Total/Active/
+// Inactive stat cards, Nationality/Race segmented bars under "Workforce
+// Composition"). This used to be computed client-side from the raw
+// `employees[]` array, but that array is role-scoped (routers/
+// employees.py's list_employees: "employee" sees only themselves,
+// "manager" only their reporting chain) to protect individual PII — which
+// silently collapsed these institution-wide stats down to "just me" for
+// those roles. Aggregation now happens server-side in
+// routers/employees.py's get_workforce_stats (GET /api/employees/
+// workforce-stats, deliberately unrestricted — see its own comment),
+// which returns counts only; these tests mirror the formatting logic
+// that turns those counts into the same labels/bars as before, not the
+// aggregation itself (that's covered in tests/test_employees.py's
+// test_workforce_stats_* — an actual DB round-trip, not mirrorable here).
+// Race is a validated required 7-value enum (core/constants.py's RACES)
+// so every employee always has one — no "Undefined" bucket. Nationality
+// is free text with no enum, so "Local" is a nationality==='Malaysian'
+// heuristic (applied server-side now, same rule).
 describe('Workforce tab composition stats', () => {
-  function genderLabel(arr) {
-    return arr.length
-      ? `${arr.filter(e=>e.gender==='Male').length} Male · ${arr.filter(e=>e.gender==='Female').length} Female` : '—';
+  function genderLabel(g) {
+    return (g.Male || g.Female) ? `${g.Male || 0} Male · ${g.Female || 0} Female` : '—';
   }
 
-  function segments(employeesArr, total) {
-    const localCount = employeesArr.filter(e=>e.nationality==='Malaysian').length;
+  function segments(stats) {
     const nationality = [
-      { label:'Local', count:localCount },
-      { label:'Foreigner', count:employeesArr.length-localCount },
+      { label:'Local', count:stats.local_count },
+      { label:'Foreigner', count:stats.foreign_count },
     ].filter(s=>s.count>0);
-    const raceCounts = {};
-    employeesArr.forEach(e=>{ raceCounts[e.race]=(raceCounts[e.race]||0)+1; });
-    const race = Object.entries(raceCounts).sort((a,b)=>b[1]-a[1]).map(([label,count])=>({label,count}));
-    return { nationality, race, nationalityPct: nationality.map(s=>Math.round(s.count/total*100)) };
+    const race = Object.entries(stats.race_breakdown).sort((a,b)=>b[1]-a[1]).map(([label,count])=>({label,count}));
+    return { nationality, race };
   }
 
-  const emps = [
-    { gender:'Male', nationality:'Malaysian', race:'Malay', status:'Active' },
-    { gender:'Female', nationality:'Malaysian', race:'Chinese', status:'Active' },
-    { gender:'Male', nationality:'Indonesian', race:'Others', status:'Inactive' },
-  ];
+  const stats = {
+    total_gender: { Male: 2, Female: 1 },
+    active_gender: { Male: 1, Female: 1 },
+    local_count: 2,
+    foreign_count: 1,
+    race_breakdown: { Malay: 1, Chinese: 1, Others: 1 },
+  };
 
   it('formats gender counts as "N Male · N Female"', () => {
-    expect(genderLabel(emps)).toBe('2 Male · 1 Female');
-    expect(genderLabel(emps.filter(e=>e.status==='Active'))).toBe('1 Male · 1 Female');
+    expect(genderLabel(stats.total_gender)).toBe('2 Male · 1 Female');
+    expect(genderLabel(stats.active_gender)).toBe('1 Male · 1 Female');
   });
 
   it('shows an em dash for an empty group instead of "0 Male · 0 Female"', () => {
-    expect(genderLabel([])).toBe('—');
+    expect(genderLabel({})).toBe('—');
   });
 
-  it('splits nationality into Local/Foreigner via the Malaysian heuristic', () => {
-    const { nationality } = segments(emps, emps.length);
+  it('splits nationality into Local/Foreigner from the server-computed counts', () => {
+    const { nationality } = segments(stats);
     expect(nationality).toEqual([{ label:'Local', count:2 }, { label:'Foreigner', count:1 }]);
   });
 
   it('omits a zero-count nationality segment rather than rendering an empty bar slice', () => {
-    const allLocal = [{ nationality:'Malaysian', race:'Malay' }, { nationality:'Malaysian', race:'Chinese' }];
-    const { nationality } = segments(allLocal, allLocal.length);
+    const { nationality } = segments({ ...stats, foreign_count: 0 });
     expect(nationality).toEqual([{ label:'Local', count:2 }]);
   });
 
   it('groups race counts using the real enum labels, one segment per race present', () => {
-    const { race } = segments(emps, emps.length);
+    const { race } = segments(stats);
     expect(race).toHaveLength(3);
     expect(race.find(r=>r.label==='Malay').count).toBe(1);
     expect(race.find(r=>r.label==='Chinese').count).toBe(1);
@@ -117,7 +127,7 @@ describe('Workforce tab composition stats', () => {
   });
 
   it('never produces an "Undefined" race segment, since race is a required field', () => {
-    const { race } = segments(emps, emps.length);
+    const { race } = segments(stats);
     expect(race.some(r=>r.label==='Undefined')).toBe(false);
   });
 });

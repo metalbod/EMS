@@ -382,6 +382,63 @@ def list_employees(
     return result
 
 
+# Aggregate-only counts (status/department/gender/nationality/race/
+# employment-type breakdowns) for the Home dashboard's Headcount tile and
+# Workforce tab — deliberately open to any authenticated user of the
+# institution (_no_restriction() in permission_matrix terms), unlike
+# list_employees above, which is scoped per role (employee → self only,
+# manager → their own reporting chain) to protect individual PII (IC
+# number, salary, address, etc.). Those per-row protections don't apply
+# here: every value returned is a count, never an individual record, so
+# there's nothing role-scoping would meaningfully protect — the whole
+# point is that "how many employees does the company have" shouldn't
+# collapse to "1" just because the viewer can only see their own record
+# in the row-level endpoint. Must stay this way: don't add per-row data
+# to this response without reintroducing the same role scoping as
+# list_employees.
+@router.get("/api/employees/workforce-stats")
+@db_session
+def get_workforce_stats(conn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    inst_id = need_inst(user)
+    rows = conn.execute(
+        "SELECT status, department, employment_type, gender, nationality, race FROM employees WHERE institution_id=?",
+        (inst_id,)
+    ).fetchall()
+
+    def gender_counts(subset):
+        return {g: sum(1 for r in subset if r["gender"] == g) for g in GENDERS}
+
+    def value_counts(subset, field):
+        counts: Dict[str, int] = {}
+        for r in subset:
+            v = r[field]
+            counts[v] = counts.get(v, 0) + 1
+        return counts
+
+    active = [r for r in rows if r["status"] == "Active"]
+    inactive = [r for r in rows if r["status"] != "Active"]
+    # Nationality is free text (core/constants.py has no NATIONALITIES
+    # enum) — "Local" is a nationality=='Malaysian' heuristic, matching
+    # the frontend logic this endpoint replaces; anything else (including
+    # typos/inconsistent entries) counts as "Foreigner".
+    local_count = sum(1 for r in rows if r["nationality"] == "Malaysian")
+
+    return {
+        "total": len(rows),
+        "active": len(active),
+        "inactive": len(inactive),
+        "departments": len({r["department"] for r in rows}),
+        "total_gender": gender_counts(rows),
+        "active_gender": gender_counts(active),
+        "inactive_gender": gender_counts(inactive),
+        "dept_breakdown": value_counts(rows, "department"),
+        "employment_type_breakdown": value_counts(rows, "employment_type"),
+        "local_count": local_count,
+        "foreign_count": len(rows) - local_count,
+        "race_breakdown": value_counts(rows, "race"),
+    }
+
+
 def _insert_new_employee(conn, inst_id, emp: EmployeeIn, user: dict, ip: Optional[str]):
     """Core employee-creation logic, shared by the single Add Employee form and bulk upload.
     Raises HTTPException on business-rule violations; lets IntegrityError propagate to the caller."""

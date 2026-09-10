@@ -137,6 +137,8 @@ MATRIX: List[Dict[str, Any]] = [
         "actions": [
             _action("List employees", "GET /api/employees", _with(_flat(*ALL_ROLES), manager=SUBORDINATE, employee=OWN),
                      note="Manager sees their reporting chain only; employee sees only themselves."),
+            _action("Institution-wide workforce stats (Home dashboard)", "GET /api/employees/workforce-stats", _no_restriction(),
+                     note="Aggregate counts only (status/department/gender/nationality/race/employment-type breakdowns) — never individual records, so it's deliberately NOT scoped like List employees above; every role sees the whole institution's totals."),
             _action("View employee record", "GET /api/employees/{id}", _with(_flat(*_EMPLOYEE_WRITE, "manager", "payroll_manager", "compensation_manager"), manager=SUBORDINATE, employee=OWN)),
             _action("Create employee", "POST /api/employees", _flat(*_EMPLOYEE_WRITE)),
             _action("Edit employee", "PUT /api/employees/{id}", _flat(*_EMPLOYEE_WRITE),
