@@ -345,20 +345,33 @@ async function loadRolesCache() {
 async function bootApp() {
   document.getElementById('loginScreen').classList.add('hidden');
   document.getElementById('appShell').classList.remove('hidden');
-  const mr = await api('/api/meta');
+  // meta, roles, and (for a regular login) the employee roster are three
+  // independent fetches with no dependency on each other — firing them
+  // together instead of one after another removes up to two round-trip
+  // latencies from the critical path before the user sees their own
+  // screen, while keeping the exact same guarantee downstream code relies
+  // on (employees[] fully populated before showPage('dashboard') runs).
+  // The superadmin/no-institution landing skips the roster fetch — it
+  // goes to the institution list instead, via loadInstitutions() below,
+  // which itself stays sequential since it only makes sense once we know
+  // there's no institution context yet.
+  const isSuperadminLanding = currentUser.role === 'superadmin' && !currentInstitution;
+  const [mr] = await Promise.all([
+    api('/api/meta'),
+    loadRolesCache(),
+    isSuperadminLanding ? Promise.resolve() : loadEmployees(),
+  ]);
   if (mr) meta = await mr.json();
-  await loadRolesCache();
   populateMetaSelects();
   applyRoleUI();
   updateSidebarUser();
   initAssistant();
   document.getElementById('headerDate').textContent =
     `${new Date().toLocaleDateString('en-MY',{weekday:'short'})}, ${fmtDate(new Date())}`;
-  if (currentUser.role === 'superadmin' && !currentInstitution) {
+  if (isSuperadminLanding) {
     await loadInstitutions();
     showPage('institutions');
   } else {
-    await loadEmployees();
     showPage('dashboard');
   }
   if (currentUser.must_change_password) openChangePasswordModal(true);

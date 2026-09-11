@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.gzip import GZipMiddleware
 
 from core.seed import init_db_seed
 from core.middleware import cors_middleware, request_logging_middleware
@@ -50,7 +50,7 @@ from routers.assistant import router as assistant_router
 from routers.auth import router as auth_router
 from routers.meta import router as meta_router
 from routers.health import router as health_router
-from routers.frontend import router as frontend_router, STATIC_DIR
+from routers.frontend import router as frontend_router, STATIC_DIR, CachedStaticFiles
 
 # ---------------------------------------------------------------------------
 # Logging — plain stdout logging so `fly logs` / any container log collector
@@ -115,6 +115,11 @@ app = FastAPI(
 # request_logging_middleware second.
 app.middleware("http")(cors_middleware)
 app.middleware("http")(request_logging_middleware)
+# Compresses every response body over minimum_size (HTML, JSON, JS, CSS —
+# nothing was compressed anywhere before this) — text compresses ~70-80%,
+# so this is the single biggest cut to bytes-on-the-wire available. Doesn't
+# interfere with either middleware above: neither touches the response body.
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 app.include_router(audit_router)
 app.include_router(notifications_router)
@@ -169,5 +174,5 @@ app.include_router(health_router)
 # catch-all route itself lives in routers/frontend.py and is included last,
 # below, after every API router so it can't shadow a more specific route.
 # ---------------------------------------------------------------------------
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+app.mount("/static", CachedStaticFiles(directory=STATIC_DIR), name="static")
 app.include_router(frontend_router)

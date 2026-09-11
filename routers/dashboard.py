@@ -28,7 +28,26 @@ from core.db_session import db_session
 router = APIRouter()
 
 
-def _approval_row_detail(conn, inst_id: int, module: str, row) -> Dict[str, Any]:
+def _batch_lookup(conn, table: str, key_col: str, value_col: str, ids, inst_id: int = None) -> Dict[Any, Any]:
+    """Resolves many {key_col: value_col} pairs in one query instead of one
+    query per id — the batched-IN-query pattern the onboarding/offboarding
+    block further down this file already uses, now also applied to the
+    approval-queue lookups above it. Returns {} without querying at all
+    when ids is empty (a module with no pending rows costs nothing here)."""
+    ids = [i for i in ids if i is not None]
+    if not ids:
+        return {}
+    placeholders = ",".join("?" * len(ids))
+    q = f"SELECT {key_col}, {value_col} FROM {table} WHERE {key_col} IN ({placeholders})"
+    params = list(ids)
+    if inst_id is not None:
+        q += " AND institution_id=?"
+        params.append(inst_id)
+    rows = conn.execute(q, params).fetchall()
+    return {r[key_col]: r[value_col] for r in rows}
+
+
+def _approval_row_detail(row, module: str, lookups: Dict[str, Dict]) -> Dict[str, Any]:
     """Resolve the (employee, stage label, stage type, due date) shown on
     one per-item To-Do row for a pending approval-workflow request —
     mirrors the shape the onboarding/offboarding checklist items below
@@ -38,28 +57,30 @@ def _approval_row_detail(conn, inst_id: int, module: str, row) -> Dict[str, Any]
     like a benefit claim) that a generic renderer would just be a wall of
     "if this column exists" checks — see docs/adr/0001 on why this
     codebase doesn't force genuinely different row shapes through one
-    renderer."""
+    renderer.
+
+    Takes pre-fetched `lookups` (see _batch_lookup calls in get_todos)
+    instead of querying inline — this used to run its own query per row
+    per module (leave_types/benefit_plans/users/ld_courses), which meant
+    a user with 20-30 pending items triggered 20-30+ individual round
+    trips just for this step, on the page that loads on every login."""
     if module == "leave":
-        lt = conn.execute("SELECT name FROM leave_types WHERE id=?", (row["leave_type_id"],)).fetchone()
+        name = lookups["leave_types"].get(row["leave_type_id"], "Leave")
         return {
             "employee_id": row["employee_id"],
-            "stage": f"{lt['name'] if lt else 'Leave'}: {row['start_date']} to {row['end_date']}",
+            "stage": f"{name}: {row['start_date']} to {row['end_date']}",
             "stage_type": "Leave", "due_date": row["start_date"],
         }
     if module == "claims":
-        p = conn.execute("SELECT plan_name FROM benefit_plans WHERE id=?", (row["benefit_plan_id"],)).fetchone()
+        name = lookups["benefit_plans"].get(row["benefit_plan_id"], "Benefit")
         return {
             "employee_id": row["employee_id"],
-            "stage": f"{p['plan_name'] if p else 'Benefit'} claim — RM {row['amount_claimed']}",
+            "stage": f"{name} claim — RM {row['amount_claimed']}",
             "stage_type": "Benefit Claim", "due_date": row["claim_date"],
         }
     if module == "requisition":
-        u = conn.execute(
-            "SELECT employee_id FROM users WHERE username=? AND institution_id=?",
-            (row["created_by"], inst_id)
-        ).fetchone()
         return {
-            "employee_id": u["employee_id"] if u else None,
+            "employee_id": lookups["requisition_creator_emp"].get(row["created_by"]),
             "stage": f"{row['title']} ({row['department']})",
             "stage_type": "Job Requisition", "due_date": row["created_at"],
         }
@@ -70,10 +91,10 @@ def _approval_row_detail(conn, inst_id: int, module: str, row) -> Dict[str, Any]
             "stage_type": "Timesheet", "due_date": row["period_start"],
         }
     if module == "ld_enrollment":
-        c = conn.execute("SELECT title FROM ld_courses WHERE id=?", (row["course_id"],)).fetchone()
+        title = lookups["ld_courses"].get(row["course_id"], "Training course")
         return {
             "employee_id": row["employee_id"],
-            "stage": c["title"] if c else "Training course",
+            "stage": title,
             "stage_type": "Training Enrollment", "due_date": row["created_at"],
         }
     if module == "overtime":
@@ -149,24 +170,43 @@ def get_todos(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, An
         ("resignation", "resignation-approvals", "Resignation"),
         ("pip", "perf-team", "PIP"),
     )
-    for module, page, noun in approval_targets:
-        rows = pending_rows_for_approver(conn, inst_id, user, module)
-        for row in rows:
-            detail = _approval_row_detail(conn, inst_id, module, row)
-            emp = conn.execute(
-                "SELECT full_name FROM employees WHERE institution_id=? AND employee_id=?",
-                (inst_id, detail["employee_id"])
-            ).fetchone() if detail["employee_id"] else None
-            employee_name = emp["full_name"] if emp else "Unknown"
-            todos.append({
-                "key": f"{module}-approval-{row['id']}",
-                "label": f"{detail['stage']} — {employee_name} ({noun.lower()}, awaiting your approval)",
-                "page": page, "count": 1,
-                # Same extra keys the onboarding items below add, for the
-                # Home page To-Do queue's per-item rendering.
-                "employee_name": employee_name, "stage": detail["stage"],
-                "stage_type": detail["stage_type"], "due_date": detail["due_date"],
-            })
+    # One pending_rows_for_approver query per module first (8 total,
+    # unavoidable — each module's own table/eligibility shape differs),
+    # then every per-row lookup _approval_row_detail used to make
+    # individually is batched into one IN-query per lookup type below —
+    # same pattern the onboarding/offboarding block further down already
+    # uses. A user with 20-30 pending items across these modules used to
+    # cost 20-30+ extra round trips just for this step; now it's a fixed
+    # handful regardless of how many items there are.
+    module_rows = {module: pending_rows_for_approver(conn, inst_id, user, module) for module, _, _ in approval_targets}
+    lookups = {
+        "leave_types": _batch_lookup(conn, "leave_types", "id", "name",
+                                      {r["leave_type_id"] for r in module_rows["leave"]}),
+        "benefit_plans": _batch_lookup(conn, "benefit_plans", "id", "plan_name",
+                                        {r["benefit_plan_id"] for r in module_rows["claims"]}),
+        "ld_courses": _batch_lookup(conn, "ld_courses", "id", "title",
+                                     {r["course_id"] for r in module_rows["ld_enrollment"]}),
+        "requisition_creator_emp": _batch_lookup(conn, "users", "username", "employee_id",
+                                                   {r["created_by"] for r in module_rows["requisition"]}, inst_id=inst_id),
+    }
+    approval_details = [
+        (module, page, noun, row, _approval_row_detail(row, module, lookups))
+        for module, page, noun in approval_targets
+        for row in module_rows[module]
+    ]
+    employee_names = _batch_lookup(conn, "employees", "employee_id", "full_name",
+                                    {d["employee_id"] for _, _, _, _, d in approval_details}, inst_id=inst_id)
+    for module, page, noun, row, detail in approval_details:
+        employee_name = employee_names.get(detail["employee_id"], "Unknown")
+        todos.append({
+            "key": f"{module}-approval-{row['id']}",
+            "label": f"{detail['stage']} — {employee_name} ({noun.lower()}, awaiting your approval)",
+            "page": page, "count": 1,
+            # Same extra keys the onboarding items below add, for the
+            # Home page To-Do queue's per-item rendering.
+            "employee_name": employee_name, "stage": detail["stage"],
+            "stage_type": detail["stage_type"], "due_date": detail["due_date"],
+        })
 
     # Employee document compliance reminders (work permit renewal, passport
     # expiry, etc — see routers/employee_documents.py) — HR-only,
