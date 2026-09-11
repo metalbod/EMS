@@ -114,14 +114,46 @@ npm run build:css
 
 `npm run watch:css` rebuilds on save while iterating on styles.
 
+### Frontend JS (bundling)
+
+`static/index.html` loads a single `static/js/app.bundle.js` rather than
+one `<script>` tag per `static/js/*.js` file — 30 separate render-blocking
+requests, unminified, used to ship on every page load regardless of role.
+The individual files are still the real source — edit them directly, same
+as always — `app.bundle.js` is a generated artifact, same "built locally,
+committed" convention as `tailwind.css`. It's produced by concatenating
+every file listed in `scripts/js-manifest.js`, in that order (these are
+plain global-scope scripts, not ES modules — order matters, since later
+files read state earlier ones declare, e.g. `core.js`'s `let employees`),
+then minifying the result with esbuild.
+
+Rebuild it — and `tailwind.css` together, in one step — before committing
+any `static/js/*.js` or `static/index.html` change:
+
+```bash
+npm install
+npm run build
+```
+
+(`npm run build:js` alone runs just the JS bundle step.) Adding a new
+`static/js/*.js` file to the app means adding its filename to
+`scripts/js-manifest.js`, not adding a `<script>` tag to `index.html`.
+
 ## Frontend asset versioning
 
 `index.html`'s `?v=...` cache-busting query strings are rewritten
-automatically at request time (`_static_asset_version()` in `main.py`),
-derived from a hash of every static file's path + mtime. Editing any file
-under `static/` automatically changes the served version — there is
+automatically at request time (`_static_asset_version()` in
+`routers/frontend.py`), derived from a hash of every static file's path +
+mtime, computed once per process (not on every request — static files
+never change during a running process's lifetime; a deployed container is
+immutable and local dev's `uvicorn` runs without `--reload`, so either way
+a file change needs a process restart to take effect). Editing any file
+under `static/` and restarting changes the served version — there is
 nothing to bump by hand. The literal `?v=...` values committed in
-`static/index.html` are just inert placeholders.
+`static/index.html` are just inert placeholders. `/static/*` responses
+also carry a long-lived `Cache-Control: immutable` header — safe because
+of this same versioning: a changed file is always requested under a new
+URL.
 
 ## API Documentation (OpenAPI/Swagger)
 

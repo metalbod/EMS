@@ -10,6 +10,8 @@
   "scripts": {
     "build:css": "tailwindcss -i ./static/css/tailwind-input.css -o ./static/css/tailwind.css --minify",
     "watch:css": "tailwindcss -i ./static/css/tailwind-input.css -o ./static/css/tailwind.css --watch",
+    "build:js": "node scripts/build-js.js",
+    "build": "npm run build:css && npm run build:js",
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage"
@@ -28,6 +30,7 @@
   "homepage": "https://github.com/metalbod/EMS#readme",
   "devDependencies": {
     "@tailwindcss/cli": "^4.3.3",
+    "esbuild": "^0.28.2",
     "jsdom": "^29.1.1",
     "tailwindcss": "^4.3.3",
     "vitest": "^4.1.11"

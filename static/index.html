@@ -5707,35 +5707,12 @@
   </form>
 </div>
 
-<script src="/static/js/list-state.js?v=74"></script>
-<script src="/static/js/core.js?v=74"></script>
-<script src="/static/js/employee-picker.js?v=1"></script>
-<script src="/static/js/dashboard.js?v=74"></script>
-<script src="/static/js/institutions.js?v=74"></script>
-<script src="/static/js/employees.js?v=74"></script>
-<script src="/static/js/orgchart.js?v=75"></script>
-<script src="/static/js/audit.js?v=74"></script>
-<script src="/static/js/users.js?v=74"></script>
-<script src="/static/js/recruitment.js?v=74"></script>
-<script src="/static/js/onboarding.js?v=74"></script>
-<script src="/static/js/ld.js?v=74"></script>
-<script src="/static/js/leave.js?v=74"></script>
-<script src="/static/js/resignation.js?v=1"></script>
-<script src="/static/js/approval-workflow.js?v=74"></script>
-<script src="/static/js/roles.js?v=4"></script>
-<script src="/static/js/employee-documents.js?v=1"></script>
-<script src="/static/js/timesheet.js?v=74"></script>
-<script src="/static/js/notifications.js?v=74"></script>
-<script src="/static/js/payroll.js?v=74"></script>
-<script src="/static/js/bulk-upload.js?v=74"></script>
-<script src="/static/js/locations.js?v=74"></script>
-<script src="/static/js/compensation.js?v=74"></script>
-<script src="/static/js/benefits.js?v=74"></script>
-<script src="/static/js/attendance.js?v=74"></script>
-<script src="/static/js/performance.js?v=74"></script>
-<script src="/static/js/pip.js?v=1"></script>
-<script src="/static/js/assistant.js?v=1"></script>
-<script src="/static/js/ai-assistant-settings.js?v=1"></script>
-<script src="/static/js/app-init.js?v=74"></script>
+<!-- Single minified bundle of every static/js/*.js file, in load order —
+     built by `npm run build:js` (see scripts/build-js.js and
+     scripts/js-manifest.js, the source of truth for that order). Editing
+     app behavior means editing the individual static/js/*.js source
+     files directly, then re-running that build — never hand-edit
+     app.bundle.js itself, same convention as static/css/tailwind.css. -->
+<script src="/static/js/app.bundle.js?v=1"></script>
 </body>
 </html>

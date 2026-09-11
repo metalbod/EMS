@@ -162,7 +162,7 @@ def list_my_projects(conn, user: dict = Depends(get_current_user)) -> List[Dict[
     rows = conn.execute("""
         SELECT DISTINCT p.* FROM projects p
         WHERE p.institution_id=? AND p.status='Active' AND (
-            p.is_open_to_all=1
+            p.is_open_to_all
             OR EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id=p.id AND pm.employee_id=?)
         )
         ORDER BY p.name

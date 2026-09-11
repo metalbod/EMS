@@ -183,6 +183,33 @@ def test_my_projects_empty_for_user_with_no_employee_record(client, hr_manager_a
     assert res.json() == []
 
 
+def test_my_projects_includes_open_to_all_project(client, hr_manager_auth, employee_with_login, make_test_project):
+    """Regression test: the previous query compared is_open_to_all=1, which
+    is valid against the old INTEGER 0/1 column (project_tasks.open_to_all)
+    but not against this genuine Postgres BOOLEAN column — every call to
+    this endpoint 500'd for a real employee with any is_open_to_all
+    project in the institution (every employee's My Timesheet project
+    selector), never caught because the only other coverage here
+    (test_my_projects_empty_for_user_with_no_employee_record) short-
+    circuits before reaching this query at all."""
+    emp, emp_headers = employee_with_login()
+    project = make_test_project(is_open_to_all=True)
+    res = client.get("/api/projects/mine", headers=emp_headers)
+    assert res.status_code == 200, res.text
+    assert project["id"] in [p["id"] for p in res.json()]
+
+
+def test_my_projects_includes_member_project_but_not_unrelated_one(
+    client, hr_manager_auth, employee_with_login, make_test_project
+):
+    emp, emp_headers = employee_with_login()
+    member_project = make_test_project(member_ids=[emp["employee_id"]])
+    other_project = make_test_project()  # not open, not a member
+    ids = [p["id"] for p in client.get("/api/projects/mine", headers=emp_headers).json()]
+    assert member_project["id"] in ids
+    assert other_project["id"] not in ids
+
+
 # ---------------------------------------------------------------------------
 # Project Tasks
 # ---------------------------------------------------------------------------
