@@ -1,6 +1,16 @@
 // Learning & Development
 // ---------------------------------------------------------------------------
 let ldCoursesCache=[], ldCatFilter='', ldEnrollFilter='', ldEnrollData=[];
+// Sort-only, like the Projects list (timesheet.js) — the catalog has no
+// pagination UI, and an institution's course count is small enough that
+// showing everything at once (rather than paging) matches how the rest
+// of L&D's own tables (My Trainings, below) already behave.
+const ldCourseList = createListState({ sortKey: 'title', pageSize: Number.MAX_SAFE_INTEGER });
+const LD_COURSE_COLUMNS = [
+  { key:'title', label:'Course', sortKey:'title' },
+  { key:'category', label:'Category', sortKey:'category' },
+  { key:'cost', label:'Cost', sortKey:'cost' },
+];
 const ldEnrollList = createListState({
   sortKey: 'employee_name',
   pageSize: Number.MAX_SAFE_INTEGER,
@@ -21,39 +31,54 @@ const LD_CATEGORY_COLORS={mandatory:'bg-red-100 text-red-700',professional_devel
 const LD_STATUS_COLORS={'Pending Approval':'status-pending','Approved':'status-info','Rejected':'status-negative','In Progress':'status-info','Completed':'status-positive'};
 
 async function loadLdCourses() {
-  const listEl=document.getElementById('ldCourseList');
+  const bodyEl=document.getElementById('ldCourseTableBody');
   const emptyEl=document.getElementById('ldCourseEmpty');
-  listEl.innerHTML='<p class="text-slate-400 text-sm text-center py-8 col-span-full">Loading…</p>';
+  bodyEl.innerHTML='<tr><td colspan="4" class="text-slate-400 text-sm text-center py-8">Loading…</td></tr>';
   let url='/api/ld/courses';
   if(ldCatFilter) url+=`?category=${encodeURIComponent(ldCatFilter)}`;
   const res=await api(url);
-  if(!res||!res.ok){listEl.innerHTML='';return;}
-  const rows=await res.json();
-  ldCoursesCache=rows;
-  if(!rows.length){listEl.innerHTML='';emptyEl?.classList.remove('hidden');return;}
+  ldCoursesCache=res&&res.ok?await res.json():[];
+  renderLdCourseTable();
+}
+
+function setLdCourseSort(key) { ldCourseList.setSort(key); renderLdCourseTable(); }
+
+function renderLdCourseTableHead() {
+  document.getElementById('ldCourseTableHead').innerHTML = LD_COURSE_COLUMNS.map(c =>
+    `<th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide cursor-pointer select-none whitespace-nowrap" onclick="setLdCourseSort('${c.sortKey}')">${esc(c.label)}<span class="ld-course-sort-arrow" data-sort-key="${c.sortKey}"></span></th>`
+  ).join('') + `<th class="px-4 py-2.5"></th>`;
+}
+
+function renderLdCourseTable() {
+  const bodyEl=document.getElementById('ldCourseTableBody');
+  const emptyEl=document.getElementById('ldCourseEmpty');
+  renderLdCourseTableHead();
+  ldCourseList.updateSortArrows('.ld-course-sort-arrow');
+  if(!ldCoursesCache.length){bodyEl.innerHTML='';emptyEl?.classList.remove('hidden');return;}
   emptyEl?.classList.add('hidden');
   const canManage=HR_MANAGE_ROLES.includes(currentUser?.role);
-  listEl.innerHTML=rows.map(c=>`
-    <div class="bg-white border border-slate-200 rounded-xl p-4">
-      <div class="flex items-start justify-between gap-2 mb-2">
-        <span class="badge text-xs ${statusColor(LD_CATEGORY_COLORS, c.category)}">${LD_CATEGORY_LABELS[c.category]||c.category}</span>
-        ${canManage?`<div class="flex items-center gap-1">
-          <button onclick="openLdModulesModal(${c.id})" class="text-slate-300 hover:text-green-600" title="Course Content"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s4.832.477 6 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg></button>
-          <button onclick="openLdQuizModal(${c.id})" class="text-slate-300 hover:text-purple-500" title="Manage Quiz"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></button>
-          <button onclick="openLdCourseModal(${c.id})" class="text-slate-300 hover:text-blue-500" title="Edit"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
-          <button onclick="deleteLdCourse(${c.id})" class="text-slate-300 hover:text-red-500" title="Remove"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
-        </div>`:''}
-      </div>
-      <p class="font-medium text-slate-800 mb-1">${esc(c.title)}</p>
-      <p class="text-xs text-slate-500 mb-3 line-clamp-2">${esc(c.description||'')}</p>
-      <div class="flex items-center justify-between">
-        <span class="text-sm font-medium ${c.cost>0?'text-amber-600':'text-green-600'}">${c.cost>0?fmtCurrency(c.cost):'Free'}</span>
-        <div class="flex items-center gap-2">
-          ${canManage?`<button onclick="openLdPreviewQuizModal(${c.id})" class="btn-ghost text-xs px-3 py-1.5 border border-slate-200">Preview</button>`:''}
+  const { pageItems } = ldCourseList.view(ldCoursesCache);
+  bodyEl.innerHTML=pageItems.map(c=>`
+    <tr class="border-t border-slate-100">
+      <td class="px-4 py-3">
+        <p class="font-medium text-slate-800">${esc(c.title)}</p>
+        <p class="text-xs text-slate-400 line-clamp-1">${esc(c.description||'')}</p>
+      </td>
+      <td class="px-4 py-3 whitespace-nowrap"><span class="badge text-xs ${statusColor(LD_CATEGORY_COLORS, c.category)}">${LD_CATEGORY_LABELS[c.category]||c.category}</span></td>
+      <td class="px-4 py-3 whitespace-nowrap font-medium ${c.cost>0?'text-amber-600':'text-green-600'}">${c.cost>0?fmtCurrency(c.cost):'Free'}</td>
+      <td class="px-4 py-3 text-right whitespace-nowrap">
+        <div class="flex items-center justify-end gap-2">
+          ${canManage?`<div class="flex items-center gap-1">
+            <button onclick="openLdModulesModal(${c.id})" class="text-slate-300 hover:text-green-600" title="Course Content"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s4.832.477 6 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg></button>
+            <button onclick="openLdQuizModal(${c.id})" class="text-slate-300 hover:text-purple-500" title="Manage Quiz"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></button>
+            <button onclick="openLdCourseModal(${c.id})" class="text-slate-300 hover:text-blue-500" title="Edit"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
+            <button onclick="deleteLdCourse(${c.id})" class="text-slate-300 hover:text-red-500" title="Remove"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+          </div>
+          <button onclick="openLdPreviewQuizModal(${c.id})" class="btn-ghost text-xs px-3 py-1.5 border border-slate-200">Preview</button>`:''}
           <button onclick="openLdEnrollModal(${c.id})" class="btn-primary text-xs px-3 py-1.5">Enroll</button>
         </div>
-      </div>
-    </div>`).join('');
+      </td>
+    </tr>`).join('');
 }
 
 function setLdCatFilter(cat) {

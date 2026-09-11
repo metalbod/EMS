@@ -1479,7 +1479,14 @@
             Add Course
           </button>
         </div>
-        <div id="ldCourseList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+        <div class="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr id="ldCourseTableHead"></tr>
+            </thead>
+            <tbody id="ldCourseTableBody"></tbody>
+          </table>
+        </div>
         <p id="ldCourseEmpty" class="hidden text-center text-slate-400 text-sm py-12">No courses in the catalog yet.</p>
       </div>
 
