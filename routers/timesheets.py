@@ -134,16 +134,25 @@ def add_timesheet_entry(conn, ts_id: int, body: TimesheetEntryIn, user: dict = D
     if ts["status"] != "Draft":
         raise HTTPException(400, f"Cannot edit a {ts['status']} timesheet")
     task = conn.execute(
-        "SELECT id, open_to_all FROM project_tasks WHERE id=? AND project_id=? AND institution_id=?",
+        "SELECT id FROM project_tasks WHERE id=? AND project_id=? AND institution_id=?",
         (body.task_id, body.project_id, inst_id)
     ).fetchone()
     if not task:
         raise HTTPException(400, "Selected task does not belong to this project")
-    if not task["open_to_all"] and not conn.execute(
-        "SELECT id FROM task_assignments WHERE task_id=? AND employee_id=? AND institution_id=?",
-        (body.task_id, ts["employee_id"], inst_id)
+    # Team membership (and its "open to all" escape hatch) lives at the
+    # project level, not per task — anyone on the project's member list
+    # can log time against any of its tasks (see routers/projects.py's
+    # list_project_tasks / add_task_assignment for the same project-level
+    # gate).
+    project = conn.execute(
+        "SELECT is_open_to_all FROM projects WHERE id=? AND institution_id=?",
+        (body.project_id, inst_id)
+    ).fetchone()
+    if not project["is_open_to_all"] and not conn.execute(
+        "SELECT id FROM project_members WHERE project_id=? AND employee_id=?",
+        (body.project_id, ts["employee_id"])
     ).fetchone():
-        raise HTTPException(403, "This employee is not assigned to the selected task")
+        raise HTTPException(403, "This employee is not a member of the selected project")
     if body.hours <= 0 or body.hours > 24:
         raise HTTPException(400, "Hours must be between 0 and 24")
     if not (ts["period_start"] <= body.date <= ts["period_end"]):

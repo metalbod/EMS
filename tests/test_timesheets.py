@@ -1,7 +1,8 @@
 """
 Integration tests for routers/timesheets.py: the Draft -> Submitted ->
 Approved/Rejected status machine, plus entry validation against project
-task assignments (open-to-all vs assignment-gated).
+membership (project_members / is_open_to_all — see routers/projects.py's
+module docstring for the project-level team-membership model).
 
 Reuses make_test_project/make_test_project_task from conftest.py (shared
 with test_projects.py) since every timesheet entry must reference a real
@@ -39,15 +40,12 @@ def employee_with_user(make_test_employee, hr_manager_auth, client, test_institu
 
 @pytest.fixture
 def open_task(hr_manager_auth, client, make_test_project, make_test_project_task):
-    """A project + task marked open_to_all, so any employee can log time
-    against it without needing an explicit assignment."""
-    project = make_test_project()
+    """A project marked is_open_to_all, so any employee can log time
+    against any of its tasks without needing to be an explicit member.
+    (Team membership — and this escape hatch — lives at the project
+    level now, not per task; see routers/projects.py.)"""
+    project = make_test_project(is_open_to_all=True)
     task = make_test_project_task(project["id"])
-    res = client.patch(
-        f"/api/projects/{project['id']}/tasks/{task['id']}/open-to-all",
-        headers=hr_manager_auth, json={"open_to_all": True},
-    )
-    assert res.status_code == 200
     return project, task
 
 
@@ -161,20 +159,39 @@ def test_add_entry_without_assignment_and_not_open_returns_403(
 ):
     emp, headers = employee_with_user
     ts = make_test_timesheet()
-    project = make_test_project()
-    task = make_test_project_task(project["id"])  # not open_to_all, employee not assigned
+    project = make_test_project()  # not open, employee not a member
+    task = make_test_project_task(project["id"])
     res = client.post(f"/api/timesheets/{ts['id']}/entries", headers=headers, json={
         "project_id": project["id"], "task_id": task["id"], "date": ENTRY_DATE, "hours": 4,
     })
     assert res.status_code == 403
 
 
+def test_add_entry_succeeds_for_project_member(
+    client, employee_with_user, make_test_timesheet, make_test_project, make_test_project_task
+):
+    """Team membership (not is_open_to_all, and not a per-task
+    task_assignments row) is what grants timesheet eligibility now — see
+    routers/timesheets.py's add_timesheet_entry."""
+    emp, headers = employee_with_user
+    ts = make_test_timesheet()
+    project = make_test_project(member_ids=[emp["employee_id"]])
+    task = make_test_project_task(project["id"])
+    res = client.post(f"/api/timesheets/{ts['id']}/entries", headers=headers, json={
+        "project_id": project["id"], "task_id": task["id"], "date": ENTRY_DATE, "hours": 4,
+    })
+    assert res.status_code == 201
+
+
 def test_add_entry_succeeds_when_explicitly_assigned(
     client, hr_manager_auth, employee_with_user, make_test_timesheet, make_test_project, make_test_project_task
 ):
+    """A project member additionally scheduled expected effort via
+    task_assignments can still log time as normal — that table no longer
+    gates eligibility, but it must not accidentally break it either."""
     emp, headers = employee_with_user
     ts = make_test_timesheet()
-    project = make_test_project()
+    project = make_test_project(member_ids=[emp["employee_id"]])
     task = make_test_project_task(project["id"])
     assign_res = client.post(
         f"/api/projects/{project['id']}/tasks/{task['id']}/assignments", headers=hr_manager_auth,

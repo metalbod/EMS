@@ -4182,6 +4182,27 @@
             <div id="projectManagersList" class="text-sm max-h-40 overflow-y-auto"></div>
           </div>
         </div>
+        <div>
+          <label class="lbl">Team Members</label>
+          <p class="text-xs text-slate-400 -mt-1 mb-1.5">Who can log timesheet hours against this project.</p>
+          <div class="border border-slate-200 rounded-lg overflow-hidden">
+            <div class="px-2 py-1.5 border-b border-slate-100">
+              <input type="text" id="projectMembersSearch" class="inp text-sm" placeholder="Search name or ID…" oninput="filterProjectMemberOptions()"/>
+            </div>
+            <label class="flex items-center gap-2 px-3 py-2 border-b border-slate-100 bg-slate-50 text-sm font-medium cursor-pointer">
+              <input type="checkbox" id="projectMembersSelectAll" onchange="toggleAllProjectMembers()"/> Select All
+            </label>
+            <div id="projectMembersList" class="text-sm max-h-40 overflow-y-auto"></div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <input type="checkbox" id="projectOpenToAll" class="w-4 h-4"/>
+          <label for="projectOpenToAll" class="text-sm text-slate-700 cursor-pointer">Open to all employees <span class="text-slate-400">— anyone can log time here, no membership needed</span></label>
+        </div>
+        <div class="flex items-center gap-2">
+          <input type="checkbox" id="projectBillable" class="w-4 h-4"/>
+          <label for="projectBillable" class="text-sm text-slate-700 cursor-pointer">Billable <span class="text-slate-400">— used for project cost calculations</span></label>
+        </div>
         <div class="flex gap-2">
           <button type="button" onclick="submitProject()" class="btn-primary">Save</button>
           <button type="button" onclick="closeProjectModal()" class="btn-ghost">Cancel</button>
@@ -4210,19 +4231,18 @@
             <button type="button" onclick="resetProjectTaskForm()" class="btn-ghost text-xs px-3 py-1.5">Clear</button>
           </div>
 
-          <!-- Per-member expected effort — only available once the task has been saved -->
+          <!-- Per-member expected effort — only available once the task has been saved.
+               Team membership itself lives at the project level (Details tab); this only
+               schedules expected effort for people already on that member list. -->
           <div id="taskAssignSection" class="hidden border-t border-slate-200 pt-2 mt-1">
-            <p class="text-xs font-semibold text-slate-600 mb-1">Assigned Team Members <span class="text-slate-400 font-normal">— expected effort</span></p>
-            <div id="taskAssignOpenBanner" class="hidden flex items-center justify-between gap-2 bg-blue-50 border border-blue-100 rounded-lg px-2.5 py-1.5 mb-2">
-              <span class="text-xs text-blue-700">Open to all — every employee can clock hours to this task</span>
-              <button type="button" onclick="removeTaskOpenToAll()" class="text-xs text-blue-600 hover:underline shrink-0">Restrict</button>
-            </div>
+            <p class="text-xs font-semibold text-slate-600 mb-1">Expected Effort <span class="text-slate-400 font-normal">— project members scheduled on this task</span></p>
             <div id="taskAssignList" class="space-y-1 mb-2 max-h-32 overflow-y-auto"></div>
-            <div class="grid grid-cols-2 gap-2 mb-2">
-              <select id="taskAssignEmpId" class="inp text-sm" onchange="toggleTaskAssignAllMode()"></select>
+            <p id="taskAssignNoMembers" class="hidden text-xs text-slate-400 italic pb-1">No project members yet — add some in the Details tab first.</p>
+            <div id="taskAssignFields" class="grid grid-cols-2 gap-2 mb-2">
+              <select id="taskAssignEmpId" class="inp text-sm"></select>
               <input id="taskAssignStart" type="datetime-local" class="inp text-sm" title="Start date &amp; time"/>
             </div>
-            <div class="flex gap-2">
+            <div id="taskAssignFieldsRow2" class="flex gap-2">
               <input id="taskAssignDuration" type="number" step="0.5" min="0.5" class="inp text-sm flex-1" placeholder="Duration (hours)"/>
               <button type="button" onclick="addTaskAssignment()" class="btn-primary text-xs px-3">Assign</button>
             </div>

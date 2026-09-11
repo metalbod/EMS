@@ -54,13 +54,10 @@ def emp_with_shift(client, hr_manager_auth, employee_with_login, make_test_shift
 
 @pytest.fixture
 def open_task(hr_manager_auth, client, make_test_project, make_test_project_task):
-    project = make_test_project()
+    """Team membership (and its "open to all" escape hatch) lives at the
+    project level now, not per task — see routers/projects.py."""
+    project = make_test_project(is_open_to_all=True)
     task = make_test_project_task(project["id"])
-    res = client.patch(
-        f"/api/projects/{project['id']}/tasks/{task['id']}/open-to-all",
-        headers=hr_manager_auth, json={"open_to_all": True},
-    )
-    assert res.status_code == 200
     return project, task
 
 

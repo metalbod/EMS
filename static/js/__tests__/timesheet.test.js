@@ -231,6 +231,137 @@ describe('Edit Project — Project Manager(s) eligibility filter', () => {
   });
 });
 
+// Mirrors timesheet.js's renderProjectMembersChecklist / filterProjectMemberOptions /
+// syncProjectMembersSelectAll / toggleAllProjectMembers — the Team
+// Members picker, same searchable-checklist mechanics as Project
+// Manager(s) above (and same filterEmployeeOptions matcher), but with no
+// role-eligibility filter: every active employee is a candidate, since
+// this is the roster that governs who can log timesheet hours against
+// the project (see routers/projects.py's add_timesheet_entry), not an
+// approval-authority list.
+describe('Edit Project — Team Members search + checkbox list', () => {
+  const members = [
+    { id: 'A028', name: 'Cheah Wui Keat' },
+    { id: 'A026', name: 'Mohamad Syafiq' },
+    { id: 'A032', name: 'Raj Saraiya' },
+    { id: 'A109', name: 'Richie Teoh' },
+  ];
+
+  beforeEach(() => {
+    document.body.innerHTML = `
+      <input type="text" id="projectMembersSearch"/>
+      <input type="checkbox" id="projectMembersSelectAll" />
+      <div id="projectMembersList">
+        ${members.map(m => `
+          <label class="project-member-option" data-label="${m.name} (${m.id})">
+            <input type="checkbox" class="project-member-checkbox" value="${m.id}"/>
+            ${m.name} (${m.id})
+          </label>`).join('')}
+        <div id="projectMembersNoMatch" class="hidden">No matches</div>
+      </div>
+    `;
+  });
+
+  function filterProjectMemberOptions() {
+    const q = document.getElementById('projectMembersSearch')?.value || '';
+    const opts = [...document.querySelectorAll('.project-member-option')];
+    const matched = new Set(filterEmployeeOptions(
+      opts.map(el => ({ value: el.querySelector('.project-member-checkbox').value, label: el.dataset.label })),
+      q
+    ).map(o => o.value));
+    let visibleCount = 0;
+    opts.forEach(opt => {
+      const match = matched.has(opt.querySelector('.project-member-checkbox').value);
+      opt.classList.toggle('hidden', !match);
+      if (match) visibleCount++;
+    });
+    document.getElementById('projectMembersNoMatch')?.classList.toggle('hidden', visibleCount > 0);
+    syncProjectMembersSelectAll();
+  }
+
+  function visibleCheckboxes() {
+    return [...document.querySelectorAll('.project-member-option:not(.hidden) .project-member-checkbox')];
+  }
+
+  function syncProjectMembersSelectAll() {
+    const boxes = visibleCheckboxes();
+    document.getElementById('projectMembersSelectAll').checked = boxes.length > 0 && boxes.every(b => b.checked);
+  }
+
+  function toggleAllProjectMembers() {
+    const checked = document.getElementById('projectMembersSelectAll').checked;
+    visibleCheckboxes().forEach(b => b.checked = checked);
+  }
+
+  function setSearch(q) {
+    document.getElementById('projectMembersSearch').value = q;
+    filterProjectMemberOptions();
+  }
+
+  function visibleIds() {
+    return visibleCheckboxes().map(b => b.value);
+  }
+
+  it('shows every active employee when the search box is empty — no role restriction', () => {
+    setSearch('');
+    expect(visibleIds().sort()).toEqual(['A026', 'A028', 'A032', 'A109']);
+  });
+
+  it('filters case-insensitively by name', () => {
+    setSearch('richie');
+    expect(visibleIds()).toEqual(['A109']);
+  });
+
+  it('filters by employee ID as well as name', () => {
+    setSearch('A032');
+    expect(visibleIds()).toEqual(['A032']);
+  });
+
+  it('shows the "No matches" empty state when nothing matches', () => {
+    setSearch('zzznomatch');
+    expect(visibleIds()).toEqual([]);
+    expect(document.getElementById('projectMembersNoMatch').classList.contains('hidden')).toBe(false);
+  });
+
+  it('"Select All" while filtered only checks the currently visible options', () => {
+    setSearch('teoh');
+    document.getElementById('projectMembersSelectAll').checked = true;
+    toggleAllProjectMembers();
+    expect(document.querySelector('.project-member-checkbox[value="A109"]').checked).toBe(true);
+    expect(document.querySelector('.project-member-checkbox[value="A026"]').checked).toBe(false);
+  });
+});
+
+// Mirrors timesheet.js's renderProjectMembersChecklist's base filter
+// (separate from the search box above): an employee deactivated after
+// being added as a project member must still be offered — checked — so
+// an unrelated future save can't silently drop them from membership just
+// because the picker itself would no longer offer them to newly add.
+// Same reasoning as the Project Manager(s) picker's own grandfather
+// clause.
+describe('Edit Project — Team Members includes a deactivated-but-selected member', () => {
+  function renderableIds(employees, selectedIds) {
+    return employees
+      .filter(e => e.status === 'Active' || selectedIds.includes(e.employee_id))
+      .map(e => e.employee_id);
+  }
+
+  const employees = [
+    { employee_id: 'A028', status: 'Active' },
+    { employee_id: 'A050', status: 'Inactive' },
+  ];
+
+  it('excludes an inactive employee who is not currently selected', () => {
+    expect(renderableIds(employees, [])).not.toContain('A050');
+  });
+
+  it('still includes an inactive employee who is already a selected member', () => {
+    const ids = renderableIds(employees, ['A050']);
+    expect(ids).toContain('A050');
+    expect(ids.sort()).toEqual(['A028', 'A050']);
+  });
+});
+
 // Mirrors core.js's fmtDate and timesheet.js's loadCurrentTimesheet week
 // label — every other date-range display in the app (Payroll runs, Leave,
 // PIP/Performance cycles, Employee contract dates) renders

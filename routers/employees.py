@@ -710,6 +710,16 @@ def _rename_employee_id_everywhere(conn, inst_id: str, old_id: str, new_id: str)
                 "ld_quiz_attempts", "ld_lesson_progress", "leave_balances", "leave_applications",
                 "leave_audit_log", "timesheets", "timesheet_audit_log", "task_assignments"):
         conn.execute(f"UPDATE {tbl} SET employee_id=? WHERE institution_id=? AND employee_id=?", (new_id, inst_id, old_id))
+    # project_managers/project_members carry no institution_id column of
+    # their own (scoped through their parent project instead — see their
+    # migrations), so they can't use the generic institution_id=? form
+    # above; scope through projects instead. Also fixes a pre-existing gap
+    # where project_managers wasn't renamed here at all.
+    for tbl in ("project_managers", "project_members"):
+        conn.execute(
+            f"UPDATE {tbl} SET employee_id=? WHERE employee_id=? AND project_id IN (SELECT id FROM projects WHERE institution_id=?)",
+            (new_id, old_id, inst_id)
+        )
 
 
 @router.put("/api/employees/{employee_id}", response_model=EmployeeOut)

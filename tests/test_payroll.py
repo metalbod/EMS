@@ -123,16 +123,15 @@ def test_hourly_employee_payslip_splits_overtime(
     assert login.status_code == 200
     emp_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
 
-    project_res = client.post("/api/projects", headers=hr_manager_auth, json={"name": "ZZ Payroll Project", "status": "Active"})
+    # is_open_to_all lives on the project itself now, not per task.
+    project_res = client.post("/api/projects", headers=hr_manager_auth,
+                               json={"name": "ZZ Payroll Project", "status": "Active", "is_open_to_all": True})
     assert project_res.status_code == 201, project_res.text
     project = project_res.json()
     task_res = client.post(f"/api/projects/{project['id']}/tasks", headers=hr_manager_auth,
                             json={"name": "ZZ Payroll Task", "status": "Not Started"})
     assert task_res.status_code == 201, task_res.text
     task = task_res.json()
-    open_res = client.patch(f"/api/projects/{project['id']}/tasks/{task['id']}/open-to-all",
-                             headers=hr_manager_auth, json={"open_to_all": True})
-    assert open_res.status_code == 200, open_res.text
 
     start, end = _period(4)
     ts = client.post("/api/timesheets", headers=emp_headers,

@@ -100,6 +100,60 @@ def test_update_project_managers_replaces_set(client, hr_manager_auth, make_test
     assert res.json()["manager_ids"] == [mgr2["employee_id"]]
 
 
+def test_create_project_with_members(client, hr_manager_auth, make_test_employee):
+    """Team members are assigned at the project level (not per task) — see
+    module docstring update in routers/projects.py."""
+    mem1 = make_test_employee(full_name="ZZ Project Member One")
+    mem2 = make_test_employee(full_name="ZZ Project Member Two")
+    res = client.post("/api/projects", headers=hr_manager_auth, json={
+        "name": "ZZ Member Project", "status": "Active",
+        "member_ids": [mem1["employee_id"], mem2["employee_id"]],
+    })
+    assert res.status_code == 201, res.text
+    assert sorted(res.json()["member_ids"]) == sorted([mem1["employee_id"], mem2["employee_id"]])
+
+    listing = client.get("/api/projects", headers=hr_manager_auth).json()
+    row = next(p for p in listing if p["id"] == res.json()["id"])
+    assert sorted(row["member_ids"]) == sorted([mem1["employee_id"], mem2["employee_id"]])
+    assert row["member_count"] == 2
+
+
+def test_create_project_with_unknown_member_returns_404(client, hr_manager_auth):
+    res = client.post("/api/projects", headers=hr_manager_auth, json={
+        "name": "ZZ Bad Member Project", "status": "Active", "member_ids": ["NOPE_NOT_REAL"],
+    })
+    assert res.status_code == 404
+
+
+def test_update_project_members_replaces_set(client, hr_manager_auth, make_test_employee, make_test_project):
+    mem1 = make_test_employee(full_name="ZZ Replace Member One")
+    mem2 = make_test_employee(full_name="ZZ Replace Member Two")
+    project = make_test_project()
+
+    client.put(f"/api/projects/{project['id']}", headers=hr_manager_auth,
+               json={"name": project["name"], "status": "Active", "member_ids": [mem1["employee_id"]]})
+    res = client.put(f"/api/projects/{project['id']}", headers=hr_manager_auth,
+                      json={"name": project["name"], "status": "Active", "member_ids": [mem2["employee_id"]]})
+    assert res.status_code == 200
+    assert res.json()["member_ids"] == [mem2["employee_id"]]
+
+
+def test_project_is_open_to_all_and_is_billable_persist(client, hr_manager_auth, make_test_project):
+    """Both default false; both persist through create and update. is_billable
+    is a plain flag today — project-cost calculations on top of it are
+    separate, later work."""
+    project = make_test_project()
+    assert project["is_open_to_all"] in (False, 0)
+    assert project["is_billable"] in (False, 0)
+
+    res = client.put(f"/api/projects/{project['id']}", headers=hr_manager_auth, json={
+        "name": project["name"], "status": "Active", "is_open_to_all": True, "is_billable": True,
+    })
+    assert res.status_code == 200
+    assert res.json()["is_open_to_all"] in (True, 1)
+    assert res.json()["is_billable"] in (True, 1)
+
+
 def test_delete_project_success(client, hr_manager_auth, make_test_project):
     project = make_test_project()
     res = client.delete(f"/api/projects/{project['id']}", headers=hr_manager_auth)
@@ -137,7 +191,6 @@ def test_create_task_success(client, make_test_project, make_test_project_task):
     task = make_test_project_task(project["id"], name="ZZ Design phase", estimated_hours=10)
     assert task["name"] == "ZZ Design phase"
     assert task["estimated_hours"] == 10
-    assert task["open_to_all"] is False or task["open_to_all"] == 0
 
 
 def test_create_task_for_nonexistent_project_returns_404(client, hr_manager_auth):
@@ -162,41 +215,39 @@ def test_list_tasks_includes_created_task(client, hr_manager_auth, make_test_pro
     assert task["id"] in [t["id"] for t in res.json()]
 
 
-def test_employee_without_assignment_only_sees_open_to_all_tasks(
-    client, hr_manager_auth, make_test_employee, make_test_project, make_test_project_task
+def test_non_member_sees_no_tasks_unless_project_is_open_to_all(
+    client, hr_manager_auth, employee_with_login, make_test_project, make_test_project_task
 ):
+    """Team membership (and its "open to all" escape hatch) lives at the
+    project level now, not per task — a non-member either sees every task
+    (project open) or none at all (project closed), never a per-task mix."""
     project = make_test_project()
-    closed_task = make_test_project_task(project["id"], name="ZZ Closed Task")
-    open_task = make_test_project_task(project["id"], name="ZZ Open Task")
-    res = client.patch(
-        f"/api/projects/{project['id']}/tasks/{open_task['id']}/open-to-all",
-        headers=hr_manager_auth, json={"open_to_all": True},
-    )
-    assert res.status_code == 200
-
-    emp = make_test_employee()
-    emp_login = client.post("/api/users", headers=hr_manager_auth, json={
-        "username": f"zzprojtest_{emp['employee_id'].lower()}",
-        "full_name": "ZZ Project Test Employee",
-        "password": "ZzPytest@123",
-        "role": "employee",
-        "employee_id": emp["employee_id"],
-    })
-    assert emp_login.status_code == 201
-    login = client.post("/api/auth/login", json={
-        "username": emp_login.json()["username"], "password": "ZzPytest@123",
-        "institution_code": "ZZPYTEST",
-    })
-    assert login.status_code == 200
-    emp_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    task = make_test_project_task(project["id"], name="ZZ Task")
+    emp, emp_headers = employee_with_login()
 
     res = client.get(f"/api/projects/{project['id']}/tasks", headers=emp_headers)
     assert res.status_code == 200
-    visible_ids = [t["id"] for t in res.json()]
-    assert open_task["id"] in visible_ids
-    assert closed_task["id"] not in visible_ids
+    assert res.json() == []
 
-    client.delete(f"/api/users/{emp_login.json()['id']}", headers=hr_manager_auth)
+    open_res = client.put(f"/api/projects/{project['id']}", headers=hr_manager_auth,
+                           json={"name": project["name"], "status": "Active", "is_open_to_all": True})
+    assert open_res.status_code == 200
+
+    res = client.get(f"/api/projects/{project['id']}/tasks", headers=emp_headers)
+    assert res.status_code == 200
+    assert task["id"] in [t["id"] for t in res.json()]
+
+
+def test_project_member_sees_all_tasks(
+    client, hr_manager_auth, employee_with_login, make_test_project, make_test_project_task
+):
+    emp, emp_headers = employee_with_login()
+    project = make_test_project(name="ZZ Member Visibility Project", member_ids=[emp["employee_id"]])
+    task = make_test_project_task(project["id"], name="ZZ Member Task")
+
+    res = client.get(f"/api/projects/{project['id']}/tasks", headers=emp_headers)
+    assert res.status_code == 200
+    assert task["id"] in [t["id"] for t in res.json()]
 
 
 def test_update_task_success(client, hr_manager_auth, make_test_project, make_test_project_task):
@@ -226,18 +277,36 @@ def test_delete_task_success(client, hr_manager_auth, make_test_project, make_te
 
 
 # ---------------------------------------------------------------------------
-# Task Assignments
+# Task Assignments — expected effort (start datetime + duration) for a
+# project member on a task. Requires project membership first (see
+# add_task_assignment) — every test below adds the employee as a project
+# member via make_test_project's member_ids before assigning them effort.
 # ---------------------------------------------------------------------------
 def test_add_assignment_success(client, hr_manager_auth, make_test_employee, make_test_project, make_test_project_task):
-    project = make_test_project()
-    task = make_test_project_task(project["id"])
     emp = make_test_employee()
+    project = make_test_project(member_ids=[emp["employee_id"]])
+    task = make_test_project_task(project["id"])
     res = client.post(
         f"/api/projects/{project['id']}/tasks/{task['id']}/assignments", headers=hr_manager_auth,
         json={"employee_id": emp["employee_id"], "start_datetime": "2026-08-01T09:00", "duration_hours": 4},
     )
     assert res.status_code == 201
     assert res.json()["employee_id"] == emp["employee_id"]
+
+
+def test_add_assignment_requires_project_membership(client, hr_manager_auth, make_test_employee, make_test_project, make_test_project_task):
+    """The regression this whole feature exists to fix: you can no longer
+    schedule task effort for someone who isn't on the project's own member
+    list — matches the (previously aspirational) UI hint text "Add them as
+    a project member first"."""
+    emp = make_test_employee()
+    project = make_test_project()  # no members
+    task = make_test_project_task(project["id"])
+    res = client.post(
+        f"/api/projects/{project['id']}/tasks/{task['id']}/assignments", headers=hr_manager_auth,
+        json={"employee_id": emp["employee_id"], "start_datetime": "2026-08-01T09:00", "duration_hours": 4},
+    )
+    assert res.status_code == 400
 
 
 def test_add_assignment_for_nonexistent_employee_returns_404(client, hr_manager_auth, make_test_project, make_test_project_task):
@@ -251,9 +320,9 @@ def test_add_assignment_for_nonexistent_employee_returns_404(client, hr_manager_
 
 
 def test_add_assignment_zero_duration_returns_400(client, hr_manager_auth, make_test_employee, make_test_project, make_test_project_task):
-    project = make_test_project()
-    task = make_test_project_task(project["id"])
     emp = make_test_employee()
+    project = make_test_project(member_ids=[emp["employee_id"]])
+    task = make_test_project_task(project["id"])
     res = client.post(
         f"/api/projects/{project['id']}/tasks/{task['id']}/assignments", headers=hr_manager_auth,
         json={"employee_id": emp["employee_id"], "start_datetime": "2026-08-01T09:00", "duration_hours": 0},
@@ -262,9 +331,9 @@ def test_add_assignment_zero_duration_returns_400(client, hr_manager_auth, make_
 
 
 def test_add_duplicate_assignment_returns_400(client, hr_manager_auth, make_test_employee, make_test_project, make_test_project_task):
-    project = make_test_project()
-    task = make_test_project_task(project["id"])
     emp = make_test_employee()
+    project = make_test_project(member_ids=[emp["employee_id"]])
+    task = make_test_project_task(project["id"])
     payload = {"employee_id": emp["employee_id"], "start_datetime": "2026-08-01T09:00", "duration_hours": 4}
     first = client.post(f"/api/projects/{project['id']}/tasks/{task['id']}/assignments", headers=hr_manager_auth, json=payload)
     assert first.status_code == 201
@@ -273,9 +342,9 @@ def test_add_duplicate_assignment_returns_400(client, hr_manager_auth, make_test
 
 
 def test_list_assignments_includes_added_assignment(client, hr_manager_auth, make_test_employee, make_test_project, make_test_project_task):
-    project = make_test_project()
-    task = make_test_project_task(project["id"])
     emp = make_test_employee()
+    project = make_test_project(member_ids=[emp["employee_id"]])
+    task = make_test_project_task(project["id"])
     client.post(
         f"/api/projects/{project['id']}/tasks/{task['id']}/assignments", headers=hr_manager_auth,
         json={"employee_id": emp["employee_id"], "start_datetime": "2026-08-01T09:00", "duration_hours": 4},
@@ -286,9 +355,9 @@ def test_list_assignments_includes_added_assignment(client, hr_manager_auth, mak
 
 
 def test_remove_assignment_success(client, hr_manager_auth, make_test_employee, make_test_project, make_test_project_task):
-    project = make_test_project()
-    task = make_test_project_task(project["id"])
     emp = make_test_employee()
+    project = make_test_project(member_ids=[emp["employee_id"]])
+    task = make_test_project_task(project["id"])
     client.post(
         f"/api/projects/{project['id']}/tasks/{task['id']}/assignments", headers=hr_manager_auth,
         json={"employee_id": emp["employee_id"], "start_datetime": "2026-08-01T09:00", "duration_hours": 4},
@@ -299,14 +368,3 @@ def test_remove_assignment_success(client, hr_manager_auth, make_test_employee, 
     assert res.status_code == 204
     listed = client.get(f"/api/projects/{project['id']}/tasks/{task['id']}/assignments", headers=hr_manager_auth).json()
     assert emp["employee_id"] not in [a["employee_id"] for a in listed]
-
-
-def test_set_task_open_to_all(client, hr_manager_auth, make_test_project, make_test_project_task):
-    project = make_test_project()
-    task = make_test_project_task(project["id"])
-    res = client.patch(
-        f"/api/projects/{project['id']}/tasks/{task['id']}/open-to-all", headers=hr_manager_auth,
-        json={"open_to_all": True},
-    )
-    assert res.status_code == 200
-    assert res.json()["open_to_all"] in (True, 1)

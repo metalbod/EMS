@@ -22,6 +22,9 @@ class ProjectIn(BaseModel):
     description: Optional[str] = None
     status: str = "Active"  # Active | On Hold | Completed
     manager_ids: List[str] = []  # employee_ids — a project can have multiple managers
+    member_ids: List[str] = []  # employee_ids — who can log time against this project
+    is_open_to_all: bool = False  # any employee can log time here, no membership needed
+    is_billable: bool = False  # for project-cost calculations (built separately, later)
 
 
 class ProjectTaskIn(BaseModel):
@@ -36,11 +39,7 @@ class ProjectTaskIn(BaseModel):
 class TaskAssignmentIn(BaseModel):
     employee_id: str
     start_datetime: str  # ISO datetime, e.g. 2026-07-08T09:00
-    duration_hours: float  # expected effort for this member on this task
-
-
-class TaskOpenToAllIn(BaseModel):
-    open_to_all: bool
+    duration_hours: float  # expected effort for this project member on this task
 
 
 # ---------------------------------------------------------------------------
@@ -71,14 +70,43 @@ def _set_project_managers(conn, inst_id: int, project_id: int, manager_ids: List
         )
 
 
+def _member_ids_for(conn, project_id: int) -> List[str]:
+    rows = conn.execute(
+        "SELECT employee_id FROM project_members WHERE project_id=? ORDER BY employee_id", (project_id,)
+    ).fetchall()
+    return [r["employee_id"] for r in rows]
+
+
+def _set_project_members(conn, inst_id: int, project_id: int, member_ids: List[str]) -> None:
+    """Team members are assigned at the project level (not per task) — this
+    is the roster that governs who can log timesheet hours against the
+    project (see routers/timesheets.py's add_timesheet_entry) and who can
+    be scheduled expected effort on one of its tasks (see
+    add_task_assignment below)."""
+    ids = sorted(set(member_ids))
+    if ids:
+        placeholders = ",".join("?" * len(ids))
+        found = conn.execute(
+            f"SELECT employee_id FROM employees WHERE institution_id=? AND employee_id IN ({placeholders})",
+            (inst_id, *ids)
+        ).fetchall()
+        missing = set(ids) - {r["employee_id"] for r in found}
+        if missing:
+            raise HTTPException(404, f"Employee(s) not found: {', '.join(sorted(missing))}")
+    conn.execute("DELETE FROM project_members WHERE project_id=?", (project_id,))
+    for emp_id in ids:
+        conn.execute(
+            "INSERT INTO project_members (project_id,employee_id) VALUES (?,?)", (project_id, emp_id)
+        )
+
+
 @router.get("/api/projects")
 @db_session
 def list_projects(conn, status: Optional[str] = None, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
     q = """
         SELECT p.*,
-            (SELECT COUNT(DISTINCT ta.employee_id) FROM task_assignments ta
-                JOIN project_tasks t2 ON t2.id=ta.task_id WHERE t2.project_id=p.id) AS member_count,
+            (SELECT COUNT(*) FROM project_members pm WHERE pm.project_id=p.id) AS member_count,
             (SELECT COUNT(*) FROM project_tasks t WHERE t.project_id=p.id) AS task_count,
             (SELECT COALESCE(SUM(t.estimated_hours),0) FROM project_tasks t WHERE t.project_id=p.id) AS total_allocated_hours,
             (SELECT COALESCE(SUM(te.hours),0) FROM timesheet_entries te WHERE te.project_id=p.id) AS total_logged_hours
@@ -92,6 +120,7 @@ def list_projects(conn, status: Optional[str] = None, user: dict = Depends(get_c
     out = [dict(r) for r in rows]
     for p in out:
         p["manager_ids"] = _manager_ids_for(conn, p["id"])
+        p["member_ids"] = _member_ids_for(conn, p["id"])
     return out
 
 
@@ -133,11 +162,8 @@ def list_my_projects(conn, user: dict = Depends(get_current_user)) -> List[Dict[
     rows = conn.execute("""
         SELECT DISTINCT p.* FROM projects p
         WHERE p.institution_id=? AND p.status='Active' AND (
-            EXISTS (
-                SELECT 1 FROM task_assignments ta JOIN project_tasks t ON t.id=ta.task_id
-                WHERE t.project_id=p.id AND ta.employee_id=?
-            )
-            OR EXISTS (SELECT 1 FROM project_tasks t WHERE t.project_id=p.id AND t.open_to_all=1)
+            p.is_open_to_all=1
+            OR EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id=p.id AND pm.employee_id=?)
         )
         ORDER BY p.name
     """, (inst_id, user["employee_id"])).fetchall()
@@ -150,15 +176,17 @@ def create_project(conn, body: ProjectIn, user: dict = Depends(get_current_user)
     require_permission(conn, user, "projects_tasks.manage_projects_tasks_assignments")
     inst_id = need_inst(user)
     conn.execute(
-        "INSERT INTO projects (institution_id,name,description,status,created_by) VALUES (?,?,?,?,?)",
-        (inst_id, body.name, body.description, body.status, user["username"])
+        "INSERT INTO projects (institution_id,name,description,status,is_open_to_all,is_billable,created_by) VALUES (?,?,?,?,?,?,?)",
+        (inst_id, body.name, body.description, body.status, body.is_open_to_all, body.is_billable, user["username"])
     )
     project_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     _set_project_managers(conn, inst_id, project_id, body.manager_ids)
+    _set_project_members(conn, inst_id, project_id, body.member_ids)
     conn.commit()
     row = conn.execute("SELECT * FROM projects WHERE id=?", (project_id,)).fetchone()
     d = dict(row)
     d["manager_ids"] = _manager_ids_for(conn, project_id)
+    d["member_ids"] = _member_ids_for(conn, project_id)
     return d
 
 
@@ -170,14 +198,16 @@ def update_project(conn, project_id: int, body: ProjectIn, user: dict = Depends(
     if not conn.execute("SELECT id FROM projects WHERE id=? AND institution_id=?", (project_id, inst_id)).fetchone():
         raise HTTPException(404, "Project not found")
     conn.execute(
-        "UPDATE projects SET name=?,description=?,status=? WHERE id=?",
-        (body.name, body.description, body.status, project_id)
+        "UPDATE projects SET name=?,description=?,status=?,is_open_to_all=?,is_billable=? WHERE id=?",
+        (body.name, body.description, body.status, body.is_open_to_all, body.is_billable, project_id)
     )
     _set_project_managers(conn, inst_id, project_id, body.manager_ids)
+    _set_project_members(conn, inst_id, project_id, body.member_ids)
     conn.commit()
     row = conn.execute("SELECT * FROM projects WHERE id=?", (project_id,)).fetchone()
     d = dict(row)
     d["manager_ids"] = _manager_ids_for(conn, project_id)
+    d["member_ids"] = _member_ids_for(conn, project_id)
     return d
 
 
@@ -188,10 +218,11 @@ def delete_project(conn, project_id: int, user: dict = Depends(get_current_user)
     inst_id = need_inst(user)
     if conn.execute("SELECT id FROM timesheet_entries WHERE project_id=? AND institution_id=?", (project_id, inst_id)).fetchone():
         raise HTTPException(400, "Cannot delete a project that already has logged timesheet hours — set it to Completed instead")
-    # project_managers has a foreign key to projects, so it must be deleted
-    # first — same FK-ordering requirement as delete_project_task's
-    # task_assignments cleanup below.
+    # project_managers/project_members have a foreign key to projects, so
+    # they must be deleted first — same FK-ordering requirement as
+    # delete_project_task's task_assignments cleanup below.
     conn.execute("DELETE FROM project_managers WHERE project_id=?", (project_id,))
+    conn.execute("DELETE FROM project_members WHERE project_id=?", (project_id,))
     conn.execute("DELETE FROM projects WHERE id=? AND institution_id=?", (project_id, inst_id))
     conn.commit()
 
@@ -203,26 +234,26 @@ def delete_project(conn, project_id: int, user: dict = Depends(get_current_user)
 @db_session
 def list_project_tasks(conn, project_id: int, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
-    if not conn.execute("SELECT id FROM projects WHERE id=? AND institution_id=?", (project_id, inst_id)).fetchone():
+    project = conn.execute("SELECT * FROM projects WHERE id=? AND institution_id=?", (project_id, inst_id)).fetchone()
+    if not project:
         raise HTTPException(404, "Project not found")
-    # Project managers and anyone already assigned to a task in this project see every
-    # task. An employee with no assignment here only sees tasks marked "ALL"
-    # (open_to_all) — those are the only ones they're allowed to clock hours against,
-    # so anything else is irrelevant to them.
-    is_assigned = bool(user.get("employee_id")) and conn.execute("""
-        SELECT ta.id FROM task_assignments ta JOIN project_tasks t ON t.id=ta.task_id
-        WHERE t.project_id=? AND ta.employee_id=? AND ta.institution_id=?
-    """, (project_id, user.get("employee_id"), inst_id)).fetchone()
-    restrict_to_open = user["role"] not in PROJECT_MANAGE_ROLES and not is_assigned
+    # Project managers and any project member see every task. An employee
+    # who is neither only sees tasks at all if the whole project is marked
+    # open-to-all — team membership (and the open-to-all escape hatch) now
+    # lives at the project level, not per task (see add_timesheet_entry).
+    is_member = bool(user.get("employee_id")) and conn.execute(
+        "SELECT id FROM project_members WHERE project_id=? AND employee_id=?",
+        (project_id, user.get("employee_id"))
+    ).fetchone()
+    if user["role"] not in PROJECT_MANAGE_ROLES and not is_member and not project["is_open_to_all"]:
+        return []
     sql = """
         SELECT t.*, COALESCE(SUM(te.hours),0) AS logged_hours
         FROM project_tasks t
         LEFT JOIN timesheet_entries te ON te.task_id = t.id
         WHERE t.project_id=? AND t.institution_id=?
+        GROUP BY t.id ORDER BY t.start_date NULLS LAST, t.created_at
     """
-    if restrict_to_open:
-        sql += " AND t.open_to_all=1"
-    sql += " GROUP BY t.id ORDER BY t.start_date NULLS LAST, t.created_at"
     rows = conn.execute(sql, (project_id, inst_id)).fetchall()
     return [dict(r) for r in rows]
 
@@ -281,9 +312,12 @@ def delete_project_task(conn, project_id: int, task_id: int, user: dict = Depend
 
 
 # ---------------------------------------------------------------------------
-# Task Assignments — per-team-member expected effort (start datetime + duration)
-# on a task. Purely for capturing expected effort; actual timesheet hours
-# logged against the task are NOT capped by this (see add_timesheet_entry).
+# Task Assignments — per-project-member expected effort (start datetime +
+# duration) on a task. Purely a capacity-planning schedule: it does NOT
+# decide who can log timesheet hours (that's project_members/
+# is_open_to_all — see add_timesheet_entry) or which tasks someone can see
+# (see list_project_tasks above); it only records how much time a project
+# member is expected to spend on a specific task.
 # ---------------------------------------------------------------------------
 @router.get("/api/projects/{project_id}/tasks/{task_id}/assignments")
 @db_session
@@ -310,6 +344,8 @@ def add_task_assignment(conn, project_id: int, task_id: int, body: TaskAssignmen
         raise HTTPException(404, "Task not found")
     if not conn.execute("SELECT id FROM employees WHERE employee_id=? AND institution_id=?", (body.employee_id, inst_id)).fetchone():
         raise HTTPException(404, "Employee not found")
+    if not conn.execute("SELECT id FROM project_members WHERE project_id=? AND employee_id=?", (project_id, body.employee_id)).fetchone():
+        raise HTTPException(400, "Employee must be a project member before being assigned effort on one of its tasks")
     if body.duration_hours <= 0:
         raise HTTPException(400, "Duration must be greater than 0")
     try:
@@ -334,18 +370,3 @@ def remove_task_assignment(conn, project_id: int, task_id: int, employee_id: str
         (task_id, employee_id, inst_id)
     )
     conn.commit()
-
-
-@router.patch("/api/projects/{project_id}/tasks/{task_id}/open-to-all")
-@db_session
-def set_task_open_to_all(conn, project_id: int, task_id: int, body: TaskOpenToAllIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
-    """Marking a task 'ALL' lets every employee in the institution clock hours to it,
-    bypassing the usual project-membership requirement (see add_timesheet_entry)."""
-    require_permission(conn, user, "projects_tasks.manage_projects_tasks_assignments")
-    inst_id = need_inst(user)
-    if not conn.execute("SELECT id FROM project_tasks WHERE id=? AND project_id=? AND institution_id=?", (task_id, project_id, inst_id)).fetchone():
-        raise HTTPException(404, "Task not found")
-    conn.execute("UPDATE project_tasks SET open_to_all=? WHERE id=?", (1 if body.open_to_all else 0, task_id))
-    conn.commit()
-    row = conn.execute("SELECT * FROM project_tasks WHERE id=?", (task_id,)).fetchone()
-    return dict(row)

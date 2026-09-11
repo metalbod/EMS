@@ -88,7 +88,11 @@ function renderProjectTable() {
             <svg class="w-3.5 h-3.5 transition-transform ${expanded?'rotate-90':''}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
           </button>
           <div class="min-w-0">
-            <p class="font-medium text-slate-800">${esc(p.name)}</p>
+            <div class="flex items-center gap-1.5">
+              <p class="font-medium text-slate-800 truncate">${esc(p.name)}</p>
+              ${p.is_open_to_all?'<span class="badge text-xs bg-blue-100 text-blue-700 shrink-0" title="Any employee can log time here, no membership needed">ALL</span>':''}
+              ${p.is_billable?'<span class="badge text-xs bg-emerald-100 text-emerald-700 shrink-0">Billable</span>':''}
+            </div>
             <p class="text-xs text-slate-400 line-clamp-1">${esc(p.description||'')}</p>
           </div>
         </div>
@@ -119,7 +123,6 @@ function projectTaskSubRows(projectId) {
         <div class="flex items-center gap-2 min-w-0">
           <span class="text-slate-300 shrink-0">↳</span>
           <span class="text-slate-700 truncate">${esc(t.name)}</span>
-          ${t.open_to_all?'<span class="badge text-xs bg-blue-100 text-blue-700 shrink-0">ALL</span>':''}
         </div>
       </td>
       <td class="px-4 py-2.5"><span class="badge text-xs ${statusColor(TASK_STATUS_COLORS, t.status)}">${t.status}</span></td>
@@ -246,6 +249,63 @@ function toggleAllProjectManagers() {
   visibleProjectManagerCheckboxes().forEach(b=>b.checked=checked);
 }
 
+// Team Members — same searchable checkbox-list pattern as Project
+// Manager(s) above, but with no role-eligibility filter: this is the
+// project's timesheet membership roster (see routers/projects.py's
+// add_timesheet_entry), open to any active employee, not just
+// manager-tier ones.
+function renderProjectMembersChecklist(selectedIds) {
+  const wrap=document.getElementById('projectMembersList');
+  // Plus anyone already a member even if their employee record is no
+  // longer Active (deactivated after being added) — same reasoning as
+  // the Project Manager(s) picker: an unrelated future save can't
+  // silently drop them just because the picker itself wouldn't offer
+  // them to newly add.
+  const active=(employees||[]).filter(e=>e.status==='Active' || selectedIds.includes(e.employee_id));
+  wrap.innerHTML=active.map(e=>{
+    const label=`${displayName(e.full_name,e.preferred_name)} (${e.employee_id})`;
+    return `
+    <label class="project-member-option flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 cursor-pointer" data-label="${esc(label)}">
+      <input type="checkbox" class="project-member-checkbox" value="${e.employee_id}" ${selectedIds.includes(e.employee_id)?'checked':''} onchange="syncProjectMembersSelectAll()"/>
+      ${esc(label)}
+    </label>`;
+  }).join('') + `<div id="projectMembersNoMatch" class="hidden text-center text-xs text-slate-400 py-3">No matches</div>`;
+  const searchEl=document.getElementById('projectMembersSearch');
+  if(searchEl) searchEl.value='';
+  filterProjectMemberOptions();
+}
+
+function filterProjectMemberOptions() {
+  const q=document.getElementById('projectMembersSearch')?.value||'';
+  const opts=[...document.querySelectorAll('.project-member-option')];
+  const matched=new Set(filterEmployeeOptions(
+    opts.map(el=>({value: el.querySelector('.project-member-checkbox').value, label: el.dataset.label})),
+    q
+  ).map(o=>o.value));
+  let visibleCount=0;
+  opts.forEach(opt=>{
+    const match=matched.has(opt.querySelector('.project-member-checkbox').value);
+    opt.classList.toggle('hidden', !match);
+    if(match) visibleCount++;
+  });
+  document.getElementById('projectMembersNoMatch')?.classList.toggle('hidden', visibleCount>0);
+  syncProjectMembersSelectAll();
+}
+
+function visibleProjectMemberCheckboxes() {
+  return [...document.querySelectorAll('.project-member-option:not(.hidden) .project-member-checkbox')];
+}
+
+function syncProjectMembersSelectAll() {
+  const boxes=visibleProjectMemberCheckboxes();
+  document.getElementById('projectMembersSelectAll').checked = boxes.length>0 && boxes.every(b=>b.checked);
+}
+
+function toggleAllProjectMembers() {
+  const checked=document.getElementById('projectMembersSelectAll').checked;
+  visibleProjectMemberCheckboxes().forEach(b=>b.checked=checked);
+}
+
 async function openProjectModal(projectId) {
   document.getElementById('projectId').value=projectId||'';
   document.getElementById('projectModalTitle').textContent=projectId?'Edit Project':'Add Project';
@@ -259,6 +319,9 @@ async function openProjectModal(projectId) {
     document.getElementById('projectDesc').value=p?.description||'';
     document.getElementById('projectStatus').value=p?.status||'Active';
     renderProjectManagersChecklist(p?.manager_ids||[]);
+    renderProjectMembersChecklist(p?.member_ids||[]);
+    document.getElementById('projectOpenToAll').checked=!!p?.is_open_to_all;
+    document.getElementById('projectBillable').checked=!!p?.is_billable;
     tasksBtn.classList.remove('hidden');
     await loadProjectTasksForManage(projectId);
     resetProjectTaskForm();
@@ -267,6 +330,9 @@ async function openProjectModal(projectId) {
     document.getElementById('projectDesc').value='';
     document.getElementById('projectStatus').value='Active';
     renderProjectManagersChecklist([]);
+    renderProjectMembersChecklist([]);
+    document.getElementById('projectOpenToAll').checked=false;
+    document.getElementById('projectBillable').checked=false;
     tasksBtn.classList.add('hidden');
   }
   document.getElementById('projectModal').classList.remove('hidden');
@@ -280,6 +346,9 @@ const submitProject = guardAsync(async function() {
     description: document.getElementById('projectDesc').value.trim()||null,
     status: document.getElementById('projectStatus').value,
     manager_ids: [...document.querySelectorAll('.project-manager-checkbox:checked')].map(b=>b.value),
+    member_ids: [...document.querySelectorAll('.project-member-checkbox:checked')].map(b=>b.value),
+    is_open_to_all: document.getElementById('projectOpenToAll').checked,
+    is_billable: document.getElementById('projectBillable').checked,
   };
   if(!body.name){ alert('Project name is required'); return; }
   const url=id?`/api/projects/${id}`:'/api/projects';
@@ -325,7 +394,6 @@ async function loadProjectTasksForManage(projectId) {
       <div class="flex items-center justify-between gap-2">
         <span class="font-medium text-slate-700">${esc(t.name)}</span>
         <div class="flex items-center gap-1">
-          ${t.open_to_all?'<span class="badge text-xs bg-blue-100 text-blue-700">ALL</span>':''}
           <span class="badge text-xs ${statusColor(TASK_STATUS_COLORS, t.status)}">${t.status}</span>
         </div>
       </div>
@@ -399,9 +467,12 @@ async function deleteProjectTask(projectId, taskId) {
 }
 
 // ---------------------------------------------------------------------------
-// Task Assignments — per-team-member expected effort (start datetime + duration).
-// Purely for capturing expected effort; actual timesheet logging is never
-// capped by this (see addTimesheetEntry / My Timesheet).
+// Task Assignments — expected effort (start datetime + duration) for a
+// project member on this task. Team membership itself lives at the
+// project level (Details tab's Team Members list, plus the "Open to
+// all" checkbox) — this only schedules effort for people already on
+// that roster; it plays no part in deciding who can log timesheet hours
+// against the project (see routers/projects.py's add_timesheet_entry).
 // ---------------------------------------------------------------------------
 async function showTaskAssignSection(taskId) {
   document.getElementById('taskAssignHint').classList.add('hidden');
@@ -409,59 +480,48 @@ async function showTaskAssignSection(taskId) {
   await loadTaskAssignments(taskId);
 }
 
-function toggleTaskAssignAllMode() {
-  const isAll=document.getElementById('taskAssignEmpId').value==='ALL';
-  document.getElementById('taskAssignStart').disabled=isAll;
-  document.getElementById('taskAssignDuration').disabled=isAll;
-  document.getElementById('taskAssignStart').classList.toggle('opacity-50', isAll);
-  document.getElementById('taskAssignDuration').classList.toggle('opacity-50', isAll);
-}
-
 async function loadTaskAssignments(taskId) {
-  const projectId=document.getElementById('projectId').value;
-  const task=projectTasksCache.find(t=>t.id===taskId);
-  const openToAll=!!task?.open_to_all;
-  document.getElementById('taskAssignOpenBanner').classList.toggle('hidden', !openToAll);
+  const projectId=parseInt(document.getElementById('projectId').value);
+  const project=projectsCache.find(p=>p.id===projectId);
+  const memberIds=project?.member_ids||[];
 
   const res=await api(`/api/projects/${projectId}/tasks/${taskId}/assignments`);
   const assignments=res?.ok?await res.json():[];
-  document.getElementById('taskAssignList').innerHTML=(!openToAll && assignments.length)?assignments.map(a=>`
+  document.getElementById('taskAssignList').innerHTML=assignments.length?assignments.map(a=>`
     <div class="flex items-center gap-2 py-1 border-b border-slate-100 text-xs">
       <span class="flex-1">${esc(displayName(a.full_name,a.preferred_name))}</span>
       <span class="text-slate-400">${fmtDate(a.start_datetime)}${a.start_datetime.includes('T')?', '+a.start_datetime.split('T')[1]:''} · ${a.duration_hours}h</span>
       <button onclick="removeTaskAssignment(${taskId},'${a.employee_id}')" class="text-slate-300 hover:text-red-500"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
-    </div>`).join(''):(openToAll?'':'<p class="text-xs text-slate-400 text-center py-1">No one assigned yet.</p>');
+    </div>`).join(''):'<p class="text-xs text-slate-400 text-center py-1">No one assigned yet.</p>';
 
-  // Offer active employees not already assigned to this task, plus an "ALL" shortcut.
-  // Fetched fresh rather than relying on the `employees` cache, which is only
-  // populated once the Employees page has been visited this session.
-  const empRes=await api('/api/employees');
-  const allEmployees=empRes?.ok?await empRes.json():[];
+  // Candidates are limited to the project's own Team Members roster
+  // (Details tab) — you can't schedule effort for someone who isn't a
+  // project member first.
   const assignedIds=new Set(assignments.map(a=>a.employee_id));
+  const available=(employees||[]).filter(e=>memberIds.includes(e.employee_id)&&!assignedIds.has(e.employee_id));
   const sel=document.getElementById('taskAssignEmpId');
-  const available=allEmployees.filter(e=>e.status==='Active'&&!assignedIds.has(e.employee_id));
-  const allOption=openToAll?'':'<option value="ALL">ALL — every employee</option>';
-  sel.innerHTML=allOption+(available.length
+  const fieldsWrap=document.getElementById('taskAssignFields');
+  const fieldsRow2=document.getElementById('taskAssignFieldsRow2');
+  const noMembersEl=document.getElementById('taskAssignNoMembers');
+  if(!memberIds.length){
+    noMembersEl.classList.remove('hidden');
+    fieldsWrap.classList.add('hidden');
+    fieldsRow2.classList.add('hidden');
+    return;
+  }
+  noMembersEl.classList.add('hidden');
+  fieldsWrap.classList.remove('hidden');
+  fieldsRow2.classList.remove('hidden');
+  sel.innerHTML=available.length
     ? available.map(e=>`<option value="${e.employee_id}">${esc(displayName(e.full_name,e.preferred_name))}</option>`).join('')
-    : (openToAll?'':'<option value="">All employees already assigned</option>'));
-  toggleTaskAssignAllMode();
+    : '<option value="">All project members already assigned</option>';
 }
 
 const addTaskAssignment = guardAsync(async function() {
   const projectId=document.getElementById('projectId').value;
   const taskId=document.getElementById('projectTaskId').value;
   const employeeId=document.getElementById('taskAssignEmpId').value;
-  if(!employeeId){ alert('No project member available to assign. Add them as a project member first.'); return; }
-  if(employeeId==='ALL'){
-    const res=await api(`/api/projects/${projectId}/tasks/${taskId}/open-to-all`,{method:'PATCH',body:JSON.stringify({open_to_all:true})});
-    if(res?.ok){
-      const task=await res.json();
-      const idx=projectTasksCache.findIndex(t=>t.id===task.id);
-      if(idx>=0) projectTasksCache[idx]=task;
-      loadTaskAssignments(parseInt(taskId));
-    } else { const d=await res.json(); alert(d.detail||'Failed to open task to all employees'); }
-    return;
-  }
+  if(!employeeId){ alert('No project member available to assign — every member is already scheduled on this task, or the project has no members yet.'); return; }
   const startDatetime=document.getElementById('taskAssignStart').value;
   const durationHours=parseFloat(document.getElementById('taskAssignDuration').value);
   if(!startDatetime||!durationHours){ alert('Start date/time and duration (hours) are required.'); return; }
@@ -479,18 +539,6 @@ async function removeTaskAssignment(taskId, employeeId) {
   const projectId=document.getElementById('projectId').value;
   await api(`/api/projects/${projectId}/tasks/${taskId}/assignments/${employeeId}`,{method:'DELETE'});
   loadTaskAssignments(taskId);
-}
-
-async function removeTaskOpenToAll() {
-  const projectId=document.getElementById('projectId').value;
-  const taskId=parseInt(document.getElementById('projectTaskId').value);
-  const res=await api(`/api/projects/${projectId}/tasks/${taskId}/open-to-all`,{method:'PATCH',body:JSON.stringify({open_to_all:false})});
-  if(res?.ok){
-    const task=await res.json();
-    const idx=projectTasksCache.findIndex(t=>t.id===task.id);
-    if(idx>=0) projectTasksCache[idx]=task;
-    loadTaskAssignments(taskId);
-  }
 }
 
 // ---------------------------------------------------------------------------
