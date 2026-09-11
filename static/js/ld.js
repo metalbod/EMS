@@ -524,6 +524,20 @@ function ldYoutubeEmbed(url) {
   return m?`https://www.youtube.com/embed/${m[1]}`:null;
 }
 
+// Renders a single module's body (video embed/link, or plain text) —
+// shared by the real Course Viewer (employee, enrollment-bound, below)
+// and the HR Preview modal, which has no enrollment behind it and so
+// never has viewed/progress state to render alongside this.
+function ldModuleContentHtml(m) {
+  if(m.content_type==='video'&&m.content){
+    const embed=ldYoutubeEmbed(m.content);
+    return embed
+      ?`<div class="aspect-video rounded-lg overflow-hidden bg-slate-100"><iframe src="${embed}" class="w-full h-full" frameborder="0" allowfullscreen></iframe></div>`
+      :`<a href="${esc(m.content)}" target="_blank" rel="noopener" class="text-sm text-blue-600 hover:underline">Open video ↗</a>`;
+  }
+  return `<p class="text-sm text-slate-600 whitespace-pre-wrap">${esc(m.content||'')}</p>`;
+}
+
 async function openLdViewerModal(courseId, enrollmentId, courseTitle) {
   const res=await api(`/api/ld/courses/${courseId}/modules?enrollment_id=${enrollmentId}`);
   if(!res?.ok){alert('Could not load course content.');return;}
@@ -532,17 +546,8 @@ async function openLdViewerModal(courseId, enrollmentId, courseTitle) {
   const viewed=modules.filter(m=>m.viewed).length;
   document.getElementById('ldViewerProgress').textContent=`${viewed} / ${modules.length} lessons viewed`;
   const isOwn=currentUser?.role==='employee';
-  document.getElementById('ldViewerBody').innerHTML=modules.map(m=>{
-    let contentHtml='';
-    if(m.content_type==='video'&&m.content){
-      const embed=ldYoutubeEmbed(m.content);
-      contentHtml=embed
-        ?`<div class="aspect-video rounded-lg overflow-hidden bg-slate-100"><iframe src="${embed}" class="w-full h-full" frameborder="0" allowfullscreen></iframe></div>`
-        :`<a href="${esc(m.content)}" target="_blank" rel="noopener" class="text-sm text-blue-600 hover:underline">Open video ↗</a>`;
-    } else {
-      contentHtml=`<p class="text-sm text-slate-600 whitespace-pre-wrap">${esc(m.content||'')}</p>`;
-    }
-    return `<div class="border border-slate-200 rounded-xl p-4" id="ldv-${m.id}">
+  document.getElementById('ldViewerBody').innerHTML=modules.map(m=>`
+    <div class="border border-slate-200 rounded-xl p-4" id="ldv-${m.id}">
       <div class="flex items-center justify-between gap-2 mb-2">
         <p class="font-medium text-slate-800 text-sm">${esc(m.title)}</p>
         ${m.viewed
@@ -550,9 +555,8 @@ async function openLdViewerModal(courseId, enrollmentId, courseTitle) {
           :isOwn?`<button onclick="markLdModuleViewed(${enrollmentId},${m.id},${courseId},'${esc(courseTitle||'').replace(/'/g,"\\'")}')" class="btn-ghost text-xs px-2 py-1 border border-slate-200">Mark as viewed</button>`
           :`<span class="badge text-xs status-neutral">Not viewed</span>`}
       </div>
-      ${contentHtml}
-    </div>`;
-  }).join('')||'<p class="text-sm text-slate-400 text-center py-8">No content in this course yet.</p>';
+      ${ldModuleContentHtml(m)}
+    </div>`).join('')||'<p class="text-sm text-slate-400 text-center py-8">No content in this course yet.</p>';
   document.getElementById('ldViewerModal').classList.remove('hidden');
 }
 
@@ -583,13 +587,24 @@ function ldShuffle(arr) {
 
 async function openLdPreviewQuizModal(courseId) {
   window.ldPreviewCourseId=courseId;
-  const res=await api(`/api/ld/courses/${courseId}/quiz/manage`);
   document.getElementById('ldPreviewQuizResult').classList.add('hidden');
   document.getElementById('ldPreviewQuizSubmitBtn').classList.remove('hidden');
   document.getElementById('ldPreviewQuizRetryBtn').classList.add('hidden');
   const course=ldCoursesCache.find(c=>c.id===courseId);
-  document.getElementById('ldPreviewQuizTitle').textContent=`Quiz Preview — ${course?course.title:''}`;
+  document.getElementById('ldPreviewQuizTitle').textContent=`Course Preview — ${course?course.title:''}`;
 
+  // Course Content — same rendering as the real Course Viewer
+  // (ldModuleContentHtml), just with no viewed/progress state: a preview
+  // has no real enrollment behind it, so there's nothing to track.
+  const modRes=await api(`/api/ld/courses/${courseId}/modules`);
+  const modules=modRes?.ok?await modRes.json():[];
+  document.getElementById('ldPreviewContent').innerHTML=modules.map(m=>`
+    <div class="border border-slate-200 rounded-xl p-4">
+      <p class="font-medium text-slate-800 text-sm mb-2">${esc(m.title)}</p>
+      ${ldModuleContentHtml(m)}
+    </div>`).join('')||'<p class="text-sm text-slate-400 text-center py-6">No content in this course yet.</p>';
+
+  const res=await api(`/api/ld/courses/${courseId}/quiz/manage`);
   if(!res?.ok){
     document.getElementById('ldPreviewQuizQuestions').innerHTML='<p class="text-sm text-slate-400 text-center py-8">This course has no quiz yet.</p>';
     document.getElementById('ldPreviewQuizSubmitBtn').classList.add('hidden');
