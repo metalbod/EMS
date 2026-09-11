@@ -564,11 +564,21 @@ function editCand() {
 }
 async function convertToEmployee() {
   if(!viewingCandId) return;
-  const res=await api(`/api/recruitment/candidates/${viewingCandId}/convert-prefill`);
+  const candId=viewingCandId;
+  const res=await api(`/api/recruitment/candidates/${candId}/convert-prefill`);
   if(!res||!res.ok) return;
   const pf=await res.json();
   closeCandDetailModal();
-  // Pre-fill the add employee form
+  showPage('employees');
+  // Open the real Add Employee modal first (same pattern as employees.js's
+  // startRehire) — this is what actually populates the Reports To and
+  // Primary Location dropdowns and wires up the searchable picker. The
+  // previous version set form field values directly and showed the modal
+  // itself, skipping that setup entirely: Reports To was left showing only
+  // its two pinned non-employee options ("None (Top Level)"/"Self"), and
+  // Primary Location was stuck on "No Location".
+  openAddModal();
+  await new Promise(r=>setTimeout(r,50));
   document.getElementById('fFullName').value=pf.full_name||'';
   document.getElementById('fIcNumber').value=pf.ic_number||'';
   document.getElementById('fNationality').value=pf.nationality||'Malaysian';
@@ -579,12 +589,9 @@ async function convertToEmployee() {
   document.getElementById('fEmploymentType').value=pf.employment_type||'Permanent';
   document.getElementById('fBasicSalary').value=pf.basic_salary||0;
   document.getElementById('fStartDate').value=pf.start_date||'';
-  // Update offer/convert on hired
-  api(`/api/recruitment/candidates/${viewingCandId}/stage`,{method:'PATCH',body:JSON.stringify({stage:'Hired',notes:'Converted to employee'})});
-  currentEmpId=null; currentTab='personal'; switchTab('personal');
   document.getElementById('empModalTitle').textContent='New Employee (from candidate)';
-  document.getElementById('empModal').classList.remove('hidden');
-  showPage('employees');
+  // Update offer/convert on hired
+  api(`/api/recruitment/candidates/${candId}/stage`,{method:'PATCH',body:JSON.stringify({stage:'Hired',notes:'Converted to employee'})});
 }
 
 // ---------------------------------------------------------------------------
