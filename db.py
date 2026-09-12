@@ -58,7 +58,22 @@ def _get_pool():
                 "DATABASE_URL environment variable is not set. "
                 "Set it to your Supabase Postgres connection string."
             )
-        _pool = psycopg2.pool.SimpleConnectionPool(1, 10, dsn=DATABASE_URL, sslmode="require")
+        # Speed Audit item 10: was capped at 10, sized with no data behind
+        # it. psycopg2's SimpleConnectionPool doesn't queue/wait once
+        # maxconn is hit — getconn() raises PoolError("connection pool
+        # exhausted") immediately, surfacing as a hard 500 under
+        # concurrent load, not the graceful slowdown the original audit
+        # assumed. Checked before raising this: DATABASE_URL already
+        # points at Supabase's PgBouncer transaction pooler (port 6543,
+        # confirmed via the connection string), not a direct Postgres
+        # connection — so these 20 client connections don't map 1:1 to
+        # backend Postgres connections the way they would without a
+        # pooler in front. Backing Postgres's own max_connections is 60
+        # (`SHOW max_connections`), with Supabase's own internal roles
+        # (supabase_admin/pgbouncer/authenticator/postgres) using ~10 of
+        # that at idle — comfortable headroom for 20 here plus the admin
+        # pool below, even in the worst case of no multiplexing benefit.
+        _pool = psycopg2.pool.SimpleConnectionPool(1, 20, dsn=DATABASE_URL, sslmode="require")
     return _pool
 
 
