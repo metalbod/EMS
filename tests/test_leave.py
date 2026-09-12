@@ -395,6 +395,76 @@ def test_list_applications_filters_by_status(client, hr_manager_auth, employee_w
 
 
 # ---------------------------------------------------------------------------
+# Pagination (Speed Audit item 8) — opt-in via limit/offset, so My Leave
+# (loadLeaveApplications in leave.js), which calls this same endpoint for
+# one employee's own bounded history with no limit at all, keeps getting
+# today's exact unbounded response. Only the Leave Approvals screen's own
+# fetch passes it. Scoped via the new employee_id filter (mirrors
+# Timesheets' own) since leave applications have no delete endpoint and
+# accumulate forever in the shared, session-scoped test institution.
+# ---------------------------------------------------------------------------
+def test_list_leave_applications_without_limit_is_unbounded_and_has_no_total_count_header(
+    client, hr_manager_auth, employee_with_user, make_test_leave_type
+):
+    emp, headers = employee_with_user
+    lt = make_test_leave_type(requires_approval=True, annual_entitlement=14)
+    apply_res = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": WORK_WEEK_START, "end_date": WORK_WEEK_END,
+    })
+    app_id = apply_res.json()["id"]
+
+    res = client.get("/api/leave/applications", headers=hr_manager_auth,
+                      params={"employee_id": emp["employee_id"]})
+    assert res.status_code == 200
+    assert "X-Total-Count" not in res.headers
+    assert app_id in [a["id"] for a in res.json()]
+
+
+def test_list_leave_applications_exposes_total_count_header_when_limit_given(
+    client, hr_manager_auth, employee_with_user, make_test_leave_type
+):
+    emp, headers = employee_with_user
+    lt = make_test_leave_type(requires_approval=True, annual_entitlement=14)
+    client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": WORK_WEEK_START, "end_date": WORK_WEEK_END,
+    })
+
+    res = client.get("/api/leave/applications", headers=hr_manager_auth,
+                      params={"employee_id": emp["employee_id"], "limit": 1})
+    assert res.status_code == 200
+    assert isinstance(res.json(), list)
+    assert int(res.headers["X-Total-Count"]) == 1
+
+
+def test_list_leave_applications_offset_pages_through_results(
+    client, hr_manager_auth, employee_with_user, make_test_leave_type
+):
+    emp, headers = employee_with_user
+    lt = make_test_leave_type(requires_approval=True, annual_entitlement=30)
+    app1 = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": "2027-03-01", "end_date": "2027-03-01",
+    }).json()
+    app2 = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": "2027-03-08", "end_date": "2027-03-08",
+    }).json()
+
+    page1 = client.get("/api/leave/applications", headers=hr_manager_auth,
+                        params={"employee_id": emp["employee_id"], "sort_by": "start_date", "sort_dir": "desc",
+                                "limit": 1, "offset": 0}).json()
+    page2 = client.get("/api/leave/applications", headers=hr_manager_auth,
+                        params={"employee_id": emp["employee_id"], "sort_by": "start_date", "sort_dir": "desc",
+                                "limit": 1, "offset": 1}).json()
+    assert len(page1) == 1 and len(page2) == 1
+    assert page1[0]["id"] != page2[0]["id"]
+    assert page1[0]["id"] == app2["id"]  # 2027-03-08 sorts first, desc
+    assert page2[0]["id"] == app1["id"]
+
+
+# ---------------------------------------------------------------------------
 # Leave Balances
 # ---------------------------------------------------------------------------
 def test_list_balances_requires_auth(client):

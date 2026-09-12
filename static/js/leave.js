@@ -1,8 +1,15 @@
 // Leave / Holiday Manager
 // ---------------------------------------------------------------------------
 let leaveTypesCache=[], leaveFilter='', leaveApprovalFilter='Pending Approval', leaveHolidaysCache=[];
+// Leave Approvals — server-paginated (routers/leave.py's optional
+// limit/offset/sort_by/sort_dir + X-Total-Count header), mirroring
+// Timesheet Approvals' pattern. My Leave (loadLeaveApplications above)
+// hits the same endpoint with no limit at all, for one employee's own
+// bounded history, and is unaffected.
 let leaveApprovalRowsCache=[];
-const leaveApprovalList=createListState({sortKey:'created_at', sortDir:'desc'});
+let leaveApprovalPage=1, leaveApprovalPageSize=50, leaveApprovalTotal=0;
+let leaveApprovalSortKey='created_at', leaveApprovalSortDir='desc';
+let leaveApprovalRequestSeq=0;
 const LEAVE_STATUS_COLORS={'Pending Approval':'status-pending','Approved':'status-positive','Rejected':'status-negative','Cancelled':'status-neutral'};
 
 function isLeaveManager() {
@@ -314,39 +321,56 @@ async function submitLeaveApplication(e) {
 // Leave Approvals (manager / HR)
 // ---------------------------------------------------------------------------
 async function loadLeaveApprovals() {
+  const seq=++leaveApprovalRequestSeq; // discards a response that's no longer the latest
   const tbody=document.getElementById('leaveApprovalTableBody');
   tbody.innerHTML='<tr><td colspan="7" class="text-slate-400 text-sm text-center py-8">Loading…</td></tr>';
-  let url='/api/leave/applications';
-  if(leaveApprovalFilter) url+=`?status=${encodeURIComponent(leaveApprovalFilter)}`;
-  const res=await api(url);
+  const offset=(leaveApprovalPage-1)*leaveApprovalPageSize;
+  const params=new URLSearchParams({
+    limit:String(leaveApprovalPageSize), offset:String(offset),
+    sort_by:leaveApprovalSortKey, sort_dir:leaveApprovalSortDir,
+  });
+  if(leaveApprovalFilter) params.set('status', leaveApprovalFilter);
+  const res=await api(`/api/leave/applications?${params}`);
+  if(seq!==leaveApprovalRequestSeq) return; // a newer request has since started
   if(!res?.ok){ tbody.innerHTML=''; return; }
   leaveApprovalRowsCache=await res.json();
-  leaveApprovalList.resetPage();
+  leaveApprovalTotal=parseInt(res.headers.get('X-Total-Count')||'0',10);
   renderLeaveApprovalTable();
 }
 
-function setLeaveApprovalSort(key) { leaveApprovalList.setSort(key); renderLeaveApprovalTable(); }
-function setLeaveApprovalPageSize(size) { leaveApprovalList.setPageSize(size); renderLeaveApprovalTable(); }
-function leaveApprovalPagePrev() { leaveApprovalList.prevPage(); renderLeaveApprovalTable(); }
-function leaveApprovalPageNext() { leaveApprovalList.nextPage(leaveApprovalRowsCache.length); renderLeaveApprovalTable(); }
+function setLeaveApprovalSort(key) {
+  if(leaveApprovalSortKey===key) leaveApprovalSortDir = leaveApprovalSortDir==='asc' ? 'desc' : 'asc';
+  else { leaveApprovalSortKey=key; leaveApprovalSortDir='asc'; }
+  leaveApprovalPage=1;
+  loadLeaveApprovals();
+}
+function setLeaveApprovalPageSize(size) { leaveApprovalPageSize=parseInt(size)||50; leaveApprovalPage=1; loadLeaveApprovals(); }
+function leaveApprovalPagePrev() { if(leaveApprovalPage>1){ leaveApprovalPage--; loadLeaveApprovals(); } }
+function leaveApprovalPageNext() {
+  const totalPages=Math.max(1, Math.ceil(leaveApprovalTotal/leaveApprovalPageSize));
+  if(leaveApprovalPage<totalPages){ leaveApprovalPage++; loadLeaveApprovals(); }
+}
 
 function renderLeaveApprovalTable() {
   const tbody=document.getElementById('leaveApprovalTableBody');
   const emptyEl=document.getElementById('leaveApprovalEmpty');
   const pagination=document.getElementById('leaveApprovalPagination');
-  leaveApprovalList.updateSortArrows('.leave-appr-sort-arrow');
+  document.querySelectorAll('.leave-appr-sort-arrow').forEach(el=>{
+    const key=el.dataset.sortKey;
+    el.textContent = key===leaveApprovalSortKey ? (leaveApprovalSortDir==='asc'?' ▲':' ▼') : '';
+  });
 
   if(!leaveApprovalRowsCache.length){ tbody.innerHTML=''; emptyEl?.classList.remove('hidden'); pagination?.classList.add('hidden'); return; }
   emptyEl?.classList.add('hidden');
   pagination?.classList.remove('hidden');
   const pageSizeEl=document.getElementById('leaveApprovalPageSize');
-  if(pageSizeEl) pageSizeEl.value=String(leaveApprovalList.pageSize);
+  if(pageSizeEl) pageSizeEl.value=String(leaveApprovalPageSize);
 
-  const { pageItems, start, total }=leaveApprovalList.view(leaveApprovalRowsCache);
+  const offset=(leaveApprovalPage-1)*leaveApprovalPageSize;
   const pageInfoEl=document.getElementById('leaveApprovalPageInfo');
-  if(pageInfoEl) pageInfoEl.textContent=`${start+1}-${Math.min(start+leaveApprovalList.pageSize, total)} of ${total}`;
+  if(pageInfoEl) pageInfoEl.textContent=`${offset+1}-${Math.min(offset+leaveApprovalPageSize, leaveApprovalTotal)} of ${leaveApprovalTotal}`;
 
-  tbody.innerHTML=pageItems.map(a=>`
+  tbody.innerHTML=leaveApprovalRowsCache.map(a=>`
     <tr>
       <td class="px-4 py-3">
         <p class="font-medium">${esc(displayName(a.employee_name, a.employee_preferred_name))}</p>
@@ -372,6 +396,7 @@ function renderLeaveApprovalTable() {
 
 function setLeaveApprovalFilter(status) {
   leaveApprovalFilter=status;
+  leaveApprovalPage=1;
   document.querySelectorAll('.leave-appr-filter-btn').forEach(b=>b.classList.remove('leave-appr-filter-active'));
   event?.target?.classList?.add('leave-appr-filter-active');
   loadLeaveApprovals();

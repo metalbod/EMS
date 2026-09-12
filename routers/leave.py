@@ -3,7 +3,7 @@ import calendar
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, field_validator, model_validator
 
 from core.deps import get_current_user, need_inst, require_roles
@@ -520,9 +520,32 @@ def adjust_leave_balance(conn, balance_id: int, body: LeaveBalanceAdjustIn, user
 # ---------------------------------------------------------------------------
 # Leave — Applications
 # ---------------------------------------------------------------------------
+# Allowlisted, not user-supplied directly — sort_by picks a key into this
+# map rather than being interpolated into the query itself.
+_LEAVE_SORT_COLUMNS = {
+    "employee_name": "e.full_name",
+    "leave_type_name": "lt.name",
+    "start_date": "a.start_date",
+    "days_count": "a.days_count",
+    "status": "a.status",
+    "created_at": "a.created_at",
+}
+
+
 @router.get("/api/leave/applications")
 @db_session
-def list_leave_applications(conn, status: Optional[str] = None, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
+def list_leave_applications(
+    conn, response: Response,
+    status: Optional[str] = None, employee_id: Optional[str] = None,
+    sort_by: str = "created_at", sort_dir: str = "desc",
+    limit: Optional[int] = None, offset: int = 0,
+    user: dict = Depends(get_current_user),
+) -> List[Dict[str, Any]]:
+    # limit is opt-in and defaults to None (today's "return everything"
+    # behavior, unchanged) — My Leave (loadLeaveApplications in leave.js)
+    # also calls this endpoint, for one employee's own (small, bounded)
+    # history, and must keep working exactly as before. Only the Leave
+    # Approvals screen's own fetch passes limit/offset.
     inst_id = need_inst(user)
     q = """
         SELECT a.*, lt.name AS leave_type_name, e.full_name AS employee_name, e.preferred_name AS employee_preferred_name, e.department, e.designation
@@ -533,12 +556,25 @@ def list_leave_applications(conn, status: Optional[str] = None, user: dict = Dep
     """
     p: list = [inst_id]
     if status: q += " AND a.status=?"; p.append(status)
+    if employee_id: q += " AND a.employee_id=?"; p.append(employee_id)
     if user["role"] == "manager":
         frag, fp = subordinates_in_clause(inst_id, user.get("employee_id", ""))
         q += f" AND e.employee_id IN {frag}"; p.extend(fp)
     elif user["role"] == "employee":
         q += " AND a.employee_id=?"; p.append(user.get("employee_id", ""))
-    q += " ORDER BY a.created_at DESC"
+
+    if limit is not None:
+        total = conn.execute(f"SELECT COUNT(*) FROM ({q}) AS sub", p).fetchone()[0]
+        response.headers["X-Total-Count"] = str(total)
+
+    sort_col = _LEAVE_SORT_COLUMNS.get(sort_by, "a.created_at")
+    direction = "ASC" if sort_dir == "asc" else "DESC"
+    q += f" ORDER BY {sort_col} {direction}"
+    if limit is not None:
+        limit = min(max(1, limit), 500)
+        offset = max(0, offset)
+        q += " LIMIT ? OFFSET ?"
+        p = p + [limit, offset]
     rows = conn.execute(q, p).fetchall()
     result = [dict(r) for r in rows]
     if user["role"] != "employee":
