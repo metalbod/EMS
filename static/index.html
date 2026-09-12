@@ -1058,7 +1058,7 @@
       <!-- AUDIT LOG -->
       <div id="page-audit" class="hidden">
         <div class="flex gap-3 mb-4">
-          <select id="auditActionFilter" class="inp w-48" onchange="loadAuditLog()">
+          <select id="auditActionFilter" class="inp w-48" onchange="auditPage=1;loadAuditLog()">
             <option value="">All Actions</option>
             <option value="CREATE">Create</option>
             <option value="UPDATE">Update</option>
@@ -1080,6 +1080,21 @@
             <tbody id="auditTableBody" class="divide-y divide-slate-100"></tbody>
           </table>
           <p id="auditEmpty" class="hidden text-center text-slate-400 text-sm py-12">No records.</p>
+          <div id="auditPagination" class="hidden flex items-center justify-between px-4 py-3 border-t border-slate-200 text-sm text-slate-500">
+            <div class="flex items-center gap-2">
+              <span>Rows per page:</span>
+              <select id="auditPageSize" onchange="setAuditPageSize(this.value)" class="border border-slate-200 rounded-lg text-sm px-2 py-1">
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+            </div>
+            <div class="flex items-center gap-3">
+              <span id="auditPageInfo"></span>
+              <button onclick="auditPagePrev()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Prev</button>
+              <button onclick="auditPageNext()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Next</button>
+            </div>
+          </div>
         </div>
       </div>
 
