@@ -8,6 +8,8 @@ test_create_employee_success is a regression test: POST /api/employees was
 completely unroutable for a while (the @router.post decorator was on the
 wrong function — see commit 207a31f) and returned 422 for every request.
 """
+import uuid
+
 import pytest
 
 from conftest import _valid_employee_payload, _unique_ic, _unique_code
@@ -74,6 +76,66 @@ def test_list_employees_includes_created_employee(client, hr_manager_auth, make_
     res = client.get("/api/employees", headers=hr_manager_auth)
     assert res.status_code == 200
     assert emp["employee_id"] in [e["employee_id"] for e in res.json()]
+
+
+# ---------------------------------------------------------------------------
+# Pagination (Speed Audit item 8) — opt-in via limit/offset, so the
+# app-wide roster fetch that ~12 other frontend files depend on (org
+# chart, employee pickers, dashboards — see loadEmployees() in
+# static/js/employees.js, called with no limit at all) keeps getting
+# today's exact "everything, unbounded" response. Only the Employee List
+# screen's own dedicated fetch passes limit/offset.
+# ---------------------------------------------------------------------------
+def test_list_employees_without_limit_is_unbounded_and_has_no_total_count_header(client, hr_manager_auth, make_test_employee):
+    emp = make_test_employee()
+    res = client.get("/api/employees", headers=hr_manager_auth)
+    assert res.status_code == 200
+    assert "X-Total-Count" not in res.headers
+    assert emp["employee_id"] in [e["employee_id"] for e in res.json()]
+
+
+def test_list_employees_exposes_total_count_header_when_limit_given(client, hr_manager_auth, make_test_employee):
+    suffix = uuid.uuid4().hex[:8]
+    make_test_employee(full_name=f"ZZ Count {suffix}")
+    res = client.get("/api/employees", headers=hr_manager_auth, params={"search": suffix, "limit": 1})
+    assert res.status_code == 200
+    assert isinstance(res.json(), list)
+    assert int(res.headers["X-Total-Count"]) == 1
+
+
+def test_list_employees_offset_pages_through_results(client, hr_manager_auth, make_test_employee):
+    """offset advances through the result set without overlap — scoped via
+    a unique random search term embedded in two disposable employees'
+    names (employees have no delete endpoint and accumulate forever
+    across test runs), so this isn't sensitive to unrelated employee data
+    elsewhere in the shared, session-scoped test institution (see
+    conftest.py's test_institution docstring, and this file's own module
+    docstring on employee cleanup)."""
+    suffix = uuid.uuid4().hex[:8]
+    make_test_employee(full_name=f"ZZ Paging {suffix} Alice")
+    make_test_employee(full_name=f"ZZ Paging {suffix} Bob")
+
+    page1 = client.get("/api/employees", headers=hr_manager_auth,
+                        params={"search": suffix, "sort_by": "full_name", "sort_dir": "asc",
+                                "limit": 1, "offset": 0}).json()
+    page2 = client.get("/api/employees", headers=hr_manager_auth,
+                        params={"search": suffix, "sort_by": "full_name", "sort_dir": "asc",
+                                "limit": 1, "offset": 1}).json()
+    assert len(page1) == 1 and len(page2) == 1
+    assert page1[0]["employee_id"] != page2[0]["employee_id"]
+    assert page1[0]["full_name"].endswith("Alice")
+    assert page2[0]["full_name"].endswith("Bob")
+
+
+def test_list_employees_unknown_sort_by_falls_back_safely(client, hr_manager_auth, make_test_employee):
+    """sort_by is allowlisted (routers/employees.py's
+    _EMPLOYEE_SORT_COLUMNS), not interpolated directly — an unrecognized
+    or malicious value falls back to the default sort column instead of
+    erroring or reaching the query."""
+    make_test_employee()
+    res = client.get("/api/employees", headers=hr_manager_auth,
+                      params={"limit": 5, "sort_by": "ic_number; DROP TABLE employees;--"})
+    assert res.status_code == 200
 
 
 def test_list_employees_pay_grade_name_only_for_compensation_roles(

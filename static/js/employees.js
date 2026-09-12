@@ -23,11 +23,22 @@ function yearsOfServiceLabel(e) {
   return months ? `${years}y ${months}m` : `${years}y`;
 }
 
-const empList = createListState({
-  sortKey: 'full_name',
-  sortValue: (e, key) => key === 'years_of_service' ? yearsOfServiceValue(e) : e[key],
-});
-let empFilteredData = [];
+// Server-paginated (routers/employees.py's optional limit/offset/sort_by
+// + X-Total-Count header — opt-in, so the app-wide employees[] roster used
+// by org chart/pickers/dashboards via loadEmployees() above is completely
+// unaffected). Independent of employees[]: this screen's rows come from
+// its own dedicated fetch below, not from filtering the full roster.
+// manager_name/location_name/pay_grade_name/years_of_service aren't real
+// DB columns (resolved server-side per-row via post-query lookups, same
+// as before) so they're not in the server sort allowlist — sorting by one
+// of those sorts only the current page, client-side (empClientSort*),
+// rather than the whole table like the 13 plain-column sorts do.
+const EMP_DERIVED_SORT_KEYS = new Set(['manager_name', 'location_name', 'pay_grade_name', 'years_of_service']);
+let empPage = 1, empPageSize = 50, empTotal = 0;
+let empSortKey = 'full_name', empSortDir = 'asc';
+let empClientSortKey = null, empClientSortDir = 'asc';
+let empPageRows = [];
+let empSearchDebounceTimer = null;
 
 // ---------------------------------------------------------------------------
 // Employee List — optional columns
@@ -115,21 +126,76 @@ function renderEmpColumnsPicker() {
     </label>`).join('');
 }
 
-function setEmpSort(key) { empList.setSort(key); renderEmpTable(); }
-function setEmpPageSize(size) { empList.setPageSize(size); renderEmpTable(); }
-function empPagePrev() { empList.prevPage(); renderEmpTable(); }
-function empPageNext() { empList.nextPage(empFilteredData.length); renderEmpTable(); }
+function setEmpSort(key) {
+  if (EMP_DERIVED_SORT_KEYS.has(key)) {
+    if (empClientSortKey === key) empClientSortDir = empClientSortDir === 'asc' ? 'desc' : 'asc';
+    else { empClientSortKey = key; empClientSortDir = 'asc'; }
+    renderEmpTable();
+    return;
+  }
+  empClientSortKey = null; // a real server sort replaces any current-page-only client sort
+  if (empSortKey === key) empSortDir = empSortDir === 'asc' ? 'desc' : 'asc';
+  else { empSortKey = key; empSortDir = 'asc'; }
+  empPage = 1;
+  loadEmployeeListPage();
+}
+function setEmpPageSize(size) { empPageSize = parseInt(size) || 50; empPage = 1; loadEmployeeListPage(); }
+function empPagePrev() { if (empPage > 1) { empPage--; loadEmployeeListPage(); } }
+function empPageNext() {
+  const totalPages = Math.max(1, Math.ceil(empTotal / empPageSize));
+  if (empPage < totalPages) { empPage++; loadEmployeeListPage(); }
+}
 
+// Debounced — empSearch fires on every keystroke (oninput), and each call
+// here is a real network round trip now (server-side search), not an
+// in-memory filter.
 function filterEmployees() {
-  const q = document.getElementById('empSearch').value.toLowerCase();
+  empPage = 1;
+  clearTimeout(empSearchDebounceTimer);
+  empSearchDebounceTimer = setTimeout(loadEmployeeListPage, 250);
+}
+
+// A fast typist (or a quick page/sort click) can fire a new fetch before
+// an older one's response lands — with a debounce this is rare but not
+// impossible (e.g. two searches within the round-trip time of the first),
+// and network completion order isn't guaranteed to match request order.
+// empRequestSeq discards a response that's no longer the most recent
+// request, so a slow, stale response can never overwrite the table.
+let empRequestSeq = 0;
+async function loadEmployeeListPage() {
+  const seq = ++empRequestSeq;
+  const q = document.getElementById('empSearch').value.trim();
   const s = document.getElementById('empStatusFilter').value;
-  empFilteredData = employees.filter(e => {
-    const mQ = !q || [e.full_name,e.preferred_name,e.employee_id,e.ic_number,e.designation,e.department].some(v=>v?.toLowerCase().includes(q));
-    const mS = !s || e.status === s;
-    return mQ && mS;
+  const offset = (empPage - 1) * empPageSize;
+  const params = new URLSearchParams({
+    limit: String(empPageSize), offset: String(offset),
+    sort_by: empSortKey, sort_dir: empSortDir,
   });
-  empList.resetPage();
+  if (q) params.set('search', q);
+  if (s) params.set('status', s);
+  const res = await api(`/api/employees?${params}`);
+  if (seq !== empRequestSeq) return; // a newer request has since started
+  if (!res || !res.ok) return;
+  empPageRows = await res.json();
+  empTotal = parseInt(res.headers.get('X-Total-Count') || '0', 10);
   renderEmpTable();
+}
+
+function empSortValue(e, key) { return key === 'years_of_service' ? yearsOfServiceValue(e) : e[key]; }
+
+// Applies the current-page-only derived-column sort, if one is active;
+// otherwise rows are already in the server's sorted order.
+function empDisplayRows() {
+  if (!empClientSortKey) return empPageRows;
+  const dir = empClientSortDir === 'asc' ? 1 : -1;
+  return [...empPageRows].sort((a, b) => {
+    let x = empSortValue(a, empClientSortKey), y = empSortValue(b, empClientSortKey);
+    if (typeof x === 'string') x = x.toLowerCase();
+    if (typeof y === 'string') y = y.toLowerCase();
+    if (x == null) x = '';
+    if (y == null) y = '';
+    return x < y ? -1 * dir : x > y ? 1 * dir : 0;
+  });
 }
 
 function renderEmpTableHead() {
@@ -147,18 +213,23 @@ function renderEmpTable() {
   const empty = document.getElementById('empEmpty');
   const pagination = document.getElementById('empPagination');
   renderEmpTableHead();
-  empList.updateSortArrows('.emp-sort-arrow');
-  if (!empFilteredData.length) { tbody.innerHTML=''; empty.classList.remove('hidden'); pagination.classList.add('hidden'); return; }
+  document.querySelectorAll('.emp-sort-arrow').forEach(el => {
+    const key = el.dataset.sortKey;
+    const activeKey = empClientSortKey || empSortKey;
+    const activeDir = empClientSortKey ? empClientSortDir : empSortDir;
+    el.textContent = key === activeKey ? (activeDir === 'asc' ? ' ▲' : ' ▼') : '';
+  });
+  if (!empPageRows.length) { tbody.innerHTML=''; empty.classList.remove('hidden'); pagination.classList.add('hidden'); return; }
   empty.classList.add('hidden');
   pagination.classList.remove('hidden');
-  document.getElementById('empPageSize').value = String(empList.pageSize);
+  document.getElementById('empPageSize').value = String(empPageSize);
 
-  const { pageItems, start, total } = empList.view(empFilteredData);
+  const offset = (empPage - 1) * empPageSize;
   document.getElementById('empPageInfo').textContent =
-    `${start + 1}-${Math.min(start + empList.pageSize, total)} of ${total}`;
+    `${offset + 1}-${Math.min(offset + empPageSize, empTotal)} of ${empTotal}`;
 
   const cols = empAvailableColumns().filter(c => empVisibleColumns.has(c.key));
-  tbody.innerHTML = pageItems.map(e=>`
+  tbody.innerHTML = empDisplayRows().map(e=>`
     <tr class="hover:bg-slate-50 transition cursor-pointer" onclick="viewEmployee('${esc(e.employee_id)}')">
       <td class="px-4 py-3">
         <div class="flex items-center gap-3">

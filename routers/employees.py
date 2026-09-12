@@ -4,7 +4,7 @@ import io
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ValidationError, field_validator
 
@@ -295,14 +295,37 @@ def _resolve_manager_name(conn, inst_id: int, reports_to: Optional[str]) -> Dict
     return {"manager_name": row["full_name"], "manager_preferred_name": row["preferred_name"]}
 
 
+# Allowlisted, not user-supplied directly — sort_by picks a key into this
+# map rather than being interpolated into the query itself. Deliberately
+# only the plain DB columns the Employee List's table can sort against —
+# manager_name/location_name/pay_grade_name/years_of_service are resolved
+# below via post-query lookups (not real columns, and not worth an inline
+# JOIN just for sorting), so those 4 columns stay sorted client-side
+# against whatever page is currently loaded, not the full table.
+_EMPLOYEE_SORT_COLUMNS = {
+    "employee_id": "employee_id", "full_name": "full_name", "preferred_name": "preferred_name",
+    "work_email": "work_email", "phone": "phone", "designation": "designation", "department": "department",
+    "start_date": "start_date", "probation_end_date": "probation_end_date", "resign_date": "resign_date",
+    "last_working_day": "last_working_day", "date_of_birth": "date_of_birth",
+    "gender": "gender", "race": "race", "employment_type": "employment_type", "status": "status",
+}
+
+
 @router.get("/api/employees", response_model=List[EmployeeOut])
 @db_session
 def list_employees(
-    conn,
+    conn, response: Response,
     status: Optional[str] = None,
     search: Optional[str] = None,
+    sort_by: Optional[str] = None, sort_dir: str = "asc",
+    limit: Optional[int] = None, offset: int = 0,
     user: dict = Depends(get_current_user),
 ) -> List[Dict[str, Any]]:
+    # limit is opt-in and defaults to None (today's "return everything"
+    # behavior, unchanged) — this endpoint doubles as the app-wide employee
+    # roster cache (org chart, pickers, dashboards; see loadEmployees() and
+    # its ~12 callers), so only the Employee List screen's own dedicated
+    # fetch passes limit/offset — every other caller is unaffected.
     inst_id = need_inst(user)
     if user["role"] == "manager" and user.get("employee_id"):
         # Self + full downstream reporting chain (not just same-department peers)
@@ -328,8 +351,19 @@ def list_employees(
         like = f"%{search}%"
         q += " AND (full_name LIKE ? OR preferred_name LIKE ? OR employee_id LIKE ? OR ic_number LIKE ? OR designation LIKE ? OR department LIKE ?)"
         p.extend([like,like,like,like,like,like])
-    q += " ORDER BY created_at DESC"
-    rows = conn.execute(q, p).fetchall()
+
+    if limit is not None:
+        total = conn.execute(f"SELECT COUNT(*) FROM ({q}) AS sub", p).fetchone()[0]
+        response.headers["X-Total-Count"] = str(total)
+        sort_col = _EMPLOYEE_SORT_COLUMNS.get(sort_by, "full_name")
+        sort_dir_sql = "DESC" if str(sort_dir).lower() == "desc" else "ASC"
+        limit = min(max(1, limit), 500)
+        offset = max(0, offset)
+        q += f" ORDER BY {sort_col} {sort_dir_sql} LIMIT ? OFFSET ?"
+        rows = conn.execute(q, p + [limit, offset]).fetchall()
+    else:
+        q += " ORDER BY created_at DESC"
+        rows = conn.execute(q, p).fetchall()
     result = [dict(r) for r in rows]
 
     # location_name/default_location_id and manager_name aren't columns on employees
