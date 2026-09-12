@@ -353,14 +353,16 @@ function vgrid(fields) {
   }</div>`;
 }
 
-function switchViewTab(name) {
+async function switchViewTab(name) {
   VIEW_TABS.forEach(t=>{
     document.getElementById(t)?.classList.toggle('hidden',t!==name);
     const btn=document.querySelector(`[data-vtab="${t}"]`);
     if(btn) btn.classList.toggle('active',t===name);
   });
   if(name==='vt-notes') loadNotes();
-  if(name==='vt-documents') loadEmployeeDocuments(viewingId);
+  // employee-documents.js is lazy-loaded (Speed Audit item 7 — HR-only,
+  // this tab's button is itself hidden for non-HR-staff roles already).
+  if(name==='vt-documents') { await ensureModuleLoaded('employee-documents'); loadEmployeeDocuments(viewingId); }
   closeViewTabMenu();
 }
 
@@ -670,7 +672,7 @@ function toggleSalaryTypeFields() {
   document.getElementById('fHourlyRateWrap').classList.toggle('hidden', !isHourly);
 }
 
-function openAddModal() {
+async function openAddModal() {
   currentEmpId=null;
   document.getElementById('empModalTitle').textContent='Add Employee';
   document.getElementById('empForm').reset();
@@ -680,6 +682,9 @@ function openAddModal() {
   while(rt.options.length>2) rt.remove(2);
   employees.filter(e=>e.status==='Active').forEach(e=>{const o=document.createElement('option');o.value=e.employee_id;o.textContent=`${e.employee_id} — ${displayName(e.full_name,e.preferred_name)}`;rt.appendChild(o);});
   initEmployeeSearchSelect('fReportsTo', 'Search employee…');
+  // locations.js is lazy-loaded (Speed Audit item 7 — HR-only); Add/Edit
+  // Employee is itself only reachable by HR-tier roles.
+  await ensureModuleLoaded('locations');
   loadLocationDropdown();
   document.getElementById('empDependentsTabBtn').classList.add('hidden'); // dependents need an existing employee_id
   currentTab='personal'; switchTab('personal');
@@ -714,6 +719,7 @@ async function openEditModal(e) {
   employees.filter(em=>em.status==='Active'&&em.employee_id!==e.employee_id).forEach(em=>{const o=document.createElement('option');o.value=em.employee_id;o.textContent=`${em.employee_id} — ${displayName(em.full_name,em.preferred_name)}`;rt.appendChild(o);});
   rt.value=e.reports_to===e.employee_id?'SELF':(e.reports_to||'');
   initEmployeeSearchSelect('fReportsTo', 'Search employee…');
+  await ensureModuleLoaded('locations'); // see openAddModal's identical comment
   await loadLocationDropdown();
   f('fDefaultLocation').value=e.default_location_id||'';
   document.getElementById('empDependentsTabBtn').classList.remove('hidden');

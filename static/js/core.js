@@ -27,6 +27,72 @@ const BENEFITS_DASHBOARD_ROLES = ['hr_manager','compensation_manager','manager']
 const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','leave-my','leave-approvals','leave-holidays','resignation-approvals','projects','timesheet-my','timesheet-approvals','overtime-my','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','comp-paygrades','comp-joblevels','comp-jobroles','comp-meritcycles','comp-bonusplans','comp-commissions','comp-equity','comp-totalrewards','comp-payequity','ben-plans','ben-periods','ben-lifeevents','ben-claims','ben-compliance','payroll-runs','payroll-my','payroll-myrewards','payroll-mybenefits','perf-my','perf-team','perf-cycles','perf-calibration','attendance-clock','attendance-review','settings-attendance','settings-approval-workflow','settings-roles','settings-document-types','settings-offer-letter-templates','settings-ai-assistant','coming-soon'];
 
 // ---------------------------------------------------------------------------
+// Lazy module loading (Speed Audit item 7)
+// ---------------------------------------------------------------------------
+// scripts/lazy-modules.js's 11 files (HR/superadmin-only screens with no
+// employee-facing self-service half — Recruitment, Onboarding/Offboarding,
+// Audit Log, Users, Institutions, and several Settings pages) are built as
+// separate minified files under static/js/modules/ instead of being
+// concatenated into app.bundle.js, so a plain employee or manager never
+// downloads or parses them at all. Each is fetched only the first time it's
+// actually needed, then cached (module-scoped promise, not just a boolean,
+// so two near-simultaneous callers share the one in-flight request).
+//
+// Versioned with the same content-hash query string as app.bundle.js
+// itself: read directly off that <script> tag's own src, since the
+// server's cache-busting ?v= substitution (routers/frontend.py) only
+// rewrites index.html's own text — a tag created here at runtime has to
+// carry the hash itself.
+const _assetVersion = (document.currentScript && document.currentScript.src.split('?v=')[1]) || '';
+const _loadedModules = {};
+function ensureModuleLoaded(name) {
+  if (_loadedModules[name]) return _loadedModules[name];
+  _loadedModules[name] = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = `/static/js/modules/${name}.js${_assetVersion ? '?v=' + _assetVersion : ''}`;
+    s.onload = () => resolve();
+    s.onerror = () => { delete _loadedModules[name]; reject(new Error(`Failed to load module: ${name}`)); };
+    document.body.appendChild(s);
+  });
+  return _loadedModules[name];
+}
+
+// page -> lazy module name, for showPage()'s dispatch below. A page not
+// listed here needs no lazy module (either it's core, or it's one of the
+// mixed employee/HR files that stays eager — see lazy-modules.js's own
+// comment on why those aren't split).
+const LAZY_PAGE_MODULES = {
+  audit: 'audit', users: 'users', institutions: 'institutions',
+  requisitions: 'recruitment', candidates: 'recruitment', interviews: 'recruitment', offers: 'recruitment',
+  'settings-offer-letter-templates': 'recruitment',
+  onboarding: 'onboarding', offboarding: 'onboarding',
+  'settings-bulk-upload': 'bulk-upload',
+  'settings-locations': 'locations',
+  'settings-approval-workflow': 'approval-workflow',
+  'settings-roles': 'roles',
+  'settings-document-types': 'employee-documents',
+  'settings-ai-assistant': 'ai-assistant-settings',
+};
+
+// Lives here rather than in approval-workflow.js (where the rest of this
+// domain's logic sits) because Leave's and Benefits' own Apply/Submit
+// forms call it directly, off the critical path of ever opening the
+// (HR-only, lazy-loaded) Approval Workflow settings page — moving
+// approval-workflow.js to lazy-load-only would otherwise have left this
+// permanently undefined for a plain employee filing routine leave/claims.
+// Decides whether to show those forms' Project picker: the applicable
+// (default) workflow for the module has to actually have a
+// project_manager step configured, primary or alt.
+async function moduleHasProjectManagerStep(module) {
+  const res = await api(`/api/approval-workflows?module=${module}`);
+  if (!res?.ok) return false;
+  const workflows = await res.json();
+  const wf = workflows.find(w => w.is_default) || workflows[0];
+  if (!wf) return false;
+  return wf.steps.some(s => s.approver_type === 'project_manager' || s.alt_approver_type === 'project_manager');
+}
+
+// ---------------------------------------------------------------------------
 // Global loading indicator
 // ---------------------------------------------------------------------------
 // A counter, not a boolean, because pages routinely fire several api() calls
@@ -376,6 +442,7 @@ async function bootApp() {
   document.getElementById('headerDate').textContent =
     `${new Date().toLocaleDateString('en-MY',{weekday:'short'})}, ${fmtDate(new Date())}`;
   if (isSuperadminLanding) {
+    await ensureModuleLoaded('institutions'); // institutions.js is lazy-loaded (Speed Audit item 7); loadInstitutions() below needs it, and runs before showPage('institutions') would otherwise trigger the same load
     await loadInstitutions();
     showPage('institutions');
   } else {
@@ -619,13 +686,13 @@ function clearInstitutionContext() {
   employees = []; users = []; orgData = [];
   applyRoleUI();
   updateSidebarUser();
-  loadInstitutions().then(() => showPage('institutions'));
+  ensureModuleLoaded('institutions').then(loadInstitutions).then(() => showPage('institutions'));
 }
 
 // ---------------------------------------------------------------------------
 // Pages
 // ---------------------------------------------------------------------------
-function showPage(page) {
+async function showPage(page) {
   ALL_PAGES.forEach(p => {
     const el = document.getElementById(`page-${p}`);
     if (el) el.classList.toggle('hidden', p !== page);
@@ -674,6 +741,11 @@ function showPage(page) {
     'settings-ai-assistant':'Settings — AI Assistant'
   };
   document.getElementById('pageTitle').textContent = titles[page] || page;
+  const lazyModule = LAZY_PAGE_MODULES[page];
+  if (lazyModule) {
+    try { await ensureModuleLoaded(lazyModule); }
+    catch (e) { console.error(e); alert('Failed to load this page — check your connection and try again.'); return; }
+  }
   if (page === 'dashboard')    renderDashboard();
   if (page === 'employees')    filterEmployees();
   if (page === 'orgchart')     loadOrgChart();

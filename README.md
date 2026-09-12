@@ -139,6 +139,30 @@ npm run build
 `static/js/*.js` file to the app means adding its filename to
 `scripts/js-manifest.js`, not adding a `<script>` tag to `index.html`.
 
+### Lazy-loaded modules
+
+11 of the `static/js/*.js` files are HR/superadmin-only screens with no
+employee-facing self-service half (Recruitment, Onboarding/Offboarding,
+Audit Log, Users, Institutions, and several Settings pages) — listed in
+`scripts/lazy-modules.js` instead of `js-manifest.js`, so `build-js.js`
+minifies each on its own into `static/js/modules/<name>.js` rather than
+folding it into `app.bundle.js`. The browser fetches one of these only the
+first time its page is actually opened (`ensureModuleLoaded()` in
+`core.js`, called from `showPage()`'s per-page dispatch, or from the one
+or two other call sites a module is reached from outside `showPage` —
+e.g. `employee-documents.js` from the employee-detail modal's Documents
+tab, `locations.js` from the Add/Edit Employee modal), not at login —
+`applyRoleUI()` hiding a nav item was never enough on its own to stop the
+script behind it from loading too.
+
+Deciding whether a new file belongs here instead of `js-manifest.js`:
+safe only if no role's own personal screen depends on it. Files that mix
+self-service and HR-management code in one file (`leave.js`, `benefits.js`,
+`timesheet.js`, `employees.js`, etc.) stay in the core bundle — splitting
+those safely would mean separating that mixed code first, not just
+deferring the whole file. See `scripts/lazy-modules.js`'s own comment
+before adding to it.
+
 ## Frontend asset versioning
 
 `index.html`'s `?v=...` cache-busting query strings are rewritten

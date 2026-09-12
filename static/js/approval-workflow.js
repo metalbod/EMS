@@ -66,18 +66,6 @@ const saveOvertimeSettings = guardAsync(async function() {
   alert('Overtime settings saved.');
 });
 
-// Used by Leave/Claims submission forms to decide whether to show a
-// Project picker — the applicable (default) workflow for the module has
-// to actually have a project_manager step configured, primary or alt.
-async function moduleHasProjectManagerStep(module) {
-  const res = await api(`/api/approval-workflows?module=${module}`);
-  if (!res?.ok) return false;
-  const workflows = await res.json();
-  const wf = workflows.find(w => w.is_default) || workflows[0];
-  if (!wf) return false;
-  return wf.steps.some(s => s.approver_type === 'project_manager' || s.alt_approver_type === 'project_manager');
-}
-
 function awUpdateProjectManagerOptionVisibility() {
   const allowed = AW_PROJECT_MANAGER_MODULES.includes(awCurrentModule);
   ['awNewStepType', 'awNewStepAltType'].forEach(id => {

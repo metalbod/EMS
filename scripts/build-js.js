@@ -19,11 +19,15 @@ const fs = require('fs');
 const path = require('path');
 const esbuild = require('esbuild');
 const manifest = require('./js-manifest');
+const lazyModules = require('./lazy-modules');
 
 const ROOT = path.join(__dirname, '..');
 const JS_DIR = path.join(ROOT, 'static', 'js');
+const MODULES_DIR = path.join(JS_DIR, 'modules');
 const OUT_NAME = 'app.bundle.js';
 const OUT_FILE = path.join(JS_DIR, OUT_NAME);
+
+const kb = n => (n / 1024).toFixed(1);
 
 const missing = manifest.filter(name => !fs.existsSync(path.join(JS_DIR, name)));
 if (missing.length) {
@@ -50,5 +54,32 @@ const result = esbuild.transformSync(concatenated, {
 fs.writeFileSync(OUT_FILE, `${result.code}\n//# sourceMappingURL=${OUT_NAME}.map\n`);
 fs.writeFileSync(`${OUT_FILE}.map`, result.map);
 
-const kb = n => (n / 1024).toFixed(1);
 console.log(`Bundled ${manifest.length} files (${kb(concatenated.length)} KB) -> static/js/${OUT_NAME} (${kb(result.code.length)} KB minified)`);
+
+// Lazy modules (Speed Audit item 7): each file in scripts/lazy-modules.js
+// is minified on its own (not concatenated with the others — verified
+// independent of each other when that list was created) and written to
+// static/js/modules/<name>, fetched by the browser on demand via
+// ensureModuleLoaded() in core.js instead of at login.
+const missingLazy = lazyModules.filter(name => !fs.existsSync(path.join(JS_DIR, name)));
+if (missingLazy.length) {
+  console.error(`scripts/lazy-modules.js lists file(s) that don't exist under static/js/: ${missingLazy.join(', ')}`);
+  process.exit(1);
+}
+fs.mkdirSync(MODULES_DIR, { recursive: true });
+let lazyTotalRaw = 0, lazyTotalMin = 0;
+for (const name of lazyModules) {
+  const code = fs.readFileSync(path.join(JS_DIR, name), 'utf8');
+  const out = esbuild.transformSync(code, {
+    minify: true,
+    sourcemap: 'external',
+    sourcefile: name,
+    target: 'es2019',
+  });
+  const outFile = path.join(MODULES_DIR, name);
+  fs.writeFileSync(outFile, `${out.code}\n//# sourceMappingURL=${name}.map\n`);
+  fs.writeFileSync(`${outFile}.map`, out.map);
+  lazyTotalRaw += code.length;
+  lazyTotalMin += out.code.length;
+}
+console.log(`Minified ${lazyModules.length} lazy module(s) (${kb(lazyTotalRaw)} KB) -> static/js/modules/*.js (${kb(lazyTotalMin)} KB minified)`);
