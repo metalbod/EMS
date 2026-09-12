@@ -325,6 +325,13 @@ async function switchRole(role) {
   const data=await res.json();
   localStorage.setItem('token',data.access_token);
   currentUser=data.user;
+  // employees[] is role-scoped server-side (list_employees()'s manager
+  // recursive-reporting-chain vs. full-institution rows) and was only
+  // fetched once at bootApp() time — without refetching here it stays
+  // stuck at the old role's rows after switching (e.g. switching
+  // manager->hr_manager wouldn't reveal the rows the manager view had
+  // filtered out until a full page reload).
+  await loadEmployees();
   applyRoleUI();
   updateSidebarUser();
   showPage('dashboard');
