@@ -330,9 +330,69 @@ def test_reject_timesheet(client, hr_manager_auth, employee_with_user, make_test
 def test_list_timesheets_includes_created(client, hr_manager_auth, employee_with_user, make_test_timesheet):
     emp, headers = employee_with_user
     ts = make_test_timesheet()
-    res = client.get("/api/timesheets", headers=hr_manager_auth)
+    # Scoped via employee_id — the endpoint now paginates (default limit
+    # 50), and this shared test institution's timesheets table accumulates
+    # forever across pytest runs (no teardown — see make_test_timesheet's
+    # docstring), so an unfiltered request can no longer be relied on to
+    # return this specific row.
+    res = client.get("/api/timesheets", headers=hr_manager_auth, params={"employee_id": emp["employee_id"]})
     assert res.status_code == 200
     assert ts["id"] in [t["id"] for t in res.json()]
+
+
+def test_list_timesheets_exposes_total_count_header(client, hr_manager_auth, make_test_employee):
+    """Mirrors Audit Log's equivalent test (test_audit.py) — the response
+    body stays a plain list for existing callers; the total row count for
+    building Prev/Next pagination is surfaced via X-Total-Count instead."""
+    emp = make_test_employee()
+    res = client.post("/api/timesheets", headers=hr_manager_auth, json={
+        "employee_id": emp["employee_id"], "period_start": PERIOD_START, "period_end": PERIOD_END,
+    })
+    assert res.status_code == 201
+    res = client.get("/api/timesheets", headers=hr_manager_auth, params={"limit": 1})
+    assert res.status_code == 200
+    assert isinstance(res.json(), list)
+    total = int(res.headers["X-Total-Count"])
+    assert total >= 1
+    assert total >= len(res.json())  # header reflects the full count, not just this page
+
+
+def test_list_timesheets_offset_pages_through_results(client, hr_manager_auth, make_test_employee):
+    """offset advances through the result set without overlap — scoped via
+    employee_id to one disposable employee with two timesheets in
+    different periods, so this isn't sensitive to unrelated timesheet
+    activity elsewhere in the shared, session-scoped test institution (see
+    conftest.py's test_institution docstring). Also covers sort_dir, which
+    Audit Log's pagination doesn't expose.
+
+    An earlier version of this test tried to force two employees to sort
+    at one extreme via a distinctive full_name and compare across the
+    whole (unfiltered) result set — timesheets/employees here have no
+    teardown (see make_test_timesheet's docstring) and accumulate
+    forever, so it kept colliding with same-named leftovers from previous
+    runs once ties made ORDER BY's tiebreak among them nondeterministic
+    (hit this twice in practice, including after adding a "unique" random
+    suffix that unintentionally changed the strings' relative sort order).
+    Scoping by employee_id sidesteps the whole class of problem."""
+    emp = make_test_employee()
+    period_a = ("2027-05-01", "2027-05-31")
+    period_b = ("2027-06-01", "2027-06-30")
+    for start, end in (period_a, period_b):
+        res = client.post("/api/timesheets", headers=hr_manager_auth, json={
+            "employee_id": emp["employee_id"], "period_start": start, "period_end": end,
+        })
+        assert res.status_code == 201, res.text
+
+    page1 = client.get("/api/timesheets", headers=hr_manager_auth,
+                        params={"employee_id": emp["employee_id"], "sort_by": "period_start", "sort_dir": "desc",
+                                "limit": 1, "offset": 0}).json()
+    page2 = client.get("/api/timesheets", headers=hr_manager_auth,
+                        params={"employee_id": emp["employee_id"], "sort_by": "period_start", "sort_dir": "desc",
+                                "limit": 1, "offset": 1}).json()
+    assert len(page1) == 1 and len(page2) == 1
+    assert page1[0]["id"] != page2[0]["id"]
+    assert page1[0]["period_start"] == period_b[0]  # most recent period first (desc)
+    assert page2[0]["period_start"] == period_a[0]
 
 
 def test_hr_sees_timesheet_pending_with_direct_manager_by_name(client, hr_manager_auth, make_test_employee,
@@ -368,7 +428,10 @@ def test_hr_sees_timesheet_pending_with_direct_manager_by_name(client, hr_manage
     submit = client.patch(f"/api/timesheets/{ts['id']}/status", headers=headers, json={"status": "Submitted"})
     assert submit.status_code == 200
 
-    hr_list = client.get("/api/timesheets", headers=hr_manager_auth).json()
+    # Scoped via employee_id — see test_list_timesheets_includes_created's
+    # comment on why an unfiltered request is no longer reliable here.
+    hr_list = client.get("/api/timesheets", headers=hr_manager_auth,
+                          params={"employee_id": report_emp["employee_id"]}).json()
     row = next(t for t in hr_list if t["id"] == ts["id"])
     assert row["is_actionable"] is False
     assert row["pending_with"] == f"{mgr_emp['full_name']} (Direct Manager)"

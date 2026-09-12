@@ -1,7 +1,7 @@
 """Timesheets (institution-scoped)."""
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 
 from core.deps import get_current_user, need_inst
@@ -48,27 +48,60 @@ def _log_timesheet(conn, inst_id: int, ts_id: int, emp_id: str,
     )
 
 
+# Allowlisted, not user-supplied directly — sort_by picks a key into this
+# map rather than being interpolated into the query itself.
+_TIMESHEET_SORT_COLUMNS = {
+    "employee_name": "e.full_name",
+    "period_start": "t.period_start",
+    "total_hours": "total_hours",
+    "status": "t.status",
+}
+
+
 @router.get("/api/timesheets")
 @db_session
-def list_timesheets(conn, status: Optional[str] = None, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
+def list_timesheets(
+    conn, response: Response,
+    status: Optional[str] = None, employee_id: Optional[str] = None,
+    sort_by: str = "period_start", sort_dir: str = "desc",
+    limit: int = 50, offset: int = 0,
+    user: dict = Depends(get_current_user),
+) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
-    q = """
+    limit = min(max(1, limit), 200)
+    offset = max(0, offset)
+    where = "t.institution_id=?"
+    params: list = [inst_id]
+    if status: where += " AND t.status=?"; params.append(status)
+    if employee_id: where += " AND t.employee_id=?"; params.append(employee_id)
+    if user["role"] == "manager":
+        frag, fp = subordinates_in_clause(inst_id, user.get("employee_id", ""))
+        where += f" AND e.employee_id IN {frag}"; params.extend(fp)
+    elif user["role"] == "employee":
+        where += " AND t.employee_id=?"; params.append(user.get("employee_id", ""))
+
+    total = conn.execute(
+        f"""SELECT COUNT(DISTINCT t.id) FROM timesheets t
+            JOIN employees e ON e.employee_id = t.employee_id AND e.institution_id = t.institution_id
+            WHERE {where}""",
+        params
+    ).fetchone()[0]
+    response.headers["X-Total-Count"] = str(total)
+
+    sort_col = _TIMESHEET_SORT_COLUMNS.get(sort_by, "t.period_start")
+    sort_dir_sql = "ASC" if str(sort_dir).lower() == "asc" else "DESC"
+    q = f"""
         SELECT t.*, e.full_name AS employee_name, e.preferred_name AS employee_preferred_name, e.department, e.designation,
                COALESCE(SUM(te.hours),0) AS total_hours
         FROM timesheets t
         JOIN employees e ON e.employee_id = t.employee_id AND e.institution_id = t.institution_id
         LEFT JOIN timesheet_entries te ON te.timesheet_id = t.id
-        WHERE t.institution_id=?
+        WHERE {where}
+        GROUP BY t.id, e.full_name, e.preferred_name, e.department, e.designation
+        ORDER BY {sort_col} {sort_dir_sql}
+        LIMIT ? OFFSET ?
     """
-    params: list = [inst_id]
-    if status: q += " AND t.status=?"; params.append(status)
-    if user["role"] == "manager":
-        frag, fp = subordinates_in_clause(inst_id, user.get("employee_id", ""))
-        q += f" AND e.employee_id IN {frag}"; params.extend(fp)
-    elif user["role"] == "employee":
-        q += " AND t.employee_id=?"; params.append(user.get("employee_id", ""))
-    q += " GROUP BY t.id, e.full_name, e.preferred_name, e.department, e.designation ORDER BY t.period_start DESC"
-    rows = conn.execute(q, params).fetchall()
+    rows = conn.execute(q, params + [limit, offset]).fetchall()
     result = [dict(r) for r in rows]
     if user["role"] != "employee":
         result = annotate_actionability(conn, inst_id, "timesheet", result, user)

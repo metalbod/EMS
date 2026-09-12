@@ -676,43 +676,66 @@ const submitTimesheet = guardAsync(async function() {
 // ---------------------------------------------------------------------------
 // Timesheet Approvals (manager / HR)
 // ---------------------------------------------------------------------------
+// Server-paginated (routers/timesheets.py's limit/offset + sort_by/sort_dir
+// + X-Total-Count header) — mirrors Audit Log's pattern (see audit.js),
+// extended with server-side sort since this table's column headers are
+// genuinely sortable (Employee/Period/Hours/Status), unlike Audit Log which
+// had no sort UI to preserve. tsApprovalRowsCache now holds just the current
+// page (openTimesheetDetail below looks a clicked row up in it for its
+// is_actionable/pending_with fields, which only the list endpoint computes).
 let tsApprovalRowsCache=[];
-const tsApprovalList=createListState({sortKey:'period_start', sortDir:'desc'});
+let tsApprovalPage=1, tsApprovalPageSize=50, tsApprovalTotal=0;
+let tsApprovalSortKey='period_start', tsApprovalSortDir='desc';
 
 async function loadTimesheetApprovals() {
   const tbody=document.getElementById('timesheetApprovalTableBody');
   tbody.innerHTML='<tr><td colspan="4" class="text-slate-400 text-sm text-center py-8">Loading…</td></tr>';
-  let url='/api/timesheets';
-  if(tsApprovalFilter) url+=`?status=${encodeURIComponent(tsApprovalFilter)}`;
-  const res=await api(url);
+  const offset=(tsApprovalPage-1)*tsApprovalPageSize;
+  const params=new URLSearchParams({
+    limit:String(tsApprovalPageSize), offset:String(offset),
+    sort_by:tsApprovalSortKey, sort_dir:tsApprovalSortDir,
+  });
+  if(tsApprovalFilter) params.set('status', tsApprovalFilter);
+  const res=await api(`/api/timesheets?${params}`);
   if(!res?.ok){ tbody.innerHTML=''; return; }
   tsApprovalRowsCache=await res.json();
-  tsApprovalList.resetPage();
+  tsApprovalTotal=parseInt(res.headers.get('X-Total-Count')||'0',10);
   renderTimesheetApprovalTable();
 }
 
-function setTimesheetApprovalSort(key) { tsApprovalList.setSort(key); renderTimesheetApprovalTable(); }
-function setTimesheetApprovalPageSize(size) { tsApprovalList.setPageSize(size); renderTimesheetApprovalTable(); }
-function timesheetApprovalPagePrev() { tsApprovalList.prevPage(); renderTimesheetApprovalTable(); }
-function timesheetApprovalPageNext() { tsApprovalList.nextPage(tsApprovalRowsCache.length); renderTimesheetApprovalTable(); }
+function setTimesheetApprovalSort(key) {
+  if(tsApprovalSortKey===key) tsApprovalSortDir = tsApprovalSortDir==='asc' ? 'desc' : 'asc';
+  else { tsApprovalSortKey=key; tsApprovalSortDir='asc'; }
+  tsApprovalPage=1;
+  loadTimesheetApprovals();
+}
+function setTimesheetApprovalPageSize(size) { tsApprovalPageSize=parseInt(size)||50; tsApprovalPage=1; loadTimesheetApprovals(); }
+function timesheetApprovalPagePrev() { if(tsApprovalPage>1){ tsApprovalPage--; loadTimesheetApprovals(); } }
+function timesheetApprovalPageNext() {
+  const totalPages=Math.max(1, Math.ceil(tsApprovalTotal/tsApprovalPageSize));
+  if(tsApprovalPage<totalPages){ tsApprovalPage++; loadTimesheetApprovals(); }
+}
 
 function renderTimesheetApprovalTable() {
   const tbody=document.getElementById('timesheetApprovalTableBody');
   const emptyEl=document.getElementById('timesheetApprovalEmpty');
   const pagination=document.getElementById('timesheetApprovalPagination');
-  tsApprovalList.updateSortArrows('.ts-appr-sort-arrow');
+  document.querySelectorAll('.ts-appr-sort-arrow').forEach(el=>{
+    const key=el.dataset.sortKey;
+    el.textContent = key===tsApprovalSortKey ? (tsApprovalSortDir==='asc'?' ▲':' ▼') : '';
+  });
 
   if(!tsApprovalRowsCache.length){ tbody.innerHTML=''; emptyEl?.classList.remove('hidden'); pagination?.classList.add('hidden'); return; }
   emptyEl?.classList.add('hidden');
   pagination?.classList.remove('hidden');
   const pageSizeEl=document.getElementById('timesheetApprovalPageSize');
-  if(pageSizeEl) pageSizeEl.value=String(tsApprovalList.pageSize);
+  if(pageSizeEl) pageSizeEl.value=String(tsApprovalPageSize);
 
-  const { pageItems, start, total }=tsApprovalList.view(tsApprovalRowsCache);
+  const offset=(tsApprovalPage-1)*tsApprovalPageSize;
   const pageInfoEl=document.getElementById('timesheetApprovalPageInfo');
-  if(pageInfoEl) pageInfoEl.textContent=`${start+1}-${Math.min(start+tsApprovalList.pageSize, total)} of ${total}`;
+  if(pageInfoEl) pageInfoEl.textContent=`${offset+1}-${Math.min(offset+tsApprovalPageSize, tsApprovalTotal)} of ${tsApprovalTotal}`;
 
-  tbody.innerHTML=pageItems.map(t=>`
+  tbody.innerHTML=tsApprovalRowsCache.map(t=>`
     <tr class="cursor-pointer hover:bg-slate-50 transition" onclick="openTimesheetDetail(${t.id})">
       <td class="px-4 py-3">
         <p class="font-medium">${esc(displayName(t.employee_name,t.employee_preferred_name))}</p>
@@ -729,6 +752,7 @@ function renderTimesheetApprovalTable() {
 
 function setTimesheetApprovalFilter(status) {
   tsApprovalFilter=status;
+  tsApprovalPage=1;
   document.querySelectorAll('.ts-appr-filter-btn').forEach(b=>b.classList.remove('ts-appr-filter-active'));
   event?.target?.classList?.add('ts-appr-filter-active');
   loadTimesheetApprovals();
