@@ -200,6 +200,57 @@ def test_create_candidate_success_and_appears_in_list(client, hr_manager_auth):
     assert any(c["id"] == cand["id"] for c in listing.json())
 
 
+# ---------------------------------------------------------------------------
+# Pagination (Speed Audit item 8) — opt-in via limit/offset, so the
+# Interview/Offer "select candidate" pickers (openIntModal/openOfferModal
+# in recruitment.js), which need the complete candidate list, keep
+# getting today's exact unbounded response when they omit limit. Only the
+# Candidate Bank screen's own dedicated fetch passes it.
+# ---------------------------------------------------------------------------
+def test_list_candidates_without_limit_is_unbounded_and_has_no_total_count_header(client, hr_manager_auth):
+    cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
+                        json={"full_name": "ZZ Unbounded Candidate"}).json()
+    res = client.get("/api/recruitment/candidates", headers=hr_manager_auth, params={"search": "ZZ Unbounded"})
+    assert res.status_code == 200
+    assert "X-Total-Count" not in res.headers
+    assert any(c["id"] == cand["id"] for c in res.json())
+
+
+def test_list_candidates_exposes_total_count_header_when_limit_given(client, hr_manager_auth):
+    suffix = os.urandom(4).hex()
+    client.post("/api/recruitment/candidates", headers=hr_manager_auth,
+                json={"full_name": f"ZZ Count {suffix}"})
+    res = client.get("/api/recruitment/candidates", headers=hr_manager_auth,
+                      params={"search": suffix, "limit": 1})
+    assert res.status_code == 200
+    assert isinstance(res.json(), list)
+    assert int(res.headers["X-Total-Count"]) == 1
+
+
+def test_list_candidates_offset_pages_through_results(client, hr_manager_auth):
+    """offset advances through the result set without overlap — scoped via
+    a unique random search term embedded in two disposable candidates'
+    names (candidates have no delete endpoint and accumulate forever
+    across test runs), so this isn't sensitive to unrelated candidate
+    data elsewhere in the shared, session-scoped test institution."""
+    suffix = os.urandom(4).hex()
+    client.post("/api/recruitment/candidates", headers=hr_manager_auth,
+                json={"full_name": f"ZZ Paging {suffix} Alice"})
+    client.post("/api/recruitment/candidates", headers=hr_manager_auth,
+                json={"full_name": f"ZZ Paging {suffix} Bob"})
+
+    page1 = client.get("/api/recruitment/candidates", headers=hr_manager_auth,
+                        params={"search": suffix, "sort_by": "full_name", "sort_dir": "asc",
+                                "limit": 1, "offset": 0}).json()
+    page2 = client.get("/api/recruitment/candidates", headers=hr_manager_auth,
+                        params={"search": suffix, "sort_by": "full_name", "sort_dir": "asc",
+                                "limit": 1, "offset": 1}).json()
+    assert len(page1) == 1 and len(page2) == 1
+    assert page1[0]["id"] != page2[0]["id"]
+    assert page1[0]["full_name"].endswith("Alice")
+    assert page2[0]["full_name"].endswith("Bob")
+
+
 def test_get_candidate_includes_interviews_and_offers(client, hr_manager_auth):
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
                         json={"full_name": "ZZ Candidate Detail"}).json()

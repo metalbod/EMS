@@ -1179,7 +1179,7 @@
           <label class="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" class="cand-stage-cb" value="Withdrawn" checked onchange="onCandStageCbChange()"/> Withdrawn</label>
         </div>
         <div class="flex flex-col sm:flex-row gap-3 mb-5">
-          <input id="candSearch" type="text" placeholder="Search name, email, company, skills…" class="inp flex-1" oninput="loadCandidates()"/>
+          <input id="candSearch" type="text" placeholder="Search name, email, company, skills…" class="inp flex-1" oninput="onCandSearchInput()"/>
           <button id="addCandBtn" onclick="openCandModal()" class="btn-primary hidden flex items-center gap-2">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
             Add Candidate
@@ -1202,6 +1202,21 @@
             <tbody id="candTableBody" class="divide-y divide-slate-100"></tbody>
           </table>
           <p id="candEmpty" class="hidden text-center text-slate-400 text-sm py-12">No candidates found.</p>
+          <div id="candPagination" class="hidden flex items-center justify-between px-4 py-3 border-t border-slate-200 text-sm text-slate-500">
+            <div class="flex items-center gap-2">
+              <span>Rows per page:</span>
+              <select id="candPageSize" onchange="setCandPageSize(this.value)" class="border border-slate-200 rounded-lg text-sm px-2 py-1">
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+            </div>
+            <div class="flex items-center gap-3">
+              <span id="candPageInfo"></span>
+              <button onclick="candPagePrev()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Prev</button>
+              <button onclick="candPageNext()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Next</button>
+            </div>
+          </div>
         </div>
       </div>
 

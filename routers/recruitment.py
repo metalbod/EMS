@@ -3,7 +3,7 @@ from datetime import datetime
 from string import Template
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, field_validator
 
 from core.deps import get_current_user, need_inst
@@ -603,14 +603,20 @@ CANDIDATE_SORT_COLUMNS = {
 
 @router.get("/api/recruitment/candidates")
 @db_session
-def list_candidates(conn,
+def list_candidates(conn, response: Response,
     requisition_id: Optional[int] = None,
     stage: Optional[List[str]] = Query(None),
     search: Optional[str] = None,
     sort_by: str = "created_at",
     sort_dir: str = "desc",
+    limit: Optional[int] = None, offset: int = 0,
     user: dict = Depends(get_current_user),
 ):
+    # limit is opt-in and defaults to None (today's "return everything"
+    # behavior, unchanged) — the Interview/Offer "select candidate"
+    # pickers (openIntModal/openOfferModal in recruitment.js) need the
+    # full candidate list, not one page of it, so only the Candidate Bank
+    # screen's own dedicated fetch passes limit/offset.
     inst_id = need_inst(user)
     q = """SELECT c.*, r.title AS requisition_title,
                (SELECT MAX(i.scheduled_date) FROM interviews i WHERE i.candidate_id=c.id) AS last_interview_date
@@ -629,9 +635,19 @@ def list_candidates(conn,
         like = f"%{search}%"
         q += " AND (c.full_name LIKE ? OR c.email LIKE ? OR c.current_company LIKE ? OR c.skills LIKE ?)"
         p.extend([like,like,like,like])
+
+    if limit is not None:
+        total = conn.execute(f"SELECT COUNT(*) FROM ({q}) AS sub", p).fetchone()[0]
+        response.headers["X-Total-Count"] = str(total)
+
     sort_col = CANDIDATE_SORT_COLUMNS.get(sort_by, "c.created_at")
     direction = "ASC" if sort_dir == "asc" else "DESC"
     q += f" ORDER BY {sort_col} {direction} NULLS LAST"
+    if limit is not None:
+        limit = min(max(1, limit), 500)
+        offset = max(0, offset)
+        q += " LIMIT ? OFFSET ?"
+        p = p + [limit, offset]
     rows = conn.execute(q, p).fetchall()
     return [dict(r) for r in rows]
 

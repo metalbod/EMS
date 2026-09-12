@@ -1,7 +1,6 @@
 // Recruitment — helpers
 // ---------------------------------------------------------------------------
 let recruitMeta = {};
-let recruitCandidates = []; // cached for selects
 let viewingReqId = null, viewingCandId = null, viewingIntId = null, viewingOfferId = null;
 let viewingCandData = null; // full candidate object currently open in detail modal
 let candExistingDocs = [];  // documents already saved for the candidate being edited
@@ -9,6 +8,16 @@ let candPendingFiles = [];  // {file_name,mime_type,data_url} selected but not y
 const CAND_FILE_MAX_BYTES = 6 * 1024 * 1024;
 let candSortBy = 'created_at', candSortDir = 'desc';
 const CAND_SORT_FIELDS = ['full_name','requisition_title','source','created_at','experience_years','last_interview_date','stage'];
+
+// Candidate Bank — server-paginated (routers/recruitment.py's optional
+// limit/offset + X-Total-Count header; sort_by/sort_dir were already
+// server-side before this). limit/offset are opt-in and only ever sent by
+// this screen's own fetch below — the Interview/Offer "select candidate"
+// pickers (openIntModal/openOfferModal) need the complete candidate list,
+// so they fetch it themselves, unbounded, independent of this page's
+// current page/search/stage-filter state (see those functions).
+let candPage = 1, candPageSize = 50, candTotal = 0, candPageRows = [];
+let candSearchDebounceTimer = null, candRequestSeq = 0;
 
 function stageBadgeClass(stage) {
   const m = {New:'status-neutral',Screening:'status-info',
@@ -191,17 +200,17 @@ async function closeReqAction() {
 // ---------------------------------------------------------------------------
 function toggleAllCandStages(checked) {
   document.querySelectorAll('.cand-stage-cb').forEach(cb=>cb.checked=checked);
-  loadCandidates();
+  candPage=1; loadCandidates();
 }
 function onCandStageCbChange() {
   const boxes=[...document.querySelectorAll('.cand-stage-cb')];
   document.getElementById('candStageAll').checked = boxes.every(cb=>cb.checked);
-  loadCandidates();
+  candPage=1; loadCandidates();
 }
 function setCandSort(field) {
   if (candSortBy === field) { candSortDir = candSortDir==='asc' ? 'desc' : 'asc'; }
   else { candSortBy = field; candSortDir = 'asc'; }
-  loadCandidates();
+  candPage=1; loadCandidates();
 }
 function updateCandSortIcons() {
   CAND_SORT_FIELDS.forEach(f=>{
@@ -212,12 +221,28 @@ function updateCandSortIcons() {
 }
 function fmtDateOnly(s) { return fmtDate(s); }
 
+// Debounced — candSearch fires on every keystroke (oninput), and each
+// call below is a real network round trip (server-side search).
+function onCandSearchInput() {
+  candPage=1;
+  clearTimeout(candSearchDebounceTimer);
+  candSearchDebounceTimer=setTimeout(loadCandidates, 250);
+}
+function setCandPageSize(size) { candPageSize=parseInt(size)||50; candPage=1; loadCandidates(); }
+function candPagePrev() { if(candPage>1){ candPage--; loadCandidates(); } }
+function candPageNext() {
+  const totalPages=Math.max(1, Math.ceil(candTotal/candPageSize));
+  if(candPage<totalPages){ candPage++; loadCandidates(); }
+}
+
 async function loadCandidates() {
   await loadRecruitMeta();
+  const seq=++candRequestSeq; // discards a response that's no longer the latest (see openIntModal/openOfferModal for why this screen's own recruitCandidates[] was retired instead of risking staleness there)
   const q=document.getElementById('candSearch')?.value||'';
   const stages=[...document.querySelectorAll('.cand-stage-cb:checked')].map(cb=>cb.value);
   const allStages=[...document.querySelectorAll('.cand-stage-cb')].map(cb=>cb.value);
-  let url='/api/recruitment/candidates?x=1';
+  const offset=(candPage-1)*candPageSize;
+  let url=`/api/recruitment/candidates?limit=${candPageSize}&offset=${offset}`;
   if(q) url+=`&search=${encodeURIComponent(q)}`;
   if(stages.length < allStages.length) {
     if(!stages.length) url+=`&stage=__none__`; // empty selection: force zero results
@@ -226,15 +251,23 @@ async function loadCandidates() {
   url+=`&sort_by=${candSortBy}&sort_dir=${candSortDir}`;
   updateCandSortIcons();
   const res=await api(url);
+  if(seq!==candRequestSeq) return; // a newer request has since started
   if(!res||!res.ok) return;
   const rows=await res.json();
-  recruitCandidates=rows;
+  candPageRows=rows;
+  candTotal=parseInt(res.headers.get('X-Total-Count')||'0',10);
   const canManage=HR_MANAGE_ROLES.includes(currentUser?.role);
   document.getElementById('addCandBtn')?.classList.toggle('hidden',!canManage);
   const body=document.getElementById('candTableBody');
   const empty=document.getElementById('candEmpty');
-  if(!rows.length){body.innerHTML='';empty?.classList.remove('hidden');return;}
+  const pagination=document.getElementById('candPagination');
+  if(!rows.length){body.innerHTML='';empty?.classList.remove('hidden');pagination?.classList.add('hidden');return;}
   empty?.classList.add('hidden');
+  pagination?.classList.remove('hidden');
+  const pageSizeEl=document.getElementById('candPageSize');
+  if(pageSizeEl) pageSizeEl.value=String(candPageSize);
+  const pageInfoEl=document.getElementById('candPageInfo');
+  if(pageInfoEl) pageInfoEl.textContent=`${offset+1}-${Math.min(offset+candPageSize, candTotal)} of ${candTotal}`;
   body.innerHTML=rows.map(c=>`
     <tr class="hover:bg-slate-50 cursor-pointer" onclick="openCandDetail(${c.id})">
       <td class="px-4 py-3">
@@ -558,7 +591,7 @@ async function moveCandStage() {
   loadCandidates();
 }
 function editCand() {
-  const c=viewingCandData||recruitCandidates.find(x=>x.id===viewingCandId)||{id:viewingCandId};
+  const c=viewingCandData||candPageRows.find(x=>x.id===viewingCandId)||{id:viewingCandId};
   closeCandDetailModal();
   openCandModal(c);
 }
@@ -632,11 +665,13 @@ async function openIntModal(candId=null) {
   document.getElementById('intId').value='';
   const it=document.getElementById('intType');
   it.innerHTML=(recruitMeta.interview_types||['Phone','Video','In-Person','Technical','Panel']).map(t=>`<option>${esc(t)}</option>`).join('');
-  // populate candidate select
+  // populate candidate select — always fetched fresh, unbounded (no
+  // limit param): independent of the Candidate Bank screen's own current
+  // page/search/stage-filter, and never stale.
   const cs=document.getElementById('intCandId');
   cs.innerHTML='<option value="">Select candidate…</option>';
-  let cands=recruitCandidates;
-  if(!cands.length){const r=await api('/api/recruitment/candidates');if(r&&r.ok){cands=await r.json();recruitCandidates=cands;}}
+  const candRes=await api('/api/recruitment/candidates');
+  const cands=(candRes&&candRes.ok)?await candRes.json():[];
   cands.forEach(c=>{const o=document.createElement('option');o.value=c.id;o.textContent=`${esc(c.full_name)} [${esc(c.stage)}]`;if(candId&&c.id===candId)o.selected=true;cs.appendChild(o);});
   document.getElementById('intDate').value='';
   document.getElementById('intTime').value='';
@@ -783,8 +818,9 @@ function confirmProbationFromView() {
 async function openOfferModal(offerId=null, preCandId=null, preEmpId=null) {
   await loadRecruitMeta();
   document.getElementById('offerId').value=offerId||'';
-  let cands=recruitCandidates;
-  if(!cands.length){const r=await api('/api/recruitment/candidates');if(r&&r.ok){cands=await r.json();recruitCandidates=cands;}}
+  // Always fetched fresh, unbounded — see openIntModal's identical comment.
+  const candRes=await api('/api/recruitment/candidates');
+  const cands=(candRes&&candRes.ok)?await candRes.json():[];
   const cs=document.getElementById('offerCandId');
   cs.innerHTML='<option value="">Select candidate…</option>';
   cands.forEach(c=>{const o=document.createElement('option');o.value=c.id;o.textContent=`${esc(c.full_name)} [${esc(c.stage)}]`;if(preCandId&&c.id===preCandId)o.selected=true;cs.appendChild(o);});
