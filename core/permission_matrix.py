@@ -263,6 +263,8 @@ MATRIX: List[Dict[str, Any]] = [
         "actions": [
             _action("Manage pay grades, job levels/roles", "compensation_pay_structure.py", _flat(*_COMP_HR), note="No hr_admin."),
             _action("Set employee compensation, record salary changes", "compensation_pay_structure.py", _flat(*_COMP_HR)),
+            _action("View an employee's compensation record", "GET .../employees/{id}/compensation", _with(_flat(*_COMP_HR, "hr_admin"), manager=OWN, employee=OWN),
+                     note="Deliberately broader than the row above: hr_admin can view (not assign), and this modal doubles as self-service \"My Profile\" so any role can view their own. A manager viewing a subordinate's compensation is not included. Manually gated in the endpoint (not require_permission) since it needs employee_id-vs-caller comparison for OWN — see 2026-09-14 access review."),
             _action("Manage bonus plans & payouts", "compensation_bonus.py", _flat(*_COMP_HR)),
             _action("Manage commission plans & entries", "compensation_commission.py", _flat(*_COMP_HR)),
             _action("Manage equity grants & vesting", "compensation_equity.py", _flat(*_COMP_HR)),

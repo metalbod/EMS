@@ -255,11 +255,14 @@ function viewEmployee(id) {
   const canWrite  = HR_MANAGE_ROLES.includes(role);
   const canToggle = HR_MANAGER_ONLY_ROLES.includes(role);
   const canNotes  = HR_MANAGE_ROLES.includes(role);
-  document.getElementById('viewName').textContent = e.full_name;
-  document.getElementById('viewMeta').textContent = `${e.employee_id} · ${e.designation} · ${e.department}`;
-  const badge = document.getElementById('viewBadge');
-  badge.textContent = e.status;
-  badge.className = `badge ${e.status==='Active'?'status-positive':'status-neutral'}`;
+  // Statutory & Payroll (EPF/SOCSO/bank/salary) is sensitive enough that a
+  // Manager viewing a subordinate's record shouldn't see it — only HR
+  // Manager/HR Admin/superadmin, or the employee viewing their own record
+  // (this modal doubles as self-service "My Profile", there being no
+  // separate page for it).
+  const isSelf = !!(currentUser.employee_id && currentUser.employee_id === e.employee_id);
+  const canStatutory = canNotes || isSelf;
+  document.getElementById('vt-statutory-btn').classList.toggle('hidden', !canStatutory);
   document.getElementById('vt-notes-btn').classList.toggle('hidden', !canNotes);
   // Employee document compliance tracking is HR-only end to end (matches
   // routers/employee_documents.py's require_roles("hr_manager","hr_admin")

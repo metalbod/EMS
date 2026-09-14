@@ -507,8 +507,19 @@ def get_employee_compensation(
     employee_id: str,
     current_user: dict = Depends(get_current_user),
 ) -> EmployeeCompensationDetail:
-    """Get current employee compensation."""
-    require_permission(conn, current_user, "compensation.set_employee_compensation_record_salary_changes")
+    """Get current employee compensation. Deliberately NOT gated by the same
+    require_permission("compensation.set_employee_compensation_record_salary_changes")
+    check as the POST below — viewing is allowed more broadly than
+    assigning: hr_admin can view (not assign, matching _COMP_HR's existing
+    "no hr_admin" carve-out), and any employee can view their own record
+    (this modal doubles as self-service "My Profile" — see
+    static/js/employees.js's viewEmployee). A manager viewing a
+    subordinate's compensation is deliberately NOT included here, per the
+    2026-09-14 authentication/employee-view access review."""
+    role = current_user["role"]
+    is_self = current_user.get("employee_id") == employee_id
+    if role not in ("superadmin", "hr_manager", "hr_admin", "payroll_manager", "compensation_manager") and not is_self:
+        raise HTTPException(403, "Access denied")
     inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
 
     comp = get_current_compensation(conn, inst_id, employee_id)

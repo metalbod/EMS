@@ -472,19 +472,98 @@ class TestPayEquity:
         assert response.json()["excluded_no_compensation_count"] >= 1
 
 
+@pytest.fixture
+def employee_with_user(make_test_employee, hr_manager_auth, client, test_institution):
+    """A real employee record with a linked login (role=employee) — for
+    exercising the "view own compensation" self-service path."""
+    emp = make_test_employee(basic_salary=6000.00)
+    username = f"zztcomp_{emp['employee_id'].lower()}"
+    password = "ZzPytest@123"
+    res = client.post("/api/users", headers=hr_manager_auth, json={
+        "username": username, "full_name": "ZZ Compensation Test Employee",
+        "password": password, "role": "employee", "employee_id": emp["employee_id"],
+    })
+    assert res.status_code == 201, f"failed to create employee-linked user: {res.text}"
+    user_id = res.json()["id"]
+    login = client.post("/api/auth/login", json={
+        "username": username, "password": password, "institution_code": test_institution["code"],
+    })
+    assert login.status_code == 200
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    yield emp, headers
+
+    client.delete(f"/api/users/{user_id}", headers=hr_manager_auth)
+
+
+@pytest.fixture
+def manager_with_subordinate(make_test_employee, hr_manager_auth, client, test_institution):
+    """A manager employee + linked login, and a subordinate employee
+    reporting to them — for exercising "manager cannot view a
+    subordinate's compensation" (only HR/payroll/comp staff, or self, can)."""
+    manager_emp = make_test_employee(basic_salary=8000.00)
+    sub_emp = make_test_employee(reports_to=manager_emp["employee_id"], basic_salary=6000.00)
+
+    username = f"zztcompmgr_{manager_emp['employee_id'].lower()}"
+    password = "ZzPytest@123"
+    res = client.post("/api/users", headers=hr_manager_auth, json={
+        "username": username, "full_name": "ZZ Compensation Test Manager",
+        "password": password, "role": "manager", "employee_id": manager_emp["employee_id"],
+    })
+    assert res.status_code == 201, f"failed to create manager-linked user: {res.text}"
+    user_id = res.json()["id"]
+    login = client.post("/api/auth/login", json={
+        "username": username, "password": password, "institution_code": test_institution["code"],
+    })
+    assert login.status_code == 200
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    yield manager_emp, headers, sub_emp
+
+    client.delete(f"/api/users/{user_id}", headers=hr_manager_auth)
+
+
 class TestAccessControl:
-    """Test access control for compensation features."""
+    """Test access control for viewing an employee's compensation record —
+    see core/permission_matrix.py's "View an employee's compensation
+    record" row and routers/compensation_pay_structure.py's
+    get_employee_compensation for the 2026-09-14 access review this covers."""
 
-    def test_non_hr_cannot_access(self, client, created_employee):
-        """Test that non-HR users cannot access compensation features."""
-        # Create a regular user header (not HR)
-        regular_user_headers = {
-            "Authorization": f"Bearer fake_token"  # This would fail in real scenario
-        }
+    def test_manager_cannot_view_subordinate_compensation(self, client, manager_with_subordinate):
+        _, mgr_headers, sub_emp = manager_with_subordinate
+        res = client.get(f"/api/compensation/employees/{sub_emp['employee_id']}/compensation", headers=mgr_headers)
+        assert res.status_code == 403
 
-        # Try to create pay grade (should fail)
-        # This test assumes proper auth is in place
-        # In practice, get_current_user would reject invalid tokens
+    def test_manager_can_view_own_compensation(self, client, manager_with_subordinate):
+        manager_emp, mgr_headers, _ = manager_with_subordinate
+        res = client.get(f"/api/compensation/employees/{manager_emp['employee_id']}/compensation", headers=mgr_headers)
+        # 404 (no compensation record set) is an acceptable outcome here —
+        # the point being tested is that access itself isn't denied (403).
+        assert res.status_code in (200, 404)
+
+    def test_employee_can_view_own_compensation(self, client, employee_with_user):
+        emp, emp_headers = employee_with_user
+        res = client.get(f"/api/compensation/employees/{emp['employee_id']}/compensation", headers=emp_headers)
+        assert res.status_code in (200, 404)
+
+    def test_employee_cannot_view_others_compensation(self, client, employee_with_user, created_employee):
+        _, emp_headers = employee_with_user
+        res = client.get(f"/api/compensation/employees/{created_employee['employee_id']}/compensation", headers=emp_headers)
+        assert res.status_code == 403
+
+    def test_hr_admin_can_view_but_not_assign_compensation(self, client, make_test_user, test_institution, created_employee):
+        token, _ = make_test_user(role="hr_admin")
+        admin_headers = {"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}
+
+        view_res = client.get(f"/api/compensation/employees/{created_employee['employee_id']}/compensation", headers=admin_headers)
+        assert view_res.status_code in (200, 404)
+
+        assign_res = client.post(
+            f"/api/compensation/employees/{created_employee['employee_id']}/compensation",
+            json={"effective_date": "2026-07-19"},
+            headers=admin_headers,
+        )
+        assert assign_res.status_code == 403
 
 
 class TestErrorHandling:

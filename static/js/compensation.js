@@ -1646,15 +1646,25 @@ async function loadEmployeeCompensationTab(employeeId) {
   const el = document.getElementById('vt-compensation');
   if (!el) return;
   const role = currentUser.role;
-  const canAssign = ['superadmin', 'hr_manager', 'payroll_manager', 'compensation_manager'].includes(role);
-  document.getElementById('vt-compensation-btn')?.classList.toggle('hidden', !canAssign);
-  if (!canAssign) return;
+  // Can assign/update anyone's compensation — matches the backend's
+  // set_employee_compensation_record_salary_changes gate (_COMP_HR in
+  // core/permission_matrix.py) exactly, so the Assign button is never
+  // shown to a role the API would then reject.
+  const canManage = ['superadmin', 'hr_manager', 'payroll_manager', 'compensation_manager'].includes(role);
+  // Anyone can view their OWN compensation (this modal doubles as
+  // self-service "My Profile" — see employees.js's viewEmployee), and
+  // hr_admin can view (not assign) anyone's, per this session's
+  // authentication/employee-view access review.
+  const isSelf = !!(currentUser.employee_id && currentUser.employee_id === employeeId);
+  const canView = canManage || HR_MANAGE_ROLES.includes(role) || isSelf;
+  document.getElementById('vt-compensation-btn')?.classList.toggle('hidden', !canView);
+  if (!canView) return;
 
   el.innerHTML = '<p class="text-slate-400 text-sm">Loading…</p>';
   const res = await api(`/api/compensation/employees/${employeeId}/compensation`);
-  const actionBtn = `<button onclick="openAssignCompModal('${esc(employeeId)}')" class="btn-primary text-sm mt-4">
+  const actionBtn = canManage ? `<button onclick="openAssignCompModal('${esc(employeeId)}')" class="btn-primary text-sm mt-4">
     ${res && res.ok ? 'Update Compensation' : 'Assign Compensation'}
-  </button>`;
+  </button>` : '';
 
   if (!res || !res.ok) {
     el.innerHTML = `<p class="text-slate-400 text-sm">No compensation record on file for this employee yet.</p>${actionBtn}`;
