@@ -983,7 +983,10 @@
             <option value="Inactive">Inactive</option>
             <option value="">All Status</option>
           </select>
-          <input id="empSearch" type="text" placeholder="Search name, ID, IC, designation…" class="inp flex-1" oninput="filterEmployees()"/>
+          <div class="relative flex-1">
+            <input id="empSearch" type="text" placeholder="Search name, ID, IC, designation…" class="inp w-full" oninput="filterEmployees()"/>
+            <span id="empSearchingIndicator" class="hidden absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 pointer-events-none">Searching…</span>
+          </div>
           <div class="relative">
             <button id="empColumnsBtn" onclick="toggleEmpColumnPicker()" class="btn-ghost flex items-center gap-2 whitespace-nowrap">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v18M3 9h18"/></svg>

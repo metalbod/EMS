@@ -151,6 +151,12 @@ function empPageNext() {
 // in-memory filter.
 function filterEmployees() {
   empPage = 1;
+  // Shown immediately (not just once the request is in flight) so there's
+  // no dead ~250ms window between a keystroke and the debounced fetch
+  // starting — a user who paused mid-word/mid-typo used to see a bare
+  // "No employees found" for that incomplete text with no signal that a
+  // fuller, correct search was still coming.
+  document.getElementById('empSearchingIndicator')?.classList.remove('hidden');
   clearTimeout(empSearchDebounceTimer);
   empSearchDebounceTimer = setTimeout(loadEmployeeListPage, 250);
 }
@@ -164,6 +170,10 @@ function filterEmployees() {
 let empRequestSeq = 0;
 async function loadEmployeeListPage() {
   const seq = ++empRequestSeq;
+  // Also shown here (not just filterEmployees()) so a page/sort/page-size
+  // change — which calls this directly, no debounce involved — gets the
+  // same in-flight signal.
+  document.getElementById('empSearchingIndicator')?.classList.remove('hidden');
   const q = document.getElementById('empSearch').value.trim();
   const s = document.getElementById('empStatusFilter').value;
   const offset = (empPage - 1) * empPageSize;
@@ -174,7 +184,8 @@ async function loadEmployeeListPage() {
   if (q) params.set('search', q);
   if (s) params.set('status', s);
   const res = await api(`/api/employees?${params}`);
-  if (seq !== empRequestSeq) return; // a newer request has since started
+  if (seq !== empRequestSeq) return; // a newer request has since started — it owns hiding the indicator
+  document.getElementById('empSearchingIndicator')?.classList.add('hidden');
   if (!res || !res.ok) return;
   empPageRows = await res.json();
   empTotal = parseInt(res.headers.get('X-Total-Count') || '0', 10);
