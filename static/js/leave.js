@@ -52,34 +52,77 @@ async function renderLeaveBalanceCards() {
   }).join('');
 }
 
+// Every role except plain "employee" sees every employee's applications
+// here, not just their own (see routers/leave.py's list_leave_applications
+// — "manager" is scoped to their reporting chain, everything else that
+// isn't "employee" gets the full institution) — so those roles land in
+// the tabular view below instead of the card list, with an Employee
+// column to tell rows apart. Matches the same condition the backend uses.
+function myLeaveShowsEveryone() {
+  return currentUser?.role !== 'employee';
+}
+
 async function loadLeaveApplications() {
+  const tabular=myLeaveShowsEveryone();
   const listEl=document.getElementById('leaveAppList');
+  const tableWrap=document.getElementById('leaveAppTableWrap');
+  const tbody=document.getElementById('leaveAppTableBody');
   const emptyEl=document.getElementById('leaveAppEmpty');
-  listEl.innerHTML='<p class="text-slate-400 text-sm text-center py-8">Loading…</p>';
+  listEl.classList.toggle('hidden', tabular);
+  tableWrap.classList.toggle('hidden', !tabular);
+  if(tabular) listEl.innerHTML=''; else tbody.innerHTML='';
+  (tabular?tbody:listEl).innerHTML=`<p class="text-slate-400 text-sm text-center py-8">Loading…</p>`;
   let url='/api/leave/applications';
   if(leaveFilter) url+=`?status=${encodeURIComponent(leaveFilter)}`;
   const res=await api(url);
-  if(!res?.ok){ listEl.innerHTML=''; return; }
+  if(!res?.ok){ listEl.innerHTML=''; tbody.innerHTML=''; return; }
   const rows=await res.json();
-  if(!rows.length){ listEl.innerHTML=''; emptyEl?.classList.remove('hidden'); return; }
+  if(!rows.length){ listEl.innerHTML=''; tbody.innerHTML=''; emptyEl?.classList.remove('hidden'); return; }
   emptyEl?.classList.add('hidden');
-  listEl.innerHTML=rows.map(a=>`
-    <div class="bg-white border border-slate-200 rounded-xl p-4">
-      <div class="flex items-start justify-between gap-3">
-        <div class="flex-1 min-w-0">
-          <div class="flex items-center gap-2 mb-0.5 flex-wrap">
-            <p class="font-medium text-slate-800">${esc(a.leave_type_name)}</p>
-            <span class="badge ${statusColor(LEAVE_STATUS_COLORS, a.status)} text-xs">${a.status}</span>
+  const cancelBtn=a=>(a.status==='Pending Approval'||a.status==='Approved')
+    ?`<button onclick="cancelLeaveApplication(${a.id})" class="text-xs text-red-600 hover:text-red-700">Cancel</button>`
+    :'<span class="text-xs text-slate-400">—</span>';
+  if(tabular){
+    listEl.innerHTML='';
+    tbody.innerHTML=rows.map(a=>`
+      <tr>
+        <td class="px-4 py-3">
+          <p class="font-medium">${esc(displayName(a.employee_name, a.employee_preferred_name))}</p>
+          <p class="text-xs text-slate-500">${esc(a.department||'')}${a.designation?' · '+esc(a.designation):''}</p>
+        </td>
+        <td class="px-4 py-3">${esc(a.leave_type_name)}</td>
+        <td class="px-4 py-3 text-slate-600">${fmtDate(a.start_date)} → ${fmtDate(a.end_date)}</td>
+        <td class="px-4 py-3 text-right text-slate-600">${a.days_count}${ldHalfDaySuffix(a)}</td>
+        <td class="px-4 py-3"><span class="badge ${statusColor(LEAVE_STATUS_COLORS, a.status)} text-xs">${a.status}</span></td>
+        <td class="px-4 py-3">
+          ${a.reason?`<p class="text-xs text-slate-500 italic">${esc(a.reason)}</p>`:''}
+          ${a.notes?`<p class="text-xs text-slate-500 mt-0.5">Note: ${esc(a.notes)}</p>`:''}
+          ${a.attachment?`<a href="${a.attachment}" target="_blank" class="text-xs text-blue-600 hover:underline mt-0.5 inline-block">View attachment</a>`:''}
+          ${!a.reason&&!a.notes&&!a.attachment?'<span class="text-xs text-slate-300">—</span>':''}
+        </td>
+        <td class="px-4 py-3 text-slate-500">${fmtDate(a.created_at)}</td>
+        <td class="px-4 py-3 text-right">${cancelBtn(a)}</td>
+      </tr>`).join('');
+  } else {
+    tbody.innerHTML='';
+    listEl.innerHTML=rows.map(a=>`
+      <div class="bg-white border border-slate-200 rounded-xl p-4">
+        <div class="flex items-start justify-between gap-3">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 mb-0.5 flex-wrap">
+              <p class="font-medium text-slate-800">${esc(a.leave_type_name)}</p>
+              <span class="badge ${statusColor(LEAVE_STATUS_COLORS, a.status)} text-xs">${a.status}</span>
+            </div>
+            <p class="text-xs text-slate-500">${fmtDate(a.start_date)} → ${fmtDate(a.end_date)} · ${a.days_count} working day(s)${ldHalfDaySuffix(a)}</p>
+            ${a.reason?`<p class="text-xs text-slate-400 italic mt-1">${esc(a.reason)}</p>`:''}
+            ${a.notes?`<p class="text-xs text-slate-500 mt-1">Note: ${esc(a.notes)}</p>`:''}
+            ${a.attachment?`<a href="${a.attachment}" target="_blank" class="text-xs text-blue-600 hover:underline mt-1 inline-block">View attachment</a>`:''}
           </div>
-          <p class="text-xs text-slate-500">${fmtDate(a.start_date)} → ${fmtDate(a.end_date)} · ${a.days_count} working day(s)${ldHalfDaySuffix(a)}</p>
-          ${a.reason?`<p class="text-xs text-slate-400 italic mt-1">${esc(a.reason)}</p>`:''}
-          ${a.notes?`<p class="text-xs text-slate-500 mt-1">Note: ${esc(a.notes)}</p>`:''}
-          ${a.attachment?`<a href="${a.attachment}" target="_blank" class="text-xs text-blue-600 hover:underline mt-1 inline-block">View attachment</a>`:''}
+          ${(a.status==='Pending Approval'||a.status==='Approved')?`<button onclick="cancelLeaveApplication(${a.id})" class="text-xs text-red-600 hover:text-red-700 shrink-0">Cancel</button>`:''}
         </div>
-        ${(a.status==='Pending Approval'||a.status==='Approved')?`<button onclick="cancelLeaveApplication(${a.id})" class="text-xs text-red-600 hover:text-red-700 shrink-0">Cancel</button>`:''}
-      </div>
-      <p class="text-xs text-slate-400 mt-2">Applied ${fmtDate(a.created_at)}</p>
-    </div>`).join('');
+        <p class="text-xs text-slate-400 mt-2">Applied ${fmtDate(a.created_at)}</p>
+      </div>`).join('');
+  }
 }
 
 function setLeaveFilter(status) {
