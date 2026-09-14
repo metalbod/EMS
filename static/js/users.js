@@ -96,7 +96,7 @@ async function submitUserForm(e) {
   const res=await api(isEdit?`/api/users/${editingUserId}`:'/api/users',
     {method:isEdit?'PUT':'POST',body:JSON.stringify(body)});
   if(!res) return;
-  if(!res.ok){const d=await res.json();err.textContent=d.detail||'Failed';err.classList.remove('hidden');return;}
+  if(!res.ok){const d=await res.json();err.textContent=apiErrorText(d.detail);err.classList.remove('hidden');return;}
   closeUserModal(); loadUsers();
 }
 

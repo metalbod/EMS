@@ -58,4 +58,61 @@ function auditPageNext() {
   if(auditPage<totalPages){ auditPage++; loadAuditLog(); }
 }
 
+// Login Attempts tab — same server-paginated shape as the Activity Log
+// above (routers/audit.py's list_login_audit_log), just a separate
+// page/pageSize/total state since the two tabs paginate independently.
+let loginAuditPage = 1, loginAuditPageSize = 50, loginAuditTotal = 0;
+
+function switchAuditTab(tab) {
+  document.querySelectorAll('[data-atab]').forEach(b=>{
+    b.classList.toggle('view-tab-active', b.dataset.atab===tab);
+    b.classList.toggle('text-slate-500', b.dataset.atab!==tab);
+  });
+  document.getElementById('at-activity').classList.toggle('hidden', tab!=='at-activity');
+  document.getElementById('at-logins').classList.toggle('hidden', tab!=='at-logins');
+  if(tab==='at-logins') loadLoginAuditLog();
+}
+
+async function loadLoginAuditLog() {
+  if(currentUser.role==='superadmin'&&!currentInstitution) return;
+  const success=document.getElementById('loginAuditSuccessFilter')?.value||'';
+  const offset=(loginAuditPage-1)*loginAuditPageSize;
+  const params=new URLSearchParams({limit:String(loginAuditPageSize), offset:String(offset)});
+  if(success) params.set('success', success);
+  const res=await api(`/api/login-audit-log?${params}`);
+  if(!res||!res.ok) return;
+  const logs=await res.json();
+  loginAuditTotal=parseInt(res.headers.get('X-Total-Count')||'0',10);
+  const tbody=document.getElementById('loginAuditTableBody');
+  const empty=document.getElementById('loginAuditEmpty');
+  const pagination=document.getElementById('loginAuditPagination');
+  if(!logs.length){
+    tbody.innerHTML='';
+    empty.classList.remove('hidden');
+    pagination?.classList.add('hidden');
+    return;
+  }
+  empty.classList.add('hidden');
+  pagination?.classList.remove('hidden');
+  document.getElementById('loginAuditPageSize').value=String(loginAuditPageSize);
+  document.getElementById('loginAuditPageInfo').textContent=
+    `${offset+1}-${Math.min(offset+loginAuditPageSize, loginAuditTotal)} of ${loginAuditTotal}`;
+  const reasonLabels={invalid_credentials:'Invalid credentials', inactive:'Account deactivated', institution_suspended:'Institution suspended'};
+  tbody.innerHTML=logs.map(l=>`
+    <tr class="hover:bg-slate-50 transition">
+      <td class="px-4 py-3 text-xs text-slate-500">${fmtDateTime(l.created_at, true)}</td>
+      <td class="px-4 py-3 text-sm font-medium">${esc(l.username)}</td>
+      <td class="px-4 py-3"><span class="badge ${l.success?'bg-emerald-100 text-emerald-700':'bg-red-100 text-red-700'}">${l.success?'Success':'Failed'}</span></td>
+      <td class="px-4 py-3 text-xs text-slate-500 hidden lg:table-cell">${l.reason?esc(reasonLabels[l.reason]||l.reason):'<span class="text-slate-300">—</span>'}</td>
+      <td class="px-4 py-3 text-xs text-slate-500 hidden md:table-cell">${l.ip_address?esc(l.ip_address):'<span class="text-slate-300">—</span>'}</td>
+    </tr>`).join('');
+}
+
+function setLoginAuditPageSize(size) { loginAuditPageSize=parseInt(size)||50; loginAuditPage=1; loadLoginAuditLog(); }
+function loginAuditPagePrev() { if(loginAuditPage>1){ loginAuditPage--; loadLoginAuditLog(); } }
+function loginAuditPageNext() {
+  const totalPages=Math.max(1, Math.ceil(loginAuditTotal/loginAuditPageSize));
+  if(loginAuditPage<totalPages){ loginAuditPage++; loadLoginAuditLog(); }
+}
+
 // ---------------------------------------------------------------------------

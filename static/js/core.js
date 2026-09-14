@@ -336,6 +336,21 @@ async function api(path, opts = {}) {
   }
 }
 
+// FastAPI's `detail` is a plain string for a manually-raised HTTPException,
+// but a Pydantic field_validator failure (422) instead sends an array of
+// {loc, msg, type} objects — rendering that directly (e.g. `err.textContent
+// = d.detail`) shows "[object Object]" rather than the actual message.
+function apiErrorText(detail, fallback = 'Failed') {
+  if (!detail) return fallback;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    // Pydantic prefixes a field_validator's plain `raise ValueError(msg)`
+    // with "Value error, " — redundant in a form's inline error text.
+    return detail.map(e => (e.msg || JSON.stringify(e)).replace(/^Value error,\s*/, '')).join('; ');
+  }
+  return fallback;
+}
+
 // ---------------------------------------------------------------------------
 // Auth
 // ---------------------------------------------------------------------------
@@ -490,7 +505,14 @@ async function submitChangePassword(e) {
     err.classList.remove('hidden');
     return;
   }
-  if (currentUser) currentUser.must_change_password = false;
+  // A password change now invalidates every previously-issued token
+  // server-side (see routers/auth.py's change_password) — including this
+  // page's own, mid-request — so the response carries a fresh one to swap
+  // in. Without this, the very next api() call would 401 and force an
+  // unexpected logout right after a successful change.
+  const data = await res.json();
+  localStorage.setItem('token', data.access_token);
+  currentUser = data.user;
   document.getElementById('changePasswordModal').classList.add('hidden');
 }
 

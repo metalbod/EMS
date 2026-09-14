@@ -30,6 +30,36 @@ def test_hr_manager_cannot_create_superadmin(client, hr_manager_auth):
     assert res.status_code == 403
 
 
+def test_create_user_short_password_returns_422(client, hr_manager_auth):
+    # Account creation previously had no length check at all — an admin
+    # could set a 1-character password with nothing rejecting it. Enforced
+    # via a Pydantic field_validator (UserIn), so this is a 422, not the
+    # role check's 400.
+    res = client.post("/api/users", headers=hr_manager_auth, json={
+        "username": f"zztest_{os.urandom(4).hex()}", "full_name": "ZZ Nope",
+        "password": "short", "role": "employee",
+    })
+    assert res.status_code == 422
+
+
+def test_update_user_short_password_returns_422(client, hr_manager_auth, make_test_user):
+    _, user_id = make_test_user(role="employee")
+    res = client.put(f"/api/users/{user_id}", headers=hr_manager_auth, json={
+        "full_name": "ZZ Updated", "password": "short", "role": "employee",
+    })
+    assert res.status_code == 422
+
+
+def test_update_user_omitted_password_is_unaffected_by_length_check(client, hr_manager_auth, make_test_user):
+    # None (password left unset) must stay valid on update — it means
+    # "keep the current password", not "set an empty one".
+    _, user_id = make_test_user(role="employee")
+    res = client.put(f"/api/users/{user_id}", headers=hr_manager_auth, json={
+        "full_name": "ZZ Updated No Password Change", "role": "employee",
+    })
+    assert res.status_code == 200, res.text
+
+
 def test_create_user_invalid_role_returns_400(client, hr_manager_auth):
     # Role validity is now checked in the endpoint body against
     # core/roles.py's get_valid_roles (built-ins + this institution's
@@ -316,8 +346,13 @@ def test_change_password_success_clears_forced_flag_and_updates_login(client, ma
     res = client.post("/api/auth/change-password", headers=headers,
                        json={"current_password": "ZzPytest@123", "new_password": "ZzNewPassword@456"})
     assert res.status_code == 200, res.text
+    # change-password bumps token_epoch, invalidating every token issued
+    # before the change — including the one that just made this request —
+    # so subsequent calls must use the fresh token the response returns,
+    # not the original `headers`.
+    new_headers = {"Authorization": f"Bearer {res.json()['access_token']}"}
 
-    me = client.get("/api/auth/me", headers=headers).json()
+    me = client.get("/api/auth/me", headers=new_headers).json()
     username = me["username"]
 
     old_login = client.post("/api/auth/login", json={

@@ -1,4 +1,6 @@
 """Integration tests for routers/audit.py."""
+import os
+
 from conftest import _valid_employee_payload
 
 
@@ -81,3 +83,46 @@ def test_list_audit_logs_offset_pages_through_results(client, hr_manager_auth, m
     assert page1[0]["id"] != page2[0]["id"]
     assert page1[0]["id"] == all_rows[0]["id"]
     assert page2[0]["id"] == all_rows[1]["id"]
+
+
+def test_list_login_audit_log_requires_auth(client):
+    res = client.get("/api/login-audit-log")
+    assert res.status_code in (401, 403)
+
+
+def test_list_login_audit_log_requires_manage_role(client, make_test_user, test_institution):
+    token, _ = make_test_user(role="employee")
+    headers = {"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}
+    res = client.get("/api/login-audit-log", headers=headers)
+    assert res.status_code == 403
+
+
+def test_failed_login_writes_audit_entry(client, hr_manager_auth, test_institution):
+    username = f"zz_nonexistent_{os.urandom(4).hex()}"
+    res = client.post("/api/auth/login", json={
+        "username": username, "password": "wrong-password", "institution_code": test_institution["code"],
+    })
+    assert res.status_code == 401
+
+    logs = client.get("/api/login-audit-log", headers=hr_manager_auth, params={"limit": 200}).json()
+    entry = next(l for l in logs if l["username"] == username)
+    assert entry["success"] is False
+    assert entry["reason"] == "invalid_credentials"
+    assert entry["user_id"] is None
+
+
+def test_successful_login_writes_audit_entry(client, make_test_user, hr_manager_auth, test_institution):
+    token, user_id = make_test_user(role="employee")
+    me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"}).json()
+
+    login_res = client.post("/api/auth/login", json={
+        "username": me["username"], "password": "ZzPytest@123", "institution_code": test_institution["code"],
+    })
+    assert login_res.status_code == 200
+
+    logs = client.get("/api/login-audit-log", headers=hr_manager_auth,
+                       params={"limit": 200, "success": "true"}).json()
+    entry = next(l for l in logs if l["username"] == me["username"])
+    assert entry["success"] is True
+    assert entry["user_id"] == user_id
+    assert entry["reason"] is None

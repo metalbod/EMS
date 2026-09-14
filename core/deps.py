@@ -30,6 +30,7 @@ if not JWT_SECRET:
     )
 JWT_ALG = "HS256"
 JWT_HOURS = 8
+MIN_PASSWORD_LENGTH = 8
 
 bearer = HTTPBearer(auto_error=False)
 
@@ -42,6 +43,30 @@ def verify_password(p, h):
     return bcrypt.checkpw(p.encode(), h.encode())
 
 
+# Fixed at import time (not per-call) so the cost of computing it doesn't
+# itself become a timing signal, and reused by every request — see
+# verify_password_or_dummy() below.
+_DUMMY_PASSWORD_HASH = hash_password("dummy-password-for-constant-time-login-checks")
+
+
+def verify_password_or_dummy(password: str, hash_or_none: str | None) -> bool:
+    """Same as verify_password(), except it still runs a real bcrypt
+    comparison (against a fixed dummy hash) when there's no real hash to
+    check against, and always returns False in that case.
+
+    Login's `if not user or not verify_password(...)` used to short-circuit
+    on a nonexistent username — verify_password() (and its ~60-100ms bcrypt
+    cost) never ran at all, so a bad username returned near-instantly while
+    a bad password on a real one didn't. That timing gap alone reveals
+    which usernames exist, independent of the login form's identical error
+    message. Calling this unconditionally (real hash or not) keeps both
+    cases paying the same bcrypt cost."""
+    if hash_or_none is None:
+        verify_password(password, _DUMMY_PASSWORD_HASH)
+        return False
+    return verify_password(password, hash_or_none)
+
+
 def make_token(user: dict) -> str:
     return jwt.encode({
         "sub": str(user["id"]),
@@ -51,6 +76,12 @@ def make_token(user: dict) -> str:
         "institution_id": user.get("institution_id"),
         "department": user.get("department"),
         "employee_id": user["employee_id"] if "employee_id" in user else None,
+        # Re-checked against the DB's current value on every request
+        # (get_current_user below) — bumping it server-side (see
+        # routers/auth.py's change_password) instantly invalidates every
+        # token issued before that point. Defaults to 0 for a user dict
+        # that predates this column (matches the column's own DB default).
+        "token_epoch": user.get("token_epoch", 0),
         "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_HOURS),
     }, JWT_SECRET, algorithm=JWT_ALG)
 
@@ -69,7 +100,7 @@ def _load_current_user_row(user_id) -> dict | None:
     try:
         user = conn.execute(
             "SELECT id, username, full_name, role, roles, department, employee_id, is_active, institution_id, "
-            "must_change_password, last_active FROM users WHERE id = ?", (user_id,)
+            "must_change_password, last_active, token_epoch FROM users WHERE id = ?", (user_id,)
         ).fetchone()
         if not user or not user["is_active"]:
             return None
@@ -167,6 +198,16 @@ async def get_current_user(
     u = await asyncio.to_thread(_load_current_user_row, payload["sub"])
     if u is None:
         raise HTTPException(401, "User not found or inactive")
+    # A token minted before the user's most recent password change (or a
+    # future "log out everywhere") carries a stale token_epoch — reject it
+    # even though its signature and expiry are still otherwise valid. This
+    # is what makes revocation real: without it, a captured token or one
+    # from a device the user meant to sign out of stays usable until its
+    # own 8-hour expiry regardless of a password change in between.
+    # payload.get(..., 0) matches a pre-this-feature token that carries no
+    # claim at all, same default as the DB column and make_token().
+    if payload.get("token_epoch", 0) != u.get("token_epoch", 0):
+        raise HTTPException(401, "Session expired, please log in again")
     # Honor a switched role from the token (see /auth/switch-role) — the DB's
     # `role` column only holds the primary role, so without this a multi-role
     # user's active-role switch would silently revert on every request.

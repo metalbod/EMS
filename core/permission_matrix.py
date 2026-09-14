@@ -357,6 +357,7 @@ MATRIX: List[Dict[str, Any]] = [
         "module": "Audit Log",
         "actions": [
             _action("View institution audit log", "GET /api/audit-logs", _flat("superadmin", "hr_manager")),
+            _action("View login audit log", "GET /api/login-audit-log", _flat("superadmin", "hr_manager")),
         ],
     },
     {

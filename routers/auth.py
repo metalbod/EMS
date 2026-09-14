@@ -17,7 +17,10 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from core.deps import build_current_user_out, get_current_user, hash_password, make_token, verify_password
+from core.deps import (
+    MIN_PASSWORD_LENGTH, build_current_user_out, get_current_user, hash_password, make_token,
+    verify_password, verify_password_or_dummy,
+)
 from core.schemas import CurrentUserOut, TokenResponse
 
 from db import get_db
@@ -72,6 +75,24 @@ def _clear_login_failures(key: str):
     _login_failures.pop(key, None)
 
 
+def _record_login_audit(conn, request: Request, institution_id, username: str, user_id, success: bool, reason: str = None):
+    """Persists one login attempt (success or failure) to login_audit_log —
+    the in-app-visible counterpart to _record_login_failure's process-local
+    logger.warning, see GET /api/login-audit-log. Best-effort: a failure
+    here must never block or fail the login itself, so any error is logged
+    and swallowed rather than propagated."""
+    try:
+        ip = request.client.host if request.client else None
+        conn.execute(
+            "INSERT INTO login_audit_log (institution_id, username, user_id, success, reason, ip_address) "
+            "VALUES (?,?,?,?,?,?)",
+            (institution_id, username, user_id, success, reason, ip)
+        )
+        conn.commit()
+    except Exception:
+        logger.exception("Failed to record login audit entry for %s", username)
+
+
 @router.post("/api/auth/login", response_model=TokenResponse, tags=["auth"])
 @db_session
 def login(conn, body: LoginIn, request: Request) -> dict:
@@ -80,34 +101,44 @@ def login(conn, body: LoginIn, request: Request) -> dict:
 
     code = body.institution_code.strip().upper() if body.institution_code and body.institution_code.strip() else None
 
+    user = None
+    inst = None
     if code:
         # Institution user: look up institution first, then find user scoped to it
         inst_row = conn.execute(
             "SELECT id, name, code, status, logo_url FROM institutions WHERE code=?", (code,)
         ).fetchone()
-        if not inst_row:
-            _record_login_failure(rate_key)
-            raise HTTPException(401, "Invalid company code, username or password")
-        user = conn.execute(
-            "SELECT * FROM users WHERE username=? AND institution_id=?",
-            (body.username, inst_row["id"])
-        ).fetchone()
         inst = inst_row
+        if inst_row:
+            user = conn.execute(
+                "SELECT * FROM users WHERE username=? AND institution_id=?",
+                (body.username, inst_row["id"])
+            ).fetchone()
     else:
         # Superadmin or platform-level login (no institution)
         user = conn.execute(
             "SELECT * FROM users WHERE username=? AND institution_id IS NULL", (body.username,)
         ).fetchone()
-        inst = None
 
-    if not user or not verify_password(body.password, user["password_hash"]):
+    # verify_password_or_dummy runs a real bcrypt comparison even when
+    # `user` is None (bad company code or unknown username) — see its own
+    # docstring. Calling it unconditionally, before branching on whether
+    # `user` exists, is what actually closes the timing gap: a bad
+    # username and a bad password now cost the same regardless of which
+    # branch above produced `user`.
+    password_ok = verify_password_or_dummy(body.password, user["password_hash"] if user else None)
+    if not user or not password_ok:
         _record_login_failure(rate_key)
+        _record_login_audit(conn, request, inst["id"] if inst else None, body.username, user["id"] if user else None, False, "invalid_credentials")
         raise HTTPException(401, "Invalid company code, username or password")
     if not user["is_active"]:
+        _record_login_audit(conn, request, inst["id"] if inst else None, body.username, user["id"], False, "inactive")
         raise HTTPException(403, "Account is deactivated")
     if inst and inst["status"] != "Active":
+        _record_login_audit(conn, request, inst["id"], body.username, user["id"], False, "institution_suspended")
         raise HTTPException(403, "Your company account has been suspended. Please contact platform support.")
     _clear_login_failures(rate_key)
+    _record_login_audit(conn, request, inst["id"] if inst else None, body.username, user["id"], True)
     now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
     conn.execute("UPDATE users SET last_login=?, last_active=? WHERE id=?", (now, now, user["id"]))
     conn.commit()
@@ -149,17 +180,29 @@ def me(conn, user: dict = Depends(get_current_user)) -> CurrentUserOut:
     return build_current_user_out(conn, user)
 
 
-@router.post("/api/auth/change-password")
+@router.post("/api/auth/change-password", response_model=TokenResponse, tags=["auth"])
 @db_session
 def change_password(conn, body: ChangePasswordIn, user: dict = Depends(get_current_user)) -> dict:
     row = conn.execute("SELECT password_hash FROM users WHERE id=?", (user["id"],)).fetchone()
     if not row or not verify_password(body.current_password, row["password_hash"]):
         raise HTTPException(400, "Current password is incorrect")
-    if len(body.new_password) < 8:
-        raise HTTPException(400, "New password must be at least 8 characters")
+    if len(body.new_password) < MIN_PASSWORD_LENGTH:
+        raise HTTPException(400, f"New password must be at least {MIN_PASSWORD_LENGTH} characters")
+    # token_epoch=token_epoch+1 invalidates every token issued before this
+    # change — including, deliberately, the one making this very request —
+    # so a stolen token can't keep working past a password change someone
+    # made specifically because they suspected it was compromised. The
+    # response mints and returns a fresh token on the new epoch so the
+    # caller's own session continues seamlessly instead of being logged
+    # out by its own next request.
     conn.execute(
-        "UPDATE users SET password_hash=?, must_change_password=0 WHERE id=?",
+        "UPDATE users SET password_hash=?, must_change_password=0, token_epoch=token_epoch+1 WHERE id=?",
         (hash_password(body.new_password), user["id"])
     )
     conn.commit()
-    return {"ok": True}
+    updated = conn.execute("SELECT * FROM users WHERE id=?", (user["id"],)).fetchone()
+    return {
+        "access_token": make_token(dict(updated)),
+        "token_type": "bearer",
+        "user": build_current_user_out(conn, dict(updated)),
+    }

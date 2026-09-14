@@ -52,3 +52,37 @@ def list_audit_logs(
         d["changes"] = json.loads(d["changes"]) if d["changes"] else []
         result.append(d)
     return result
+
+
+@router.get("/api/login-audit-log")
+@db_session
+def list_login_audit_log(
+    conn,
+    response: Response,
+    success: Optional[bool] = None,
+    limit: int = 50,
+    offset: int = 0,
+    user: dict = Depends(get_current_user),
+) -> List[Dict[str, Any]]:
+    """Login attempts (success and failure) for this institution — see
+    routers/auth.py's _record_login_audit. Superadmin with no institution
+    context selected sees every institution's attempts, matching
+    list_audit_logs' own global-view behavior below."""
+    require_permission(conn, user, "audit_log.view_login_audit_log")
+    inst_id = user.get("active_institution_id")
+    q = "SELECT * FROM login_audit_log"
+    p = []
+    clauses = []
+    if inst_id:
+        clauses.append("institution_id=?"); p.append(inst_id)
+    if success is not None:
+        clauses.append("success=?"); p.append(success)
+    if clauses:
+        q += " WHERE " + " AND ".join(clauses)
+    limit = min(max(1, limit), 200)
+    offset = max(0, offset)
+    total = conn.execute(q.replace("SELECT *", "SELECT COUNT(*)", 1), p).fetchone()[0]
+    response.headers["X-Total-Count"] = str(total)
+    q += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+    rows = conn.execute(q, p + [limit, offset]).fetchall()
+    return [dict(r) for r in rows]

@@ -2,9 +2,9 @@
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
-from core.deps import get_current_user, hash_password
+from core.deps import MIN_PASSWORD_LENGTH, get_current_user, hash_password
 
 from core.permission_matrix import require_permission
 
@@ -35,6 +35,17 @@ class UserIn(BaseModel):
     # get_valid_roles), which needs a DB connection and inst_id neither
     # of which a Pydantic validator has access to.
 
+    # Unlike self-service /api/auth/change-password, account creation had
+    # no length check at all — an admin could set a 1-character password
+    # with nothing rejecting it. A static field_validator works fine here,
+    # unlike role above, since this needs no DB access.
+    @field_validator("password")
+    @classmethod
+    def _password_min_length(cls, v):
+        if len(v) < MIN_PASSWORD_LENGTH:
+            raise ValueError(f"Password must be at least {MIN_PASSWORD_LENGTH} characters")
+        return v
+
 
 class UserUpdate(BaseModel):
     full_name: str
@@ -46,6 +57,15 @@ class UserUpdate(BaseModel):
     is_active: bool = True
 
     # role validated in update_user's body — see UserIn's note above.
+
+    @field_validator("password")
+    @classmethod
+    def _password_min_length(cls, v):
+        # None is valid here (unlike UserIn) — it means "leave the current
+        # password unchanged", not "set an empty one".
+        if v is not None and len(v) < MIN_PASSWORD_LENGTH:
+            raise ValueError(f"Password must be at least {MIN_PASSWORD_LENGTH} characters")
+        return v
 
 
 @router.get("/api/users")
