@@ -146,6 +146,16 @@ function empPageNext() {
   if (empPage < totalPages) { empPage++; loadEmployeeListPage(); }
 }
 
+// The table itself is dimmed (not cleared) while a request is in flight —
+// on a slow connection /api/employees can take a couple of seconds (see
+// empRequestSeq's note below), and previously the old rows just sat there
+// unchanged with only a small "Searching…" label next to the input as a
+// cue, easy to miss — reading as stuck/broken rather than "still working".
+function setEmpSearching(on) {
+  document.getElementById('empSearchingIndicator')?.classList.toggle('hidden', !on);
+  document.getElementById('empTableWrap')?.classList.toggle('opacity-40', on);
+}
+
 // Debounced — empSearch fires on every keystroke (oninput), and each call
 // here is a real network round trip now (server-side search), not an
 // in-memory filter.
@@ -156,7 +166,7 @@ function filterEmployees() {
   // starting — a user who paused mid-word/mid-typo used to see a bare
   // "No employees found" for that incomplete text with no signal that a
   // fuller, correct search was still coming.
-  document.getElementById('empSearchingIndicator')?.classList.remove('hidden');
+  setEmpSearching(true);
   clearTimeout(empSearchDebounceTimer);
   empSearchDebounceTimer = setTimeout(loadEmployeeListPage, 250);
 }
@@ -173,7 +183,7 @@ async function loadEmployeeListPage() {
   // Also shown here (not just filterEmployees()) so a page/sort/page-size
   // change — which calls this directly, no debounce involved — gets the
   // same in-flight signal.
-  document.getElementById('empSearchingIndicator')?.classList.remove('hidden');
+  setEmpSearching(true);
   const q = document.getElementById('empSearch').value.trim();
   const s = document.getElementById('empStatusFilter').value;
   const offset = (empPage - 1) * empPageSize;
@@ -185,7 +195,7 @@ async function loadEmployeeListPage() {
   if (s) params.set('status', s);
   const res = await api(`/api/employees?${params}`);
   if (seq !== empRequestSeq) return; // a newer request has since started — it owns hiding the indicator
-  document.getElementById('empSearchingIndicator')?.classList.add('hidden');
+  setEmpSearching(false);
   if (!res || !res.ok) return;
   empPageRows = await res.json();
   empTotal = parseInt(res.headers.get('X-Total-Count') || '0', 10);
