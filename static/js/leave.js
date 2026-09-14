@@ -36,8 +36,15 @@ async function loadLeavePage() {
 
 async function renderLeaveBalanceCards() {
   const wrap=document.getElementById('leaveBalanceCards');
+  // These are the caller's OWN balance (GET /api/leave/balances with no
+  // employee_id defaults to self — see routers/leave.py). For a role that
+  // lands on the institution-wide table below (myLeaveShowsEveryone) this
+  // screen isn't "my leave" anymore, so showing one person's own balance
+  // cards above a table of everyone else's applications read as wrong —
+  // skip them entirely rather than show a balance that only applies to
+  // one row out of many.
   const empId=currentUser?.employee_id;
-  if(!empId){ wrap.innerHTML=''; return; }
+  if(!empId || myLeaveShowsEveryone()){ wrap.innerHTML=''; return; }
   const res=await api(`/api/leave/balances?year=${new Date().getFullYear()}`);
   if(!res?.ok){ wrap.innerHTML=''; return; }
   const balances=await res.json();
