@@ -114,14 +114,24 @@ async function openLeaveApplyModal() {
   leaveApplyAttachment=null;
 
   const empWrap=document.getElementById('leaveApplyEmpWrap');
+  const empSel=document.getElementById('leaveApplyEmpId');
   if(isLeaveManager()||currentUser?.role==='manager'){
     empWrap.classList.remove('hidden');
-    const sel=document.getElementById('leaveApplyEmpId');
-    sel.innerHTML=employees.filter(e=>e.status==='Active').map(e=>`<option value="${e.employee_id}">${e.employee_id} — ${esc(displayName(e.full_name,e.preferred_name))}</option>`).join('');
-    if(currentUser?.employee_id) sel.value=currentUser.employee_id;
+    empSel.required=true;
+    empSel.innerHTML=employees.filter(e=>e.status==='Active').map(e=>`<option value="${e.employee_id}">${e.employee_id} — ${esc(displayName(e.full_name,e.preferred_name))}</option>`).join('');
+    if(currentUser?.employee_id) empSel.value=currentUser.employee_id;
     initEmployeeSearchSelect('leaveApplyEmpId', 'Search employee…');
   } else {
     empWrap.classList.add('hidden');
+    // A `required` field left off-screen (initEmployeeSearchSelect hides
+    // the real <select> via opacity/size, not display:none, to keep it
+    // in the tab order under its own search-input replacement) still
+    // blocks native form submission even inside a hidden ancestor — the
+    // browser can't focus it to report why, so submission just silently
+    // no-ops. Clearing `required` here (the field isn't shown at all for
+    // this role, so nothing to require) is what actually lets a plain
+    // employee submit this form at all.
+    empSel.required=false;
   }
 
   const typeSel=document.getElementById('leaveApplyTypeId');

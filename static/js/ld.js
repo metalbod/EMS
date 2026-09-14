@@ -141,15 +141,22 @@ function openLdEnrollModal(courseId) {
     costNote.classList.add('hidden');
   }
   const empWrap=document.getElementById('ldEnrollEmpWrap');
+  const empSel=document.getElementById('ldEnrollEmpId');
   const canManage=HR_AND_MANAGER_ROLES.includes(currentUser?.role);
   if(canManage){
     empWrap.classList.remove('hidden');
-    const sel=document.getElementById('ldEnrollEmpId');
-    sel.innerHTML=employees.filter(e=>e.status==='Active').map(e=>`<option value="${e.employee_id}">${e.employee_id} — ${esc(displayName(e.full_name,e.preferred_name))}</option>`).join('');
-    if(currentUser?.employee_id) sel.value=currentUser.employee_id;
+    empSel.required=true;
+    empSel.innerHTML=employees.filter(e=>e.status==='Active').map(e=>`<option value="${e.employee_id}">${e.employee_id} — ${esc(displayName(e.full_name,e.preferred_name))}</option>`).join('');
+    if(currentUser?.employee_id) empSel.value=currentUser.employee_id;
     initEmployeeSearchSelect('ldEnrollEmpId', 'Search employee…');
   } else {
     empWrap.classList.add('hidden');
+    // See static/js/leave.js's identical fix: a `required` field left
+    // hidden-but-not-display:none by initEmployeeSearchSelect silently
+    // blocks native form submission for every role that doesn't see it —
+    // a plain employee self-enrolling would click Enroll and see nothing
+    // happen at all.
+    empSel.required=false;
   }
   document.getElementById('ldEnrollModal').classList.remove('hidden');
 }
