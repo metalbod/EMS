@@ -127,6 +127,23 @@ def test_list_employees_offset_pages_through_results(client, hr_manager_auth, ma
     assert page2[0]["full_name"].endswith("Bob")
 
 
+def test_list_employees_search_is_case_insensitive(client, hr_manager_auth, make_test_employee):
+    """LIKE is case-sensitive in Postgres — a plain LIKE here used to mean
+    searching "yong" (lowercase) missed a stored "Yong Khai Ling" entirely,
+    which read to a real user as the search box "not working". Covers both
+    a name-field match and the designation (job title) field."""
+    suffix = uuid.uuid4().hex[:8]
+    make_test_employee(full_name=f"ZZ Case {suffix.upper()} Test", designation="ZZ Senior Widget Engineer")
+
+    name_res = client.get("/api/employees", headers=hr_manager_auth, params={"search": suffix.lower()})
+    assert name_res.status_code == 200
+    assert any(suffix.upper() in e["full_name"] for e in name_res.json())
+
+    title_res = client.get("/api/employees", headers=hr_manager_auth, params={"search": "widget engineer"})
+    assert title_res.status_code == 200
+    assert any(e["designation"] == "ZZ Senior Widget Engineer" for e in title_res.json())
+
+
 def test_list_employees_unknown_sort_by_falls_back_safely(client, hr_manager_auth, make_test_employee):
     """sort_by is allowlisted (routers/employees.py's
     _EMPLOYEE_SORT_COLUMNS), not interpolated directly — an unrecognized

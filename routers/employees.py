@@ -349,7 +349,9 @@ def list_employees(
     if status: q += " AND status=?"; p.append(status)
     if search and user["role"] != "employee":
         like = f"%{search}%"
-        q += " AND (full_name LIKE ? OR preferred_name LIKE ? OR employee_id LIKE ? OR ic_number LIKE ? OR designation LIKE ? OR department LIKE ?)"
+        # ILIKE, not LIKE — plain LIKE is case-sensitive in Postgres, so
+        # "yong" wouldn't match a stored "Yong Khai Ling" at all.
+        q += " AND (full_name ILIKE ? OR preferred_name ILIKE ? OR employee_id ILIKE ? OR ic_number ILIKE ? OR designation ILIKE ? OR department ILIKE ?)"
         p.extend([like,like,like,like,like,like])
 
     if limit is not None:
