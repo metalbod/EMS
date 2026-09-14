@@ -633,7 +633,7 @@ def list_candidates(conn, response: Response,
             p.extend(stage)
     if search:
         like = f"%{search}%"
-        q += " AND (c.full_name LIKE ? OR c.email LIKE ? OR c.current_company LIKE ? OR c.skills LIKE ?)"
+        q += " AND (c.full_name ILIKE ? OR c.email ILIKE ? OR c.current_company ILIKE ? OR c.skills ILIKE ?)"
         p.extend([like,like,like,like])
 
     if limit is not None:

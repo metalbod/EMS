@@ -251,6 +251,24 @@ def test_list_candidates_offset_pages_through_results(client, hr_manager_auth):
     assert page2[0]["full_name"].endswith("Bob")
 
 
+def test_list_candidates_search_is_case_insensitive(client, hr_manager_auth):
+    """LIKE is case-sensitive in Postgres — searching lowercase used to
+    miss a stored mixed-case name/company entirely. Covers both full_name
+    and current_company (skills/email match the same way)."""
+    suffix = os.urandom(4).hex()
+    cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth, json={
+        "full_name": f"ZZ Case {suffix.upper()} Candidate", "current_company": "ZZ Acme Widgets Corp",
+    }).json()
+
+    name_res = client.get("/api/recruitment/candidates", headers=hr_manager_auth, params={"search": suffix.lower()})
+    assert name_res.status_code == 200
+    assert any(c["id"] == cand["id"] for c in name_res.json())
+
+    company_res = client.get("/api/recruitment/candidates", headers=hr_manager_auth, params={"search": "acme widgets"})
+    assert company_res.status_code == 200
+    assert any(c["id"] == cand["id"] for c in company_res.json())
+
+
 def test_get_candidate_includes_interviews_and_offers(client, hr_manager_auth):
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
                         json={"full_name": "ZZ Candidate Detail"}).json()
