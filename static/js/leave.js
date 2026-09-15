@@ -69,6 +69,63 @@ function myLeaveShowsEveryone() {
   return currentUser?.role !== 'employee';
 }
 
+// Sorted client-side, not re-fetched — the table's rows are already all
+// in hand (loadLeaveApplications has no pagination, see its own comment),
+// so a header click just re-sorts and re-renders the cached rows instead
+// of a redundant round trip.
+let leaveAppTableRowsCache=[];
+let leaveAppTableSortKey='created_at', leaveAppTableSortDir='desc';
+const LEAVE_APP_TABLE_SORT_VALUE={
+  employee_name: a=>displayName(a.employee_name, a.employee_preferred_name).toLowerCase(),
+  leave_type_name: a=>a.leave_type_name.toLowerCase(),
+  start_date: a=>a.start_date,
+  days_count: a=>a.days_count,
+  status: a=>a.status,
+  created_at: a=>a.created_at,
+};
+
+function setLeaveAppTableSort(key) {
+  if(leaveAppTableSortKey===key) leaveAppTableSortDir=leaveAppTableSortDir==='asc'?'desc':'asc';
+  else { leaveAppTableSortKey=key; leaveAppTableSortDir=key==='employee_name'||key==='leave_type_name'?'asc':'desc'; }
+  renderLeaveAppTable();
+}
+
+function renderLeaveAppTable() {
+  const tbody=document.getElementById('leaveAppTableBody');
+  document.querySelectorAll('.leave-app-sort-arrow').forEach(el=>{
+    const key=el.dataset.sortKey;
+    el.textContent = key===leaveAppTableSortKey ? (leaveAppTableSortDir==='asc'?' ▲':' ▼') : '';
+  });
+  const getValue=LEAVE_APP_TABLE_SORT_VALUE[leaveAppTableSortKey]||LEAVE_APP_TABLE_SORT_VALUE.created_at;
+  const dir=leaveAppTableSortDir==='asc'?1:-1;
+  const rows=[...leaveAppTableRowsCache].sort((a,b)=>{
+    const x=getValue(a), y=getValue(b);
+    return x<y?-1*dir:x>y?1*dir:0;
+  });
+  const cancelBtn=a=>(a.status==='Pending Approval'||a.status==='Approved')
+    ?`<button onclick="cancelLeaveApplication(${a.id})" class="text-xs text-red-600 hover:text-red-700">Cancel</button>`
+    :'<span class="text-xs text-slate-400">—</span>';
+  tbody.innerHTML=rows.map(a=>`
+    <tr>
+      <td class="px-4 py-3">
+        <p class="font-medium">${esc(displayName(a.employee_name, a.employee_preferred_name))}</p>
+        <p class="text-xs text-slate-500">${esc(a.department||'')}${a.designation?' · '+esc(a.designation):''}</p>
+      </td>
+      <td class="px-4 py-3">${esc(a.leave_type_name)}</td>
+      <td class="px-4 py-3 text-slate-600">${fmtDate(a.start_date)} → ${fmtDate(a.end_date)}</td>
+      <td class="px-4 py-3 text-right text-slate-600">${a.days_count}${ldHalfDaySuffix(a)}</td>
+      <td class="px-4 py-3"><span class="badge ${statusColor(LEAVE_STATUS_COLORS, a.status)} text-xs">${a.status}</span></td>
+      <td class="px-4 py-3">
+        ${a.reason?`<p class="text-xs text-slate-500 italic">${esc(a.reason)}</p>`:''}
+        ${a.notes?`<p class="text-xs text-slate-500 mt-0.5">Note: ${esc(a.notes)}</p>`:''}
+        ${a.attachment?`<a href="${a.attachment}" target="_blank" class="text-xs text-blue-600 hover:underline mt-0.5 inline-block">View attachment</a>`:''}
+        ${!a.reason&&!a.notes&&!a.attachment?'<span class="text-xs text-slate-300">—</span>':''}
+      </td>
+      <td class="px-4 py-3 text-slate-500">${fmtDate(a.created_at)}</td>
+      <td class="px-4 py-3 text-right">${cancelBtn(a)}</td>
+    </tr>`).join('');
+}
+
 async function loadLeaveApplications() {
   const tabular=myLeaveShowsEveryone();
   const listEl=document.getElementById('leaveAppList');
@@ -84,32 +141,12 @@ async function loadLeaveApplications() {
   const res=await api(url);
   if(!res?.ok){ listEl.innerHTML=''; tbody.innerHTML=''; return; }
   const rows=await res.json();
-  if(!rows.length){ listEl.innerHTML=''; tbody.innerHTML=''; emptyEl?.classList.remove('hidden'); return; }
+  if(!rows.length){ listEl.innerHTML=''; tbody.innerHTML=''; leaveAppTableRowsCache=[]; emptyEl?.classList.remove('hidden'); return; }
   emptyEl?.classList.add('hidden');
-  const cancelBtn=a=>(a.status==='Pending Approval'||a.status==='Approved')
-    ?`<button onclick="cancelLeaveApplication(${a.id})" class="text-xs text-red-600 hover:text-red-700">Cancel</button>`
-    :'<span class="text-xs text-slate-400">—</span>';
   if(tabular){
     listEl.innerHTML='';
-    tbody.innerHTML=rows.map(a=>`
-      <tr>
-        <td class="px-4 py-3">
-          <p class="font-medium">${esc(displayName(a.employee_name, a.employee_preferred_name))}</p>
-          <p class="text-xs text-slate-500">${esc(a.department||'')}${a.designation?' · '+esc(a.designation):''}</p>
-        </td>
-        <td class="px-4 py-3">${esc(a.leave_type_name)}</td>
-        <td class="px-4 py-3 text-slate-600">${fmtDate(a.start_date)} → ${fmtDate(a.end_date)}</td>
-        <td class="px-4 py-3 text-right text-slate-600">${a.days_count}${ldHalfDaySuffix(a)}</td>
-        <td class="px-4 py-3"><span class="badge ${statusColor(LEAVE_STATUS_COLORS, a.status)} text-xs">${a.status}</span></td>
-        <td class="px-4 py-3">
-          ${a.reason?`<p class="text-xs text-slate-500 italic">${esc(a.reason)}</p>`:''}
-          ${a.notes?`<p class="text-xs text-slate-500 mt-0.5">Note: ${esc(a.notes)}</p>`:''}
-          ${a.attachment?`<a href="${a.attachment}" target="_blank" class="text-xs text-blue-600 hover:underline mt-0.5 inline-block">View attachment</a>`:''}
-          ${!a.reason&&!a.notes&&!a.attachment?'<span class="text-xs text-slate-300">—</span>':''}
-        </td>
-        <td class="px-4 py-3 text-slate-500">${fmtDate(a.created_at)}</td>
-        <td class="px-4 py-3 text-right">${cancelBtn(a)}</td>
-      </tr>`).join('');
+    leaveAppTableRowsCache=rows;
+    renderLeaveAppTable();
   } else {
     tbody.innerHTML='';
     listEl.innerHTML=rows.map(a=>`

@@ -1618,13 +1618,13 @@
             <table class="w-full text-sm">
               <thead class="bg-slate-50 border-b border-slate-200">
                 <tr>
-                  <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Employee</th>
-                  <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Leave Type</th>
-                  <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Dates</th>
-                  <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Days</th>
-                  <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+                  <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setLeaveAppTableSort('employee_name')">Employee <span class="leave-app-sort-arrow" data-sort-key="employee_name"></span></th>
+                  <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setLeaveAppTableSort('leave_type_name')">Leave Type <span class="leave-app-sort-arrow" data-sort-key="leave_type_name"></span></th>
+                  <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setLeaveAppTableSort('start_date')">Dates <span class="leave-app-sort-arrow" data-sort-key="start_date"></span></th>
+                  <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setLeaveAppTableSort('days_count')">Days <span class="leave-app-sort-arrow" data-sort-key="days_count"></span></th>
+                  <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setLeaveAppTableSort('status')">Status <span class="leave-app-sort-arrow" data-sort-key="status"></span></th>
                   <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Reason / Note</th>
-                  <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Applied</th>
+                  <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setLeaveAppTableSort('created_at')">Applied <span class="leave-app-sort-arrow" data-sort-key="created_at"></span></th>
                   <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Actions</th>
                 </tr>
               </thead>
