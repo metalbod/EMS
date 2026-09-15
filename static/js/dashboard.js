@@ -266,6 +266,29 @@ function loadRecruitmentDash() {
   });
 }
 
+// Shared by both the project-level bar and each of its task-level bars —
+// green means "on track" (at or under estimate), red means over, grey
+// means there's no estimate to compare against at all. The right-hand
+// text always spells out hours left/over explicitly rather than making
+// someone do that subtraction themselves from a bare "logged/estimate"
+// pair.
+function _utilBarInfo(logged, estimated) {
+  const hasEstimate = estimated != null && estimated > 0;
+  const over = hasEstimate && logged > estimated;
+  const pct = hasEstimate ? Math.min(100, Math.round(logged / estimated * 100)) : (logged > 0 ? 100 : 0);
+  const fmtH = n => (Math.round(n * 10) / 10).toString().replace(/\.0$/, '');
+  let rightText;
+  if (!hasEstimate) rightText = `${fmtH(logged)}h logged`;
+  else if (over) rightText = `${fmtH(logged)}h / ${fmtH(estimated)}h · ${fmtH(logged - estimated)}h over`;
+  else rightText = `${fmtH(logged)}h / ${fmtH(estimated)}h · ${fmtH(estimated - logged)}h left`;
+  return {
+    pct,
+    barColor: !hasEstimate ? 'bg-slate-300' : over ? 'bg-red-500' : 'bg-emerald-500',
+    textColor: over ? 'text-red-600 font-medium' : 'text-slate-500',
+    rightText,
+  };
+}
+
 function loadTimesheetDash() {
   api('/api/projects/utilization').then(async res => {
     if (!res || !res.ok) return;
@@ -275,21 +298,26 @@ function loadTimesheetDash() {
     if (!projects.length) { listEl.innerHTML=''; emptyEl.classList.remove('hidden'); return; }
     emptyEl.classList.add('hidden');
     listEl.innerHTML = projects.map(p => {
+      const proj = _utilBarInfo(p.total_hours, p.total_estimated_hours);
       const taskRows = p.tasks.length ? p.tasks.map(t => {
-        const pct = t.estimated_hours ? Math.min(100, Math.round(t.logged_hours / t.estimated_hours * 100)) : null;
-        const over = t.estimated_hours && t.logged_hours > t.estimated_hours;
+        const info = _utilBarInfo(t.logged_hours, t.estimated_hours);
         return `<div class="flex items-center gap-2">
-          <div class="w-40 text-xs text-slate-600 truncate" title="${esc(t.name)}">${esc(t.name)}</div>
+          <div class="w-40 text-xs text-slate-600 truncate shrink-0" title="${esc(t.name)}">${esc(t.name)}</div>
           <div class="flex-1 bg-slate-100 rounded-full h-2">
-            <div class="${over?'bg-red-500':'bg-blue-500'} h-2 rounded-full" style="width:${pct===null?(t.logged_hours>0?100:0):pct}%"></div>
+            <div class="${info.barColor} h-2 rounded-full" style="width:${info.pct}%"></div>
           </div>
-          <div class="text-xs ${over?'text-red-600 font-medium':'text-slate-500'} w-24 text-right">${t.logged_hours}${t.estimated_hours?` / ${t.estimated_hours}h`:'h'}</div>
+          <div class="text-xs ${info.textColor} shrink-0 whitespace-nowrap">${info.rightText}</div>
         </div>`;
       }).join('') : '<p class="text-xs text-slate-400">No tasks defined yet.</p>';
       return `<div class="bg-white rounded-xl border border-slate-200 p-5">
-        <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center justify-between mb-1.5">
           <h4 class="font-medium text-sm text-slate-800">${esc(p.name)}</h4>
-          <span class="text-xs font-semibold text-slate-600">${p.total_hours}h total</span>
+        </div>
+        <div class="flex items-center gap-2 mb-4">
+          <div class="flex-1 bg-slate-100 rounded-full h-2.5">
+            <div class="${proj.barColor} h-2.5 rounded-full" style="width:${proj.pct}%"></div>
+          </div>
+          <div class="text-xs ${proj.textColor} shrink-0 whitespace-nowrap font-medium">${proj.rightText}</div>
         </div>
         <div class="space-y-2">${taskRows}</div>
       </div>`;

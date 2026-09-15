@@ -53,18 +53,23 @@ function createListState({sortKey:e,sortDir:t="asc",pageSize:n=10,sortValue:a}){
             <div class="${statusColor(o,i,"bg-slate-400")} h-2 rounded-full" style="width:${Math.round(d/l*100)}%"></div>
           </div>
           <div class="text-xs text-slate-500 w-5 text-right">${d}</div>
-        </div>`).join("")||'<p class="text-slate-400 text-sm">No requisitions yet.</p>'})}function loadTimesheetDash(){api("/api/projects/utilization").then(async e=>{if(!e||!e.ok)return;const t=await e.json(),n=document.getElementById("utilProjectList"),a=document.getElementById("utilEmpty");if(!t.length){n.innerHTML="",a.classList.remove("hidden");return}a.classList.add("hidden"),n.innerHTML=t.map(s=>{const o=s.tasks.length?s.tasks.map(l=>{const i=l.estimated_hours?Math.min(100,Math.round(l.logged_hours/l.estimated_hours*100)):null,d=l.estimated_hours&&l.logged_hours>l.estimated_hours;return`<div class="flex items-center gap-2">
-          <div class="w-40 text-xs text-slate-600 truncate" title="${esc(l.name)}">${esc(l.name)}</div>
+        </div>`).join("")||'<p class="text-slate-400 text-sm">No requisitions yet.</p>'})}function _utilBarInfo(e,t){const n=t!=null&&t>0,a=n&&e>t,s=n?Math.min(100,Math.round(e/t*100)):e>0?100:0,o=i=>(Math.round(i*10)/10).toString().replace(/\.0$/,"");let l;return n?a?l=`${o(e)}h / ${o(t)}h \xB7 ${o(e-t)}h over`:l=`${o(e)}h / ${o(t)}h \xB7 ${o(t-e)}h left`:l=`${o(e)}h logged`,{pct:s,barColor:n?a?"bg-red-500":"bg-emerald-500":"bg-slate-300",textColor:a?"text-red-600 font-medium":"text-slate-500",rightText:l}}function loadTimesheetDash(){api("/api/projects/utilization").then(async e=>{if(!e||!e.ok)return;const t=await e.json(),n=document.getElementById("utilProjectList"),a=document.getElementById("utilEmpty");if(!t.length){n.innerHTML="",a.classList.remove("hidden");return}a.classList.add("hidden"),n.innerHTML=t.map(s=>{const o=_utilBarInfo(s.total_hours,s.total_estimated_hours),l=s.tasks.length?s.tasks.map(i=>{const d=_utilBarInfo(i.logged_hours,i.estimated_hours);return`<div class="flex items-center gap-2">
+          <div class="w-40 text-xs text-slate-600 truncate shrink-0" title="${esc(i.name)}">${esc(i.name)}</div>
           <div class="flex-1 bg-slate-100 rounded-full h-2">
-            <div class="${d?"bg-red-500":"bg-blue-500"} h-2 rounded-full" style="width:${i===null?l.logged_hours>0?100:0:i}%"></div>
+            <div class="${d.barColor} h-2 rounded-full" style="width:${d.pct}%"></div>
           </div>
-          <div class="text-xs ${d?"text-red-600 font-medium":"text-slate-500"} w-24 text-right">${l.logged_hours}${l.estimated_hours?` / ${l.estimated_hours}h`:"h"}</div>
+          <div class="text-xs ${d.textColor} shrink-0 whitespace-nowrap">${d.rightText}</div>
         </div>`}).join(""):'<p class="text-xs text-slate-400">No tasks defined yet.</p>';return`<div class="bg-white rounded-xl border border-slate-200 p-5">
-        <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center justify-between mb-1.5">
           <h4 class="font-medium text-sm text-slate-800">${esc(s.name)}</h4>
-          <span class="text-xs font-semibold text-slate-600">${s.total_hours}h total</span>
         </div>
-        <div class="space-y-2">${o}</div>
+        <div class="flex items-center gap-2 mb-4">
+          <div class="flex-1 bg-slate-100 rounded-full h-2.5">
+            <div class="${o.barColor} h-2.5 rounded-full" style="width:${o.pct}%"></div>
+          </div>
+          <div class="text-xs ${o.textColor} shrink-0 whitespace-nowrap font-medium">${o.rightText}</div>
+        </div>
+        <div class="space-y-2">${l}</div>
       </div>`}).join("")})}function loadCompensationDash(){var n,a;const e=BENEFITS_DASHBOARD_ROLES.includes(currentUser==null?void 0:currentUser.role);(n=document.getElementById("benefitsDashSection"))==null||n.classList.toggle("hidden",!e),e&&api("/api/benefits/reports/dashboard").then(async s=>{var r,c;if(!s||!s.ok)return;const o=await s.json();_lastBenefitsDashboard=o,document.getElementById("bdActivePlans").textContent=o.total_active_plans,document.getElementById("bdEnrolledEmployees").textContent=o.total_enrolled_employees,document.getElementById("bdEmployerCost").textContent=fmtCurrency(o.total_monthly_employer_cost),document.getElementById("bdClaimsPaid").textContent=fmtCurrency(o.total_claims_paid_ytd);const l=document.getElementById("bdDeptCostList");(r=document.getElementById("bdDeptCostEmpty"))==null||r.classList.toggle("hidden",o.department_costs.length>0);const i=Math.max(...o.department_costs.map(m=>m.monthly_employer_cost_total),1);l.innerHTML=o.department_costs.map(m=>`
         <div class="flex items-center gap-2">
           <div class="w-28 text-xs text-slate-600 truncate" title="${esc(m.department)}">${esc(m.department)}</div>

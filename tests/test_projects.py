@@ -176,6 +176,35 @@ def test_project_utilization_includes_active_project(client, hr_manager_auth, ma
     assert project["id"] in [p["id"] for p in res.json()]
 
 
+def test_project_utilization_total_estimated_sums_only_estimated_tasks(
+    client, hr_manager_auth, make_test_project, make_test_project_task
+):
+    """total_estimated_hours is the sum of task-level estimates only — a
+    task with no estimate at all doesn't count as a 0-hour budget, it's
+    just excluded from the total (see get_project_utilization)."""
+    project = make_test_project(status="Active")
+    make_test_project_task(project["id"], estimated_hours=10)
+    make_test_project_task(project["id"], estimated_hours=5)
+    make_test_project_task(project["id"])  # no estimate
+
+    res = client.get("/api/projects/utilization", headers=hr_manager_auth)
+    assert res.status_code == 200
+    body = next(p for p in res.json() if p["id"] == project["id"])
+    assert body["total_estimated_hours"] == 15
+    assert body["total_hours"] == 0
+
+
+def test_project_utilization_total_estimated_is_none_when_no_task_has_one(
+    client, hr_manager_auth, make_test_project, make_test_project_task
+):
+    project = make_test_project(status="Active")
+    make_test_project_task(project["id"])  # no estimate
+
+    res = client.get("/api/projects/utilization", headers=hr_manager_auth)
+    body = next(p for p in res.json() if p["id"] == project["id"])
+    assert body["total_estimated_hours"] is None
+
+
 def test_my_projects_empty_for_user_with_no_employee_record(client, hr_manager_auth):
     """The hr_manager test user has no linked employee_id."""
     res = client.get("/api/projects/mine", headers=hr_manager_auth)

@@ -276,3 +276,57 @@ describe('Leave Calendar — merging leave entries and onboarding action items p
     expect(chipInner(dayView(byDay, {}, 10).shown[0])).toBe('Jane Tan');
   });
 });
+
+// Matches dashboard.js's _utilBarInfo — the shared project/task hours-bar
+// helper on the Home dashboard's Timesheet tab. Green = on or under
+// estimate, red = over, grey = no estimate to compare against at all.
+describe('Project/task utilization bar (_utilBarInfo)', () => {
+  function utilBarInfo(logged, estimated) {
+    const hasEstimate = estimated != null && estimated > 0;
+    const over = hasEstimate && logged > estimated;
+    const pct = hasEstimate ? Math.min(100, Math.round(logged / estimated * 100)) : (logged > 0 ? 100 : 0);
+    const fmtH = n => (Math.round(n * 10) / 10).toString().replace(/\.0$/, '');
+    let rightText;
+    if (!hasEstimate) rightText = `${fmtH(logged)}h logged`;
+    else if (over) rightText = `${fmtH(logged)}h / ${fmtH(estimated)}h · ${fmtH(logged - estimated)}h over`;
+    else rightText = `${fmtH(logged)}h / ${fmtH(estimated)}h · ${fmtH(estimated - logged)}h left`;
+    return {
+      pct,
+      barColor: !hasEstimate ? 'bg-slate-300' : over ? 'bg-red-500' : 'bg-emerald-500',
+      textColor: over ? 'text-red-600 font-medium' : 'text-slate-500',
+      rightText,
+    };
+  }
+
+  it('is green with hours-left text when under the estimate', () => {
+    const info = utilBarInfo(6, 10);
+    expect(info.barColor).toBe('bg-emerald-500');
+    expect(info.pct).toBe(60);
+    expect(info.rightText).toBe('6h / 10h · 4h left');
+  });
+
+  it('is still green at exactly 100% of the estimate — over-budget is strictly greater than, not >=', () => {
+    const info = utilBarInfo(10, 10);
+    expect(info.barColor).toBe('bg-emerald-500');
+    expect(info.rightText).toBe('10h / 10h · 0h left');
+  });
+
+  it('turns red and caps the bar at 100% once logged hours exceed the estimate', () => {
+    const info = utilBarInfo(14, 10);
+    expect(info.barColor).toBe('bg-red-500');
+    expect(info.pct).toBe(100);
+    expect(info.rightText).toBe('14h / 10h · 4h over');
+  });
+
+  it('is grey with no comparison when there is no estimate at all', () => {
+    const info = utilBarInfo(7, null);
+    expect(info.barColor).toBe('bg-slate-300');
+    expect(info.textColor).toBe('text-slate-500');
+    expect(info.rightText).toBe('7h logged');
+  });
+
+  it('rounds fractional hours to one decimal and drops a trailing .0', () => {
+    const info = utilBarInfo(3.25, 8);
+    expect(info.rightText).toBe('3.3h / 8h · 4.8h left');
+  });
+});

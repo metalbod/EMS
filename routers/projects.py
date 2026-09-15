@@ -137,9 +137,15 @@ def get_project_utilization(conn, user: dict = Depends(get_current_user)) -> Lis
         """, (p["id"], inst_id)).fetchall()
         task_list = [dict(t) for t in tasks]
         project_total = sum(t["logged_hours"] for t in task_list)
+        # Only tasks that actually have an estimate contribute to the
+        # project-level denominator — a task with no estimate can't say
+        # anything about whether the project as a whole is on track, so it's
+        # left out rather than silently counted as a 0-hour budget.
+        estimated_task_hours = [t["estimated_hours"] for t in task_list if t["estimated_hours"]]
+        project_total_estimated = sum(estimated_task_hours) if estimated_task_hours else None
         result.append({
             "id": p["id"], "name": p["name"], "status": p["status"],
-            "total_hours": project_total, "tasks": task_list,
+            "total_hours": project_total, "total_estimated_hours": project_total_estimated, "tasks": task_list,
         })
     return result
 
