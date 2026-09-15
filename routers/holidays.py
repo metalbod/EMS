@@ -10,6 +10,7 @@ from core.permission_matrix import require_permission
 
 from db import get_db, IntegrityError
 from core.db_session import db_session
+from routers.leave import sweep_holiday_leave_adjustments
 
 router = APIRouter()
 
@@ -47,7 +48,11 @@ def create_holiday(conn, body: HolidayIn, user: dict = Depends(get_current_user)
     except IntegrityError as e:
         raise HTTPException(400, "A holiday already exists on this date")
     row = conn.execute("SELECT * FROM holidays WHERE id=last_insert_rowid()").fetchone()
-    return dict(row)
+    adjusted = sweep_holiday_leave_adjustments(conn, inst_id, body.date, body.name, user)
+    conn.commit()
+    result = dict(row)
+    result["adjusted_applications_count"] = adjusted
+    return result
 
 
 @router.delete("/api/holidays/{holiday_id}", status_code=204)

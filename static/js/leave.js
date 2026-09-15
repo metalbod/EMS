@@ -574,9 +574,11 @@ async function submitHoliday(e) {
   const body={ name:document.getElementById('holidayName').value.trim(), date, year:parseInt(date.slice(0,4)) };
   const res=await api('/api/holidays',{method:'POST',body:JSON.stringify(body)});
   if(res?.ok){
+    const saved=await res.json();
     closeHolidayModal();
     document.getElementById('holidayYearSelect').value=body.year;
     loadHolidays();
+    if(saved.adjusted_applications_count) alert(`Holiday added — ${saved.adjusted_applications_count} leave application(s) were adjusted since they fell on this date.`);
   } else {
     const d=await res.json(); alert(d.detail||'Failed to add holiday');
   }

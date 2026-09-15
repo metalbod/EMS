@@ -9,6 +9,10 @@ Uses a fixed, known Mon-Fri work week (2027-03-01 to 2027-03-05, 5 working
 days, no weekend in between) for application date ranges, verified via
 Python's own date.weekday() rather than assumed.
 """
+import itertools
+import random
+from datetime import date, timedelta
+
 import pytest
 from concurrent.futures import ThreadPoolExecutor
 
@@ -1095,3 +1099,246 @@ def test_concurrent_first_time_balance_lookups_do_not_500(client, make_test_leav
 
     statuses = [r.status_code for r in results]
     assert all(s == 200 for s in statuses), f"expected all 200, got {statuses}"
+
+
+# ---------------------------------------------------------------------------
+# Adding a holiday retroactively adjusts any Pending Approval/Approved
+# application that already counted that date as a working day.
+# ---------------------------------------------------------------------------
+_holiday_year_counter = itertools.count(1)
+_holiday_year_salt = 2200 + random.randint(0, 800)  # far-future, disjoint from test_holidays.py's own salt range
+
+
+def _unique_holiday_work_week():
+    """A fresh, far-future Mon-Fri work week per call (via ISO week 10's
+    Monday, so it's always a real weekday run with no weekend in between),
+    so each test's holiday date can't collide with another test/run's
+    holiday on the same calendar date (holidays are unique per
+    institution+date)."""
+    year = _holiday_year_salt + next(_holiday_year_counter)
+    monday = date.fromisocalendar(year, 10, 1)
+    return monday, monday + timedelta(days=4)
+
+
+@pytest.fixture
+def make_test_holiday_for_sweep(client, hr_manager_auth):
+    """Factory: creates a disposable holiday (same endpoint the "Save"
+    button in Holiday Manager hits), returning the full response body
+    (including adjusted_applications_count). Deletes it on teardown."""
+    created_ids = []
+
+    def _make(d, name="ZZ Sweep Holiday"):
+        res = client.post("/api/holidays", headers=hr_manager_auth,
+                           json={"name": name, "date": d.isoformat(), "year": d.year})
+        assert res.status_code == 201, res.text
+        h = res.json()
+        created_ids.append(h["id"])
+        return h
+
+    yield _make
+
+    for hid in created_ids:
+        client.delete(f"/api/holidays/{hid}", headers=hr_manager_auth)
+
+
+def test_holiday_added_reduces_approved_multiday_application_and_credits_balance(
+    client, hr_manager_auth, employee_with_user, make_test_leave_type, make_test_holiday_for_sweep
+):
+    emp, headers = employee_with_user
+    lt = make_test_leave_type(requires_approval=False, annual_entitlement=14)
+    monday, friday = _unique_holiday_work_week()
+    apply_res = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": monday.isoformat(), "end_date": friday.isoformat(),
+    })
+    assert apply_res.status_code == 201, apply_res.text
+    app = apply_res.json()
+    assert app["status"] == "Approved" and app["days_count"] == 5.0
+
+    wednesday = monday + timedelta(days=2)
+    holiday = make_test_holiday_for_sweep(wednesday)
+    assert holiday["adjusted_applications_count"] == 1
+
+    listed = client.get("/api/leave/applications", headers=hr_manager_auth,
+                        params={"employee_id": emp["employee_id"]}).json()
+    updated = next(a for a in listed if a["id"] == app["id"])
+    assert updated["days_count"] == 4.0
+
+    bal = client.get("/api/leave/balances", headers=hr_manager_auth,
+                     params={"employee_id": emp["employee_id"], "year": monday.year}).json()
+    bal_row = next(b for b in bal if b["leave_type_id"] == lt["id"])
+    assert bal_row["used_days"] == 4.0
+
+
+def test_holiday_on_only_day_of_single_day_application_zeroes_days_but_keeps_status(
+    client, hr_manager_auth, employee_with_user, make_test_leave_type, make_test_holiday_for_sweep
+):
+    emp, headers = employee_with_user
+    lt = make_test_leave_type(requires_approval=False, annual_entitlement=14)
+    monday, _ = _unique_holiday_work_week()
+    apply_res = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": monday.isoformat(), "end_date": monday.isoformat(),
+    })
+    assert apply_res.status_code == 201, apply_res.text
+    app = apply_res.json()
+    assert app["status"] == "Approved" and app["days_count"] == 1.0
+
+    holiday = make_test_holiday_for_sweep(monday)
+    assert holiday["adjusted_applications_count"] == 1
+
+    listed = client.get("/api/leave/applications", headers=hr_manager_auth,
+                        params={"employee_id": emp["employee_id"]}).json()
+    updated = next(a for a in listed if a["id"] == app["id"])
+    assert updated["days_count"] == 0.0
+    assert updated["status"] == "Approved"  # status is left untouched, even at 0 days
+
+    bal = client.get("/api/leave/balances", headers=hr_manager_auth,
+                     params={"employee_id": emp["employee_id"], "year": monday.year}).json()
+    bal_row = next(b for b in bal if b["leave_type_id"] == lt["id"])
+    assert bal_row["used_days"] == 0.0
+
+
+def test_holiday_added_adjusts_pending_application_without_touching_balance(
+    client, hr_manager_auth, employee_with_user, make_test_leave_type, make_test_holiday_for_sweep
+):
+    emp, headers = employee_with_user
+    lt = make_test_leave_type(requires_approval=True, annual_entitlement=14)
+    monday, _ = _unique_holiday_work_week()
+    apply_res = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": monday.isoformat(), "end_date": monday.isoformat(),
+    })
+    assert apply_res.status_code == 201, apply_res.text
+    app = apply_res.json()
+    assert app["status"] == "Pending Approval" and app["days_count"] == 1.0
+
+    holiday = make_test_holiday_for_sweep(monday)
+    assert holiday["adjusted_applications_count"] == 1
+
+    listed = client.get("/api/leave/applications", headers=hr_manager_auth,
+                        params={"employee_id": emp["employee_id"]}).json()
+    updated = next(a for a in listed if a["id"] == app["id"])
+    assert updated["days_count"] == 0.0
+    assert updated["status"] == "Pending Approval"
+
+    bal = client.get("/api/leave/balances", headers=hr_manager_auth,
+                     params={"employee_id": emp["employee_id"], "year": monday.year}).json()
+    bal_row = next(b for b in bal if b["leave_type_id"] == lt["id"])
+    assert bal_row["used_days"] == 0.0  # never consumed — nothing to release
+
+
+def test_calendar_day_leave_type_untouched_by_new_holiday(
+    client, hr_manager_auth, employee_with_user, make_test_leave_type, make_test_holiday_for_sweep
+):
+    """Maternity/Paternity-style types count holidays as leave days by
+    legal requirement (see _compute_leave_days) — a new holiday must not
+    reduce their applications."""
+    emp, headers = employee_with_user
+    lt = make_test_leave_type(requires_approval=False, annual_entitlement=60, count_calendar_days=True)
+    monday, friday = _unique_holiday_work_week()
+    apply_res = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": monday.isoformat(), "end_date": friday.isoformat(),
+    })
+    assert apply_res.status_code == 201, apply_res.text
+    app = apply_res.json()
+    assert app["days_count"] == 5.0
+
+    wednesday = monday + timedelta(days=2)
+    holiday = make_test_holiday_for_sweep(wednesday)
+    assert holiday["adjusted_applications_count"] == 0
+
+    listed = client.get("/api/leave/applications", headers=hr_manager_auth,
+                        params={"employee_id": emp["employee_id"]}).json()
+    updated = next(a for a in listed if a["id"] == app["id"])
+    assert updated["days_count"] == 5.0
+
+
+def test_rejected_application_untouched_by_new_holiday(
+    client, hr_manager_auth, employee_with_user, make_test_leave_type, make_test_holiday_for_sweep
+):
+    emp, headers = employee_with_user
+    lt = make_test_leave_type(requires_approval=True, annual_entitlement=14)
+    monday, _ = _unique_holiday_work_week()
+    apply_res = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": monday.isoformat(), "end_date": monday.isoformat(),
+    })
+    app_id = apply_res.json()["id"]
+    reject_res = client.patch(f"/api/leave/applications/{app_id}/status", headers=hr_manager_auth,
+                              json={"status": "Rejected"})
+    assert reject_res.status_code == 200 and reject_res.json()["status"] == "Rejected"
+
+    holiday = make_test_holiday_for_sweep(monday)
+    assert holiday["adjusted_applications_count"] == 0
+
+    listed = client.get("/api/leave/applications", headers=hr_manager_auth,
+                        params={"employee_id": emp["employee_id"]}).json()
+    updated = next(a for a in listed if a["id"] == app_id)
+    assert updated["days_count"] == 1.0
+    assert updated["status"] == "Rejected"
+
+
+def test_already_elapsed_application_untouched_by_new_holiday(
+    client, hr_manager_auth, employee_with_user, make_test_leave_type, make_test_holiday_for_sweep
+):
+    """Only current/future applications (end_date >= today) get corrected —
+    leave that's already fully in the past is left as historically
+    settled."""
+    emp, headers = employee_with_user
+    lt = make_test_leave_type(requires_approval=False, annual_entitlement=14)
+    # A weekday at least 60 days in the past, guaranteed to be its own
+    # institution's only application on that exact date.
+    d = date.today() - timedelta(days=60)
+    while d.weekday() >= 5:
+        d -= timedelta(days=1)
+    apply_res = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": d.isoformat(), "end_date": d.isoformat(),
+    })
+    assert apply_res.status_code == 201, apply_res.text
+    app = apply_res.json()
+    assert app["status"] == "Approved" and app["days_count"] == 1.0
+
+    holiday = make_test_holiday_for_sweep(d, name="ZZ Past Holiday")
+    assert holiday["adjusted_applications_count"] == 0
+
+    listed = client.get("/api/leave/applications", headers=hr_manager_auth,
+                        params={"employee_id": emp["employee_id"]}).json()
+    updated = next(a for a in listed if a["id"] == app["id"])
+    assert updated["days_count"] == 1.0
+    assert updated["status"] == "Approved"
+
+    bal = client.get("/api/leave/balances", headers=hr_manager_auth,
+                     params={"employee_id": emp["employee_id"], "year": d.year}).json()
+    bal_row = next(b for b in bal if b["leave_type_id"] == lt["id"])
+    assert bal_row["used_days"] == 1.0  # unchanged — never released
+
+
+def test_holiday_on_half_day_boundary_deducts_half_day_and_credits_half_day(
+    client, hr_manager_auth, employee_with_user, make_test_leave_type, make_test_holiday_for_sweep
+):
+    emp, headers = employee_with_user
+    lt = make_test_leave_type(requires_approval=False, annual_entitlement=14, allow_half_day=True)
+    monday, friday = _unique_holiday_work_week()
+    apply_res = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": monday.isoformat(), "end_date": friday.isoformat(), "start_day_period": "PM",
+    })
+    assert apply_res.status_code == 201, apply_res.text
+    app = apply_res.json()
+    assert app["days_count"] == 4.5  # 5 working days minus the Monday PM half-day
+
+    holiday = make_test_holiday_for_sweep(monday, name="ZZ Half Day Holiday")
+    assert holiday["adjusted_applications_count"] == 1
+
+    listed = client.get("/api/leave/applications", headers=hr_manager_auth,
+                        params={"employee_id": emp["employee_id"]}).json()
+    updated = next(a for a in listed if a["id"] == app["id"])
+    assert updated["days_count"] == 4.0  # only the remaining 0.5 for that date is credited back
+
+    bal = client.get("/api/leave/balances", headers=hr_manager_auth,
+                     params={"employee_id": emp["employee_id"], "year": monday.year}).json()
+    bal_row = next(b for b in bal if b["leave_type_id"] == lt["id"])
+    assert bal_row["used_days"] == 4.0

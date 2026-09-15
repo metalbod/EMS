@@ -198,6 +198,58 @@ def _half_day_deduction(conn, inst_id: int, start_date: str, end_date: str, coun
     return deduction
 
 
+def sweep_holiday_leave_adjustments(conn, inst_id: int, holiday_date: str, holiday_name: str, user: dict) -> int:
+    """Called right after a new public holiday is inserted (routers/holidays.py's
+    create_holiday): finds every Pending Approval/Approved application that
+    counted holiday_date as a working day before this holiday existed, and
+    corrects it — reduces days_count by whatever that date cost (1.0, or 0.5
+    if it landed on a half-day start/end), crediting any already-consumed
+    balance back via _release_balance. Status is left untouched even if
+    days_count reaches 0 — a 0-day Approved/Pending row just stays as a
+    record of what was approved.
+
+    Two deliberate exclusions: leave types with count_calendar_days=True
+    (Maternity/Paternity-style — these count holidays as leave days by legal
+    requirement, see _compute_leave_days, so they're never adjusted here),
+    and applications that have already fully elapsed (end_date < today) —
+    past leave is treated as historically settled, only current/future
+    bookings are corrected. Returns how many applications were adjusted."""
+    d = datetime.strptime(holiday_date, "%Y-%m-%d").date()
+    if d.weekday() >= 5:
+        return 0  # a weekend date was never counted as a working day to begin with
+    today = datetime.now().strftime("%Y-%m-%d")
+    rows = conn.execute(
+        """SELECT a.* FROM leave_applications a JOIN leave_types lt ON lt.id = a.leave_type_id
+           WHERE a.institution_id=? AND a.status IN ('Pending Approval','Approved')
+             AND a.start_date<=? AND a.end_date>=? AND a.end_date>=? AND lt.count_calendar_days=0""",
+        (inst_id, holiday_date, holiday_date, today)
+    ).fetchall()
+    adjusted = 0
+    for r in rows:
+        app = dict(r)
+        if app["start_day_period"] and app["start_date"] == holiday_date:
+            was_working = 0.5
+        elif app["end_day_period"] and app["end_date"] == holiday_date:
+            was_working = 0.5
+        else:
+            was_working = 1.0
+        delta = min(was_working, app["days_count"])
+        if delta <= 0:
+            continue
+        new_days = round((app["days_count"] - delta) * 2) / 2
+        conn.execute("UPDATE leave_applications SET days_count=? WHERE id=?", (new_days, app["id"]))
+        if app["status"] == "Approved":
+            lt = conn.execute("SELECT * FROM leave_types WHERE id=?", (app["leave_type_id"],)).fetchone()
+            year = datetime.strptime(app["start_date"], "%Y-%m-%d").year
+            balance = _get_or_create_leave_balance(conn, inst_id, app["employee_id"], _balance_leave_type_id(lt), year)
+            _release_balance(conn, balance, delta)
+        _log_leave(conn, inst_id, app["id"], app["employee_id"], "Auto-adjusted for new holiday",
+                   f"{holiday_date} is now a public holiday ({holiday_name}) — days_count reduced by {delta} "
+                   f"(was {app['days_count']}, now {new_days})", user)
+        adjusted += 1
+    return adjusted
+
+
 def _accrued_days(annual_entitlement: float, join_date: Optional[str], as_of_date: str) -> float:
     """Monthly accrual: earned at the start of each calendar month, 1/12th
     of the annual entitlement per month, pro-rated in the join year from
