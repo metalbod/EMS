@@ -4335,24 +4335,6 @@
             <button type="button" onclick="submitProjectTask()" class="btn-primary text-xs px-3 py-1.5">Save Task</button>
             <button type="button" onclick="resetProjectTaskForm()" class="btn-ghost text-xs px-3 py-1.5">Clear</button>
           </div>
-
-          <!-- Per-member expected effort — only available once the task has been saved.
-               Team membership itself lives at the project level (Details tab); this only
-               schedules expected effort for people already on that member list. -->
-          <div id="taskAssignSection" class="hidden border-t border-slate-200 pt-2 mt-1">
-            <p class="text-xs font-semibold text-slate-600 mb-1">Expected Effort <span class="text-slate-400 font-normal">— project members scheduled on this task</span></p>
-            <div id="taskAssignList" class="space-y-1 mb-2 max-h-32 overflow-y-auto"></div>
-            <p id="taskAssignNoMembers" class="hidden text-xs text-slate-400 italic pb-1">No project members yet — add some in the Details tab first.</p>
-            <div id="taskAssignFields" class="grid grid-cols-2 gap-2 mb-2">
-              <select id="taskAssignEmpId" class="inp text-sm"></select>
-              <input id="taskAssignStart" type="datetime-local" class="inp text-sm" title="Start date &amp; time"/>
-            </div>
-            <div id="taskAssignFieldsRow2" class="flex gap-2">
-              <input id="taskAssignDuration" type="number" step="0.5" min="0.5" class="inp text-sm flex-1" placeholder="Duration (hours)"/>
-              <button type="button" onclick="addTaskAssignment()" class="btn-primary text-xs px-3">Assign</button>
-            </div>
-          </div>
-          <p id="taskAssignHint" class="text-xs text-slate-400 italic pt-1">Save the task first to assign team members.</p>
         </div>
       </div>
     </div>

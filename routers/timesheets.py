@@ -175,8 +175,7 @@ def add_timesheet_entry(conn, ts_id: int, body: TimesheetEntryIn, user: dict = D
     # Team membership (and its "open to all" escape hatch) lives at the
     # project level, not per task — anyone on the project's member list
     # can log time against any of its tasks (see routers/projects.py's
-    # list_project_tasks / add_task_assignment for the same project-level
-    # gate).
+    # list_project_tasks for the same project-level gate).
     project = conn.execute(
         "SELECT is_open_to_all FROM projects WHERE id=? AND institution_id=?",
         (body.project_id, inst_id)

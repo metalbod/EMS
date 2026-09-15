@@ -416,8 +416,6 @@ function resetProjectTaskForm() {
   document.getElementById('projectTaskStart').value='';
   document.getElementById('projectTaskEnd').value='';
   document.getElementById('projectTaskStatus').value='Not Started';
-  document.getElementById('taskAssignSection').classList.add('hidden');
-  document.getElementById('taskAssignHint').classList.remove('hidden');
 }
 
 function editProjectTask(taskId) {
@@ -430,7 +428,6 @@ function editProjectTask(taskId) {
   document.getElementById('projectTaskStart').value=t.start_date||'';
   document.getElementById('projectTaskEnd').value=t.end_date||'';
   document.getElementById('projectTaskStatus').value=t.status;
-  showTaskAssignSection(t.id);
 }
 
 const submitProjectTask = guardAsync(async function() {
@@ -449,11 +446,8 @@ const submitProjectTask = guardAsync(async function() {
   const url=taskId?`/api/projects/${projectId}/tasks/${taskId}`:`/api/projects/${projectId}/tasks`;
   const res=await api(url,{method:taskId?'PUT':'POST',body:JSON.stringify(body)});
   if(res?.ok){
-    const saved=await res.json();
     await loadProjectTasksForManage(parseInt(projectId));
-    // Keep the form open on the just-saved task so team members can be assigned right away
-    document.getElementById('projectTaskId').value=saved.id;
-    showTaskAssignSection(saved.id);
+    resetProjectTaskForm();
   } else {
     const d=await res.json(); alert(d.detail||'Failed to save task');
   }
@@ -464,81 +458,6 @@ async function deleteProjectTask(projectId, taskId) {
   const res=await api(`/api/projects/${projectId}/tasks/${taskId}`,{method:'DELETE'});
   if(res?.ok||res?.status===204){ loadProjectTasksForManage(projectId); resetProjectTaskForm(); }
   else { const d=await res.json(); alert(d.detail||'Failed to delete task'); }
-}
-
-// ---------------------------------------------------------------------------
-// Task Assignments — expected effort (start datetime + duration) for a
-// project member on this task. Team membership itself lives at the
-// project level (Details tab's Team Members list, plus the "Open to
-// all" checkbox) — this only schedules effort for people already on
-// that roster; it plays no part in deciding who can log timesheet hours
-// against the project (see routers/projects.py's add_timesheet_entry).
-// ---------------------------------------------------------------------------
-async function showTaskAssignSection(taskId) {
-  document.getElementById('taskAssignHint').classList.add('hidden');
-  document.getElementById('taskAssignSection').classList.remove('hidden');
-  await loadTaskAssignments(taskId);
-}
-
-async function loadTaskAssignments(taskId) {
-  const projectId=parseInt(document.getElementById('projectId').value);
-  const project=projectsCache.find(p=>p.id===projectId);
-  const memberIds=project?.member_ids||[];
-
-  const res=await api(`/api/projects/${projectId}/tasks/${taskId}/assignments`);
-  const assignments=res?.ok?await res.json():[];
-  document.getElementById('taskAssignList').innerHTML=assignments.length?assignments.map(a=>`
-    <div class="flex items-center gap-2 py-1 border-b border-slate-100 text-xs">
-      <span class="flex-1">${esc(displayName(a.full_name,a.preferred_name))}</span>
-      <span class="text-slate-400">${fmtDate(a.start_datetime)}${a.start_datetime.includes('T')?', '+a.start_datetime.split('T')[1]:''} · ${a.duration_hours}h</span>
-      <button onclick="removeTaskAssignment(${taskId},'${a.employee_id}')" class="text-slate-300 hover:text-red-500"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
-    </div>`).join(''):'<p class="text-xs text-slate-400 text-center py-1">No one assigned yet.</p>';
-
-  // Candidates are limited to the project's own Team Members roster
-  // (Details tab) — you can't schedule effort for someone who isn't a
-  // project member first.
-  const assignedIds=new Set(assignments.map(a=>a.employee_id));
-  const available=(employees||[]).filter(e=>memberIds.includes(e.employee_id)&&!assignedIds.has(e.employee_id));
-  const sel=document.getElementById('taskAssignEmpId');
-  const fieldsWrap=document.getElementById('taskAssignFields');
-  const fieldsRow2=document.getElementById('taskAssignFieldsRow2');
-  const noMembersEl=document.getElementById('taskAssignNoMembers');
-  if(!memberIds.length){
-    noMembersEl.classList.remove('hidden');
-    fieldsWrap.classList.add('hidden');
-    fieldsRow2.classList.add('hidden');
-    return;
-  }
-  noMembersEl.classList.add('hidden');
-  fieldsWrap.classList.remove('hidden');
-  fieldsRow2.classList.remove('hidden');
-  sel.innerHTML=available.length
-    ? available.map(e=>`<option value="${e.employee_id}">${esc(displayName(e.full_name,e.preferred_name))}</option>`).join('')
-    : '<option value="">All project members already assigned</option>';
-}
-
-const addTaskAssignment = guardAsync(async function() {
-  const projectId=document.getElementById('projectId').value;
-  const taskId=document.getElementById('projectTaskId').value;
-  const employeeId=document.getElementById('taskAssignEmpId').value;
-  if(!employeeId){ alert('No project member available to assign — every member is already scheduled on this task, or the project has no members yet.'); return; }
-  const startDatetime=document.getElementById('taskAssignStart').value;
-  const durationHours=parseFloat(document.getElementById('taskAssignDuration').value);
-  if(!startDatetime||!durationHours){ alert('Start date/time and duration (hours) are required.'); return; }
-  const res=await api(`/api/projects/${projectId}/tasks/${taskId}/assignments`,{method:'POST',body:JSON.stringify({employee_id:employeeId,start_datetime:startDatetime,duration_hours:durationHours})});
-  if(res?.ok){
-    document.getElementById('taskAssignStart').value='';
-    document.getElementById('taskAssignDuration').value='';
-    loadTaskAssignments(parseInt(taskId));
-  } else {
-    const d=await res.json(); alert(d.detail||'Failed to assign team member');
-  }
-});
-
-async function removeTaskAssignment(taskId, employeeId) {
-  const projectId=document.getElementById('projectId').value;
-  await api(`/api/projects/${projectId}/tasks/${taskId}/assignments/${employeeId}`,{method:'DELETE'});
-  loadTaskAssignments(taskId);
 }
 
 // ---------------------------------------------------------------------------

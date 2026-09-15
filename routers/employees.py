@@ -744,7 +744,7 @@ def _rename_employee_id_everywhere(conn, inst_id: str, old_id: str, new_id: str)
     conn.execute("UPDATE audit_logs SET target_employee_id=? WHERE institution_id=? AND target_employee_id=?", (new_id, inst_id, old_id))
     for tbl in ("ob_audit_log", "hr_notes", "ob_checklists", "ld_enrollments", "ld_audit_log",
                 "ld_quiz_attempts", "ld_lesson_progress", "leave_balances", "leave_applications",
-                "leave_audit_log", "timesheets", "timesheet_audit_log", "task_assignments"):
+                "leave_audit_log", "timesheets", "timesheet_audit_log"):
         conn.execute(f"UPDATE {tbl} SET employee_id=? WHERE institution_id=? AND employee_id=?", (new_id, inst_id, old_id))
     # project_managers/project_members carry no institution_id column of
     # their own (scoped through their parent project instead — see their

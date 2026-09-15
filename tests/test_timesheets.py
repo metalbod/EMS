@@ -170,34 +170,12 @@ def test_add_entry_without_assignment_and_not_open_returns_403(
 def test_add_entry_succeeds_for_project_member(
     client, employee_with_user, make_test_timesheet, make_test_project, make_test_project_task
 ):
-    """Team membership (not is_open_to_all, and not a per-task
-    task_assignments row) is what grants timesheet eligibility now — see
-    routers/timesheets.py's add_timesheet_entry."""
+    """Team membership (not is_open_to_all) is what grants timesheet
+    eligibility — see routers/timesheets.py's add_timesheet_entry."""
     emp, headers = employee_with_user
     ts = make_test_timesheet()
     project = make_test_project(member_ids=[emp["employee_id"]])
     task = make_test_project_task(project["id"])
-    res = client.post(f"/api/timesheets/{ts['id']}/entries", headers=headers, json={
-        "project_id": project["id"], "task_id": task["id"], "date": ENTRY_DATE, "hours": 4,
-    })
-    assert res.status_code == 201
-
-
-def test_add_entry_succeeds_when_explicitly_assigned(
-    client, hr_manager_auth, employee_with_user, make_test_timesheet, make_test_project, make_test_project_task
-):
-    """A project member additionally scheduled expected effort via
-    task_assignments can still log time as normal — that table no longer
-    gates eligibility, but it must not accidentally break it either."""
-    emp, headers = employee_with_user
-    ts = make_test_timesheet()
-    project = make_test_project(member_ids=[emp["employee_id"]])
-    task = make_test_project_task(project["id"])
-    assign_res = client.post(
-        f"/api/projects/{project['id']}/tasks/{task['id']}/assignments", headers=hr_manager_auth,
-        json={"employee_id": emp["employee_id"], "start_datetime": "2027-04-01T09:00", "duration_hours": 8},
-    )
-    assert assign_res.status_code == 201
     res = client.post(f"/api/timesheets/{ts['id']}/entries", headers=headers, json={
         "project_id": project["id"], "task_id": task["id"], "date": ENTRY_DATE, "hours": 4,
     })

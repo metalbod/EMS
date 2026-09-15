@@ -1,4 +1,4 @@
-"""Projects, Project Tasks, and Task Assignments (managed by HR Manager) — feeds Timesheet's project selector."""
+"""Projects and Project Tasks (managed by HR Manager) — feeds Timesheet's project selector."""
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 from core.deps import get_current_user, need_inst
 
-from db import get_db, IntegrityError
+from db import get_db
 
 from core.db_session import db_session
 
@@ -34,12 +34,6 @@ class ProjectTaskIn(BaseModel):
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     status: str = "Not Started"  # Not Started | In Progress | Completed
-
-
-class TaskAssignmentIn(BaseModel):
-    employee_id: str
-    start_datetime: str  # ISO datetime, e.g. 2026-07-08T09:00
-    duration_hours: float  # expected effort for this project member on this task
 
 
 # ---------------------------------------------------------------------------
@@ -80,9 +74,7 @@ def _member_ids_for(conn, project_id: int) -> List[str]:
 def _set_project_members(conn, inst_id: int, project_id: int, member_ids: List[str]) -> None:
     """Team members are assigned at the project level (not per task) — this
     is the roster that governs who can log timesheet hours against the
-    project (see routers/timesheets.py's add_timesheet_entry) and who can
-    be scheduled expected effort on one of its tasks (see
-    add_task_assignment below)."""
+    project (see routers/timesheets.py's add_timesheet_entry)."""
     ids = sorted(set(member_ids))
     if ids:
         placeholders = ",".join("?" * len(ids))
@@ -219,8 +211,7 @@ def delete_project(conn, project_id: int, user: dict = Depends(get_current_user)
     if conn.execute("SELECT id FROM timesheet_entries WHERE project_id=? AND institution_id=?", (project_id, inst_id)).fetchone():
         raise HTTPException(400, "Cannot delete a project that already has logged timesheet hours — set it to Completed instead")
     # project_managers/project_members have a foreign key to projects, so
-    # they must be deleted first — same FK-ordering requirement as
-    # delete_project_task's task_assignments cleanup below.
+    # they must be deleted first.
     conn.execute("DELETE FROM project_managers WHERE project_id=?", (project_id,))
     conn.execute("DELETE FROM project_members WHERE project_id=?", (project_id,))
     conn.execute("DELETE FROM projects WHERE id=? AND institution_id=?", (project_id, inst_id))
@@ -303,70 +294,5 @@ def delete_project_task(conn, project_id: int, task_id: int, user: dict = Depend
     inst_id = need_inst(user)
     if conn.execute("SELECT id FROM timesheet_entries WHERE task_id=? AND institution_id=?", (task_id, inst_id)).fetchone():
         raise HTTPException(400, "Cannot delete a task that already has logged timesheet hours — mark it Completed instead")
-    # task_assignments has a foreign key to project_tasks, so it must be
-    # deleted first — deleting project_tasks first violates that FK whenever
-    # the task has any assignments.
-    conn.execute("DELETE FROM task_assignments WHERE task_id=? AND institution_id=?", (task_id, inst_id))
     conn.execute("DELETE FROM project_tasks WHERE id=? AND project_id=? AND institution_id=?", (task_id, project_id, inst_id))
-    conn.commit()
-
-
-# ---------------------------------------------------------------------------
-# Task Assignments — per-project-member expected effort (start datetime +
-# duration) on a task. Purely a capacity-planning schedule: it does NOT
-# decide who can log timesheet hours (that's project_members/
-# is_open_to_all — see add_timesheet_entry) or which tasks someone can see
-# (see list_project_tasks above); it only records how much time a project
-# member is expected to spend on a specific task.
-# ---------------------------------------------------------------------------
-@router.get("/api/projects/{project_id}/tasks/{task_id}/assignments")
-@db_session
-def list_task_assignments(conn, project_id: int, task_id: int, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
-    inst_id = need_inst(user)
-    if not conn.execute("SELECT id FROM project_tasks WHERE id=? AND project_id=? AND institution_id=?", (task_id, project_id, inst_id)).fetchone():
-        raise HTTPException(404, "Task not found")
-    rows = conn.execute("""
-        SELECT ta.*, e.full_name, e.preferred_name, e.department, e.designation
-        FROM task_assignments ta
-        JOIN employees e ON e.employee_id = ta.employee_id AND e.institution_id = ta.institution_id
-        WHERE ta.task_id=? AND ta.institution_id=?
-        ORDER BY ta.start_datetime
-    """, (task_id, inst_id)).fetchall()
-    return [dict(r) for r in rows]
-
-
-@router.post("/api/projects/{project_id}/tasks/{task_id}/assignments", status_code=201)
-@db_session
-def add_task_assignment(conn, project_id: int, task_id: int, body: TaskAssignmentIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
-    require_permission(conn, user, "projects_tasks.manage_projects_tasks_assignments")
-    inst_id = need_inst(user)
-    if not conn.execute("SELECT id FROM project_tasks WHERE id=? AND project_id=? AND institution_id=?", (task_id, project_id, inst_id)).fetchone():
-        raise HTTPException(404, "Task not found")
-    if not conn.execute("SELECT id FROM employees WHERE employee_id=? AND institution_id=?", (body.employee_id, inst_id)).fetchone():
-        raise HTTPException(404, "Employee not found")
-    if not conn.execute("SELECT id FROM project_members WHERE project_id=? AND employee_id=?", (project_id, body.employee_id)).fetchone():
-        raise HTTPException(400, "Employee must be a project member before being assigned effort on one of its tasks")
-    if body.duration_hours <= 0:
-        raise HTTPException(400, "Duration must be greater than 0")
-    try:
-        conn.execute(
-            "INSERT INTO task_assignments (institution_id,task_id,employee_id,start_datetime,duration_hours,assigned_by) VALUES (?,?,?,?,?,?)",
-            (inst_id, task_id, body.employee_id, body.start_datetime, body.duration_hours, user["username"])
-        )
-        conn.commit()
-    except IntegrityError:
-        raise HTTPException(400, "Employee is already assigned to this task")
-    row = conn.execute("SELECT * FROM task_assignments WHERE id=last_insert_rowid()").fetchone()
-    return dict(row)
-
-
-@router.delete("/api/projects/{project_id}/tasks/{task_id}/assignments/{employee_id}", status_code=204)
-@db_session
-def remove_task_assignment(conn, project_id: int, task_id: int, employee_id: str, user: dict = Depends(get_current_user)) -> None:
-    require_permission(conn, user, "projects_tasks.manage_projects_tasks_assignments")
-    inst_id = need_inst(user)
-    conn.execute(
-        "DELETE FROM task_assignments WHERE task_id=? AND employee_id=? AND institution_id=?",
-        (task_id, employee_id, inst_id)
-    )
     conn.commit()
