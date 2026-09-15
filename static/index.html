@@ -660,6 +660,27 @@
               <div class="bg-white rounded-xl border border-slate-200 p-5"><h3 class="font-semibold mb-3">By Department</h3><div id="deptBreakdown" class="space-y-2"></div></div>
               <div class="bg-white rounded-xl border border-slate-200 p-5"><h3 class="font-semibold mb-3">By Employment Type</h3><div id="empTypeBreakdown" class="space-y-2"></div></div>
             </div>
+            <div class="bg-white rounded-xl border border-slate-200 p-5 mb-4">
+              <h3 class="font-semibold mb-1">Attrition</h3>
+              <p class="text-xs text-slate-400 mb-4">Trailing 12 months</p>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div class="kpi-tile">
+                  <p class="kpi-tile-label">Turnover Rate</p>
+                  <p id="statTurnoverRate" class="kpi-number mt-1">—</p>
+                  <p id="statSeparations" class="kpi-tile-delta"></p>
+                </div>
+                <div class="kpi-tile">
+                  <p class="kpi-tile-label">Resignations</p>
+                  <p id="statResignations" class="kpi-number mt-1">—</p>
+                  <p class="kpi-tile-delta">last 12 months</p>
+                </div>
+                <div class="kpi-tile">
+                  <p class="kpi-tile-label">Average Tenure</p>
+                  <p id="statAvgTenure" class="kpi-number mt-1">—</p>
+                  <p class="kpi-tile-delta">active employees</p>
+                </div>
+              </div>
+            </div>
             <!-- Locations Overview (HR Manager / HR Admin only) -->
             <div id="locDashSection" class="hidden mt-6">
               <div class="flex items-center gap-2 mb-3">

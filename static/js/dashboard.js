@@ -114,6 +114,11 @@ async function loadWorkforceStats() {
   document.getElementById('statActivePct').textContent = `${Math.round(s.active/total*100)}%`;
   document.getElementById('statInactivePct').textContent = `${Math.round(s.inactive/total*100)}%`;
 
+  document.getElementById('statTurnoverRate').textContent = `${s.turnover_rate_12mo}%`;
+  document.getElementById('statSeparations').textContent = `${s.separations_12mo} separation(s)`;
+  document.getElementById('statResignations').textContent = s.resignations_12mo;
+  document.getElementById('statAvgTenure').textContent = `${s.avg_tenure_years}y`;
+
   const breakdownBar = (containerId, counts, barColor) => {
     const entries = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
     document.getElementById(containerId).innerHTML = entries.map(([label,c])=>`

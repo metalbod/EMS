@@ -251,6 +251,60 @@ def test_workforce_stats_is_institution_wide_for_employee_role(client, hr_manage
     assert emp_stats["total"] > 1  # would be <= 1 if this were wrongly scoped to "self" like List employees
 
 
+def test_workforce_stats_turnover_reflects_deactivation(client, hr_manager_auth, make_test_employee):
+    """Deactivating an employee writes an audit_logs action='DEACTIVATE'
+    row (routers/employees.py's update_status) — separations_12mo counts
+    those, and turnover_rate_12mo is separations over current active
+    headcount."""
+    emp = make_test_employee()
+    before = client.get("/api/employees/workforce-stats", headers=hr_manager_auth).json()
+
+    client.patch(f"/api/employees/{emp['employee_id']}/status", headers=hr_manager_auth, json={"status": "Inactive"})
+
+    after = client.get("/api/employees/workforce-stats", headers=hr_manager_auth).json()
+    assert after["separations_12mo"] == before["separations_12mo"] + 1
+    expected_rate = round(after["separations_12mo"] / after["active"] * 100, 1) if after["active"] else 0.0
+    assert after["turnover_rate_12mo"] == expected_rate
+
+
+def test_workforce_stats_resignation_counted_only_when_approved(client, hr_manager_auth, make_test_employee):
+    """resignations_12mo counts approved resignation_requests specifically
+    (the voluntary subset of separations) — filing one alone (still
+    Pending) must not move it."""
+    emp = make_test_employee(full_name="ZZ Workforce Stats Resign")
+    before = client.get("/api/employees/workforce-stats", headers=hr_manager_auth).json()
+
+    res = client.post("/api/resignations", headers=hr_manager_auth, json={
+        "employee_id": emp["employee_id"], "reason": "ZZ testing workforce stats",
+        "effective_date": "2027-06-01", "last_working_day": "2027-06-15",
+    })
+    assert res.status_code == 201, res.text
+    request_id = res.json()["id"]
+
+    pending = client.get("/api/employees/workforce-stats", headers=hr_manager_auth).json()
+    assert pending["resignations_12mo"] == before["resignations_12mo"]
+
+    approve = client.patch(f"/api/resignations/{request_id}", headers=hr_manager_auth, json={"status": "Approved"})
+    assert approve.status_code == 200, approve.text
+
+    after = client.get("/api/employees/workforce-stats", headers=hr_manager_auth).json()
+    assert after["resignations_12mo"] == before["resignations_12mo"] + 1
+
+
+def test_workforce_stats_avg_tenure_shifts_toward_new_employees_tenure(client, hr_manager_auth, make_test_employee):
+    """A newly-added active employee with a long-past start_date pulls the
+    reported average tenure up — a direction-of-change assertion (not an
+    exact value) since test_institution is session-scoped and shared
+    across the whole run, so the pre-existing population size/composition
+    isn't known exactly."""
+    before = client.get("/api/employees/workforce-stats", headers=hr_manager_auth).json()
+
+    make_test_employee(full_name="ZZ Workforce Stats Tenure", start_date="2010-01-01")
+
+    after = client.get("/api/employees/workforce-stats", headers=hr_manager_auth).json()
+    assert after["avg_tenure_years"] > before["avg_tenure_years"]
+
+
 # ---------------------------------------------------------------------------
 # Update
 # ---------------------------------------------------------------------------

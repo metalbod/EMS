@@ -1,7 +1,7 @@
 """Employee routes (institution-scoped), plus Bulk Employee Upload (HR Manager only)."""
 import csv
 import io
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -437,7 +437,7 @@ def list_employees(
 def get_workforce_stats(conn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     inst_id = need_inst(user)
     rows = conn.execute(
-        "SELECT status, department, employment_type, gender, nationality, race FROM employees WHERE institution_id=?",
+        "SELECT status, department, employment_type, gender, nationality, race, start_date FROM employees WHERE institution_id=?",
         (inst_id,)
     ).fetchall()
 
@@ -459,6 +459,36 @@ def get_workforce_stats(conn, user: dict = Depends(get_current_user)) -> Dict[st
     # typos/inconsistent entries) counts as "Foreigner".
     local_count = sum(1 for r in rows if r["nationality"] == "Malaysian")
 
+    # Attrition — trailing 12 months, rolling (always "the last 12 months
+    # from today", not a calendar-year bucket that resets every January).
+    # Separations = audit_logs' action='DEACTIVATE' rows — the only place
+    # that action is written (routers/employees.py's update_status), so it
+    # captures every exit regardless of reason (resignation, termination,
+    # contract end, ...). Resignations is the voluntary subset: approved
+    # resignation_requests, which have no row for an HR-initiated
+    # termination. Turnover rate is separations over *current* active
+    # headcount rather than a period-averaged headcount — this system has
+    # no historical headcount-snapshot table, and one just for this ratio
+    # would be a lot of new machinery for a modest accuracy gain.
+    cutoff = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d %H:%M:%S")
+    separations_12mo = conn.execute(
+        "SELECT COUNT(*) FROM audit_logs WHERE institution_id=? AND action='DEACTIVATE' AND timestamp>=?",
+        (inst_id, cutoff)
+    ).fetchone()[0]
+    resignations_12mo = conn.execute(
+        "SELECT COUNT(*) FROM resignation_requests WHERE institution_id=? AND status='Approved' AND decided_at>=?",
+        (inst_id, cutoff)
+    ).fetchone()[0]
+    turnover_rate_12mo = round(separations_12mo / len(active) * 100, 1) if active else 0.0
+
+    # Average tenure — currently-Active employees only, in years.
+    now = datetime.now()
+    tenures = [
+        (now - datetime.strptime(r["start_date"], "%Y-%m-%d")).days / 365.25
+        for r in active if r["start_date"]
+    ]
+    avg_tenure_years = round(sum(tenures) / len(tenures), 1) if tenures else 0.0
+
     return {
         "total": len(rows),
         "active": len(active),
@@ -472,6 +502,10 @@ def get_workforce_stats(conn, user: dict = Depends(get_current_user)) -> Dict[st
         "local_count": local_count,
         "foreign_count": len(rows) - local_count,
         "race_breakdown": value_counts(rows, "race"),
+        "separations_12mo": separations_12mo,
+        "resignations_12mo": resignations_12mo,
+        "turnover_rate_12mo": turnover_rate_12mo,
+        "avg_tenure_years": avg_tenure_years,
     }
 
 
