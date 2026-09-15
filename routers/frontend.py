@@ -3,6 +3,7 @@ since it matches any path not already claimed by a more specific route."""
 import hashlib
 import os
 import re
+import subprocess
 
 from fastapi import APIRouter
 from fastapi.responses import Response
@@ -15,6 +16,35 @@ STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file
 _CACHE_BUST_RE = re.compile(r"\?v=[A-Za-z0-9]+")
 _index_html_cache = {"version": None, "content": None}
 _version_cache = {"value": None}
+_app_version_cache = {"value": None}
+
+
+def _app_version() -> str:
+    """A short, human-checkable label for exactly what code is running —
+    shown on the login screen so "is this the version I just deployed?"
+    doesn't need a trip to `fly releases`. Computed once per process
+    (this never changes during a running process's lifetime, same
+    reasoning as _static_asset_version above).
+
+    In production, APP_VERSION is set as a build-arg-derived image ENV by
+    deploy.sh (the deployed image has no .git — see .dockerignore — so it
+    can't be computed at runtime there). Local dev has no such env var,
+    but does have .git, so it's read directly via `git`; if even that
+    fails (git not installed, not a repo), falls back to "dev" rather
+    than raising — this must never break the login page over a cosmetic
+    label."""
+    if _app_version_cache["value"] is None:
+        version = os.environ.get("APP_VERSION")
+        if not version:
+            try:
+                version = subprocess.run(
+                    ["git", "rev-parse", "--short", "HEAD"],
+                    cwd=os.path.dirname(STATIC_DIR), capture_output=True, text=True, timeout=5, check=True,
+                ).stdout.strip() + " (local)"
+            except Exception:
+                version = "dev"
+        _app_version_cache["value"] = version
+    return _app_version_cache["value"]
 
 
 def _static_asset_version() -> str:
@@ -64,6 +94,7 @@ def serve_frontend(full_path: str):
     if _index_html_cache["version"] != version:
         with open(os.path.join(STATIC_DIR, "index.html"), "r", encoding="utf-8") as f:
             raw = f.read()
+        raw = raw.replace("{{APP_VERSION}}", _app_version())
         _index_html_cache["content"] = _CACHE_BUST_RE.sub(f"?v={version}", raw)
         _index_html_cache["version"] = version
     return Response(content=_index_html_cache["content"], media_type="text/html")

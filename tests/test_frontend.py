@@ -27,3 +27,11 @@ def test_api_routes_are_not_swallowed_by_spa_fallback(client):
     res = client.get("/health")
     assert res.status_code == 200
     assert res.json() == {"status": "ok"}
+
+
+def test_login_screen_shows_a_resolved_app_version(client):
+    """The {{APP_VERSION}} placeholder must always be substituted — never
+    leak the literal placeholder text to a real user's login screen."""
+    res = client.get("/")
+    assert "{{APP_VERSION}}" not in res.text
+    assert "Version " in res.text

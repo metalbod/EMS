@@ -26,7 +26,8 @@ if [ -z "$prev_image" ]; then
 fi
 
 echo "==> Deploying to Fly.io..."
-fly deploy --app ems-app
+app_version="$(git rev-parse --short HEAD)"
+fly deploy --app ems-app --build-arg "APP_VERSION=$app_version"
 
 echo "==> Verifying..."
 code=$(curl -s -o /dev/null -w "%{http_code}" https://ems-app.fly.dev/)
