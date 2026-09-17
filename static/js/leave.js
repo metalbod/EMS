@@ -612,9 +612,15 @@ function shiftDateByOneYear(dateStr) {
 }
 
 function _populateHolidayRowHtml(date, name, conflict) {
+  // .inp sets width:100% (see styles.css) — on a flex item with the default
+  // flex-basis:auto, that 100% becomes the item's own flex-basis, so the
+  // date input claims the whole row width and squeezes the name field to
+  // almost nothing. w-40 (paired with .inp.w-40 in styles.css) plus
+  // shrink-0 gives the date field a fixed basis instead; min-w-0 lets the
+  // name field actually shrink/grow within whatever space is left.
   return `<div class="flex items-center gap-2 populate-holiday-row">
-    <input type="date" class="inp text-sm pop-hol-date" value="${date || ''}"/>
-    <input type="text" class="inp text-sm flex-1 pop-hol-name" placeholder="Holiday name" value="${esc(name || '')}"/>
+    <input type="date" class="inp w-40 shrink-0 text-sm pop-hol-date" value="${date || ''}"/>
+    <input type="text" class="inp text-sm flex-1 min-w-0 pop-hol-name" placeholder="Holiday name" value="${esc(name || '')}"/>
     ${conflict ? '<span class="text-xs text-amber-600 shrink-0 whitespace-nowrap">Already exists</span>' : ''}
     <button type="button" onclick="this.closest('.populate-holiday-row').remove()" class="text-slate-300 hover:text-red-500 p-1 shrink-0">
       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
