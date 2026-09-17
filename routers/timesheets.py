@@ -63,6 +63,7 @@ _TIMESHEET_SORT_COLUMNS = {
 def list_timesheets(
     conn, response: Response,
     status: Optional[str] = None, employee_id: Optional[str] = None,
+    period_from: Optional[str] = None, period_to: Optional[str] = None,
     sort_by: str = "period_start", sort_dir: str = "desc",
     limit: int = 50, offset: int = 0,
     user: dict = Depends(get_current_user),
@@ -74,6 +75,12 @@ def list_timesheets(
     params: list = [inst_id]
     if status: where += " AND t.status=?"; params.append(status)
     if employee_id: where += " AND t.employee_id=?"; params.append(employee_id)
+    # Matches on the period's start date — a period is always a fixed 7-day
+    # week (see static/js/timesheet.js's tsGetMonday), so "period starting
+    # within this range" is the intuitive reading of a "period" filter (e.g.
+    # picking a month's date range surfaces every week that starts in it).
+    if period_from: where += " AND t.period_start>=?"; params.append(period_from)
+    if period_to: where += " AND t.period_start<=?"; params.append(period_to)
     if user["role"] == "manager":
         frag, fp = subordinates_in_clause(inst_id, user.get("employee_id", ""))
         where += f" AND e.employee_id IN {frag}"; params.extend(fp)

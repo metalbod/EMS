@@ -373,6 +373,61 @@ def test_list_timesheets_offset_pages_through_results(client, hr_manager_auth, m
     assert page2[0]["period_start"] == period_a[0]
 
 
+def test_list_timesheets_filters_by_period_from(client, hr_manager_auth, make_test_employee):
+    """period_from matches on period_start (a period is always a fixed
+    7-day week) — scoped via employee_id, same isolation reasoning as the
+    offset-pagination test above."""
+    emp = make_test_employee()
+    older = client.post("/api/timesheets", headers=hr_manager_auth, json={
+        "employee_id": emp["employee_id"], "period_start": "2027-07-01", "period_end": "2027-07-07",
+    }).json()
+    newer = client.post("/api/timesheets", headers=hr_manager_auth, json={
+        "employee_id": emp["employee_id"], "period_start": "2027-07-15", "period_end": "2027-07-21",
+    }).json()
+
+    res = client.get("/api/timesheets", headers=hr_manager_auth,
+                      params={"employee_id": emp["employee_id"], "period_from": "2027-07-10"})
+    ids = [t["id"] for t in res.json()]
+    assert newer["id"] in ids
+    assert older["id"] not in ids
+
+
+def test_list_timesheets_filters_by_period_to(client, hr_manager_auth, make_test_employee):
+    emp = make_test_employee()
+    older = client.post("/api/timesheets", headers=hr_manager_auth, json={
+        "employee_id": emp["employee_id"], "period_start": "2027-08-01", "period_end": "2027-08-07",
+    }).json()
+    newer = client.post("/api/timesheets", headers=hr_manager_auth, json={
+        "employee_id": emp["employee_id"], "period_start": "2027-08-15", "period_end": "2027-08-21",
+    }).json()
+
+    res = client.get("/api/timesheets", headers=hr_manager_auth,
+                      params={"employee_id": emp["employee_id"], "period_to": "2027-08-10"})
+    ids = [t["id"] for t in res.json()]
+    assert older["id"] in ids
+    assert newer["id"] not in ids
+
+
+def test_list_timesheets_period_range_combines_from_and_to(client, hr_manager_auth, make_test_employee):
+    emp = make_test_employee()
+    before = client.post("/api/timesheets", headers=hr_manager_auth, json={
+        "employee_id": emp["employee_id"], "period_start": "2027-09-01", "period_end": "2027-09-07",
+    }).json()
+    within = client.post("/api/timesheets", headers=hr_manager_auth, json={
+        "employee_id": emp["employee_id"], "period_start": "2027-09-15", "period_end": "2027-09-21",
+    }).json()
+    after = client.post("/api/timesheets", headers=hr_manager_auth, json={
+        "employee_id": emp["employee_id"], "period_start": "2027-09-29", "period_end": "2027-10-05",
+    }).json()
+
+    res = client.get("/api/timesheets", headers=hr_manager_auth, params={
+        "employee_id": emp["employee_id"], "period_from": "2027-09-10", "period_to": "2027-09-25",
+    })
+    ids = [t["id"] for t in res.json()]
+    assert ids == [within["id"]]
+    assert before["id"] not in ids and after["id"] not in ids
+
+
 def test_hr_sees_timesheet_pending_with_direct_manager_by_name(client, hr_manager_auth, make_test_employee,
                                                                  test_institution, open_task):
     """Mirrors leave/claims' equivalent coverage — GET /api/timesheets must

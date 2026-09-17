@@ -1846,9 +1846,24 @@
 
       <!-- TIMESHEET APPROVALS -->
       <div id="page-timesheet-approvals" class="hidden">
-        <div class="flex items-center gap-2 mb-5">
-          <button onclick="setTimesheetApprovalFilter('Submitted')" class="btn-ghost text-xs ts-appr-filter-btn ts-appr-filter-active">Pending</button>
-          <button onclick="setTimesheetApprovalFilter('')" class="btn-ghost text-xs ts-appr-filter-btn">All</button>
+        <div class="flex flex-col sm:flex-row flex-wrap gap-3 mb-5 sm:items-center">
+          <select id="tsApprovalStatusFilter" class="inp w-40" onchange="setTimesheetApprovalFilter(this.value)">
+            <option value="Submitted" selected>Pending Review</option>
+            <option value="">All Statuses</option>
+            <option value="Draft">Draft</option>
+            <option value="Approved">Approved</option>
+            <option value="Rejected">Rejected</option>
+          </select>
+          <select id="tsApprovalEmployeeFilter" class="inp w-48" onchange="setTimesheetApprovalEmployeeFilter(this.value)">
+            <option value="">All Employees</option>
+          </select>
+          <div class="flex items-center gap-2">
+            <label class="text-xs text-slate-500 whitespace-nowrap">Period</label>
+            <input type="date" id="tsApprovalPeriodFrom" class="inp w-40" onchange="setTimesheetApprovalPeriod()"/>
+            <span class="text-slate-400 text-xs">to</span>
+            <input type="date" id="tsApprovalPeriodTo" class="inp w-40" onchange="setTimesheetApprovalPeriod()"/>
+          </div>
+          <button onclick="clearTimesheetApprovalFilters()" class="btn-ghost text-xs">Clear</button>
         </div>
         <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
           <div class="overflow-x-auto">

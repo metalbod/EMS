@@ -12,7 +12,8 @@ const projectList = createListState({ sortKey: 'name', pageSize: 10000 });
 // path, so editing a task there can't leave this cache stale.
 let expandedProjectIds=new Set(), projectTasksByProject={};
 let tsCurrentWeekStart=null, tsCurrentTimesheet=null;
-let tsApprovalFilter='Submitted';
+let tsApprovalFilter='Submitted', tsApprovalEmployeeFilter='', tsApprovalPeriodFrom='', tsApprovalPeriodTo='';
+let tsApprovalEmployeeOptionsBuilt=false;
 const TS_STATUS_COLORS={'Draft':'status-neutral','Submitted':'status-pending','Approved':'status-positive','Rejected':'status-negative'};
 
 // Login roles eligible to be picked as a Project Manager. Matters beyond
@@ -648,6 +649,7 @@ let tsApprovalPage=1, tsApprovalPageSize=50, tsApprovalTotal=0;
 let tsApprovalSortKey='period_start', tsApprovalSortDir='desc';
 
 async function loadTimesheetApprovals() {
+  await populateTimesheetApprovalEmployeeFilter();
   const tbody=document.getElementById('timesheetApprovalTableBody');
   tbody.innerHTML='<tr><td colspan="4" class="text-slate-400 text-sm text-center py-8">Loading…</td></tr>';
   const offset=(tsApprovalPage-1)*tsApprovalPageSize;
@@ -656,11 +658,58 @@ async function loadTimesheetApprovals() {
     sort_by:tsApprovalSortKey, sort_dir:tsApprovalSortDir,
   });
   if(tsApprovalFilter) params.set('status', tsApprovalFilter);
+  if(tsApprovalEmployeeFilter) params.set('employee_id', tsApprovalEmployeeFilter);
+  if(tsApprovalPeriodFrom) params.set('period_from', tsApprovalPeriodFrom);
+  if(tsApprovalPeriodTo) params.set('period_to', tsApprovalPeriodTo);
   const res=await api(`/api/timesheets?${params}`);
   if(!res?.ok){ tbody.innerHTML=''; return; }
   tsApprovalRowsCache=await res.json();
   tsApprovalTotal=parseInt(res.headers.get('X-Total-Count')||'0',10);
   renderTimesheetApprovalTable();
+}
+
+// Built once per session (from the already role-scoped global `employees`
+// array — manager sees their reporting chain, HR sees everyone, same
+// scoping list_timesheets itself applies) rather than every reload, so
+// picking a different employee doesn't fight a dropdown rebuilding out
+// from under the user's own selection.
+async function populateTimesheetApprovalEmployeeFilter() {
+  if(tsApprovalEmployeeOptionsBuilt) return;
+  if(!employees || !employees.length) await loadEmployees();
+  const sel=document.getElementById('tsApprovalEmployeeFilter');
+  const active=(employees||[]).filter(e=>e.status==='Active').sort((a,b)=>a.full_name.localeCompare(b.full_name));
+  sel.innerHTML='<option value="">All Employees</option>' + active.map(e=>
+    `<option value="${e.employee_id}">${esc(displayName(e.full_name,e.preferred_name))} (${e.employee_id})</option>`
+  ).join('');
+  initEmployeeSearchSelect('tsApprovalEmployeeFilter', 'Search employee…');
+  tsApprovalEmployeeOptionsBuilt=true;
+}
+
+function setTimesheetApprovalEmployeeFilter(employeeId) {
+  tsApprovalEmployeeFilter=employeeId;
+  tsApprovalPage=1;
+  loadTimesheetApprovals();
+}
+
+function setTimesheetApprovalPeriod() {
+  tsApprovalPeriodFrom=document.getElementById('tsApprovalPeriodFrom').value;
+  tsApprovalPeriodTo=document.getElementById('tsApprovalPeriodTo').value;
+  tsApprovalPage=1;
+  loadTimesheetApprovals();
+}
+
+function clearTimesheetApprovalFilters() {
+  tsApprovalFilter='Submitted';
+  tsApprovalEmployeeFilter='';
+  tsApprovalPeriodFrom='';
+  tsApprovalPeriodTo='';
+  document.getElementById('tsApprovalStatusFilter').value='Submitted';
+  document.getElementById('tsApprovalEmployeeFilter').value='';
+  document.getElementById('tsApprovalEmployeeFilterSearch').value='';
+  document.getElementById('tsApprovalPeriodFrom').value='';
+  document.getElementById('tsApprovalPeriodTo').value='';
+  tsApprovalPage=1;
+  loadTimesheetApprovals();
 }
 
 function setTimesheetApprovalSort(key) {
@@ -713,8 +762,6 @@ function renderTimesheetApprovalTable() {
 function setTimesheetApprovalFilter(status) {
   tsApprovalFilter=status;
   tsApprovalPage=1;
-  document.querySelectorAll('.ts-appr-filter-btn').forEach(b=>b.classList.remove('ts-appr-filter-active'));
-  event?.target?.classList?.add('ts-appr-filter-active');
   loadTimesheetApprovals();
 }
 
