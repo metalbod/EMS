@@ -2,7 +2,7 @@
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from core.deps import get_current_user, need_inst
 
@@ -34,6 +34,21 @@ class ProjectTaskIn(BaseModel):
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     status: str = "Not Started"  # Not Started | In Progress | Completed
+
+
+_DUPLICATE_SCOPES = ("tasks_and_members", "tasks_only", "members_only")
+
+
+class ProjectDuplicateIn(BaseModel):
+    name: str
+    duplicate_scope: str  # "tasks_and_members" | "tasks_only" | "members_only"
+
+    @field_validator("duplicate_scope")
+    @classmethod
+    def _validate_scope(cls, v):
+        if v not in _DUPLICATE_SCOPES:
+            raise ValueError(f"duplicate_scope must be one of: {', '.join(_DUPLICATE_SCOPES)}")
+        return v
 
 
 # ---------------------------------------------------------------------------
@@ -222,6 +237,58 @@ def delete_project(conn, project_id: int, user: dict = Depends(get_current_user)
     conn.execute("DELETE FROM project_members WHERE project_id=?", (project_id,))
     conn.execute("DELETE FROM projects WHERE id=? AND institution_id=?", (project_id, inst_id))
     conn.commit()
+
+
+@router.post("/api/projects/{project_id}/duplicate", status_code=201)
+@db_session
+def duplicate_project(conn, project_id: int, body: ProjectDuplicateIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    """Clones a project under a new name — a "fresh start" clone, not a
+    byte-for-byte one: the new project always starts Active regardless of
+    the source's status, and copied tasks reset to Not Started with no
+    dates (status/dates are execution-specific, not template data worth
+    preserving). Description, is_open_to_all and is_billable always carry
+    over unconditionally — duplicate_scope only controls tasks/managers/
+    members, per the 3 options offered in the UI. Managers and Team
+    Members travel together as one "Members" unit."""
+    require_permission(conn, user, "projects_tasks.manage_projects_tasks_assignments")
+    inst_id = need_inst(user)
+    source = conn.execute("SELECT * FROM projects WHERE id=? AND institution_id=?", (project_id, inst_id)).fetchone()
+    if not source:
+        raise HTTPException(404, "Project not found")
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(400, "Project name is required")
+
+    include_tasks = body.duplicate_scope in ("tasks_and_members", "tasks_only")
+    include_members = body.duplicate_scope in ("tasks_and_members", "members_only")
+
+    conn.execute(
+        "INSERT INTO projects (institution_id,name,description,status,is_open_to_all,is_billable,created_by) VALUES (?,?,?,?,?,?,?)",
+        (inst_id, name, source["description"], "Active", source["is_open_to_all"], source["is_billable"], user["username"])
+    )
+    new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+    if include_members:
+        _set_project_managers(conn, inst_id, new_id, _manager_ids_for(conn, project_id))
+        _set_project_members(conn, inst_id, new_id, _member_ids_for(conn, project_id))
+
+    if include_tasks:
+        tasks = conn.execute(
+            "SELECT * FROM project_tasks WHERE project_id=? AND institution_id=?", (project_id, inst_id)
+        ).fetchall()
+        for t in tasks:
+            conn.execute(
+                "INSERT INTO project_tasks (institution_id,project_id,name,description,estimated_hours,start_date,end_date,status,created_by) "
+                "VALUES (?,?,?,?,?,?,?,?,?)",
+                (inst_id, new_id, t["name"], t["description"], t["estimated_hours"], None, None, "Not Started", user["username"])
+            )
+
+    conn.commit()
+    row = conn.execute("SELECT * FROM projects WHERE id=?", (new_id,)).fetchone()
+    d = dict(row)
+    d["manager_ids"] = _manager_ids_for(conn, new_id)
+    d["member_ids"] = _member_ids_for(conn, new_id)
+    return d
 
 
 # ---------------------------------------------------------------------------

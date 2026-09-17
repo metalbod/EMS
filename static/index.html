@@ -4362,6 +4362,42 @@
   </div>
 </div>
 
+<!-- Duplicate Project Modal -->
+<div id="dupProjectModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 class="text-base font-semibold">Duplicate Project</h2>
+      <button onclick="closeDuplicateProjectModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <div class="p-6 space-y-4">
+      <p class="text-sm text-slate-500">Duplicating <span id="dupProjectSourceName" class="font-medium text-slate-700"></span></p>
+      <div>
+        <label class="lbl">New Project Name <span class="text-red-500">*</span></label>
+        <input id="dupProjectName" class="inp" required/>
+      </div>
+      <div>
+        <label class="lbl">What to duplicate?</label>
+        <div class="space-y-1.5 mt-1">
+          <label class="flex items-center gap-2 text-sm cursor-pointer">
+            <input type="radio" name="dupProjectScope" value="tasks_and_members"/> Tasks &amp; Members
+          </label>
+          <label class="flex items-center gap-2 text-sm cursor-pointer">
+            <input type="radio" name="dupProjectScope" value="tasks_only"/> Tasks only
+          </label>
+          <label class="flex items-center gap-2 text-sm cursor-pointer">
+            <input type="radio" name="dupProjectScope" value="members_only"/> Members only
+          </label>
+        </div>
+        <p class="text-xs text-slate-400 mt-1.5">"Members" includes both Project Manager(s) and Team Members. The new project always starts as Active, with copied tasks reset to Not Started and no dates.</p>
+      </div>
+      <div class="flex gap-2">
+        <button type="button" onclick="submitDuplicateProject()" class="btn-primary">Duplicate</button>
+        <button type="button" onclick="closeDuplicateProjectModal()" class="btn-ghost">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Timesheet Detail Viewer Modal (approvals) -->
 <div id="timesheetDetailModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
   <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl">

@@ -162,6 +162,157 @@ def test_delete_project_success(client, hr_manager_auth, make_test_project):
     assert project["id"] not in [p["id"] for p in listed]
 
 
+# ---------------------------------------------------------------------------
+# Duplicate
+# ---------------------------------------------------------------------------
+def _cleanup_duplicated_project(client, hr_manager_auth, project_id):
+    """Duplicates aren't tracked by make_test_project's own teardown (they're
+    created via a different endpoint) — delete child tasks first (FK), same
+    defensive order make_test_project's teardown uses."""
+    tasks = client.get(f"/api/projects/{project_id}/tasks", headers=hr_manager_auth)
+    if tasks.status_code == 200:
+        for task in tasks.json():
+            client.delete(f"/api/projects/{project_id}/tasks/{task['id']}", headers=hr_manager_auth)
+    client.delete(f"/api/projects/{project_id}", headers=hr_manager_auth)
+
+
+def test_duplicate_project_requires_manage_role(client, make_test_user, test_institution, make_test_project):
+    project = make_test_project()
+    token, _ = make_test_user(role="employee")
+    headers = {"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}
+    res = client.post(f"/api/projects/{project['id']}/duplicate", headers=headers,
+                       json={"name": "ZZ Dup", "duplicate_scope": "tasks_only"})
+    assert res.status_code == 403
+
+
+def test_duplicate_project_not_found_returns_404(client, hr_manager_auth):
+    res = client.post("/api/projects/999999999/duplicate", headers=hr_manager_auth,
+                       json={"name": "ZZ Dup", "duplicate_scope": "tasks_only"})
+    assert res.status_code == 404
+
+
+def test_duplicate_project_invalid_scope_returns_422(client, hr_manager_auth, make_test_project):
+    project = make_test_project()
+    res = client.post(f"/api/projects/{project['id']}/duplicate", headers=hr_manager_auth,
+                       json={"name": "ZZ Dup", "duplicate_scope": "everything"})
+    assert res.status_code == 422
+
+
+def test_duplicate_project_missing_name_returns_400(client, hr_manager_auth, make_test_project):
+    project = make_test_project()
+    res = client.post(f"/api/projects/{project['id']}/duplicate", headers=hr_manager_auth,
+                       json={"name": "   ", "duplicate_scope": "tasks_only"})
+    assert res.status_code == 400
+
+
+def test_duplicate_project_carries_description_and_flags_and_forces_active(
+    client, hr_manager_auth, make_test_project
+):
+    project = make_test_project(
+        name="ZZ Source Project", description="ZZ desc", status="Completed",
+        is_open_to_all=True, is_billable=True,
+    )
+    res = client.post(f"/api/projects/{project['id']}/duplicate", headers=hr_manager_auth,
+                       json={"name": "ZZ Dup Flags", "duplicate_scope": "tasks_only"})
+    assert res.status_code == 201, res.text
+    dup = res.json()
+    assert dup["name"] == "ZZ Dup Flags"
+    assert dup["description"] == "ZZ desc"
+    assert dup["is_open_to_all"] in (True, 1)
+    assert dup["is_billable"] in (True, 1)
+    assert dup["status"] == "Active"  # fresh-start clone, regardless of source status
+    _cleanup_duplicated_project(client, hr_manager_auth, dup["id"])
+
+
+def test_duplicate_project_tasks_only_copies_tasks_but_not_members(
+    client, hr_manager_auth, make_test_employee, make_test_project, make_test_project_task
+):
+    mgr = make_test_employee(full_name="ZZ Dup Manager")
+    mem = make_test_employee(full_name="ZZ Dup Member")
+    project = make_test_project(manager_ids=[mgr["employee_id"]], member_ids=[mem["employee_id"]])
+    make_test_project_task(project["id"], name="ZZ Task A", estimated_hours=5,
+                           start_date="2027-01-01", end_date="2027-01-05", status="In Progress")
+
+    res = client.post(f"/api/projects/{project['id']}/duplicate", headers=hr_manager_auth,
+                       json={"name": "ZZ Dup Tasks Only", "duplicate_scope": "tasks_only"})
+    assert res.status_code == 201, res.text
+    dup = res.json()
+    assert dup["manager_ids"] == []
+    assert dup["member_ids"] == []
+
+    tasks = client.get(f"/api/projects/{dup['id']}/tasks", headers=hr_manager_auth).json()
+    assert len(tasks) == 1
+    assert tasks[0]["name"] == "ZZ Task A"
+    assert tasks[0]["estimated_hours"] == 5
+    # Fresh-start clone: status reset, dates cleared.
+    assert tasks[0]["status"] == "Not Started"
+    assert tasks[0]["start_date"] is None
+    assert tasks[0]["end_date"] is None
+    _cleanup_duplicated_project(client, hr_manager_auth, dup["id"])
+
+
+def test_duplicate_project_members_only_copies_managers_and_members_but_not_tasks(
+    client, hr_manager_auth, make_test_employee, make_test_project, make_test_project_task
+):
+    mgr = make_test_employee(full_name="ZZ Dup Manager2")
+    mem = make_test_employee(full_name="ZZ Dup Member2")
+    project = make_test_project(manager_ids=[mgr["employee_id"]], member_ids=[mem["employee_id"]])
+    make_test_project_task(project["id"], name="ZZ Task B")
+
+    res = client.post(f"/api/projects/{project['id']}/duplicate", headers=hr_manager_auth,
+                       json={"name": "ZZ Dup Members Only", "duplicate_scope": "members_only"})
+    assert res.status_code == 201, res.text
+    dup = res.json()
+    assert dup["manager_ids"] == [mgr["employee_id"]]
+    assert dup["member_ids"] == [mem["employee_id"]]
+
+    tasks = client.get(f"/api/projects/{dup['id']}/tasks", headers=hr_manager_auth).json()
+    assert tasks == []
+    _cleanup_duplicated_project(client, hr_manager_auth, dup["id"])
+
+
+def test_duplicate_project_tasks_and_members_copies_both(
+    client, hr_manager_auth, make_test_employee, make_test_project, make_test_project_task
+):
+    mgr = make_test_employee(full_name="ZZ Dup Manager3")
+    mem = make_test_employee(full_name="ZZ Dup Member3")
+    project = make_test_project(manager_ids=[mgr["employee_id"]], member_ids=[mem["employee_id"]])
+    make_test_project_task(project["id"], name="ZZ Task C")
+
+    res = client.post(f"/api/projects/{project['id']}/duplicate", headers=hr_manager_auth,
+                       json={"name": "ZZ Dup Both", "duplicate_scope": "tasks_and_members"})
+    assert res.status_code == 201, res.text
+    dup = res.json()
+    assert dup["manager_ids"] == [mgr["employee_id"]]
+    assert dup["member_ids"] == [mem["employee_id"]]
+
+    tasks = client.get(f"/api/projects/{dup['id']}/tasks", headers=hr_manager_auth).json()
+    assert len(tasks) == 1 and tasks[0]["name"] == "ZZ Task C"
+    _cleanup_duplicated_project(client, hr_manager_auth, dup["id"])
+
+
+def test_duplicate_project_does_not_mutate_source(
+    client, hr_manager_auth, make_test_employee, make_test_project, make_test_project_task
+):
+    """Duplicating is purely additive — the source project's own tasks/
+    members/status must be untouched afterward."""
+    mgr = make_test_employee(full_name="ZZ Dup Manager4")
+    project = make_test_project(manager_ids=[mgr["employee_id"]], status="On Hold")
+    task = make_test_project_task(project["id"], name="ZZ Task D")
+
+    res = client.post(f"/api/projects/{project['id']}/duplicate", headers=hr_manager_auth,
+                       json={"name": "ZZ Dup NoMutate", "duplicate_scope": "tasks_and_members"})
+    assert res.status_code == 201, res.text
+    dup = res.json()
+
+    source_after = next(p for p in client.get("/api/projects", headers=hr_manager_auth).json() if p["id"] == project["id"])
+    assert source_after["status"] == "On Hold"
+    assert source_after["manager_ids"] == [mgr["employee_id"]]
+    source_tasks = client.get(f"/api/projects/{project['id']}/tasks", headers=hr_manager_auth).json()
+    assert [t["id"] for t in source_tasks] == [task["id"]]
+    _cleanup_duplicated_project(client, hr_manager_auth, dup["id"])
+
+
 def test_project_utilization_requires_manage_role(client, make_test_user, test_institution):
     token, _ = make_test_user(role="employee")
     headers = {"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}

@@ -47,7 +47,7 @@ const PROJECT_TABLE_COLUMNS=[
 async function loadProjects() {
   const listEl=document.getElementById('projectList');
   const emptyEl=document.getElementById('projectEmpty');
-  listEl.innerHTML='<tr><td colspan="6" class="text-slate-400 text-sm text-center py-8">Loading…</td></tr>';
+  listEl.innerHTML='<tr><td colspan="7" class="text-slate-400 text-sm text-center py-8">Loading…</td></tr>';
   let url='/api/projects';
   if(projectFilter) url+=`?status=${encodeURIComponent(projectFilter)}`;
   const res=await api(url);
@@ -65,7 +65,7 @@ function renderProjectTableHead() {
     const active=projectList.sortKey===c.key;
     const arrow=active?(projectList.sortDir==='asc'?'▲':'▼'):'';
     return `<th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide cursor-pointer select-none hover:text-slate-700" onclick="setProjectSort('${c.key}')">${c.label} <span class="text-blue-600">${arrow}</span></th>`;
-  }).join('');
+  }).join('') + '<th class="px-4 py-2.5"></th>';
 }
 
 function setProjectSort(key) {
@@ -102,6 +102,11 @@ function renderProjectTable() {
       <td class="px-4 py-3 text-slate-600">${p.member_count}</td>
       <td class="px-4 py-3 text-slate-600">${p.total_allocated_hours}h</td>
       <td class="px-4 py-3 text-slate-600">${p.total_logged_hours}h</td>
+      <td class="px-4 py-3 text-right">
+        <button onclick="event.stopPropagation();openDuplicateProjectModal(${p.id})" class="text-slate-400 hover:text-slate-600 p-1" title="Duplicate project">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V5a2 2 0 012-2h9a2 2 0 012 2v9a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v9a2 2 0 002 2h9a2 2 0 002-2v-2M8 7h6a2 2 0 012 2v6"/></svg>
+        </button>
+      </td>
     </tr>${expanded?projectTaskSubRows(p.id):''}`;
   }).join('');
 }
@@ -112,10 +117,10 @@ function renderProjectTable() {
 function projectTaskSubRows(projectId) {
   const tasks=projectTasksByProject[projectId];
   if(tasks===undefined) {
-    return `<tr class="bg-slate-50/60"><td colspan="6" class="pl-12 pr-4 py-2.5 text-xs text-slate-400">Loading tasks…</td></tr>`;
+    return `<tr class="bg-slate-50/60"><td colspan="7" class="pl-12 pr-4 py-2.5 text-xs text-slate-400">Loading tasks…</td></tr>`;
   }
   if(!tasks.length) {
-    return `<tr class="bg-slate-50/60"><td colspan="6" class="pl-12 pr-4 py-2.5 text-xs text-slate-400">No tasks yet.</td></tr>`;
+    return `<tr class="bg-slate-50/60"><td colspan="7" class="pl-12 pr-4 py-2.5 text-xs text-slate-400">No tasks yet.</td></tr>`;
   }
   return tasks.map(t=>`
     <tr class="bg-slate-50/60 border-t border-slate-100">
@@ -130,6 +135,7 @@ function projectTaskSubRows(projectId) {
       <td class="px-4 py-2.5 text-slate-300">—</td>
       <td class="px-4 py-2.5 text-slate-500">${t.estimated_hours?t.estimated_hours+'h':'—'}</td>
       <td class="px-4 py-2.5 text-slate-500">${t.logged_hours}h</td>
+      <td class="px-4 py-2.5"></td>
     </tr>`).join('');
 }
 
@@ -374,6 +380,41 @@ async function deleteProject(projectId) {
   if(res?.ok||res?.status===204){ closeProjectModal(); loadProjects(); }
   else { const d=await res.json(); alert(d.detail||'Failed to delete project'); }
 }
+
+// ---------------------------------------------------------------------------
+// Duplicate Project — clones a project under a new name. A "fresh start"
+// clone (new project always Active, copied tasks reset to Not Started with
+// no dates — see routers/projects.py's duplicate_project), scoped by which
+// of Tasks/Members to bring along. Managers + Team Members travel together
+// as one "Members" unit.
+// ---------------------------------------------------------------------------
+let duplicatingProjectId=null;
+
+function openDuplicateProjectModal(projectId) {
+  const p=projectsCache.find(x=>x.id===projectId);
+  if(!p) return;
+  duplicatingProjectId=projectId;
+  document.getElementById('dupProjectSourceName').textContent=p.name;
+  document.getElementById('dupProjectName').value=`${p.name} (Copy)`;
+  document.querySelector('input[name="dupProjectScope"][value="tasks_and_members"]').checked=true;
+  document.getElementById('dupProjectModal').classList.remove('hidden');
+}
+function closeDuplicateProjectModal() { closeModal('dupProjectModal'); duplicatingProjectId=null; }
+
+const submitDuplicateProject = guardAsync(async function() {
+  const name=document.getElementById('dupProjectName').value.trim();
+  if(!name){ alert('Project name is required'); return; }
+  const duplicate_scope=document.querySelector('input[name="dupProjectScope"]:checked').value;
+  const res=await api(`/api/projects/${duplicatingProjectId}/duplicate`,{method:'POST',body:JSON.stringify({name,duplicate_scope})});
+  if(res?.ok){
+    const proj=await res.json();
+    closeDuplicateProjectModal();
+    await loadProjects();
+    openProjectModal(proj.id);
+  } else {
+    const d=await res.json(); alert(d.detail||'Failed to duplicate project');
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Project Tasks (HR Manager)
