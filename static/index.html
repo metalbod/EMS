@@ -1748,10 +1748,16 @@
               <label class="text-sm text-slate-600">Year</label>
               <select id="holidayYearSelect" onchange="loadHolidays()" class="inp" style="width:100px"></select>
             </div>
-            <button onclick="openHolidayModal()" class="btn-primary text-sm flex items-center gap-2">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-              Add Holiday
-            </button>
+            <div class="flex items-center gap-2">
+              <button onclick="openPopulateNextYearModal()" class="btn-ghost text-sm flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                Populate Next Year
+              </button>
+              <button onclick="openHolidayModal()" class="btn-primary text-sm flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                Add Holiday
+              </button>
+            </div>
           </div>
           <div class="bg-white border border-slate-200 rounded-xl overflow-hidden">
             <table class="w-full text-sm">
@@ -4149,6 +4155,30 @@
         <button type="button" onclick="closeHolidayModal()" class="btn-ghost">Cancel</button>
       </div>
     </form>
+  </div>
+</div>
+
+<!-- Populate Next Year's Holidays Modal -->
+<div id="populateHolidaysModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
+      <div>
+        <h2 id="populateHolidaysTitle" class="text-base font-semibold">Populate Holidays</h2>
+        <p id="populateHolidaysSubtitle" class="text-xs text-slate-400 mt-0.5"></p>
+      </div>
+      <button onclick="closePopulateHolidaysModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <div class="p-6 overflow-y-auto flex-1">
+      <p class="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
+        Dates are carried over as-is from last year. Holidays that move every year (e.g. Chinese New Year, Hari Raya, Deepavali) will need their dates corrected below before adding.
+      </p>
+      <div id="populateHolidaysRows" class="space-y-2"></div>
+      <button type="button" onclick="addPopulateHolidayRow()" class="text-sm text-blue-600 hover:underline mt-3">+ Add Row</button>
+    </div>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="button" onclick="submitPopulateHolidays()" class="btn-primary">Add Holidays</button>
+      <button type="button" onclick="closePopulateHolidaysModal()" class="btn-ghost">Cancel</button>
+    </div>
   </div>
 </div>
 

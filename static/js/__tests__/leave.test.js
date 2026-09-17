@@ -58,3 +58,35 @@ describe('Leave half-day display — list suffix formatting', () => {
     expect(ldHalfDaySuffix({ start_day_period: 'PM', end_day_period: 'AM' })).toBe(' (PM start, AM end)');
   });
 });
+
+// Matches leave.js's shiftDateByOneYear — the date-shift behind "Populate
+// Next Year" (Holiday Manager). Proposes next year's holidays by moving each
+// of this year's dates forward by exactly one year (same month/day); the
+// review modal lets HR correct any row before it's actually added, which
+// matters for lunar/Islamic-calendar holidays (Chinese New Year, Hari Raya,
+// Deepavali, ...) that don't fall on the same date every year.
+describe('Populate Next Year — date-shift helper (shiftDateByOneYear)', () => {
+  function shiftDateByOneYear(dateStr) {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const targetYear = y + 1;
+    const isLeap = (targetYear % 4 === 0 && targetYear % 100 !== 0) || targetYear % 400 === 0;
+    const day = (m === 2 && d === 29 && !isLeap) ? 28 : d;
+    return `${targetYear}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  }
+
+  it('shifts a fixed-date holiday forward by exactly one year', () => {
+    expect(shiftDateByOneYear('2026-08-31')).toBe('2027-08-31');
+  });
+
+  it('shifts Jan 1 correctly across the year boundary', () => {
+    expect(shiftDateByOneYear('2026-01-01')).toBe('2027-01-01');
+  });
+
+  it('Feb 29 falls back to Feb 28 the following year (consecutive leap years never occur, so this is the only real case)', () => {
+    expect(shiftDateByOneYear('2028-02-29')).toBe('2029-02-28');
+  });
+
+  it('a plain Feb 28 (non-leap source) shifts to Feb 28, untouched by the leap-year fallback', () => {
+    expect(shiftDateByOneYear('2027-02-28')).toBe('2028-02-28');
+  });
+});

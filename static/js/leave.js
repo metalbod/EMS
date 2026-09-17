@@ -591,6 +591,83 @@ async function deleteHoliday(id) {
 }
 
 // ---------------------------------------------------------------------------
+// Populate Next Year — proposes next year's holidays by shifting the
+// currently-viewed year's dates forward by one year (same month/day), then
+// lets HR freely edit/add/delete rows before actually adding anything.
+// Purely a frontend convenience: no new backend endpoint, just loops the
+// existing POST /api/holidays per confirmed row, so each one still gets the
+// usual duplicate-date check and retroactive leave-adjustment sweep.
+// ---------------------------------------------------------------------------
+
+// dateStr: "YYYY-MM-DD" -> same month/day, one year later. Feb 29 falls back
+// to Feb 28 when the target year isn't a leap year (there is no Feb 29 to
+// shift to). Exported as a plain function (no DOM access) so it's directly
+// unit-testable.
+function shiftDateByOneYear(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const targetYear = y + 1;
+  const isLeap = (targetYear % 4 === 0 && targetYear % 100 !== 0) || targetYear % 400 === 0;
+  const day = (m === 2 && d === 29 && !isLeap) ? 28 : d;
+  return `${targetYear}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function _populateHolidayRowHtml(date, name, conflict) {
+  return `<div class="flex items-center gap-2 populate-holiday-row">
+    <input type="date" class="inp text-sm pop-hol-date" value="${date || ''}"/>
+    <input type="text" class="inp text-sm flex-1 pop-hol-name" placeholder="Holiday name" value="${esc(name || '')}"/>
+    ${conflict ? '<span class="text-xs text-amber-600 shrink-0 whitespace-nowrap">Already exists</span>' : ''}
+    <button type="button" onclick="this.closest('.populate-holiday-row').remove()" class="text-slate-300 hover:text-red-500 p-1 shrink-0">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+    </button>
+  </div>`;
+}
+
+const openPopulateNextYearModal = guardAsync(async function() {
+  const sourceYear = parseInt(document.getElementById('holidayYearSelect').value);
+  const targetYear = sourceYear + 1;
+  if (!leaveHolidaysCache.length) {
+    alert(`No holidays found for ${sourceYear} to populate from. Add ${sourceYear}'s holidays first, or use "+ Add Row" after opening this to enter ${targetYear}'s manually.`);
+  }
+  const targetRes = await api(`/api/holidays?year=${targetYear}`);
+  const existingTargetDates = new Set((targetRes?.ok ? await targetRes.json() : []).map(h => h.date));
+
+  document.getElementById('populateHolidaysTitle').textContent = `Populate Holidays for ${targetYear}`;
+  document.getElementById('populateHolidaysSubtitle').textContent = `Based on ${sourceYear}'s holidays — review, edit, or remove before adding.`;
+  document.getElementById('populateHolidaysRows').innerHTML = leaveHolidaysCache.map(h => {
+    const date = shiftDateByOneYear(h.date);
+    return _populateHolidayRowHtml(date, h.name, existingTargetDates.has(date));
+  }).join('');
+  document.getElementById('populateHolidaysModal').classList.remove('hidden');
+});
+function closePopulateHolidaysModal() { closeModal('populateHolidaysModal'); }
+
+function addPopulateHolidayRow() {
+  document.getElementById('populateHolidaysRows').insertAdjacentHTML('beforeend', _populateHolidayRowHtml('', '', false));
+}
+
+const submitPopulateHolidays = guardAsync(async function() {
+  const items = [...document.querySelectorAll('.populate-holiday-row')].map(r => ({
+    date: r.querySelector('.pop-hol-date').value,
+    name: r.querySelector('.pop-hol-name').value.trim(),
+  })).filter(r => r.date && r.name);
+  if (!items.length) { alert('Add at least one holiday with both a date and a name'); return; }
+
+  let added = 0, lastYear = null;
+  const failed = [];
+  for (const item of items) {
+    const year = parseInt(item.date.slice(0, 4));
+    lastYear = year;
+    const res = await api('/api/holidays', { method: 'POST', body: JSON.stringify({ name: item.name, date: item.date, year }) });
+    if (res?.ok) added++;
+    else { const d = await res.json(); failed.push(`${item.date} (${item.name}): ${apiErrorText(d.detail, 'failed')}`); }
+  }
+  closePopulateHolidaysModal();
+  if (lastYear) document.getElementById('holidayYearSelect').value = lastYear;
+  await loadHolidays();
+  alert(added + ' holiday(s) added.' + (failed.length ? `\n\nSkipped ${failed.length}:\n` + failed.join('\n') : ''));
+});
+
+// ---------------------------------------------------------------------------
 // Leave Types (management, shown under Holiday Manager page)
 // ---------------------------------------------------------------------------
 async function loadLeaveTypesForManage() {
