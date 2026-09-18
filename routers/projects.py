@@ -21,6 +21,8 @@ class ProjectIn(BaseModel):
     name: str
     description: Optional[str] = None
     status: str = "Active"  # Active | On Hold | Completed
+    start_date: Optional[str] = None  # informational only — not checked against timesheet entries
+    end_date: Optional[str] = None
     manager_ids: List[str] = []  # employee_ids — a project can have multiple managers
     member_ids: List[str] = []  # employee_ids — who can log time against this project
     is_open_to_all: bool = False  # any employee can log time here, no membership needed
@@ -188,9 +190,12 @@ def list_my_projects(conn, user: dict = Depends(get_current_user)) -> List[Dict[
 def create_project(conn, body: ProjectIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     require_permission(conn, user, "projects_tasks.manage_projects_tasks_assignments")
     inst_id = need_inst(user)
+    if body.start_date and body.end_date and body.end_date < body.start_date:
+        raise HTTPException(400, "End date must be on or after start date")
     conn.execute(
-        "INSERT INTO projects (institution_id,name,description,status,is_open_to_all,is_billable,created_by) VALUES (?,?,?,?,?,?,?)",
-        (inst_id, body.name, body.description, body.status, body.is_open_to_all, body.is_billable, user["username"])
+        "INSERT INTO projects (institution_id,name,description,status,start_date,end_date,is_open_to_all,is_billable,created_by) VALUES (?,?,?,?,?,?,?,?,?)",
+        (inst_id, body.name, body.description, body.status, body.start_date, body.end_date,
+         body.is_open_to_all, body.is_billable, user["username"])
     )
     project_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     _set_project_managers(conn, inst_id, project_id, body.manager_ids)
@@ -210,9 +215,12 @@ def update_project(conn, project_id: int, body: ProjectIn, user: dict = Depends(
     inst_id = need_inst(user)
     if not conn.execute("SELECT id FROM projects WHERE id=? AND institution_id=?", (project_id, inst_id)).fetchone():
         raise HTTPException(404, "Project not found")
+    if body.start_date and body.end_date and body.end_date < body.start_date:
+        raise HTTPException(400, "End date must be on or after start date")
     conn.execute(
-        "UPDATE projects SET name=?,description=?,status=?,is_open_to_all=?,is_billable=? WHERE id=?",
-        (body.name, body.description, body.status, body.is_open_to_all, body.is_billable, project_id)
+        "UPDATE projects SET name=?,description=?,status=?,start_date=?,end_date=?,is_open_to_all=?,is_billable=? WHERE id=?",
+        (body.name, body.description, body.status, body.start_date, body.end_date,
+         body.is_open_to_all, body.is_billable, project_id)
     )
     _set_project_managers(conn, inst_id, project_id, body.manager_ids)
     _set_project_members(conn, inst_id, project_id, body.member_ids)
@@ -294,6 +302,18 @@ def duplicate_project(conn, project_id: int, body: ProjectDuplicateIn, user: dic
 # ---------------------------------------------------------------------------
 # Project Tasks
 # ---------------------------------------------------------------------------
+def _check_task_dates_within_project(project, body: ProjectTaskIn) -> None:
+    """Each task date is checked independently against the matching project
+    date, inclusive of the boundary — a task can start/end exactly on the
+    project's own start/end date. Only runs where both sides of a
+    comparison are actually set; the project's dates are informational-only
+    otherwise and impose no constraint."""
+    if project["start_date"] and body.start_date and body.start_date < project["start_date"]:
+        raise HTTPException(400, "Task start date cannot be before the project's start date")
+    if project["end_date"] and body.end_date and body.end_date > project["end_date"]:
+        raise HTTPException(400, "Task end date cannot be after the project's end date")
+
+
 @router.get("/api/projects/{project_id}/tasks")
 @db_session
 def list_project_tasks(conn, project_id: int, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
@@ -327,10 +347,12 @@ def list_project_tasks(conn, project_id: int, user: dict = Depends(get_current_u
 def create_project_task(conn, project_id: int, body: ProjectTaskIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     require_permission(conn, user, "projects_tasks.manage_projects_tasks_assignments")
     inst_id = need_inst(user)
-    if not conn.execute("SELECT id FROM projects WHERE id=? AND institution_id=?", (project_id, inst_id)).fetchone():
+    project = conn.execute("SELECT * FROM projects WHERE id=? AND institution_id=?", (project_id, inst_id)).fetchone()
+    if not project:
         raise HTTPException(404, "Project not found")
     if body.start_date and body.end_date and body.end_date < body.start_date:
         raise HTTPException(400, "End date must be on or after start date")
+    _check_task_dates_within_project(project, body)
     conn.execute(
         "INSERT INTO project_tasks (institution_id,project_id,name,description,estimated_hours,start_date,end_date,status,created_by) "
         "VALUES (?,?,?,?,?,?,?,?,?)",
@@ -349,8 +371,10 @@ def update_project_task(conn, project_id: int, task_id: int, body: ProjectTaskIn
     inst_id = need_inst(user)
     if not conn.execute("SELECT id FROM project_tasks WHERE id=? AND project_id=? AND institution_id=?", (task_id, project_id, inst_id)).fetchone():
         raise HTTPException(404, "Task not found")
+    project = conn.execute("SELECT * FROM projects WHERE id=? AND institution_id=?", (project_id, inst_id)).fetchone()
     if body.start_date and body.end_date and body.end_date < body.start_date:
         raise HTTPException(400, "End date must be on or after start date")
+    _check_task_dates_within_project(project, body)
     conn.execute(
         "UPDATE project_tasks SET name=?,description=?,estimated_hours=?,start_date=?,end_date=?,status=? WHERE id=?",
         (body.name, body.description, body.estimated_hours, body.start_date, body.end_date, body.status, task_id)

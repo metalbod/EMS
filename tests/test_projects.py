@@ -154,6 +154,36 @@ def test_project_is_open_to_all_and_is_billable_persist(client, hr_manager_auth,
     assert res.json()["is_billable"] in (True, 1)
 
 
+def test_project_start_end_date_persist(client, hr_manager_auth, make_test_project):
+    """Informational only — not checked against timesheet entries (see
+    routers/projects.py's ProjectIn docstring comment)."""
+    project = make_test_project(start_date="2027-01-01", end_date="2027-12-31")
+    assert project["start_date"] == "2027-01-01"
+    assert project["end_date"] == "2027-12-31"
+
+    res = client.put(f"/api/projects/{project['id']}", headers=hr_manager_auth, json={
+        "name": project["name"], "status": "Active", "start_date": "2027-02-01", "end_date": "2027-11-30",
+    })
+    assert res.status_code == 200
+    assert res.json()["start_date"] == "2027-02-01"
+    assert res.json()["end_date"] == "2027-11-30"
+
+
+def test_create_project_end_before_start_returns_400(client, hr_manager_auth):
+    res = client.post("/api/projects", headers=hr_manager_auth, json={
+        "name": "ZZ Bad Dates", "status": "Active", "start_date": "2027-02-01", "end_date": "2027-01-01",
+    })
+    assert res.status_code == 400
+
+
+def test_update_project_end_before_start_returns_400(client, hr_manager_auth, make_test_project):
+    project = make_test_project()
+    res = client.put(f"/api/projects/{project['id']}", headers=hr_manager_auth, json={
+        "name": project["name"], "status": "Active", "start_date": "2027-02-01", "end_date": "2027-01-01",
+    })
+    assert res.status_code == 400
+
+
 def test_delete_project_success(client, hr_manager_auth, make_test_project):
     project = make_test_project()
     res = client.delete(f"/api/projects/{project['id']}", headers=hr_manager_auth)
@@ -410,6 +440,65 @@ def test_create_task_end_before_start_returns_400(client, hr_manager_auth, make_
     res = client.post(
         f"/api/projects/{project['id']}/tasks", headers=hr_manager_auth,
         json={"name": "ZZ", "start_date": "2026-02-01", "end_date": "2026-01-01"},
+    )
+    assert res.status_code == 400
+
+
+def test_create_task_start_before_project_start_returns_400(client, hr_manager_auth, make_test_project):
+    project = make_test_project(start_date="2027-03-01", end_date="2027-06-30")
+    res = client.post(
+        f"/api/projects/{project['id']}/tasks", headers=hr_manager_auth,
+        json={"name": "ZZ", "start_date": "2027-02-01"},
+    )
+    assert res.status_code == 400
+
+
+def test_create_task_end_after_project_end_returns_400(client, hr_manager_auth, make_test_project):
+    project = make_test_project(start_date="2027-03-01", end_date="2027-06-30")
+    res = client.post(
+        f"/api/projects/{project['id']}/tasks", headers=hr_manager_auth,
+        json={"name": "ZZ", "end_date": "2027-07-01"},
+    )
+    assert res.status_code == 400
+
+
+def test_create_task_dates_on_project_boundary_allowed(client, hr_manager_auth, make_test_project, make_test_project_task):
+    """Inclusive boundary — a task can start/end exactly on the project's
+    own start/end date."""
+    project = make_test_project(start_date="2027-03-01", end_date="2027-06-30")
+    task = make_test_project_task(project["id"], start_date="2027-03-01", end_date="2027-06-30")
+    assert task["start_date"] == "2027-03-01"
+    assert task["end_date"] == "2027-06-30"
+
+
+def test_create_task_dates_within_project_range_allowed(client, hr_manager_auth, make_test_project, make_test_project_task):
+    project = make_test_project(start_date="2027-03-01", end_date="2027-06-30")
+    task = make_test_project_task(project["id"], start_date="2027-04-01", end_date="2027-05-01")
+    assert task["start_date"] == "2027-04-01"
+
+
+def test_create_task_dates_allowed_when_project_has_no_dates(client, hr_manager_auth, make_test_project, make_test_project_task):
+    """The project's own dates are informational-only — with none set,
+    tasks impose no constraint on themselves either."""
+    project = make_test_project()
+    task = make_test_project_task(project["id"], start_date="2020-01-01", end_date="2099-12-31")
+    assert task["start_date"] == "2020-01-01"
+
+
+def test_create_task_start_allowed_with_only_project_end_set(client, hr_manager_auth, make_test_project, make_test_project_task):
+    """Each side is checked independently — a task start date isn't
+    constrained just because the project happens to have an end date."""
+    project = make_test_project(end_date="2027-06-30")
+    task = make_test_project_task(project["id"], start_date="2020-01-01")
+    assert task["start_date"] == "2020-01-01"
+
+
+def test_update_task_end_after_project_end_returns_400(client, hr_manager_auth, make_test_project, make_test_project_task):
+    project = make_test_project(start_date="2027-03-01", end_date="2027-06-30")
+    task = make_test_project_task(project["id"])
+    res = client.put(
+        f"/api/projects/{project['id']}/tasks/{task['id']}", headers=hr_manager_auth,
+        json={"name": task["name"], "end_date": "2027-07-01"},
     )
     assert res.status_code == 400
 

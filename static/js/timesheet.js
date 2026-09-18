@@ -325,6 +325,8 @@ async function openProjectModal(projectId) {
     document.getElementById('projectName').value=p?.name||'';
     document.getElementById('projectDesc').value=p?.description||'';
     document.getElementById('projectStatus').value=p?.status||'Active';
+    document.getElementById('projectStart').value=p?.start_date||'';
+    document.getElementById('projectEnd').value=p?.end_date||'';
     renderProjectManagersChecklist(p?.manager_ids||[]);
     renderProjectMembersChecklist(p?.member_ids||[]);
     document.getElementById('projectOpenToAll').checked=!!p?.is_open_to_all;
@@ -336,6 +338,8 @@ async function openProjectModal(projectId) {
     document.getElementById('projectName').value='';
     document.getElementById('projectDesc').value='';
     document.getElementById('projectStatus').value='Active';
+    document.getElementById('projectStart').value='';
+    document.getElementById('projectEnd').value='';
     renderProjectManagersChecklist([]);
     renderProjectMembersChecklist([]);
     document.getElementById('projectOpenToAll').checked=false;
@@ -352,6 +356,8 @@ const submitProject = guardAsync(async function() {
     name: document.getElementById('projectName').value.trim(),
     description: document.getElementById('projectDesc').value.trim()||null,
     status: document.getElementById('projectStatus').value,
+    start_date: document.getElementById('projectStart').value||null,
+    end_date: document.getElementById('projectEnd').value||null,
     manager_ids: [...document.querySelectorAll('.project-manager-checkbox:checked')].map(b=>b.value),
     member_ids: [...document.querySelectorAll('.project-member-checkbox:checked')].map(b=>b.value),
     is_open_to_all: document.getElementById('projectOpenToAll').checked,
