@@ -49,31 +49,35 @@ def _smtp_settings(conn, inst_id: int) -> Optional[dict]:
     }
 
 
-def _log(conn, inst_id, module, category, recipient_email, subject, status, error=None):
+def _log(conn, inst_id, module, category, recipient_email, subject, status, error=None, dedupe_key=None):
     try:
         conn.execute(
-            "INSERT INTO email_log (institution_id,module,category,recipient_email,subject,status,error) "
-            "VALUES (?,?,?,?,?,?,?)",
-            (inst_id, module, category, recipient_email, subject, status, error)
+            "INSERT INTO email_log (institution_id,module,category,recipient_email,subject,status,error,dedupe_key) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (inst_id, module, category, recipient_email, subject, status, error, dedupe_key)
         )
     except Exception:
         logger.exception("email_engine: failed to write email_log row")
 
 
 def send_email(conn, inst_id: int, to_email: str, subject: str, html_body: str,
-               category: str, module: Optional[str] = None) -> bool:
+               category: str, module: Optional[str] = None, dedupe_key: Optional[str] = None) -> bool:
     """Best-effort send — returns True/False for callers that want to know,
     but NEVER raises. No-ops (logged as 'skipped') if the institution has
     email notifications disabled, has no SMTP configured, or `to_email`
-    is empty/obviously invalid."""
+    is empty/obviously invalid. `dedupe_key` identifies the specific item
+    this email is about (e.g. 'item:123') for callers that need to check
+    "have I already sent this" before calling — see
+    scripts/send_reminders.py; Phase 1's approval-workflow emails leave
+    it unset, since each of those is inherently a one-shot event."""
     to_email = (to_email or "").strip()
     if not to_email or "@" not in to_email:
-        _log(conn, inst_id, module, category, to_email or "(none)", subject, "skipped", "no usable recipient address")
+        _log(conn, inst_id, module, category, to_email or "(none)", subject, "skipped", "no usable recipient address", dedupe_key)
         return False
 
     settings = _smtp_settings(conn, inst_id)
     if not settings:
-        _log(conn, inst_id, module, category, to_email, subject, "skipped", "email notifications disabled or not configured")
+        _log(conn, inst_id, module, category, to_email, subject, "skipped", "email notifications disabled or not configured", dedupe_key)
         return False
 
     try:
@@ -89,12 +93,35 @@ def send_email(conn, inst_id: int, to_email: str, subject: str, html_body: str,
             server.login(settings["username"], settings["password"])
             server.sendmail(settings["from_address"], [to_email], msg.as_string())
 
-        _log(conn, inst_id, module, category, to_email, subject, "sent")
+        _log(conn, inst_id, module, category, to_email, subject, "sent", dedupe_key=dedupe_key)
         return True
     except Exception as e:
         logger.warning(f"email_engine: send failed for institution {inst_id} category {category}: {e}")
-        _log(conn, inst_id, module, category, to_email, subject, "failed", str(e))
+        _log(conn, inst_id, module, category, to_email, subject, "failed", str(e), dedupe_key)
         return False
+
+
+def already_sent_recently(conn, inst_id: int, category: str, dedupe_key: str, cooldown_days: float) -> bool:
+    """Whether a 'sent' email_log row already exists for this exact
+    (institution, category, dedupe_key) within the last `cooldown_days`
+    — the dedupe check scripts/send_reminders.py uses before sending a
+    reminder, so the same overdue item/missed period isn't re-emailed
+    every time the sweep runs. cooldown_days=0 means "ever" (never
+    re-send at all, e.g. a missed-timesheet-period reminder)."""
+    cutoff = _cooldown_cutoff(cooldown_days)
+    row = conn.execute(
+        "SELECT 1 FROM email_log WHERE institution_id=? AND category=? AND dedupe_key=? "
+        "AND status='sent' AND created_at >= ? LIMIT 1",
+        (inst_id, category, dedupe_key, cutoff)
+    ).fetchone()
+    return row is not None
+
+
+def _cooldown_cutoff(cooldown_days: float) -> str:
+    from datetime import datetime, timedelta, timezone
+    if cooldown_days <= 0:
+        return "0000-01-01 00:00:00"
+    return (datetime.now(timezone.utc) - timedelta(days=cooldown_days)).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def verify_smtp_connection(host: str, port: int, use_tls: bool, username: str, password: str) -> None:
