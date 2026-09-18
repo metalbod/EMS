@@ -7,7 +7,16 @@ notification is ever active for an institution at a given moment.
 System-Wide Notifications — configured by superadmin only, shown as a red
 "urgency" banner above the institution notification banner, to ALL users
 across ALL institutions (including superadmin), e.g. system downtime.
+
+Email notification settings (Phase 1 of the email notification engine —
+see core/email_engine.py, core/approval_workflow.py's notification hooks,
+and migrations/versions/20260919_0001_email_notifications.py): each
+institution configures its own SMTP mailbox (BYO-SMTP, same
+encrypted-credential pattern as the AI assistant's Anthropic BYOK key)
+to send approval/application emails from.
 """
+import json
+import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -16,13 +25,26 @@ from pydantic import BaseModel, field_validator
 
 from core.deps import get_current_user, need_inst, require_roles
 
+from core.secrets_encryption import encrypt_secret
+
+from core.email_engine import send_email, verify_smtp_connection
+
 from db import get_db
 
 from core.db_session import db_session
 
+logger = logging.getLogger("ems")
+
 router = APIRouter()
 
 NOTIFICATION_MANAGE_ROLES = ("hr_manager", "hr_admin")
+
+# Same risk category as the AI assistant's Anthropic BYOK key (an
+# institution's own third-party credential) — see routers/assistant.py's
+# ASSISTANT_SETTINGS_ROLES for the identical reasoning. Deliberately a
+# hardcoded require_roles gate, not routed through the permission-matrix
+# override system.
+EMAIL_SETTINGS_ROLES = ("hr_manager",)
 
 
 class NotificationIn(BaseModel):
@@ -40,6 +62,168 @@ class NotificationIn(BaseModel):
         if word_count > 500:
             raise ValueError(f"Message must be 500 words or fewer (currently {word_count})")
         return v
+
+
+# ---------------------------------------------------------------------------
+# Email notification settings (Phase 1 — BYO-SMTP per institution).
+# Registered before the parameterized /api/notifications/{notification_id}
+# routes below on purpose — FastAPI/Starlette matches path templates in
+# registration order, and {notification_id} would otherwise greedily
+# match the literal segment "email-settings" (or "email-log"), 422'ing
+# on the int conversion instead of ever reaching these handlers.
+# ---------------------------------------------------------------------------
+def _validate_email_format(v: str, field_name: str) -> str:
+    v = v.strip()
+    if not v or "@" not in v or v.startswith("@") or v.endswith("@"):
+        raise ValueError(f"{field_name} must be a valid email address")
+    return v
+
+
+class EmailSettingsIn(BaseModel):
+    smtp_host: str
+    smtp_port: int
+    smtp_use_tls: bool = True
+    smtp_from_address: str
+    smtp_from_name: Optional[str] = None
+    smtp_username: str
+    smtp_password: str
+    notifications_email_enabled: bool = True
+
+    @field_validator("smtp_host", "smtp_username", "smtp_password")
+    @classmethod
+    def _not_blank(cls, v):
+        v = v.strip()
+        if not v:
+            raise ValueError("This field is required")
+        return v
+
+    @field_validator("smtp_from_address")
+    @classmethod
+    def _valid_from_address(cls, v):
+        return _validate_email_format(v, "smtp_from_address")
+
+
+class EmailSettingsOut(BaseModel):
+    configured: bool
+    notifications_email_enabled: bool = False
+    smtp_host: Optional[str] = None
+    smtp_port: Optional[int] = None
+    smtp_use_tls: bool = True
+    smtp_from_address: Optional[str] = None
+    smtp_from_name: Optional[str] = None
+    smtp_configured_at: Optional[str] = None
+
+
+class TestEmailIn(BaseModel):
+    to_email: str
+
+    @field_validator("to_email")
+    @classmethod
+    def _valid_to_email(cls, v):
+        return _validate_email_format(v, "to_email")
+
+
+_EMAIL_SETTINGS_COLS = (
+    "smtp_host, smtp_port, smtp_use_tls, smtp_from_address, smtp_from_name, "
+    "smtp_credentials_encrypted, smtp_configured_at, notifications_email_enabled"
+)
+
+
+def _email_settings_response(row) -> EmailSettingsOut:
+    if not row:
+        return EmailSettingsOut(configured=False)
+    return EmailSettingsOut(
+        configured=bool(row["smtp_credentials_encrypted"]),
+        notifications_email_enabled=bool(row["notifications_email_enabled"]),
+        smtp_host=row["smtp_host"], smtp_port=row["smtp_port"], smtp_use_tls=bool(row["smtp_use_tls"]),
+        smtp_from_address=row["smtp_from_address"], smtp_from_name=row["smtp_from_name"],
+        smtp_configured_at=row["smtp_configured_at"],
+    )
+
+
+@router.get("/api/notifications/email-settings")
+@db_session
+def get_email_settings(conn, user: dict = Depends(require_roles(*EMAIL_SETTINGS_ROLES))) -> EmailSettingsOut:
+    inst_id = need_inst(user)
+    row = conn.execute(f"SELECT {_EMAIL_SETTINGS_COLS} FROM institutions WHERE id=?", (inst_id,)).fetchone()
+    return _email_settings_response(row)
+
+
+@router.put("/api/notifications/email-settings")
+@db_session
+def update_email_settings(
+    conn, body: EmailSettingsIn, user: dict = Depends(require_roles(*EMAIL_SETTINGS_ROLES))
+) -> EmailSettingsOut:
+    """Saves an institution's own SMTP mailbox — validated with a real
+    login attempt first (mirrors routers/assistant.py's Anthropic key
+    check: catch a typo'd host/password here, not on the first real
+    approval email that silently fails)."""
+    inst_id = need_inst(user)
+    try:
+        verify_smtp_connection(body.smtp_host, body.smtp_port, body.smtp_use_tls, body.smtp_username, body.smtp_password)
+    except Exception as e:
+        logger.warning(f"notification settings: SMTP validation failed for institution {inst_id}: {e}")
+        raise HTTPException(400, detail="Couldn't connect/log in with those SMTP details — double-check them and try again.")
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    credentials = encrypt_secret(json.dumps({"username": body.smtp_username, "password": body.smtp_password}))
+    conn.execute(
+        "UPDATE institutions SET smtp_host=?, smtp_port=?, smtp_use_tls=?, smtp_from_address=?, smtp_from_name=?, "
+        "smtp_credentials_encrypted=?, smtp_configured_at=?, notifications_email_enabled=? WHERE id=?",
+        (body.smtp_host, body.smtp_port, body.smtp_use_tls, body.smtp_from_address, body.smtp_from_name,
+         credentials, now, body.notifications_email_enabled, inst_id)
+    )
+    conn.commit()
+    row = conn.execute(f"SELECT {_EMAIL_SETTINGS_COLS} FROM institutions WHERE id=?", (inst_id,)).fetchone()
+    return _email_settings_response(row)
+
+
+@router.delete("/api/notifications/email-settings")
+@db_session
+def delete_email_settings(conn, user: dict = Depends(require_roles(*EMAIL_SETTINGS_ROLES))) -> EmailSettingsOut:
+    """Clears the institution's SMTP config — email notifications simply
+    stop going out (no platform-wide fallback sender, unlike the AI
+    assistant's Anthropic key, since emails need to come from THIS
+    institution's own identity, not a shared one)."""
+    inst_id = need_inst(user)
+    conn.execute(
+        "UPDATE institutions SET smtp_host=NULL, smtp_port=NULL, smtp_from_address=NULL, smtp_from_name=NULL, "
+        "smtp_credentials_encrypted=NULL, smtp_configured_at=NULL, notifications_email_enabled=false WHERE id=?",
+        (inst_id,)
+    )
+    conn.commit()
+    return EmailSettingsOut(configured=False)
+
+
+@router.post("/api/notifications/email-settings/test")
+@db_session
+def send_test_email(conn, body: TestEmailIn, user: dict = Depends(require_roles(*EMAIL_SETTINGS_ROLES))) -> Dict[str, Any]:
+    inst_id = need_inst(user)
+    sent = send_email(
+        conn, inst_id, body.to_email, "EMS test email",
+        "<p>This is a test email from your EMS notification settings. If you're reading this, it works.</p>",
+        "test",
+    )
+    conn.commit()
+    if not sent:
+        raise HTTPException(400, detail="Couldn't send the test email — check that notifications are enabled and your SMTP settings are correct.")
+    return {"sent": True}
+
+
+@router.get("/api/notifications/email-log")
+@db_session
+def list_email_log(conn, limit: int = 50, user: dict = Depends(require_roles(*EMAIL_SETTINGS_ROLES))) -> List[Dict[str, Any]]:
+    """Recent send attempts (sent/failed/skipped) for this institution —
+    the only visibility into core/email_engine.py's best-effort, never-
+    raises sends, since a silently-swallowed failure otherwise has no
+    other way to surface to HR."""
+    inst_id = need_inst(user)
+    limit = min(max(1, limit), 200)
+    rows = conn.execute(
+        "SELECT * FROM email_log WHERE institution_id=? ORDER BY created_at DESC, id DESC LIMIT ?",
+        (inst_id, limit)
+    ).fetchall()
+    return [dict(r) for r in rows]
 
 
 # ---------------------------------------------------------------------------
@@ -193,3 +377,4 @@ def update_system_notification(conn, notification_id: int, body: NotificationIn,
 def delete_system_notification(conn, notification_id: int, user: dict = Depends(require_roles("superadmin"))) -> None:
     conn.execute("DELETE FROM system_notifications WHERE id=?", (notification_id,))
     conn.commit()
+

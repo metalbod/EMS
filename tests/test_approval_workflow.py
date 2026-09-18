@@ -12,8 +12,41 @@ can't: the actual direct-manager-must-approve-first enforcement (which
 needs a real reporting-chain fixture), and the workflow-settings CRUD.
 """
 import os
+from unittest.mock import patch
 
 import pytest
+
+
+@pytest.fixture
+def manager_with_report_and_emails(client, hr_manager_auth, make_test_employee, test_institution):
+    """Same shape as manager_with_report below, but both employees get a
+    real (fake-domain) email address — needed only by the email-
+    notification tests, which check core/email_engine.py's send_email
+    actually gets called with the resolved approver's/requester's
+    address. Returns (report_emp, mgr_headers, mgr_email, report_email)."""
+    mgr_email = f"zzmgr_{os.urandom(4).hex()}@zzpytest.example.com"
+    report_email = f"zzreport_{os.urandom(4).hex()}@zzpytest.example.com"
+    mgr_emp = make_test_employee(full_name="ZZ Email Notif Manager", personal_email=mgr_email)
+    report_emp = make_test_employee(full_name="ZZ Email Notif Report", reports_to=mgr_emp["employee_id"],
+                                    personal_email=report_email)
+
+    username = f"zzemailmgr_{mgr_emp['employee_id'].lower()}"
+    password = "ZzPytest@123"
+    res = client.post("/api/users", headers=hr_manager_auth, json={
+        "username": username, "full_name": "ZZ Email Notif Manager User", "password": password,
+        "role": "manager", "employee_id": mgr_emp["employee_id"],
+    })
+    assert res.status_code == 201, f"failed to create manager user: {res.text}"
+    user_id = res.json()["id"]
+    login = client.post("/api/auth/login", json={
+        "username": username, "password": password, "institution_code": test_institution["code"],
+    })
+    assert login.status_code == 200
+    mgr_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    yield report_emp, mgr_headers, mgr_email, report_email
+
+    client.delete(f"/api/users/{user_id}", headers=hr_manager_auth)
 
 
 @pytest.fixture
@@ -774,3 +807,70 @@ def test_flat_workflow_auto_skips_empty_step_without_blocking_finalization(
     assert res.json()["status"] == "Approved", "the only resolvable step (hr_manager) approving should finalize it"
 
     client.delete(f"/api/approval-workflows/{wf['id']}", headers=hr_manager_auth)
+
+
+# ---------------------------------------------------------------------------
+# Email notifications — proves start_workflow/advance_or_finalize's
+# notification hooks (core/approval_workflow.py's _notify_step_recipients/
+# _notify_requester_outcome) actually fire, end to end through a real
+# Leave submission/decision, not just at the email_engine/settings level
+# (see tests/test_notification_settings.py for that layer).
+# ---------------------------------------------------------------------------
+def test_leave_submission_and_approval_send_notification_emails(
+    client, hr_manager_auth, manager_with_report_and_emails, make_test_leave_type, configured_email_settings
+):
+    report_emp, mgr_headers, mgr_email, report_email = manager_with_report_and_emails
+    lt = make_test_leave_type(requires_approval=True)
+    start = "2027-09-06"
+
+    with patch("core.email_engine.smtplib.SMTP"):
+        app = client.post("/api/leave/applications", headers=hr_manager_auth, json={
+            "employee_id": report_emp["employee_id"], "leave_type_id": lt["id"],
+            "start_date": start, "end_date": start,
+        }).json()
+    assert app["status"] == "Pending Approval"
+
+    log = client.get("/api/notifications/email-log", headers=hr_manager_auth).json()
+    submitted = next(r for r in log if r["recipient_email"] == mgr_email and r["category"] == "approval_needed")
+    assert submitted["status"] == "sent"
+
+    with patch("core.email_engine.smtplib.SMTP"):
+        # The default Leave workflow is 2 steps (direct_manager, then
+        # hr_manager) — the manager's own approval only advances it, it
+        # doesn't finalize; HR still has to clear step 2.
+        step1 = client.patch(f"/api/leave/applications/{app['id']}/status", headers=mgr_headers,
+                             json={"status": "Approved"})
+        assert step1.status_code == 200, step1.text
+        assert step1.json()["status"] == "Pending Approval"
+
+        final = client.patch(f"/api/leave/applications/{app['id']}/status", headers=hr_manager_auth,
+                             json={"status": "Approved"})
+    assert final.status_code == 200, final.text
+    assert final.json()["status"] == "Approved"
+
+    log_after = client.get("/api/notifications/email-log", headers=hr_manager_auth).json()
+    decided = next(r for r in log_after if r["recipient_email"] == report_email and r["category"] == "approval_decided")
+    assert decided["status"] == "sent"
+
+
+def test_leave_rejection_sends_requester_notification_email(
+    client, hr_manager_auth, manager_with_report_and_emails, make_test_leave_type, configured_email_settings
+):
+    report_emp, mgr_headers, mgr_email, report_email = manager_with_report_and_emails
+    lt = make_test_leave_type(requires_approval=True)
+    start = "2027-09-13"
+
+    with patch("core.email_engine.smtplib.SMTP"):
+        app = client.post("/api/leave/applications", headers=hr_manager_auth, json={
+            "employee_id": report_emp["employee_id"], "leave_type_id": lt["id"],
+            "start_date": start, "end_date": start,
+        }).json()
+
+        rejected = client.patch(f"/api/leave/applications/{app['id']}/status", headers=mgr_headers,
+                                json={"status": "Rejected"})
+    assert rejected.status_code == 200, rejected.text
+    assert rejected.json()["status"] == "Rejected"
+
+    log = client.get("/api/notifications/email-log", headers=hr_manager_auth).json()
+    decided = next(r for r in log if r["recipient_email"] == report_email and r["category"] == "approval_decided")
+    assert decided["status"] == "sent"

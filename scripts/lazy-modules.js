@@ -31,4 +31,5 @@ module.exports = [
   'ai-assistant-settings.js',
   'recruitment.js',
   'onboarding.js',
+  'email-notification-settings.js',
 ];

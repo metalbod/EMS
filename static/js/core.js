@@ -24,7 +24,7 @@ const HR_STAFF_ROLES = ['hr_manager','hr_admin'];                  // no superad
 const HR_MANAGER_ONLY_ROLES = ['superadmin','hr_manager'];         // no hr_admin
 const COMPENSATION_STAFF_ROLES = ['hr_manager','payroll_manager','compensation_manager'];
 const BENEFITS_DASHBOARD_ROLES = ['hr_manager','compensation_manager','manager'];
-const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','leave-my','leave-approvals','leave-holidays','resignation-approvals','projects','timesheet-my','timesheet-approvals','overtime-my','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','comp-paygrades','comp-joblevels','comp-jobroles','comp-meritcycles','comp-bonusplans','comp-commissions','comp-equity','comp-totalrewards','comp-payequity','ben-plans','ben-periods','ben-lifeevents','ben-claims','ben-compliance','payroll-runs','payroll-my','payroll-myrewards','payroll-mybenefits','perf-my','perf-team','perf-cycles','perf-calibration','attendance-clock','attendance-review','settings-attendance','settings-approval-workflow','settings-roles','settings-document-types','settings-offer-letter-templates','settings-ai-assistant','coming-soon'];
+const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','leave-my','leave-approvals','leave-holidays','resignation-approvals','projects','timesheet-my','timesheet-approvals','overtime-my','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','comp-paygrades','comp-joblevels','comp-jobroles','comp-meritcycles','comp-bonusplans','comp-commissions','comp-equity','comp-totalrewards','comp-payequity','ben-plans','ben-periods','ben-lifeevents','ben-claims','ben-compliance','payroll-runs','payroll-my','payroll-myrewards','payroll-mybenefits','perf-my','perf-team','perf-cycles','perf-calibration','attendance-clock','attendance-review','settings-attendance','settings-approval-workflow','settings-roles','settings-document-types','settings-offer-letter-templates','settings-ai-assistant','settings-email-notifications','coming-soon'];
 
 // ---------------------------------------------------------------------------
 // Lazy module loading (Speed Audit item 7)
@@ -72,6 +72,7 @@ const LAZY_PAGE_MODULES = {
   'settings-roles': 'roles',
   'settings-document-types': 'employee-documents',
   'settings-ai-assistant': 'ai-assistant-settings',
+  'settings-email-notifications': 'email-notification-settings',
 };
 
 // Lives here rather than in approval-workflow.js (where the rest of this
@@ -620,7 +621,10 @@ function applyRoleUI() {
   // key is a real billing-relevant credential, hr_manager only, matching
   // routers/assistant.py's ASSISTANT_SETTINGS_ROLES exactly.
   const canAiSettings = role === 'hr_manager';
-  document.getElementById('nav-settings-wrap')?.classList.toggle('hidden', hideEmp || !(canAudit || canUsers || canNotify || canBulkUpload || canLocations || canManage || canAttendanceManage || canApprovalWorkflow || canRoles || canDocTypes || canAiSettings));
+  // Same risk category/tier as canAiSettings above — matches
+  // routers/notifications.py's EMAIL_SETTINGS_ROLES exactly.
+  const canEmailSettings = role === 'hr_manager';
+  document.getElementById('nav-settings-wrap')?.classList.toggle('hidden', hideEmp || !(canAudit || canUsers || canNotify || canBulkUpload || canLocations || canManage || canAttendanceManage || canApprovalWorkflow || canRoles || canDocTypes || canAiSettings || canEmailSettings));
   document.getElementById('nav-settings-notifications')?.classList.toggle('hidden', !canNotify);
   document.getElementById('nav-bulk-upload')?.classList.toggle('hidden', !canBulkUpload);
   document.getElementById('nav-locations')?.classList.toggle('hidden', !canLocations);
@@ -635,6 +639,7 @@ function applyRoleUI() {
   document.getElementById('nav-document-types')?.classList.toggle('hidden', !canDocTypes);
   document.getElementById('nav-offer-letter-templates')?.classList.toggle('hidden', !canManage);
   document.getElementById('nav-ai-assistant-settings')?.classList.toggle('hidden', !canAiSettings);
+  document.getElementById('nav-email-notification-settings')?.classList.toggle('hidden', !canEmailSettings);
 
   // Compensation: its own top-level menu, visible to HR Manager, Payroll
   // Manager, and the dedicated Compensation Manager role — explicitly
@@ -774,7 +779,8 @@ async function showPage(page) {
     'settings-roles':'Settings — Roles',
     'settings-document-types':'Settings — Document Types',
     'settings-offer-letter-templates':'Settings — Letter Templates',
-    'settings-ai-assistant':'Settings — AI Assistant'
+    'settings-ai-assistant':'Settings — AI Assistant',
+    'settings-email-notifications':'Settings — Email Notifications'
   };
   document.getElementById('pageTitle').textContent = titles[page] || page;
   const lazyModule = LAZY_PAGE_MODULES[page];
@@ -838,6 +844,7 @@ async function showPage(page) {
   if (page === 'settings-document-types') loadEmployeeDocTypesPage();
   if (page === 'settings-offer-letter-templates') loadOfferTemplates();
   if (page === 'settings-ai-assistant') loadAiAssistantSettingsPage();
+  if (page === 'settings-email-notifications') loadEmailNotificationSettingsPage();
 }
 
 // ---------------------------------------------------------------------------

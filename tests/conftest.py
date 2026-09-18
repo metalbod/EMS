@@ -214,6 +214,40 @@ def hr_manager_auth(make_test_user, test_institution):
 
 
 @pytest.fixture
+def clean_email_settings(client, hr_manager_auth):
+    """Ensures the shared test institution starts with no SMTP config for
+    this test, and restores that clean (disabled/unconfigured) state
+    afterward. institutions.smtp_*/notifications_email_enabled live on
+    the shared session-scoped test_institution — leaving them configured
+    would let a later, unrelated test's leave/timesheet/etc. submission
+    attempt a real outbound SMTP connection to whatever fake host a
+    prior test left behind. Used by test_notification_settings.py and
+    test_approval_workflow.py's email-notification tests."""
+    client.delete("/api/notifications/email-settings", headers=hr_manager_auth)
+    yield
+    client.delete("/api/notifications/email-settings", headers=hr_manager_auth)
+
+
+@pytest.fixture
+def configured_email_settings(client, hr_manager_auth, clean_email_settings):
+    """Configures fake-but-valid-shaped SMTP settings (the PUT's own
+    connection check is mocked here) with notifications enabled. A test
+    using this still needs to mock core.email_engine.smtplib.SMTP itself
+    around whatever action it expects to trigger an actual send — this
+    fixture only covers the one-time PUT's own verify_smtp_connection
+    call."""
+    from unittest.mock import patch
+    with patch("routers.notifications.verify_smtp_connection"):
+        res = client.put("/api/notifications/email-settings", headers=hr_manager_auth, json={
+            "smtp_host": "smtp.zzpytest.example.com", "smtp_port": 587, "smtp_use_tls": True,
+            "smtp_from_address": "hr@zzpytest.example.com", "smtp_from_name": "ZZ Pytest HR",
+            "smtp_username": "zzuser", "smtp_password": "zzpass", "notifications_email_enabled": True,
+        })
+    assert res.status_code == 200, f"failed to configure test email settings: {res.text}"
+    yield
+
+
+@pytest.fixture
 def payroll_manager_auth(make_test_user, test_institution):
     """A disposable payroll_manager user's auth headers, pre-scoped to the
     test institution — the only role in PAYROLL_MANAGE_ROLES (see
