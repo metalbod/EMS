@@ -770,7 +770,7 @@ function renderClaimsTable() {
         ${(c.status === 'Submitted' || c.status === 'Under Review') ? (c.is_actionable ? `
           <button onclick="openClaimDecideModal(${c.id})" class="text-xs text-emerald-700 hover:underline mr-3">Approve</button>
           <button onclick="rejectClaim(${c.id})" class="text-xs text-red-700 hover:underline">Reject</button>
-        ` : `<span class="text-xs text-slate-400">Pending: ${esc(c.pending_with || '—')}</span>`) : c.status === 'Approved' ? `
+        ` : `<span class="text-xs text-slate-400">Pending: ${pendingWithLabel(c)}</span>`) : c.status === 'Approved' ? `
           <button onclick="markClaimPaid(${c.id})" class="text-xs text-blue-700 hover:underline">Mark Paid</button>
         ` : '<span class="text-xs text-slate-400">—</span>'}
       </td>

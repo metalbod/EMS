@@ -138,6 +138,48 @@ def test_legacy_whole_record_endpoint_blocked_once_split(
     assert "individually" in res.json()["detail"]
 
 
+def test_flat_mode_project_manager_and_hr_can_approve_overtime_in_any_order(
+    client, hr_manager_auth, employee_with_login, make_test_project, make_test_project_task, emp_with_shift
+):
+    emp, headers, shift = emp_with_shift
+    pm_emp, pm_headers = employee_with_login(full_name="ZZ OT Flat PM")
+    project_a = make_test_project(name="ZZ OT Flat Project", is_open_to_all=True,
+                                  manager_ids=[pm_emp["employee_id"]])
+    task_a = make_test_project_task(project_a["id"])
+
+    wf = client.post("/api/approval-workflows", headers=hr_manager_auth,
+                      json={"module": "overtime", "name": "ZZ OT Flat WF", "mode": "flat"}).json()
+    client.post(f"/api/approval-workflows/{wf['id']}/steps", headers=hr_manager_auth,
+                json={"approver_type": "project_manager"})
+    client.post(f"/api/approval-workflows/{wf['id']}/steps", headers=hr_manager_auth,
+                json={"approver_type": "hr_manager"})
+    client.put(f"/api/approval-workflows/{wf['id']}", headers=hr_manager_auth,
+               json={"name": wf["name"], "is_default": True, "mode": "flat"})
+
+    ts = client.post("/api/timesheets", headers=headers, json={
+        "employee_id": emp["employee_id"], "period_start": PERIOD_START, "period_end": PERIOD_END,
+    }).json()
+    client.post(f"/api/timesheets/{ts['id']}/entries", headers=headers, json={
+        "project_id": project_a["id"], "task_id": task_a["id"], "date": WORK_DATE, "hours": 10,
+    })
+    client.patch(f"/api/timesheets/{ts['id']}/status", headers=headers, json={"status": "Submitted"})
+
+    records = client.get(f"/api/timesheets/{ts['id']}/overtime", headers=headers).json()
+    approval_id = records[0]["project_approval_id"]
+
+    first = client.patch(f"/api/overtime/projects/{approval_id}/status", headers=hr_manager_auth,
+                         json={"status": "Approved"})
+    assert first.status_code == 200, first.text
+    assert first.json()["status"] == "Pending", "still waiting on the project manager's step"
+
+    second = client.patch(f"/api/overtime/projects/{approval_id}/status", headers=pm_headers,
+                          json={"status": "Approved"})
+    assert second.status_code == 200, second.text
+    assert second.json()["status"] == "Approved"
+
+    client.delete(f"/api/approval-workflows/{wf['id']}", headers=hr_manager_auth)
+
+
 def test_single_project_day_gets_full_overtime_unprorated(
     client, hr_manager_auth, emp_with_shift, two_open_tasks
 ):

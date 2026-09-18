@@ -548,7 +548,8 @@ def approve_requisition(conn, req_id: int, body: RequisitionApprovalIn,
         try:
             outcome, next_step = advance_or_finalize(
                 conn, inst_id, "requisition", requester_employee_id,
-                r["approval_workflow_id"], r["approval_step"], action, user
+                r["approval_workflow_id"], r["approval_step"], action, user,
+                "job_requisitions", req_id
             )
         except PermissionError as e:
             raise HTTPException(403, str(e))

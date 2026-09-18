@@ -782,7 +782,7 @@ function renderTimesheetApprovalTable() {
       </td>
       <td class="px-4 py-3 text-slate-600">
         ${fmtDate(t.period_start)} → ${fmtDate(t.period_end)}
-        ${t.status==='Submitted' && !t.is_actionable ? `<p class="text-xs text-slate-400 mt-0.5">Pending with: ${esc(t.pending_with||'—')}</p>` : ''}
+        ${t.status==='Submitted' && !t.is_actionable ? `<p class="text-xs text-slate-400 mt-0.5">Pending with: ${pendingWithLabel(t)}</p>` : ''}
       </td>
       <td class="px-4 py-3 text-slate-600">${esc(t.project_names||'—')}</td>
       <td class="px-4 py-3 text-right text-slate-600">${t.total_hours} hrs</td>
@@ -830,7 +830,7 @@ async function openTimesheetDetail(tsId) {
         ${pa.status==='Submitted' ? (pa.is_actionable!==false ? `
           <button onclick="reviewTimesheetProject(${ts.id},${pa.project_id},'Approved')" class="btn-primary text-xs px-2 py-1">Approve</button>
           <button onclick="reviewTimesheetProject(${ts.id},${pa.project_id},'Rejected')" class="btn-ghost text-xs px-2 py-1 text-red-600">Reject</button>
-        ` : `<p class="text-xs text-slate-400">Pending with: ${esc(pa.pending_with||'—')}</p>`) : ''}
+        ` : `<p class="text-xs text-slate-400">Pending with: ${pendingWithLabel(pa)}</p>`) : ''}
       </div>`).join('');
   } else {
     // Legacy (pre-split) or Draft timesheet — the old whole-record action.
@@ -839,7 +839,7 @@ async function openTimesheetDetail(tsId) {
     actions.innerHTML=ts.status!=='Submitted'?'':(!cached||cached.is_actionable)?`
       <button onclick="reviewTimesheet(${ts.id},'Approved')" class="btn-primary text-sm">Approve</button>
       <button onclick="reviewTimesheet(${ts.id},'Rejected')" class="btn-ghost text-sm text-red-600">Reject</button>
-    `:`<p class="text-xs text-slate-400">Pending with: ${esc(cached.pending_with||'—')}</p>`;
+    `:`<p class="text-xs text-slate-400">Pending with: ${pendingWithLabel(cached)}</p>`;
   }
   await loadTimesheetDetailOvertime(tsId);
   document.getElementById('timesheetDetailModal').classList.remove('hidden');
@@ -865,7 +865,7 @@ async function loadTimesheetDetailOvertime(tsId) {
       ${(o.status==='Pending' && (o.is_actionable===undefined||o.is_actionable))?`
         <button onclick="reviewOvertime(${o.project_approval_id||o.id},${tsId},'Approved',${!!o.project_approval_id})" class="btn-primary text-xs px-2 py-1">Approve</button>
         <button onclick="reviewOvertime(${o.project_approval_id||o.id},${tsId},'Rejected',${!!o.project_approval_id})" class="btn-ghost text-xs px-2 py-1 text-red-600">Reject</button>
-      `:(o.status==='Pending' && !o.is_actionable ? `<p class="text-xs text-slate-400">Pending with: ${esc(o.pending_with||'—')}</p>` : '')}
+      `:(o.status==='Pending' && !o.is_actionable ? `<p class="text-xs text-slate-400">Pending with: ${pendingWithLabel(o)}</p>` : '')}
     </div>`).join('');
 }
 

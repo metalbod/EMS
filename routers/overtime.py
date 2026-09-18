@@ -212,7 +212,8 @@ def update_overtime_status(conn, record_id: int, body: OvertimeStatusIn, user: d
     try:
         outcome, next_step = advance_or_finalize(
             conn, inst_id, "overtime", record["employee_id"],
-            record["approval_workflow_id"], record["approval_step"], action, user, project_ids
+            record["approval_workflow_id"], record["approval_step"], action, user,
+            "overtime_records", record_id, project_ids
         )
     except PermissionError as e:
         raise HTTPException(403, str(e))
@@ -254,7 +255,8 @@ def update_overtime_project_status(conn, approval_id: int, body: OvertimeStatusI
     try:
         outcome, next_step = advance_or_finalize(
             conn, inst_id, "overtime", row["employee_id"],
-            row["approval_workflow_id"], row["approval_step"], action, user, project_ids
+            row["approval_workflow_id"], row["approval_step"], action, user,
+            "overtime_project_approvals", approval_id, project_ids
         )
     except PermissionError as e:
         raise HTTPException(403, str(e))

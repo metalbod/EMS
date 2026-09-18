@@ -1,17 +1,28 @@
 """Generic approval-workflow engine, shared by every module that gates a
 request behind approval: Leave, Benefits Claims, Job Requisition,
-Timesheet, L&D Enrollment, Overtime, and Resignation. See README.md's "Approval workflow module"
-section for the full mechanism. Each module used to hardcode its own
-single-step role check (e.g. "role in (manager, hr_manager, hr_admin)")
-with no verification that an approving "manager" was the requester's
-*actual* manager — this replaces that with a per-institution configurable,
-1-4 step chain of direct_manager / skip_level_manager / hr_manager /
-specific_employee / project_manager approvers.
+Timesheet, L&D Enrollment, Overtime, Resignation, and PIP. See README.md's
+"Approval workflow module" section for the full mechanism. Each module
+used to hardcode its own single-step role check (e.g. "role in (manager,
+hr_manager, hr_admin)") with no verification that an approving "manager"
+was the requester's *actual* manager — this replaces that with a
+per-institution configurable, 1-4 step chain of direct_manager /
+skip_level_manager / hr_manager / specific_employee / project_manager
+approvers.
+
+Each workflow also has a `mode` (see WORKFLOW_MODES): 'sequential' (the
+default, and how every workflow behaved before this existed) requires
+step 1 to clear before step 2 becomes actionable, and so on; 'flat' lets
+every step with a nonempty approver pool act at once, finalizing once all
+of them have approved (a reject at any one is still immediately
+terminal, same as sequential). Flat mode's per-step decisions are
+recorded in approval_step_decisions, since a request row's own single
+`approval_step` column can't represent "several steps open at once."
 """
 from typing import Any, Dict, FrozenSet, List, Optional, Set, Tuple
 
 APPROVER_TYPES = ("direct_manager", "skip_level_manager", "hr_manager", "specific_employee", "project_manager")
 MAX_STEPS = 4
+WORKFLOW_MODES = ("sequential", "flat")
 
 # project_manager only makes sense where the request either lets the
 # requester pick a project (Leave, Claims — see project_id on those
@@ -112,6 +123,55 @@ def _timesheet_project_ids(conn, timesheet_id: int) -> Set[int]:
         "SELECT DISTINCT project_id FROM timesheet_entries WHERE timesheet_id=?", (timesheet_id,)
     ).fetchall()
     return {r["project_id"] for r in rows}
+
+
+def _request_identity_for_row(module: str, row) -> Tuple[str, int]:
+    """(request_table, request_id) for approval_step_decisions lookups —
+    the table+row a flat workflow's per-step decisions are recorded
+    against, mirroring project_ids_for_row's own legacy-vs-split
+    disambiguation (same "genuinely non-None project_id" signal). A
+    per-project split row's true id is its own project-table row id: for
+    a row read straight off that table (e.g. get_timesheet's
+    project_approvals, or a raw fetch from MODULE_PROJECT_TABLE) that's
+    just row['id']; for a row that's been through
+    _expand_timesheet_rows/_expand_overtime_rows (which keep row['id']
+    pointing at the PARENT record so the Timesheet Detail modal still
+    opens by timesheet id) it's the project_approval_id key those
+    functions overlay instead. Uses `"key" in row.keys()` throughout
+    rather than `row.get(...)` since db.py's Row type (unlike a plain
+    dict) has no .get()."""
+    project_table = MODULE_PROJECT_TABLE.get(module)
+    if project_table and "project_id" in row.keys() and row["project_id"] is not None:
+        if "project_approval_id" in row.keys() and row["project_approval_id"] is not None:
+            return project_table, row["project_approval_id"]
+        return project_table, row["id"]
+    return MODULE_TABLE[module], row["id"]
+
+
+def _get_workflow_mode(conn, workflow_id: int) -> str:
+    row = conn.execute("SELECT mode FROM approval_workflows WHERE id=?", (workflow_id,)).fetchone()
+    return row["mode"] if row else "sequential"
+
+
+def _decided_step_orders(conn, request_table: str, request_id: int) -> Set[int]:
+    """Which step_orders already have a recorded decision (approve or
+    reject) for this specific flat-mode request — sequential workflows
+    never write here, so this is only ever consulted on the flat path."""
+    rows = conn.execute(
+        "SELECT step_order FROM approval_step_decisions WHERE request_table=? AND request_id=?",
+        (request_table, request_id)
+    ).fetchall()
+    return {r["step_order"] for r in rows}
+
+
+def _record_decision(conn, inst_id: int, module: str, request_table: str, request_id: int,
+                     step_order: int, action: str, decided_by: str) -> None:
+    conn.execute(
+        "INSERT INTO approval_step_decisions "
+        "(institution_id,module,request_table,request_id,step_order,action,decided_by) "
+        "VALUES (?,?,?,?,?,?,?)",
+        (inst_id, module, request_table, request_id, step_order, action, decided_by)
+    )
 
 
 def project_ids_for_row(conn, module: str, row) -> Set[int]:
@@ -407,25 +467,69 @@ def start_workflow(conn, inst_id: int, module: str, employee_id: str,
 def advance_or_finalize(conn, inst_id: int, module: str, employee_id: str,
                         workflow_id: int, current_step_order: int,
                         action: str, acting_user: dict,
+                        request_table: str, request_id: int,
                         project_ids: Optional[Set[int]] = None) -> Tuple[str, Optional[int]]:
-    """Validates `acting_user` can act on the request's current step, then
+    """Validates `acting_user` can act on the request right now, then
     returns (outcome, next_step_order): outcome is 'rejected', 'approved'
-    (chain fully cleared), or 'advanced' (next_step_order is the new
-    pending step). Raises PermissionError if acting_user isn't eligible —
-    callers translate that to a 403."""
+    (chain fully cleared), or 'advanced'. Raises PermissionError if
+    acting_user isn't eligible for anything actionable right now —
+    callers translate that to a 403.
+
+    Sequential workflows (the default, and every pre-existing one — see
+    approval_workflows.mode) behave exactly as before: only the row's own
+    current_step_order is checked, and 'advanced' means "move to this new
+    single step".
+
+    Flat workflows let every step with a nonempty approver pool act at
+    once instead of one at a time: current_step_order is ignored for
+    eligibility (any still-undecided resolvable step qualifies, not just
+    one), a single Approve clears every open step `acting_user` happens
+    to be eligible for in one shot (see approval_step_decisions), reject
+    is immediately terminal exactly as in sequential mode, and 'advanced'
+    means "at least one other step is still undecided" — its
+    next_step_order is only the lowest-numbered one of those, kept purely
+    as a non-null "still pending" signal on the request row; nothing
+    re-reads it as *the* current step for a flat row the way sequential
+    mode does. `request_table`/`request_id` identify this specific row
+    for recording each step's decision — required on every call (even
+    sequential ones, which never read/write it) so a workflow could be
+    switched from sequential to flat later without a gap in history."""
     steps = get_steps(conn, workflow_id)
-    current = next((s for s in steps if s["step_order"] == current_step_order), None)
-    if current is None:
-        raise PermissionError("This request's current approval step no longer exists")
-    if not is_eligible_approver(conn, inst_id, module, employee_id, current, acting_user, project_ids):
-        raise PermissionError("You are not an eligible approver for this request's current step")
+    mode = _get_workflow_mode(conn, workflow_id)
+
+    if mode != "flat":
+        current = next((s for s in steps if s["step_order"] == current_step_order), None)
+        if current is None:
+            raise PermissionError("This request's current approval step no longer exists")
+        if not is_eligible_approver(conn, inst_id, module, employee_id, current, acting_user, project_ids):
+            raise PermissionError("You are not an eligible approver for this request's current step")
+        if action == "reject":
+            return "rejected", None
+        remaining = [s for s in steps if s["step_order"] > current_step_order]
+        nxt = _first_resolvable_step(conn, inst_id, module, employee_id, remaining, project_ids)
+        if nxt is None:
+            return "approved", None
+        return "advanced", nxt["step_order"]
+
+    # Flat: every step with a non-empty pool is open simultaneously,
+    # regardless of step_order, until each is individually decided.
+    decided = _decided_step_orders(conn, request_table, request_id)
+    open_steps = [s for s in steps if s["step_order"] not in decided
+                  and _step_pool_nonempty(conn, inst_id, module, employee_id, s, project_ids)]
+    my_steps = [s for s in open_steps
+                if is_eligible_approver(conn, inst_id, module, employee_id, s, acting_user, project_ids)]
+    if not my_steps:
+        raise PermissionError("You are not an eligible approver for any of this request's open steps")
+    decision = "rejected" if action == "reject" else "approved"
+    for s in my_steps:
+        _record_decision(conn, inst_id, module, request_table, request_id, s["step_order"], decision, acting_user["username"])
     if action == "reject":
         return "rejected", None
-    remaining = [s for s in steps if s["step_order"] > current_step_order]
-    nxt = _first_resolvable_step(conn, inst_id, module, employee_id, remaining, project_ids)
-    if nxt is None:
+    my_orders = {s["step_order"] for s in my_steps}
+    still_open = [s for s in open_steps if s["step_order"] not in my_orders]
+    if not still_open:
         return "approved", None
-    return "advanced", nxt["step_order"]
+    return "advanced", min(s["step_order"] for s in still_open)
 
 
 def pending_rows_for_approver(conn, inst_id: int, user: dict, module: str) -> List[Dict[str, Any]]:
@@ -452,15 +556,27 @@ def pending_rows_for_approver(conn, inst_id: int, user: dict, module: str) -> Li
         ).fetchall())
     result = []
     for row in rows:
-        steps = get_steps(conn, row["approval_workflow_id"])
-        current = next((s for s in steps if s["step_order"] == row["approval_step"]), None)
-        if not current:
-            continue
+        workflow_id = row["approval_workflow_id"]
+        steps = get_steps(conn, workflow_id)
         employee_id = _requester_employee_id(conn, inst_id, module, row)
         if not employee_id:
             continue
         project_ids = project_ids_for_row(conn, module, row)
-        if is_eligible_approver(conn, inst_id, module, employee_id, current, user, project_ids):
+        mode = _get_workflow_mode(conn, workflow_id)
+
+        if mode != "flat":
+            current = next((s for s in steps if s["step_order"] == row["approval_step"]), None)
+            if not current:
+                continue
+            if is_eligible_approver(conn, inst_id, module, employee_id, current, user, project_ids):
+                result.append(row)
+            continue
+
+        request_table, request_id = _request_identity_for_row(module, row)
+        resolvable = [s for s in steps if _step_pool_nonempty(conn, inst_id, module, employee_id, s, project_ids)]
+        decided = _decided_step_orders(conn, request_table, request_id)
+        open_steps = [s for s in resolvable if s["step_order"] not in decided]
+        if any(is_eligible_approver(conn, inst_id, module, employee_id, s, user, project_ids) for s in open_steps):
             result.append(row)
     return result
 
@@ -491,28 +607,54 @@ def annotate_actionability(conn, inst_id: int, module: str, rows: List[Dict[str,
     list screen does with a "not eligible" result: label it, don't hide
     it.
 
-    A row always gets `is_actionable=True`, `pending_with=None` if it's
-    not at a pending status for this module, or has no workflow/step
-    recorded — those carry no action buttons anyway, or (a legacy
-    pre-engine row) are gated by that module's own blanket role-based
-    fallback instead of this engine, so labeling them here would be
-    wrong.
+    A row always gets `is_actionable=True`, `pending_with=None`,
+    `approval_progress=None` if it's not at a pending status for this
+    module, or has no workflow/step recorded — those carry no action
+    buttons anyway, or (a legacy pre-engine row) are gated by that
+    module's own blanket role-based fallback instead of this engine, so
+    labeling them here would be wrong.
+
+    A flat-mode row (see approval_workflows.mode) additionally gets
+    `approval_progress={"decided": N, "total": M}` — how many of its
+    resolvable steps have already been individually decided — and
+    `pending_with` becomes a comma-joined list of every still-open step's
+    description rather than just one, since more than one can be
+    actionable at once.
     """
     pending = set(MODULE_PENDING_STATUSES[module])
     for row in rows:
         row["is_actionable"] = True
         row["pending_with"] = None
+        row["approval_progress"] = None
         if row["status"] not in pending or row["approval_workflow_id"] is None or row["approval_step"] is None:
             continue
-        steps = get_steps(conn, row["approval_workflow_id"])
-        current = next((s for s in steps if s["step_order"] == row["approval_step"]), None)
-        if not current:
-            continue
+        workflow_id = row["approval_workflow_id"]
+        steps = get_steps(conn, workflow_id)
         employee_id = _requester_employee_id(conn, inst_id, module, row)
         if not employee_id:
             continue
         project_ids = project_ids_for_row(conn, module, row)
-        row["is_actionable"] = is_eligible_approver(conn, inst_id, module, employee_id, current, user, project_ids)
-        if not row["is_actionable"]:
-            row["pending_with"] = describe_current_step(conn, inst_id, employee_id, current, project_ids)
+        mode = _get_workflow_mode(conn, workflow_id)
+
+        if mode != "flat":
+            current = next((s for s in steps if s["step_order"] == row["approval_step"]), None)
+            if not current:
+                continue
+            row["is_actionable"] = is_eligible_approver(conn, inst_id, module, employee_id, current, user, project_ids)
+            if not row["is_actionable"]:
+                row["pending_with"] = describe_current_step(conn, inst_id, employee_id, current, project_ids)
+            continue
+
+        request_table, request_id = _request_identity_for_row(module, row)
+        resolvable = [s for s in steps if _step_pool_nonempty(conn, inst_id, module, employee_id, s, project_ids)]
+        decided = _decided_step_orders(conn, request_table, request_id)
+        open_steps = [s for s in resolvable if s["step_order"] not in decided]
+        row["approval_progress"] = {"decided": len(resolvable) - len(open_steps), "total": len(resolvable)}
+        row["is_actionable"] = any(
+            is_eligible_approver(conn, inst_id, module, employee_id, s, user, project_ids) for s in open_steps
+        )
+        if not row["is_actionable"] and open_steps:
+            row["pending_with"] = ", ".join(
+                describe_current_step(conn, inst_id, employee_id, s, project_ids) for s in open_steps
+            )
     return rows

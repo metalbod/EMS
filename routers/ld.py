@@ -224,7 +224,8 @@ def update_ld_enrollment_status(conn, enr_id: int, body: LDEnrollStatusIn, user:
             try:
                 outcome, next_step = advance_or_finalize(
                     conn, inst_id, "ld_enrollment", enr["employee_id"],
-                    enr["approval_workflow_id"], enr["approval_step"], action, user
+                    enr["approval_workflow_id"], enr["approval_step"], action, user,
+                    "ld_enrollments", enr_id
                 )
             except PermissionError as e:
                 raise HTTPException(403, str(e))

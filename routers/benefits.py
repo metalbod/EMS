@@ -1303,7 +1303,8 @@ def decide_claim(
             project_ids = {claim["project_id"]} if claim["project_id"] else set()
             outcome, next_step = advance_or_finalize(
                 conn, inst_id, "claims", claim["employee_id"],
-                claim["approval_workflow_id"], claim["approval_step"], action, current_user, project_ids
+                claim["approval_workflow_id"], claim["approval_step"], action, current_user,
+                "benefit_claims", claim_id, project_ids
             )
         except PermissionError as e:
             raise HTTPException(403, detail=str(e))

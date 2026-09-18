@@ -1,8 +1,11 @@
 """Approval Workflow settings: institution-configurable approval chains for
-Leave, Benefits Claims, Job Requisition, Timesheet, and L&D Enrollment. See
-core/approval_workflow.py for the resolution/advancement engine these
-configure, and README.md's "Approval workflow module" section for the
-overall mechanism.
+Leave, Benefits Claims, Job Requisition, Timesheet, L&D Enrollment,
+Overtime, Resignation, and PIP. See core/approval_workflow.py for the
+resolution/advancement engine these configure, and README.md's "Approval
+workflow module" section for the overall mechanism. Each workflow also
+carries a `mode` (sequential | flat, see WORKFLOW_MODES) — sequential
+requires each step to clear in order; flat lets every step with a
+nonempty approver pool act at once.
 """
 from typing import Any, Dict, List, Optional
 
@@ -13,7 +16,7 @@ from core.deps import get_current_user, need_inst
 
 from core.permission_matrix import require_permission
 
-from core.approval_workflow import APPROVER_TYPES, MAX_STEPS, MODULE_TABLE, PROJECT_MANAGER_MODULES, get_steps
+from core.approval_workflow import APPROVER_TYPES, MAX_STEPS, MODULE_TABLE, PROJECT_MANAGER_MODULES, WORKFLOW_MODES, get_steps
 
 from db import get_db
 
@@ -30,6 +33,7 @@ WORKFLOW_MANAGE_ROLES = ("superadmin", "hr_manager", "hr_admin")
 class WorkflowIn(BaseModel):
     module: str
     name: str
+    mode: str = "sequential"  # sequential | flat — see core/approval_workflow.py
 
     @field_validator("module")
     @classmethod
@@ -38,10 +42,25 @@ class WorkflowIn(BaseModel):
             raise ValueError(f"module must be one of: {', '.join(MODULES)}")
         return v
 
+    @field_validator("mode")
+    @classmethod
+    def _validate_mode(cls, v):
+        if v not in WORKFLOW_MODES:
+            raise ValueError(f"mode must be one of: {', '.join(WORKFLOW_MODES)}")
+        return v
+
 
 class WorkflowUpdateIn(BaseModel):
     name: str
     is_default: bool = False
+    mode: str = "sequential"
+
+    @field_validator("mode")
+    @classmethod
+    def _validate_mode(cls, v):
+        if v not in WORKFLOW_MODES:
+            raise ValueError(f"mode must be one of: {', '.join(WORKFLOW_MODES)}")
+        return v
 
 
 class StepIn(BaseModel):
@@ -122,8 +141,8 @@ def create_workflow(conn, body: WorkflowIn, user: dict = Depends(get_current_use
         "SELECT id FROM approval_workflows WHERE institution_id=? AND module=? AND is_active=1", (inst_id, body.module)
     ).fetchone()
     conn.execute(
-        "INSERT INTO approval_workflows (institution_id,module,name,is_default) VALUES (?,?,?,?)",
-        (inst_id, body.module, body.name.strip(), 0 if existing_default else 1)
+        "INSERT INTO approval_workflows (institution_id,module,name,is_default,mode) VALUES (?,?,?,?,?)",
+        (inst_id, body.module, body.name.strip(), 0 if existing_default else 1, body.mode)
     )
     workflow_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     conn.commit()
@@ -153,8 +172,8 @@ def update_workflow(conn, workflow_id: int, body: WorkflowUpdateIn, user: dict =
             (inst_id, wf["module"], workflow_id)
         )
     conn.execute(
-        "UPDATE approval_workflows SET name=?,is_default=? WHERE id=?",
-        (body.name.strip(), 1 if body.is_default else 0, workflow_id)
+        "UPDATE approval_workflows SET name=?,is_default=?,mode=? WHERE id=?",
+        (body.name.strip(), 1 if body.is_default else 0, body.mode, workflow_id)
     )
     conn.commit()
     return _with_steps(conn, conn.execute("SELECT * FROM approval_workflows WHERE id=?", (workflow_id,)).fetchone())

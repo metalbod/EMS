@@ -232,6 +232,49 @@ def test_approve_already_decided_project_returns_400(
     assert "already Approved" in res.json()["detail"]
 
 
+def test_flat_mode_project_manager_and_hr_can_approve_in_any_order(
+    client, hr_manager_auth, employee_with_login, make_test_project, make_test_project_task,
+    employee_with_user, make_test_timesheet
+):
+    """A flat workflow on the per-project split path — proves
+    core/approval_workflow.py's _request_identity_for_row correctly
+    disambiguates a timesheet_project_approvals row (via
+    project_approval_id) rather than the parent timesheet's own id."""
+    pm_emp, pm_headers = employee_with_login(full_name="ZZ TPA Flat PM")
+    project_a = make_test_project(name="ZZ TPA Flat Project", is_open_to_all=True,
+                                  manager_ids=[pm_emp["employee_id"]])
+    task_a = make_test_project_task(project_a["id"])
+
+    wf = client.post("/api/approval-workflows", headers=hr_manager_auth,
+                      json={"module": "timesheet", "name": "ZZ TPA Flat WF", "mode": "flat"}).json()
+    client.post(f"/api/approval-workflows/{wf['id']}/steps", headers=hr_manager_auth,
+                json={"approver_type": "project_manager"})
+    client.post(f"/api/approval-workflows/{wf['id']}/steps", headers=hr_manager_auth,
+                json={"approver_type": "hr_manager"})
+    client.put(f"/api/approval-workflows/{wf['id']}", headers=hr_manager_auth,
+               json={"name": wf["name"], "is_default": True, "mode": "flat"})
+
+    emp, headers = employee_with_user
+    ts = make_test_timesheet()
+    client.post(f"/api/timesheets/{ts['id']}/entries", headers=headers, json={
+        "project_id": project_a["id"], "task_id": task_a["id"], "date": ENTRY_DATE, "hours": 4,
+    })
+    client.patch(f"/api/timesheets/{ts['id']}/status", headers=headers, json={"status": "Submitted"})
+
+    # HR acts first (step 2), even though flat mode lets it act before the PM.
+    first = client.patch(f"/api/timesheets/{ts['id']}/projects/{project_a['id']}/status",
+                         headers=hr_manager_auth, json={"status": "Approved"})
+    assert first.status_code == 200, first.text
+    assert first.json()["status"] == "Submitted", "still waiting on the project manager's step"
+
+    second = client.patch(f"/api/timesheets/{ts['id']}/projects/{project_a['id']}/status",
+                          headers=pm_headers, json={"status": "Approved"})
+    assert second.status_code == 200, second.text
+    assert second.json()["status"] == "Approved"
+
+    client.delete(f"/api/approval-workflows/{wf['id']}", headers=hr_manager_auth)
+
+
 def test_list_timesheets_project_filter_and_sort(
     client, hr_manager_auth, employee_with_user, make_test_timesheet, two_open_tasks
 ):

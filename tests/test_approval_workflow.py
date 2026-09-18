@@ -582,3 +582,195 @@ def test_delete_workflow_promotes_another_default(client, hr_manager_auth):
     assert any(w["is_default"] == 1 for w in listing)
 
     client.delete(f"/api/approval-workflows/{wf_b['id']}", headers=hr_manager_auth)
+
+
+# ---------------------------------------------------------------------------
+# Flat mode — every step with a nonempty approver pool can act at once
+# instead of one at a time (see approval_workflows.mode).
+# ---------------------------------------------------------------------------
+def _make_flat_leave_workflow(client, hr_manager_auth, step_bodies):
+    wf = client.post("/api/approval-workflows", headers=hr_manager_auth,
+                      json={"module": "leave", "name": _unique_name(), "mode": "flat"}).json()
+    assert wf["mode"] == "flat"
+    for step_body in step_bodies:
+        client.post(f"/api/approval-workflows/{wf['id']}/steps", headers=hr_manager_auth, json=step_body)
+    client.put(f"/api/approval-workflows/{wf['id']}", headers=hr_manager_auth,
+               json={"name": wf["name"], "is_default": True, "mode": "flat"})
+    return wf
+
+
+def test_create_workflow_invalid_mode_returns_422(client, hr_manager_auth):
+    res = client.post("/api/approval-workflows", headers=hr_manager_auth,
+                       json={"module": "leave", "name": _unique_name(), "mode": "bogus"})
+    assert res.status_code == 422
+
+
+def test_workflow_mode_persists_through_create_and_update(client, hr_manager_auth):
+    wf = client.post("/api/approval-workflows", headers=hr_manager_auth,
+                      json={"module": "claims", "name": _unique_name(), "mode": "flat"}).json()
+    assert wf["mode"] == "flat"
+    listing = client.get("/api/approval-workflows", headers=hr_manager_auth, params={"module": "claims"}).json()
+    assert next(w for w in listing if w["id"] == wf["id"])["mode"] == "flat"
+
+    updated = client.put(f"/api/approval-workflows/{wf['id']}", headers=hr_manager_auth,
+                          json={"name": wf["name"], "is_default": False, "mode": "sequential"}).json()
+    assert updated["mode"] == "sequential"
+
+    client.delete(f"/api/approval-workflows/{wf['id']}", headers=hr_manager_auth)
+
+
+def test_flat_workflow_finalizes_only_once_every_step_approves(
+    client, hr_manager_auth, manager_with_report, make_test_leave_type
+):
+    report_emp, mgr_headers = manager_with_report
+    lt = make_test_leave_type(requires_approval=True)
+    wf = _make_flat_leave_workflow(client, hr_manager_auth, [
+        {"approver_type": "direct_manager"}, {"approver_type": "hr_manager"},
+    ])
+
+    start = "2027-07-05"
+    app = client.post("/api/leave/applications", headers=hr_manager_auth, json={
+        "employee_id": report_emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": start, "end_date": start,
+    }).json()
+    assert app["status"] == "Pending Approval"
+
+    # HR acts FIRST even though it's step 2 — flat mode allows any order.
+    first = client.patch(f"/api/leave/applications/{app['id']}/status", headers=hr_manager_auth,
+                          json={"status": "Approved"})
+    assert first.status_code == 200, first.text
+    assert first.json()["status"] == "Pending Approval", "still waiting on the manager's step"
+
+    # HR has nothing left to decide — their only eligible step is done.
+    denied = client.patch(f"/api/leave/applications/{app['id']}/status", headers=hr_manager_auth,
+                           json={"status": "Approved"})
+    assert denied.status_code == 403, denied.text
+
+    second = client.patch(f"/api/leave/applications/{app['id']}/status", headers=mgr_headers,
+                           json={"status": "Approved"})
+    assert second.status_code == 200, second.text
+    assert second.json()["status"] == "Approved"
+
+    client.delete(f"/api/approval-workflows/{wf['id']}", headers=hr_manager_auth)
+
+
+def test_flat_workflow_reject_at_any_step_is_immediately_terminal(
+    client, hr_manager_auth, manager_with_report, make_test_leave_type
+):
+    report_emp, mgr_headers = manager_with_report
+    lt = make_test_leave_type(requires_approval=True)
+    wf = _make_flat_leave_workflow(client, hr_manager_auth, [
+        {"approver_type": "direct_manager"}, {"approver_type": "hr_manager"},
+    ])
+
+    start = "2027-07-19"
+    app = client.post("/api/leave/applications", headers=hr_manager_auth, json={
+        "employee_id": report_emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": start, "end_date": start,
+    }).json()
+
+    rejected = client.patch(f"/api/leave/applications/{app['id']}/status", headers=hr_manager_auth,
+                             json={"status": "Rejected"})
+    assert rejected.status_code == 200, rejected.text
+    assert rejected.json()["status"] == "Rejected"
+
+    # Nothing left to act on — already terminal, regardless of the
+    # manager's own step never having been decided.
+    denied = client.patch(f"/api/leave/applications/{app['id']}/status", headers=mgr_headers,
+                           json={"status": "Approved"})
+    assert denied.status_code == 400, denied.text
+
+    client.delete(f"/api/approval-workflows/{wf['id']}", headers=hr_manager_auth)
+
+
+def test_flat_workflow_both_steps_actionable_simultaneously_and_progress_updates(
+    client, hr_manager_auth, manager_with_report, make_test_leave_type
+):
+    report_emp, mgr_headers = manager_with_report
+    lt = make_test_leave_type(requires_approval=True)
+    wf = _make_flat_leave_workflow(client, hr_manager_auth, [
+        {"approver_type": "direct_manager"}, {"approver_type": "hr_manager"},
+    ])
+
+    start = "2027-07-26"
+    app = client.post("/api/leave/applications", headers=hr_manager_auth, json={
+        "employee_id": report_emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": start, "end_date": start,
+    }).json()
+
+    mgr_row = next(a for a in client.get("/api/leave/applications", headers=mgr_headers).json()
+                   if a["id"] == app["id"])
+    assert mgr_row["is_actionable"] is True
+    assert mgr_row["approval_progress"] == {"decided": 0, "total": 2}
+
+    hr_row = next(a for a in client.get("/api/leave/applications", headers=hr_manager_auth).json()
+                  if a["id"] == app["id"])
+    assert hr_row["is_actionable"] is True, "both steps should be simultaneously actionable in flat mode"
+
+    client.patch(f"/api/leave/applications/{app['id']}/status", headers=hr_manager_auth,
+                 json={"status": "Approved"})
+
+    mgr_row_after = next(a for a in client.get("/api/leave/applications", headers=mgr_headers).json()
+                         if a["id"] == app["id"])
+    assert mgr_row_after["is_actionable"] is True, "manager's own step is still untouched"
+    assert mgr_row_after["approval_progress"] == {"decided": 1, "total": 2}
+
+    client.delete(f"/api/approval-workflows/{wf['id']}", headers=hr_manager_auth)
+
+
+def test_flat_workflow_one_action_clears_every_step_same_person_qualifies_for(
+    client, hr_manager_auth, manager_with_report, make_test_leave_type
+):
+    """If the same acting user qualifies for more than one still-open step
+    at once (here: they're both the direct manager AND a named specific
+    employee on another step), a single Approve clears every step they
+    personally qualify for in one shot, per the confirmed design."""
+    report_emp, mgr_headers = manager_with_report
+    mgr_emp_id = client.get("/api/auth/me", headers=mgr_headers).json()["employee_id"]
+    lt = make_test_leave_type(requires_approval=True)
+    wf = _make_flat_leave_workflow(client, hr_manager_auth, [
+        {"approver_type": "specific_employee", "specific_employee_id": mgr_emp_id},
+        {"approver_type": "direct_manager"},
+    ])
+
+    start = "2027-08-09"
+    app = client.post("/api/leave/applications", headers=hr_manager_auth, json={
+        "employee_id": report_emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": start, "end_date": start,
+    }).json()
+    assert app["status"] == "Pending Approval"
+
+    res = client.patch(f"/api/leave/applications/{app['id']}/status", headers=mgr_headers,
+                        json={"status": "Approved"})
+    assert res.status_code == 200, res.text
+    assert res.json()["status"] == "Approved", "one action should have cleared both steps the manager qualifies for"
+
+    client.delete(f"/api/approval-workflows/{wf['id']}", headers=hr_manager_auth)
+
+
+def test_flat_workflow_auto_skips_empty_step_without_blocking_finalization(
+    client, hr_manager_auth, employee_with_login, make_test_leave_type
+):
+    """A flat step with an empty approver pool (no manager on file) must
+    not count toward "all steps must approve" — same auto-skip rule as
+    sequential mode."""
+    requester, _ = employee_with_login(full_name="ZZ Flat Auto Skip Requester")
+    lt = make_test_leave_type(requires_approval=True)
+    wf = _make_flat_leave_workflow(client, hr_manager_auth, [
+        {"approver_type": "direct_manager"},  # empty pool: requester has no manager on file
+        {"approver_type": "hr_manager"},
+    ])
+
+    start = "2027-08-16"
+    app = client.post("/api/leave/applications", headers=hr_manager_auth, json={
+        "employee_id": requester["employee_id"], "leave_type_id": lt["id"],
+        "start_date": start, "end_date": start,
+    }).json()
+    assert app["status"] == "Pending Approval"
+
+    res = client.patch(f"/api/leave/applications/{app['id']}/status", headers=hr_manager_auth,
+                        json={"status": "Approved"})
+    assert res.status_code == 200, res.text
+    assert res.json()["status"] == "Approved", "the only resolvable step (hr_manager) approving should finalize it"
+
+    client.delete(f"/api/approval-workflows/{wf['id']}", headers=hr_manager_auth)

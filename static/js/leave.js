@@ -486,7 +486,7 @@ function renderLeaveApprovalTable() {
         ${a.status==='Pending Approval'?(a.is_actionable?`
           <button onclick="reviewLeaveApplication(${a.id},'Approved')" class="text-xs text-emerald-700 hover:underline mr-3">Approve</button>
           <button onclick="reviewLeaveApplication(${a.id},'Rejected')" class="text-xs text-red-700 hover:underline">Reject</button>
-        `:`<span class="text-xs text-slate-400">Pending: ${esc(a.pending_with||'—')}</span>`):'<span class="text-xs text-slate-400">—</span>'}
+        `:`<span class="text-xs text-slate-400">Pending: ${pendingWithLabel(a)}</span>`):'<span class="text-xs text-slate-400">—</span>'}
       </td>
     </tr>`).join('');
 }

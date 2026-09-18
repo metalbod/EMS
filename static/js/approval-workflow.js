@@ -8,7 +8,12 @@ const AW_MODULES = [
   {key:'ld_enrollment', label:'L&D Enrollment'},
   {key:'overtime', label:'Overtime'},
   {key:'resignation', label:'Resignation'},
+  {key:'pip', label:'PIP'},
 ];
+const AW_MODE_HINTS = {
+  sequential: 'Sequential — each step must clear before the next becomes actionable.',
+  flat: 'Flat — every step below can be actioned at once, in any order; it finalizes once all of them have approved.',
+};
 const AW_STEP_LABELS = {
   direct_manager: 'Direct Manager',
   skip_level_manager: 'Skip-Level Manager',
@@ -85,12 +90,15 @@ async function loadAwWorkflows(selectId) {
   const res = await api(`/api/approval-workflows?module=${awCurrentModule}`);
   awWorkflowsCache = res?.ok ? await res.json() : [];
   const sel = document.getElementById('awWorkflowSelect');
+  const modeSel = document.getElementById('awWorkflowModeSelect');
   if (!awWorkflowsCache.length) {
     sel.innerHTML = '<option value="">No workflows yet</option>';
+    modeSel.disabled = true;
     awCurrentWorkflowId = null;
     renderAwSteps();
     return;
   }
+  modeSel.disabled = false;
   sel.innerHTML = awWorkflowsCache.map(w =>
     `<option value="${w.id}">${esc(w.name)}${w.is_default?' (Default)':''} — ${w.steps.length} step${w.steps.length===1?'':'s'}</option>`
   ).join('');
@@ -104,8 +112,20 @@ function switchApprovalWorkflow() {
   renderAwSteps();
 }
 
+async function updateAwWorkflowMode() {
+  if (!awCurrentWorkflowId) return;
+  const current = awWorkflowsCache.find(w=>w.id===awCurrentWorkflowId);
+  const mode = document.getElementById('awWorkflowModeSelect').value;
+  const res = await api(`/api/approval-workflows/${awCurrentWorkflowId}`, {
+    method:'PUT', body: JSON.stringify({name: current?.name || '', is_default: !!current?.is_default, mode})
+  });
+  if (!res?.ok) { const d = await res?.json().catch(()=>({})); alert(d?.detail || 'Failed to update mode'); }
+  await loadAwWorkflows(awCurrentWorkflowId);
+}
+
 function showAwWorkflowForm() {
   document.getElementById('awWorkflowName').value = '';
+  document.getElementById('awWorkflowModeInput').value = 'sequential';
   document.getElementById('awWorkflowIsDefault').checked = false;
   document.getElementById('awWorkflowForm').classList.remove('hidden');
 }
@@ -114,11 +134,12 @@ function hideAwWorkflowForm() { document.getElementById('awWorkflowForm')?.class
 const saveAwWorkflow = guardAsync(async function() {
   const name = document.getElementById('awWorkflowName').value.trim();
   if (!name) { alert('Workflow name is required'); return; }
-  const res = await api('/api/approval-workflows', {method:'POST', body: JSON.stringify({module: awCurrentModule, name})});
+  const mode = document.getElementById('awWorkflowModeInput').value;
+  const res = await api('/api/approval-workflows', {method:'POST', body: JSON.stringify({module: awCurrentModule, name, mode})});
   if (!res?.ok) return;
   const created = await res.json();
   if (document.getElementById('awWorkflowIsDefault').checked) {
-    await api(`/api/approval-workflows/${created.id}`, {method:'PUT', body: JSON.stringify({name, is_default:true})});
+    await api(`/api/approval-workflows/${created.id}`, {method:'PUT', body: JSON.stringify({name, is_default:true, mode})});
   }
   hideAwWorkflowForm();
   await loadAwWorkflows(created.id);
@@ -129,7 +150,9 @@ async function renameAwWorkflow() {
   const current = awWorkflowsCache.find(w=>w.id===awCurrentWorkflowId);
   const name = prompt('Workflow name:', current?.name || '');
   if (!name || !name.trim()) return;
-  const res = await api(`/api/approval-workflows/${awCurrentWorkflowId}`, {method:'PUT', body: JSON.stringify({name: name.trim(), is_default: !!current?.is_default})});
+  const res = await api(`/api/approval-workflows/${awCurrentWorkflowId}`, {method:'PUT', body: JSON.stringify({
+    name: name.trim(), is_default: !!current?.is_default, mode: current?.mode || 'sequential'
+  })});
   if (!res?.ok) return;
   await loadAwWorkflows(awCurrentWorkflowId);
 }
@@ -137,7 +160,9 @@ async function renameAwWorkflow() {
 async function setAwWorkflowDefault() {
   if (!awCurrentWorkflowId) return;
   const current = awWorkflowsCache.find(w=>w.id===awCurrentWorkflowId);
-  await api(`/api/approval-workflows/${awCurrentWorkflowId}`, {method:'PUT', body: JSON.stringify({name: current?.name || '', is_default: true})});
+  await api(`/api/approval-workflows/${awCurrentWorkflowId}`, {method:'PUT', body: JSON.stringify({
+    name: current?.name || '', is_default: true, mode: current?.mode || 'sequential'
+  })});
   await loadAwWorkflows(awCurrentWorkflowId);
 }
 
@@ -153,9 +178,12 @@ function renderAwSteps() {
   const wrap = document.getElementById('awStepsList');
   const emptyEl = document.getElementById('awStepsEmpty');
   const addForm = document.getElementById('awAddStepForm');
-  if (!awCurrentWorkflowId) { wrap.innerHTML=''; emptyEl.classList.remove('hidden'); addForm.classList.add('hidden'); return; }
+  const hintEl = document.getElementById('awModeHint');
+  if (!awCurrentWorkflowId) { wrap.innerHTML=''; emptyEl.classList.remove('hidden'); addForm.classList.add('hidden'); hintEl.textContent=''; return; }
   const workflow = awWorkflowsCache.find(w=>w.id===awCurrentWorkflowId);
   const steps = workflow?.steps || [];
+  document.getElementById('awWorkflowModeSelect').value = workflow?.mode || 'sequential';
+  hintEl.textContent = AW_MODE_HINTS[workflow?.mode] || '';
   addForm.classList.remove('hidden');
   if (!steps.length) { wrap.innerHTML=''; emptyEl.classList.remove('hidden'); return; }
   emptyEl.classList.add('hidden');

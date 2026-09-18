@@ -2199,6 +2199,10 @@
 
         <div class="flex items-center gap-2 mb-4 flex-wrap">
           <select id="awWorkflowSelect" onchange="switchApprovalWorkflow()" class="inp flex-1 min-w-[220px] max-w-xs"></select>
+          <select id="awWorkflowModeSelect" onchange="updateAwWorkflowMode()" class="inp text-xs" style="width:170px" title="Sequential: steps must clear in order, one at a time. Flat: every step can act at once.">
+            <option value="sequential">Sequential</option>
+            <option value="flat">Flat (parallel)</option>
+          </select>
           <button onclick="showAwWorkflowForm()" class="btn-ghost text-xs px-2 whitespace-nowrap">+ New Workflow</button>
           <button onclick="setAwWorkflowDefault()" class="btn-ghost text-xs px-2 whitespace-nowrap" title="Make this the default workflow used for new requests">Set Default</button>
           <button onclick="renameAwWorkflow()" class="text-slate-400 hover:text-blue-500" title="Rename"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
@@ -2206,10 +2210,15 @@
         </div>
         <div id="awWorkflowForm" class="hidden flex items-center gap-2 mb-4 bg-slate-50 border border-slate-200 rounded-lg p-3">
           <input id="awWorkflowName" class="inp flex-1" placeholder="Workflow name…"/>
+          <select id="awWorkflowModeInput" class="inp text-xs" style="width:170px">
+            <option value="sequential">Sequential</option>
+            <option value="flat">Flat (parallel)</option>
+          </select>
           <label class="flex items-center gap-1 text-xs text-slate-500 whitespace-nowrap"><input type="checkbox" id="awWorkflowIsDefault"/> Default</label>
           <button onclick="saveAwWorkflow()" class="btn-primary text-xs px-3 py-1.5">Save</button>
           <button onclick="hideAwWorkflowForm()" class="text-xs text-slate-500 hover:text-slate-700 px-2">Cancel</button>
         </div>
+        <p id="awModeHint" class="text-xs text-slate-400 -mt-2 mb-3"></p>
 
         <div id="awStepsList" class="space-y-2 mb-4"></div>
         <p id="awStepsEmpty" class="hidden text-slate-400 text-sm text-center py-8">No steps yet — add one below.</p>

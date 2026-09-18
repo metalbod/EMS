@@ -192,6 +192,20 @@ function combinedName(fullName, preferredName) {
   return full;
 }
 
+// A row's "who's still holding this up" label, for any module wired into
+// core/approval_workflow.py's annotate_actionability. Sequential rows
+// (approval_progress null) show just the plain label, exactly as before
+// this existed; a flat-mode row (see approval_workflows.mode) also shows
+// how many of its steps have already cleared, e.g. "Direct Manager, HR
+// Manager (1/2 approved)" — every step in pending_with's list is still
+// open, so the label always lists what's outstanding, not what's done.
+function pendingWithLabel(row) {
+  const label = row.pending_with || '—';
+  if (!row.approval_progress) return esc(label);
+  const {decided, total} = row.approval_progress;
+  return `${esc(label)} (${decided}/${total} approved)`;
+}
+
 // ---------------------------------------------------------------------------
 // Currency display: "RM 1,234.56" everywhere (was 3 implementations —
 // fmtRM in benefits.js, fmtMoney in payroll.js, ~40 inline

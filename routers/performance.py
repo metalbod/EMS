@@ -694,7 +694,8 @@ def decide_pip(conn, cycle_id: int, body: PipDecisionIn, user: dict = Depends(ge
     try:
         outcome, next_step = advance_or_finalize(
             conn, inst_id, "pip", cycle["employee_id"],
-            cycle["approval_workflow_id"], cycle["approval_step"], action, user
+            cycle["approval_workflow_id"], cycle["approval_step"], action, user,
+            "performance_cycles", cycle_id
         )
     except PermissionError as e:
         raise HTTPException(403, str(e))

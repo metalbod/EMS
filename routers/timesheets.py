@@ -139,7 +139,10 @@ def _expand_timesheet_rows(conn, candidates: List[Dict[str, Any]]) -> List[Dict[
     `row["id"]` always stays the parent timesheet's id either way (the
     Timesheet Detail modal opens by timesheet id, not by this table's own
     child-row id); a split row additionally carries `project_id` for the
-    per-project approve/reject endpoint."""
+    per-project approve/reject endpoint and `project_approval_id` (the
+    child row's own id) for anything that needs to identify that specific
+    approval instance, e.g. flat-mode decision tracking — see
+    core/approval_workflow.py's _request_identity_for_row."""
     ts_ids = [c["id"] for c in candidates]
     if not ts_ids:
         return []
@@ -181,6 +184,7 @@ def _expand_timesheet_rows(conn, candidates: List[Dict[str, Any]]) -> List[Dict[
             continue
         for pr in splits:
             row = dict(t)
+            row["project_approval_id"] = pr["id"]  # the child row's own id — see PATCH .../projects/{project_id}/status
             row["project_id"] = pr["project_id"]
             row["project_names"] = pr["project_name"]
             row["status"] = pr["status"]
@@ -432,7 +436,8 @@ def update_timesheet_status(conn, ts_id: int, body: TimesheetStatusIn, user: dic
                 project_ids = project_ids_for_row(conn, "timesheet", ts)
                 outcome, next_step = advance_or_finalize(
                     conn, inst_id, "timesheet", ts["employee_id"],
-                    ts["approval_workflow_id"], ts["approval_step"], action, user, project_ids
+                    ts["approval_workflow_id"], ts["approval_step"], action, user,
+                    "timesheets", ts_id, project_ids
                 )
             except PermissionError as e:
                 raise HTTPException(403, str(e))
@@ -484,7 +489,8 @@ def update_timesheet_project_status(conn, ts_id: int, project_id: int, body: Tim
     try:
         outcome, next_step = advance_or_finalize(
             conn, inst_id, "timesheet", row["employee_id"],
-            row["approval_workflow_id"], row["approval_step"], action, user, project_ids
+            row["approval_workflow_id"], row["approval_step"], action, user,
+            "timesheet_project_approvals", row["id"], project_ids
         )
     except PermissionError as e:
         raise HTTPException(403, str(e))

@@ -144,7 +144,8 @@ def update_resignation_status(conn, request_id: int, body: ResignationDecisionIn
         try:
             outcome, next_step = advance_or_finalize(
                 conn, inst_id, "resignation", request_row["employee_id"],
-                request_row["approval_workflow_id"], request_row["approval_step"], action, user
+                request_row["approval_workflow_id"], request_row["approval_step"], action, user,
+                "resignation_requests", request_id
             )
         except PermissionError as e:
             raise HTTPException(403, str(e))

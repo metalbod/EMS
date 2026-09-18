@@ -772,7 +772,8 @@ def update_leave_status(conn, app_id: int, body: LeaveStatusIn, user: dict = Dep
                 project_ids = {application["project_id"]} if application["project_id"] else set()
                 outcome, next_step = advance_or_finalize(
                     conn, inst_id, "leave", application["employee_id"],
-                    application["approval_workflow_id"], application["approval_step"], action, user, project_ids
+                    application["approval_workflow_id"], application["approval_step"], action, user,
+                    "leave_applications", app_id, project_ids
                 )
             except PermissionError as e:
                 raise HTTPException(403, str(e))
