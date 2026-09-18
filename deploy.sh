@@ -58,3 +58,27 @@ if [ "$code" != "200" ]; then
   exit 1
 fi
 echo "==> Deploy verified: 200 OK"
+
+# The "reminders" process group (scripts/send_reminders.py, Phase 2 of the
+# email notification engine) runs on a Fly-native schedule, which is a
+# per-machine property set via `fly machine update --schedule` — NOT
+# something fly.toml can express, and `fly deploy` can silently drop it
+# from an existing machine on redeploy (a known Fly quirk). Re-asserting
+# it here, every deploy, means it's never left unscheduled without
+# anyone noticing. Provisioning the process group/machine itself (adding
+# it to fly.toml, `fly scale count reminders=1`) is a one-time manual
+# step, not done by this script — if that hasn't happened yet, this
+# block finds nothing and says so, without failing the deploy.
+echo "==> Re-applying schedule to the 'reminders' process (if provisioned)..."
+reminder_machine_ids=$(fly machine list --app ems-app --json 2>/dev/null | jq -r '.[] | select(.config.metadata.fly_process_group=="reminders") | .id') || true
+if [ -z "$reminder_machine_ids" ]; then
+  echo "    No 'reminders' process group machine found — skipping (not provisioned yet, or fly.toml has no such process group)."
+else
+  while IFS= read -r mid; do
+    [ -z "$mid" ] && continue
+    echo "    Setting schedule=daily on machine $mid..."
+    if ! fly machine update "$mid" --schedule=daily --app ems-app --yes; then
+      echo "    WARNING: failed to (re)set schedule=daily on reminders machine $mid — verify manually: fly machine status $mid --app ems-app" >&2
+    fi
+  done <<< "$reminder_machine_ids"
+fi
