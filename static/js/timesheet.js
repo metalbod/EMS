@@ -12,8 +12,8 @@ const projectList = createListState({ sortKey: 'name', pageSize: 10000 });
 // path, so editing a task there can't leave this cache stale.
 let expandedProjectIds=new Set(), projectTasksByProject={};
 let tsCurrentWeekStart=null, tsCurrentTimesheet=null;
-let tsApprovalFilter='Submitted', tsApprovalEmployeeFilter='', tsApprovalPeriodFrom='', tsApprovalPeriodTo='';
-let tsApprovalEmployeeOptionsBuilt=false;
+let tsApprovalFilter='Submitted', tsApprovalEmployeeFilter='', tsApprovalPeriodFrom='', tsApprovalPeriodTo='', tsApprovalProjectFilter='';
+let tsApprovalEmployeeOptionsBuilt=false, tsApprovalProjectOptionsBuilt=false;
 const TS_STATUS_COLORS={'Draft':'status-neutral','Submitted':'status-pending','Approved':'status-positive','Rejected':'status-negative'};
 
 // Login roles eligible to be picked as a Project Manager. Matters beyond
@@ -650,8 +650,9 @@ let tsApprovalSortKey='period_start', tsApprovalSortDir='desc';
 
 async function loadTimesheetApprovals() {
   await populateTimesheetApprovalEmployeeFilter();
+  await populateTimesheetApprovalProjectFilter();
   const tbody=document.getElementById('timesheetApprovalTableBody');
-  tbody.innerHTML='<tr><td colspan="4" class="text-slate-400 text-sm text-center py-8">Loading…</td></tr>';
+  tbody.innerHTML='<tr><td colspan="5" class="text-slate-400 text-sm text-center py-8">Loading…</td></tr>';
   const offset=(tsApprovalPage-1)*tsApprovalPageSize;
   const params=new URLSearchParams({
     limit:String(tsApprovalPageSize), offset:String(offset),
@@ -661,6 +662,7 @@ async function loadTimesheetApprovals() {
   if(tsApprovalEmployeeFilter) params.set('employee_id', tsApprovalEmployeeFilter);
   if(tsApprovalPeriodFrom) params.set('period_from', tsApprovalPeriodFrom);
   if(tsApprovalPeriodTo) params.set('period_to', tsApprovalPeriodTo);
+  if(tsApprovalProjectFilter) params.set('project_id', tsApprovalProjectFilter);
   const res=await api(`/api/timesheets?${params}`);
   if(!res?.ok){ tbody.innerHTML=''; return; }
   tsApprovalRowsCache=await res.json();
@@ -691,6 +693,26 @@ function setTimesheetApprovalEmployeeFilter(employeeId) {
   loadTimesheetApprovals();
 }
 
+// Every project regardless of status (Active/On Hold/Completed) — a
+// timesheet can reference a project that's since moved on, and excluding
+// those would make some real timesheets unfindable by this filter.
+async function populateTimesheetApprovalProjectFilter() {
+  if(tsApprovalProjectOptionsBuilt) return;
+  const res=await api('/api/projects');
+  const list=res?.ok?await res.json():[];
+  const sel=document.getElementById('tsApprovalProjectFilter');
+  sel.innerHTML='<option value="">All Projects</option>' + list
+    .sort((a,b)=>a.name.localeCompare(b.name))
+    .map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  tsApprovalProjectOptionsBuilt=true;
+}
+
+function setTimesheetApprovalProjectFilter(projectId) {
+  tsApprovalProjectFilter=projectId;
+  tsApprovalPage=1;
+  loadTimesheetApprovals();
+}
+
 function setTimesheetApprovalPeriod() {
   tsApprovalPeriodFrom=document.getElementById('tsApprovalPeriodFrom').value;
   tsApprovalPeriodTo=document.getElementById('tsApprovalPeriodTo').value;
@@ -703,11 +725,13 @@ function clearTimesheetApprovalFilters() {
   tsApprovalEmployeeFilter='';
   tsApprovalPeriodFrom='';
   tsApprovalPeriodTo='';
+  tsApprovalProjectFilter='';
   document.getElementById('tsApprovalStatusFilter').value='Submitted';
   document.getElementById('tsApprovalEmployeeFilter').value='';
   document.getElementById('tsApprovalEmployeeFilterSearch').value='';
   document.getElementById('tsApprovalPeriodFrom').value='';
   document.getElementById('tsApprovalPeriodTo').value='';
+  document.getElementById('tsApprovalProjectFilter').value='';
   tsApprovalPage=1;
   loadTimesheetApprovals();
 }
@@ -754,6 +778,7 @@ function renderTimesheetApprovalTable() {
         ${fmtDate(t.period_start)} → ${fmtDate(t.period_end)}
         ${t.status==='Submitted' && !t.is_actionable ? `<p class="text-xs text-slate-400 mt-0.5">Pending with: ${esc(t.pending_with||'—')}</p>` : ''}
       </td>
+      <td class="px-4 py-3 text-slate-600">${esc(t.project_names||'—')}</td>
       <td class="px-4 py-3 text-right text-slate-600">${t.total_hours} hrs</td>
       <td class="px-4 py-3"><span class="badge ${statusColor(TS_STATUS_COLORS, t.status)} text-xs">${t.status}</span></td>
     </tr>`).join('');
@@ -770,7 +795,12 @@ async function openTimesheetDetail(tsId) {
   if(!res?.ok) return;
   const ts=await res.json();
   document.getElementById('timesheetDetailTitle').textContent=`Timesheet — ${fmtDate(ts.period_start)} to ${fmtDate(ts.period_end)}`;
-  document.getElementById('timesheetDetailMeta').textContent=`Status: ${ts.status}${ts.submitted_at?' · Submitted '+fmtDate(ts.submitted_at):''}`;
+  // A split (new-style) timesheet's own status is vestigial once
+  // per-project rows exist — real status is shown per project below.
+  const hasSplit=ts.project_approvals && ts.project_approvals.length>0;
+  document.getElementById('timesheetDetailMeta').textContent=hasSplit
+    ? `Submitted ${ts.submitted_at?fmtDate(ts.submitted_at):''} · status shown per project below`
+    : `Status: ${ts.status}${ts.submitted_at?' · Submitted '+fmtDate(ts.submitted_at):''}`;
   document.getElementById('timesheetDetailBody').innerHTML=ts.entries.map(e=>`
     <tr class="border-t border-slate-100">
       <td class="py-2">${fmtDate(e.date)}</td><td class="py-2">${esc(e.project_name)}</td>
@@ -779,11 +809,32 @@ async function openTimesheetDetail(tsId) {
     </tr>`).join('');
   document.getElementById('timesheetDetailTotal').textContent=`Total: ${ts.total_hours} hours`;
   const actions=document.getElementById('timesheetDetailActions');
-  const cached=tsApprovalRowsCache.find(r=>r.id===ts.id);
-  actions.innerHTML=ts.status!=='Submitted'?'':(!cached||cached.is_actionable)?`
-    <button onclick="reviewTimesheet(${ts.id},'Approved')" class="btn-primary text-sm">Approve</button>
-    <button onclick="reviewTimesheet(${ts.id},'Rejected')" class="btn-ghost text-sm text-red-600">Reject</button>
-  `:`<p class="text-xs text-slate-400">Pending with: ${esc(cached.pending_with||'—')}</p>`;
+  if(ts.project_approvals && ts.project_approvals.length){
+    // Split (new-style) timesheet — one status/action per project,
+    // independent of any other project on this same week. The container
+    // defaults to a flex ROW (sized for the legacy 2-button case below) —
+    // switch it to a column stack for this multi-row case.
+    actions.className='flex flex-col gap-2 mb-4';
+    actions.innerHTML=ts.project_approvals.map(pa=>`
+      <div class="flex items-center gap-3 bg-slate-50 rounded-lg px-3 py-2 flex-wrap">
+        <span class="text-sm font-medium text-slate-700 shrink-0">${esc(pa.project_name)}</span>
+        <span class="text-xs text-slate-500 shrink-0">${pa.total_hours}h</span>
+        <span class="badge ${statusColor(TS_STATUS_COLORS, pa.status)} text-xs shrink-0">${pa.status}</span>
+        <span class="flex-1"></span>
+        ${pa.status==='Submitted' ? (pa.is_actionable!==false ? `
+          <button onclick="reviewTimesheetProject(${ts.id},${pa.project_id},'Approved')" class="btn-primary text-xs px-2 py-1">Approve</button>
+          <button onclick="reviewTimesheetProject(${ts.id},${pa.project_id},'Rejected')" class="btn-ghost text-xs px-2 py-1 text-red-600">Reject</button>
+        ` : `<p class="text-xs text-slate-400">Pending with: ${esc(pa.pending_with||'—')}</p>`) : ''}
+      </div>`).join('');
+  } else {
+    // Legacy (pre-split) or Draft timesheet — the old whole-record action.
+    actions.className='flex gap-2 mb-4';
+    const cached=tsApprovalRowsCache.find(r=>r.id===ts.id);
+    actions.innerHTML=ts.status!=='Submitted'?'':(!cached||cached.is_actionable)?`
+      <button onclick="reviewTimesheet(${ts.id},'Approved')" class="btn-primary text-sm">Approve</button>
+      <button onclick="reviewTimesheet(${ts.id},'Rejected')" class="btn-ghost text-sm text-red-600">Reject</button>
+    `:`<p class="text-xs text-slate-400">Pending with: ${esc(cached.pending_with||'—')}</p>`;
+  }
   await loadTimesheetDetailOvertime(tsId);
   document.getElementById('timesheetDetailModal').classList.remove('hidden');
 }
@@ -800,19 +851,21 @@ async function loadTimesheetDetailOvertime(tsId) {
   list.innerHTML=records.map(o=>`
     <div class="flex items-center gap-3 bg-slate-50 rounded-lg px-3 py-2">
       <span class="text-sm text-slate-700 shrink-0">${fmtDate(o.work_date)}</span>
+      ${o.project_name?`<span class="text-xs text-slate-600 shrink-0">${esc(o.project_name)}</span>`:''}
       <span class="text-xs text-slate-500 shrink-0">${o.logged_hours}h logged, ${o.threshold_hours}h normal</span>
       <span class="text-sm font-medium text-amber-700 shrink-0">+${o.overtime_hours}h OT</span>
       <span class="badge ${statusColor(OT_STATUS_COLORS, o.status)} text-xs shrink-0">${o.status}</span>
       <span class="flex-1"></span>
-      ${o.status==='Pending'?`
-        <button onclick="reviewOvertime(${o.id},${tsId},'Approved')" class="btn-primary text-xs px-2 py-1">Approve</button>
-        <button onclick="reviewOvertime(${o.id},${tsId},'Rejected')" class="btn-ghost text-xs px-2 py-1 text-red-600">Reject</button>
-      `:''}
+      ${(o.status==='Pending' && (o.is_actionable===undefined||o.is_actionable))?`
+        <button onclick="reviewOvertime(${o.project_approval_id||o.id},${tsId},'Approved',${!!o.project_approval_id})" class="btn-primary text-xs px-2 py-1">Approve</button>
+        <button onclick="reviewOvertime(${o.project_approval_id||o.id},${tsId},'Rejected',${!!o.project_approval_id})" class="btn-ghost text-xs px-2 py-1 text-red-600">Reject</button>
+      `:(o.status==='Pending' && !o.is_actionable ? `<p class="text-xs text-slate-400">Pending with: ${esc(o.pending_with||'—')}</p>` : '')}
     </div>`).join('');
 }
 
-async function reviewOvertime(recordId, tsId, status) {
-  const res=await api(`/api/overtime/${recordId}/status`,{method:'PATCH',body:JSON.stringify({status})});
+async function reviewOvertime(id, tsId, status, isProjectSplit) {
+  const url=isProjectSplit ? `/api/overtime/projects/${id}/status` : `/api/overtime/${id}/status`;
+  const res=await api(url,{method:'PATCH',body:JSON.stringify({status})});
   if(res?.ok){ loadTimesheetDetailOvertime(tsId); }
   else { const d=await res.json(); alert(d.detail||'Failed to update overtime record'); }
 }
@@ -831,7 +884,7 @@ async function loadMyOvertimePage() {
   listEl.innerHTML=records.map(o=>`
     <div class="bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-3">
       <div class="flex-1">
-        <p class="font-medium text-slate-800">${fmtDate(o.work_date)}</p>
+        <p class="font-medium text-slate-800">${fmtDate(o.work_date)}${o.project_name?` <span class="text-slate-400 font-normal">— ${esc(o.project_name)}</span>`:''}</p>
         <p class="text-xs text-slate-500">${o.logged_hours}h logged vs ${o.threshold_hours}h normal — <span class="font-medium text-amber-700">${o.overtime_hours}h overtime</span></p>
         ${o.status==='Approved'?`<p class="text-xs text-green-700 mt-1">${o.conversion_mode==='leave'?`+${o.leave_days_credited} day(s) credited`:`${fmtCurrency(o.pay_amount)} tracked`}</p>`:''}
       </div>
@@ -844,4 +897,16 @@ async function reviewTimesheet(tsId, status) {
   const res=await api(`/api/timesheets/${tsId}/status`,{method:'PATCH',body:JSON.stringify({status})});
   if(res?.ok){ closeTimesheetDetailModal(); loadTimesheetApprovals(); }
   else { const d=await res.json(); alert(d.detail||'Failed to update'); }
+}
+
+async function reviewTimesheetProject(tsId, projectId, status) {
+  const res=await api(`/api/timesheets/${tsId}/projects/${projectId}/status`,{method:'PATCH',body:JSON.stringify({status})});
+  if(res?.ok){
+    // Stays open and refreshes in place — a timesheet split across
+    // several projects likely still has other projects left to decide.
+    await openTimesheetDetail(tsId);
+    loadTimesheetApprovals();
+  } else {
+    const d=await res.json(); alert(d.detail||'Failed to update');
+  }
 }

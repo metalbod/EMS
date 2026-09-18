@@ -81,6 +81,19 @@ MODULE_PENDING_STATUSES = {
     "pip": ("PendingApproval",),
 }
 
+# timesheet/overtime rows submitted since 2026-09-17 track approval per
+# project instead of on the parent row (see timesheet_project_approvals/
+# overtime_project_approvals) — pending_rows_for_approver below reads BOTH
+# this table (new-style) and MODULE_TABLE (legacy, pre-split rows that are
+# never backfilled) rather than replacing one with the other, since a
+# legacy row's own workflow instance is still live and actionable forever.
+# Same pending-status strings as MODULE_PENDING_STATUSES: a fresh child row
+# starts life carrying its module's own "just submitted" status.
+MODULE_PROJECT_TABLE = {
+    "timesheet": "timesheet_project_approvals",
+    "overtime": "overtime_project_approvals",
+}
+
 
 def _requester_employee_id(conn, inst_id: int, module: str, row) -> Optional[str]:
     col = MODULE_EMPLOYEE_COL[module]
@@ -105,19 +118,33 @@ def project_ids_for_row(conn, module: str, row) -> Set[int]:
     """Which project(s) a project_manager step should resolve against for
     this specific request. Leave/Claims: the single project_id the
     requester picked at submission (or none, if the applicable workflow
-    has no project_manager step and the field was left blank). Timesheet:
-    the union of every project logged in that week's entries — a
-    timesheet can span multiple projects, so any of their managers is
-    eligible rather than requiring one specific project to be picked.
-    Overtime: the same union, via its parent timesheet — an overtime
-    record has no project of its own, it just follows whatever the
-    timesheet it was detected on already logged."""
+    has no project_manager step and the field was left blank).
+
+    Timesheet/Overtime have two row shapes now (see
+    timesheet_project_approvals/overtime_project_approvals, added
+    2026-09-17 to split approval to the project level): a NEW-style
+    per-project row already carries its own single project_id — disambiguated
+    by its presence, since legacy rows never have that column — so it
+    resolves to just that one project, not a union. A LEGACY row (a plain
+    `timesheets`/`overtime_records` row that predates the split, or one
+    read via this module's old whole-record path) still resolves to the
+    union of every project logged in that week/day — kept forever, since
+    those rows are never backfilled onto the new shape."""
     if module in ("leave", "claims"):
         pid = row["project_id"] if "project_id" in row.keys() else None
         return {pid} if pid else set()
+    # A row that's been through routers/timesheets.py's _expand_timesheet_rows
+    # (or overtime's equivalent) always has a project_id KEY, even for a
+    # legacy/unsplit row (explicitly set to None there) — so disambiguating
+    # by mere key presence would wrongly treat every legacy row as split.
+    # Check for a genuinely non-None value instead.
     if module == "timesheet":
+        if "project_id" in row.keys() and row["project_id"] is not None:
+            return {row["project_id"]}
         return _timesheet_project_ids(conn, row["id"])
     if module == "overtime":
+        if "project_id" in row.keys() and row["project_id"] is not None:
+            return {row["project_id"]}
         return _timesheet_project_ids(conn, row["timesheet_id"])
     return set()
 
@@ -411,11 +438,18 @@ def pending_rows_for_approver(conn, inst_id: int, user: dict, module: str) -> Li
     table = MODULE_TABLE[module]
     statuses = MODULE_PENDING_STATUSES[module]
     placeholders = ",".join("?" * len(statuses))
-    rows = conn.execute(
+    rows = list(conn.execute(
         f"SELECT * FROM {table} WHERE institution_id=? AND status IN ({placeholders}) "
         f"AND approval_workflow_id IS NOT NULL AND approval_step IS NOT NULL",
         (inst_id, *statuses)
-    ).fetchall()
+    ).fetchall())
+    project_table = MODULE_PROJECT_TABLE.get(module)
+    if project_table:
+        rows += list(conn.execute(
+            f"SELECT * FROM {project_table} WHERE institution_id=? AND status IN ({placeholders}) "
+            f"AND approval_workflow_id IS NOT NULL AND approval_step IS NOT NULL",
+            (inst_id, *statuses)
+        ).fetchall())
     result = []
     for row in rows:
         steps = get_steps(conn, row["approval_workflow_id"])

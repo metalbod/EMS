@@ -146,7 +146,10 @@ def test_hourly_employee_payslip_splits_overtime(
 
     submit = client.patch(f"/api/timesheets/{timesheet['id']}/status", headers=emp_headers, json={"status": "Submitted"})
     assert submit.status_code == 200, submit.text
-    approve = client.patch(f"/api/timesheets/{timesheet['id']}/status", headers=hr_manager_auth, json={"status": "Approved"})
+    # Submit splits into one timesheet_project_approvals row per project
+    # (see routers/timesheets.py) — approve that project's row directly.
+    approve = client.patch(f"/api/timesheets/{timesheet['id']}/projects/{project['id']}/status",
+                           headers=hr_manager_auth, json={"status": "Approved"})
     assert approve.status_code == 200, approve.text
 
     res = client.post("/api/payroll/runs", headers=payroll_manager_auth,

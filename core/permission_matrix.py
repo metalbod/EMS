@@ -179,7 +179,8 @@ MATRIX: List[Dict[str, Any]] = [
             _action("View timesheets", "GET /api/timesheets", _with(_flat(*ALL_ROLES), manager=SUBORDINATE, employee=OWN)),
             _action("Start / edit own timesheet", "POST /api/timesheets, POST .../entries", _no_restriction(), note="Self-serve; employee acts on their own timesheet only."),
             _action("Submit timesheet", "PATCH /api/timesheets/{id}/status (submit)", _no_restriction(), note="Self-serve submission by the timesheet's own employee."),
-            _action("Approve / reject timesheet", "PATCH /api/timesheets/{id}/status (approve/reject)", _flat("hr_manager", "hr_admin"),
+            _action("Approve / reject timesheet", "PATCH /api/timesheets/{id}/status (legacy, pre-split) or "
+                    ".../projects/{project_id}/status (since 2026-09-17, one decision per project)", _flat("hr_manager", "hr_admin"),
                      note=CONFIGURABLE + " — resolved by the approval-workflow engine, same mechanism as Leave."),
         ],
     },
@@ -189,8 +190,9 @@ MATRIX: List[Dict[str, Any]] = [
             _action("View overtime settings", "GET /api/overtime/settings", _no_restriction()),
             _action("Configure overtime settings", "PUT /api/overtime/settings", _flat(*_LEAVE_MANAGE)),
             _action("View overtime records", "GET /api/overtime", _no_restriction(), note="Scoped inline by role."),
-            _action("Approve / reject overtime", "PATCH /api/overtime/{id}/status", _flat("hr_manager", "hr_admin"),
-                     note=CONFIGURABLE + " — resolved by the approval-workflow engine."),
+            _action("Approve / reject overtime", "PATCH /api/overtime/{id}/status (legacy, pre-split) or "
+                    "/api/overtime/projects/{approval_id}/status (since 2026-09-17, one decision per project)",
+                     _flat("hr_manager", "hr_admin"), note=CONFIGURABLE + " — resolved by the approval-workflow engine."),
         ],
     },
     {

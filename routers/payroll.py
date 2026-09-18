@@ -61,11 +61,26 @@ def _compute_pay(conn, inst_id, emp, period_start, period_end):
     salary_type = emp["salary_type"] or "Monthly"
 
     if salary_type == "Hourly":
+        # A timesheet submitted since 2026-09-17 splits approval per project
+        # (timesheet_project_approvals) — t.status stays a vestigial
+        # "Submitted" forever once split, so an entry only counts once
+        # EITHER the whole (legacy, never-split) timesheet is Approved, OR
+        # that entry's own project has its own Approved row. See
+        # routers/timesheets.py's module-level docstring/migration for why.
         approved_hours = conn.execute("""
             SELECT COALESCE(SUM(te.hours), 0) FROM timesheet_entries te
             JOIN timesheets t ON t.id = te.timesheet_id
-            WHERE t.institution_id=? AND t.employee_id=? AND t.status='Approved'
+            WHERE t.institution_id=? AND t.employee_id=?
               AND te.date >= ? AND te.date <= ?
+              AND (
+                (t.status='Approved' AND NOT EXISTS (
+                    SELECT 1 FROM timesheet_project_approvals tpa WHERE tpa.timesheet_id=t.id
+                ))
+                OR EXISTS (
+                    SELECT 1 FROM timesheet_project_approvals tpa2
+                    WHERE tpa2.timesheet_id=t.id AND tpa2.project_id=te.project_id AND tpa2.status='Approved'
+                )
+              )
         """, (inst_id, emp["employee_id"], period_start, period_end)).fetchone()[0]
         approved_hours = float(approved_hours or 0)
         hourly_rate = emp["hourly_rate"] or 0.0

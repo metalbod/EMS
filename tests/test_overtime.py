@@ -122,10 +122,10 @@ def test_overtime_approve_requires_manage_role_then_credits_leave(client, hr_man
     record = client.get(f"/api/timesheets/{ts['id']}/overtime", headers=headers).json()[0]
     assert record["overtime_hours"] == 4
 
-    denied = client.patch(f"/api/overtime/{record['id']}/status", headers=headers, json={"status": "Approved"})
+    denied = client.patch(f"/api/overtime/projects/{record['project_approval_id']}/status", headers=headers, json={"status": "Approved"})
     assert denied.status_code == 403, denied.text
 
-    approved = client.patch(f"/api/overtime/{record['id']}/status", headers=hr_manager_auth, json={"status": "Approved"})
+    approved = client.patch(f"/api/overtime/projects/{record['project_approval_id']}/status", headers=hr_manager_auth, json={"status": "Approved"})
     assert approved.status_code == 200, approved.text
     assert approved.json()["status"] == "Approved"
     assert approved.json()["leave_days_credited"] == 0.5  # 4h overtime / 8h shift
@@ -148,7 +148,7 @@ def test_overtime_approve_pay_mode_tracks_amount(client, hr_manager_auth, emp_wi
     record = client.get(f"/api/timesheets/{ts['id']}/overtime", headers=headers).json()[0]
     assert record["overtime_hours"] == 1
 
-    approved = client.patch(f"/api/overtime/{record['id']}/status", headers=hr_manager_auth, json={"status": "Approved"})
+    approved = client.patch(f"/api/overtime/projects/{record['project_approval_id']}/status", headers=hr_manager_auth, json={"status": "Approved"})
     assert approved.status_code == 200, approved.text
     assert approved.json()["pay_amount"] is not None
     assert approved.json()["leave_days_credited"] is None
@@ -160,7 +160,7 @@ def test_overtime_reject_leaves_no_credit(client, hr_manager_auth, emp_with_shif
     ts = _submit_timesheet_with_hours(client, hr_manager_auth, emp, headers, project, task, 10)
     record = client.get(f"/api/timesheets/{ts['id']}/overtime", headers=headers).json()[0]
 
-    res = client.patch(f"/api/overtime/{record['id']}/status", headers=hr_manager_auth, json={"status": "Rejected"})
+    res = client.patch(f"/api/overtime/projects/{record['project_approval_id']}/status", headers=hr_manager_auth, json={"status": "Rejected"})
     assert res.status_code == 200, res.text
     assert res.json()["status"] == "Rejected"
     assert res.json()["pay_amount"] is None

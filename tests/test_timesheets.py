@@ -250,6 +250,11 @@ def test_status_not_found_returns_404(client, hr_manager_auth):
 
 
 def test_full_draft_submit_approve_lifecycle(client, hr_manager_auth, employee_with_user, make_test_timesheet, open_task):
+    """Since 2026-09-17, Submit splits into one timesheet_project_approvals
+    row per project — approve/reject happens per project (see
+    test_per_project_approval.py's dedicated coverage of the split
+    itself); this just confirms the end-to-end Draft->Submit->Approve path
+    still works through the new per-project endpoint."""
     emp, headers = employee_with_user
     ts = make_test_timesheet()
     project, task = open_task
@@ -261,13 +266,20 @@ def test_full_draft_submit_approve_lifecycle(client, hr_manager_auth, employee_w
     assert submit.status_code == 200
     assert submit.json()["status"] == "Submitted"
 
-    # Can no longer edit entries once submitted.
+    # Can no longer edit entries for this (now Submitted, locked) project.
     blocked = client.post(f"/api/timesheets/{ts['id']}/entries", headers=headers, json={
         "project_id": project["id"], "task_id": task["id"], "date": ENTRY_DATE, "hours": 1,
     })
     assert blocked.status_code == 400
 
-    approve = client.patch(f"/api/timesheets/{ts['id']}/status", headers=hr_manager_auth, json={"status": "Approved", "notes": "ZZ looks good"})
+    # The legacy whole-timesheet endpoint refuses a split timesheet.
+    legacy_attempt = client.patch(f"/api/timesheets/{ts['id']}/status", headers=hr_manager_auth,
+                                  json={"status": "Approved"})
+    assert legacy_attempt.status_code == 400
+    assert "individually" in legacy_attempt.json()["detail"]
+
+    approve = client.patch(f"/api/timesheets/{ts['id']}/projects/{project['id']}/status", headers=hr_manager_auth,
+                           json={"status": "Approved", "notes": "ZZ looks good"})
     assert approve.status_code == 200
     assert approve.json()["status"] == "Approved"
 
@@ -280,7 +292,8 @@ def test_employee_cannot_approve_timesheets(client, employee_with_user, make_tes
         "project_id": project["id"], "task_id": task["id"], "date": ENTRY_DATE, "hours": 8,
     })
     client.patch(f"/api/timesheets/{ts['id']}/status", headers=headers, json={"status": "Submitted"})
-    res = client.patch(f"/api/timesheets/{ts['id']}/status", headers=headers, json={"status": "Approved"})
+    res = client.patch(f"/api/timesheets/{ts['id']}/projects/{project['id']}/status", headers=headers,
+                       json={"status": "Approved"})
     assert res.status_code == 403
 
 
@@ -300,7 +313,8 @@ def test_reject_timesheet(client, hr_manager_auth, employee_with_user, make_test
         "project_id": project["id"], "task_id": task["id"], "date": ENTRY_DATE, "hours": 8,
     })
     client.patch(f"/api/timesheets/{ts['id']}/status", headers=headers, json={"status": "Submitted"})
-    res = client.patch(f"/api/timesheets/{ts['id']}/status", headers=hr_manager_auth, json={"status": "Rejected", "notes": "ZZ needs revision"})
+    res = client.patch(f"/api/timesheets/{ts['id']}/projects/{project['id']}/status", headers=hr_manager_auth,
+                       json={"status": "Rejected", "notes": "ZZ needs revision"})
     assert res.status_code == 200
     assert res.json()["status"] == "Rejected"
 

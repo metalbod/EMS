@@ -1857,6 +1857,9 @@
           <select id="tsApprovalEmployeeFilter" class="inp w-48" onchange="setTimesheetApprovalEmployeeFilter(this.value)">
             <option value="">All Employees</option>
           </select>
+          <select id="tsApprovalProjectFilter" class="inp w-48" onchange="setTimesheetApprovalProjectFilter(this.value)">
+            <option value="">All Projects</option>
+          </select>
           <div class="flex items-center gap-2">
             <label class="text-xs text-slate-500 whitespace-nowrap">Period</label>
             <input type="date" id="tsApprovalPeriodFrom" class="inp w-40" onchange="setTimesheetApprovalPeriod()"/>
@@ -1872,6 +1875,7 @@
                 <tr>
                   <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setTimesheetApprovalSort('employee_name')">Employee <span class="ts-appr-sort-arrow" data-sort-key="employee_name"></span></th>
                   <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setTimesheetApprovalSort('period_start')">Period <span class="ts-appr-sort-arrow" data-sort-key="period_start"></span></th>
+                  <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setTimesheetApprovalSort('project')">Project <span class="ts-appr-sort-arrow" data-sort-key="project"></span></th>
                   <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setTimesheetApprovalSort('total_hours')">Hours <span class="ts-appr-sort-arrow" data-sort-key="total_hours"></span></th>
                   <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setTimesheetApprovalSort('status')">Status <span class="ts-appr-sort-arrow" data-sort-key="status"></span></th>
                 </tr>

@@ -15,9 +15,9 @@ from core.roles import LEAVE_MANAGE_ROLES
 
 from core.permission_matrix import require_permission
 
-from core.approval_workflow import advance_or_finalize, project_ids_for_row
+from core.approval_workflow import advance_or_finalize, project_ids_for_row, annotate_actionability
 
-from core.overtime import apply_overtime_outcome
+from core.overtime import apply_overtime_outcome, apply_overtime_project_outcome
 
 from core.db_session import db_session
 
@@ -101,6 +101,56 @@ def _visible_overtime_where(user: dict):
     return "", []
 
 
+def _expand_overtime_rows(conn, records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Mirrors routers/timesheets.py's _expand_timesheet_rows: one
+    day-level overtime_records row -> one row per project its overtime
+    was split into (see overtime_project_approvals, added 2026-09-17),
+    each carrying that project's own prorated overtime_hours and
+    status/approval fields — or, for a record never split (legacy,
+    pre-split, or auto-approved with no attendance-detected split
+    needed... actually always split when created going forward, so
+    "never split" here just means legacy), a single row using the day's
+    own whole-record status/overtime_hours."""
+    record_ids = [r["id"] for r in records]
+    if not record_ids:
+        return []
+    placeholders = ",".join("?" * len(record_ids))
+    project_rows = conn.execute(
+        f"""SELECT opa.*, p.name AS project_name FROM overtime_project_approvals opa
+            JOIN projects p ON p.id = opa.project_id
+            WHERE opa.overtime_record_id IN ({placeholders}) ORDER BY p.name""",
+        record_ids
+    ).fetchall()
+    by_record: Dict[int, List[Dict[str, Any]]] = {}
+    for pr in project_rows:
+        by_record.setdefault(pr["overtime_record_id"], []).append(dict(pr))
+
+    out = []
+    for r in records:
+        splits = by_record.get(r["id"])
+        if not splits:
+            row = dict(r)
+            row["project_id"] = None
+            row["project_name"] = None
+            out.append(row)
+            continue
+        for pr in splits:
+            row = dict(r)
+            row["project_approval_id"] = pr["id"]  # the child row's own id — see PATCH .../projects/{approval_id}/status
+            row["project_id"] = pr["project_id"]
+            row["project_name"] = pr["project_name"]
+            row["status"] = pr["status"]
+            row["overtime_hours"] = pr["overtime_hours"]
+            row["approval_workflow_id"] = pr["approval_workflow_id"]
+            row["approval_step"] = pr["approval_step"]
+            row["approved_by"] = pr["approved_by"]
+            row["approved_at"] = pr["approved_at"]
+            row["leave_days_credited"] = pr["leave_days_credited"]
+            row["pay_amount"] = pr["pay_amount"]
+            out.append(row)
+    return out
+
+
 @router.get("/api/overtime")
 @db_session
 def list_overtime(conn, status: Optional[str] = None, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
@@ -114,11 +164,14 @@ def list_overtime(conn, status: Optional[str] = None, user: dict = Depends(get_c
     params: list = [inst_id]
     extra_where, extra_params = _visible_overtime_where(user)
     q += extra_where; params.extend(extra_params)
-    if status:
-        q += " AND o.status=?"; params.append(status)
     q += " ORDER BY o.work_date DESC, o.id DESC"
-    rows = conn.execute(q, params).fetchall()
-    return [dict(r) for r in rows]
+    rows = [dict(r) for r in conn.execute(q, params).fetchall()]
+    expanded = _expand_overtime_rows(conn, rows)
+    if status:
+        expanded = [r for r in expanded if r["status"] == status]
+    if user["role"] != "employee":
+        expanded = annotate_actionability(conn, inst_id, "overtime", expanded, user)
+    return expanded
 
 
 @router.get("/api/timesheets/{timesheet_id}/overtime")
@@ -129,7 +182,10 @@ def list_overtime_for_timesheet(conn, timesheet_id: int, user: dict = Depends(ge
         "SELECT * FROM overtime_records WHERE timesheet_id=? AND institution_id=? ORDER BY work_date",
         (timesheet_id, inst_id)
     ).fetchall()
-    return [dict(r) for r in rows]
+    expanded = _expand_overtime_rows(conn, [dict(r) for r in rows])
+    if user["role"] != "employee":
+        expanded = annotate_actionability(conn, inst_id, "overtime", expanded, user)
+    return expanded
 
 
 @router.patch("/api/overtime/{record_id}/status")
@@ -142,6 +198,11 @@ def update_overtime_status(conn, record_id: int, body: OvertimeStatusIn, user: d
     record = conn.execute("SELECT * FROM overtime_records WHERE id=? AND institution_id=?", (record_id, inst_id)).fetchone()
     if not record:
         raise HTTPException(404, "Overtime record not found")
+    # LEGACY (pre-split) records only — a record with per-project rows
+    # must be decided project by project via
+    # PATCH /api/overtime/projects/{approval_id}/status instead.
+    if conn.execute("SELECT 1 FROM overtime_project_approvals WHERE overtime_record_id=? LIMIT 1", (record_id,)).fetchone():
+        raise HTTPException(400, "This overtime record's projects must be approved/rejected individually")
     if record["status"] != "Pending":
         raise HTTPException(400, f"Overtime record is already {record['status']}")
 
@@ -164,3 +225,45 @@ def update_overtime_status(conn, record_id: int, body: OvertimeStatusIn, user: d
     apply_overtime_outcome(conn, inst_id, record, outcome, user["username"])
     conn.commit()
     return dict(conn.execute("SELECT * FROM overtime_records WHERE id=?", (record_id,)).fetchone())
+
+
+@router.patch("/api/overtime/projects/{approval_id}/status")
+@db_session
+def update_overtime_project_status(conn, approval_id: int, body: OvertimeStatusIn,
+                                   user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    """Approve/reject one project's prorated share of a day's overtime,
+    independently of any other project logged that same day — see
+    migrations/versions/20260917_0001_... and core/overtime.py's module
+    docstring. `approval_id` is the overtime_project_approvals row's own
+    id, same direct-id convention as the legacy PATCH .../{record_id}/status
+    above."""
+    inst_id = need_inst(user)
+    valid = ("Approved", "Rejected")
+    if body.status not in valid:
+        raise HTTPException(400, f"status must be one of: {', '.join(valid)}")
+    row = conn.execute(
+        "SELECT * FROM overtime_project_approvals WHERE id=? AND institution_id=?", (approval_id, inst_id)
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "Overtime project approval not found")
+    if row["status"] != "Pending":
+        raise HTTPException(400, f"This project's overtime is already {row['status']}")
+
+    action = "reject" if body.status == "Rejected" else "approve"
+    project_ids = project_ids_for_row(conn, "overtime", row)
+    try:
+        outcome, next_step = advance_or_finalize(
+            conn, inst_id, "overtime", row["employee_id"],
+            row["approval_workflow_id"], row["approval_step"], action, user, project_ids
+        )
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+
+    if outcome == "advanced":
+        conn.execute("UPDATE overtime_project_approvals SET approval_step=? WHERE id=?", (next_step, approval_id))
+        conn.commit()
+        return dict(conn.execute("SELECT * FROM overtime_project_approvals WHERE id=?", (approval_id,)).fetchone())
+
+    apply_overtime_project_outcome(conn, inst_id, row, outcome, user["username"])
+    conn.commit()
+    return dict(conn.execute("SELECT * FROM overtime_project_approvals WHERE id=?", (approval_id,)).fetchone())
