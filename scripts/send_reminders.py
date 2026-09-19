@@ -13,33 +13,53 @@ deploy.sh; that's a separate, manual infrastructure step. This script
 has no HTTP endpoint or auth of its own, since only Fly's own scheduler
 is expected to run it.
 
-For every institution with notifications_email_enabled=true, sweeps:
+For every institution with notifications_email_enabled=true, sweeps
+whichever of the following categories that institution has separately
+opted into via its own reminder_<category>_enabled column (Settings ->
+Notifications -> Reminders tab; migrations/versions/
+20260922_0001_reminder_category_toggles.py) — each of these narrows,
+never replaces, the master notifications_email_enabled toggle:
 
-  - Overdue onboarding/offboarding checklist items: any ob_checklist_items
-    row still 'Pending' past its due_date. Recipient is whoever holds
-    that item's assigned_role — the checklist's own employee's direct
-    manager if assigned_role=='manager' (narrower than "every manager in
-    the institution"), otherwise every active user holding that role
+  - Overdue onboarding/offboarding checklist items (reminder_onboarding_enabled
+    / reminder_offboarding_enabled — independently toggleable, swept
+    separately by ob_checklists.type): any ob_checklist_items row still
+    'Pending' past its due_date. Recipient is whoever holds that item's
+    assigned_role — the checklist's own employee's direct manager if
+    assigned_role=='manager' (narrower than "every manager in the
+    institution"), otherwise every active user holding that role
     institution-wide. Re-reminded at most once every REMIND_COOLDOWN_DAYS
     while it stays overdue (checked every run, any day of the week).
 
   - Employees with no Submitted/Approved timesheet for the week that
-    just ended: only active employees who are a specific, named member
-    of at least one currently-Active project. An is_open_to_all project
-    deliberately does NOT grant blanket eligibility here (unlike
-    elsewhere in the app) — that made nearly every employee in an
-    institution "eligible" the moment any one open project existed,
-    which meant this reminder fired for the whole company regardless of
-    whether they actually had anything to log; a real project_members
-    row is required instead. Membership in an On Hold or Completed
-    project alone does NOT count either (there's nothing current to log
-    time against there). Reminded once per missed period, never re-sent
-    once logged (checked only when this script runs on a Monday,
-    regardless of what time Fly's scheduler actually wakes it — the
-    schedule only controls *when* this runs, not what it decides to do
-    that day).
+    just ended (reminder_timesheet_enabled): only active employees who
+    are a specific, named member of at least one currently-Active
+    project. An is_open_to_all project deliberately does NOT grant
+    blanket eligibility here (unlike elsewhere in the app) — that made
+    nearly every employee in an institution "eligible" the moment any
+    one open project existed, which meant this reminder fired for the
+    whole company regardless of whether they actually had anything to
+    log; a real project_members row is required instead. Membership in
+    an On Hold or Completed project alone does NOT count either
+    (there's nothing current to log time against there). Reminded once
+    per missed period, never re-sent once logged (checked only when
+    this script runs on a Monday, regardless of what time Fly's
+    scheduler actually wakes it — the schedule only controls *when*
+    this runs, not what it decides to do that day).
 
-Both categories dedupe against email_log's dedupe_key column rather than
+  - A public holiday falling tomorrow (reminder_holidays_enabled): every
+    active employee gets an email, using the exact same "holiday is
+    tomorrow, in the institution's own timezone" detection as the
+    dashboard eve-banner (routers/notifications.py's
+    _holiday_eve_virtual_notification) — but this is an independent
+    toggle and an independent delivery channel; an institution can have
+    the banner on, this email off, or both. Reminded once per employee
+    per holiday, never re-sent for the same holiday.
+
+reminder_acknowledgement_enabled is stored but not swept here — nothing
+reads it yet, since the "document acknowledgement" feature it will
+eventually gate doesn't exist.
+
+All categories dedupe against email_log's dedupe_key column rather than
 any new tracking table.
 
 Usage:
@@ -54,6 +74,7 @@ import logging
 import os
 import sys
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -115,12 +136,30 @@ def _enabled_institutions(conn):
     return conn.execute("SELECT id FROM institutions WHERE notifications_email_enabled=true").fetchall()
 
 
-def sweep_overdue_checklists(conn, inst_id, today_str, dry_run):
+_CHECKLIST_TYPE_TOGGLE_COLUMN = {"onboarding": "reminder_onboarding_enabled", "offboarding": "reminder_offboarding_enabled"}
+
+
+def _category_enabled(conn, inst_id, column):
+    """Reads one institutions.reminder_<category>_enabled column — each
+    sweep function below checks its own toggle so it's a fully
+    self-contained, independently testable unit (matches how
+    already_sent_recently/send_email are called directly by each sweep
+    rather than pre-filtered by the caller)."""
+    row = conn.execute(f"SELECT {column} FROM institutions WHERE id=?", (inst_id,)).fetchone()
+    return bool(row and row[column])
+
+
+def sweep_overdue_checklists(conn, inst_id, today_str, checklist_type, dry_run):
+    """checklist_type is 'onboarding' or 'offboarding' — the two are
+    swept, dedupe-tracked, and toggled independently (institutions.
+    reminder_onboarding_enabled / reminder_offboarding_enabled)."""
+    if not _category_enabled(conn, inst_id, _CHECKLIST_TYPE_TOGGLE_COLUMN[checklist_type]):
+        return 0
     items = conn.execute(
         "SELECT i.*, c.employee_id AS checklist_employee_id FROM ob_checklist_items i "
         "JOIN ob_checklists c ON c.id = i.checklist_id "
-        "WHERE i.institution_id=? AND i.status='Pending' AND i.due_date IS NOT NULL AND i.due_date < ?",
-        (inst_id, today_str)
+        "WHERE i.institution_id=? AND c.type=? AND i.status='Pending' AND i.due_date IS NOT NULL AND i.due_date < ?",
+        (inst_id, checklist_type, today_str)
     ).fetchall()
     sent = 0
     for item in items:
@@ -155,7 +194,7 @@ def sweep_overdue_checklists(conn, inst_id, today_str, dry_run):
             if dry_run:
                 print(f"[DRY RUN] checklist_overdue -> {email}: {subject}")
             else:
-                send_email(conn, inst_id, email, subject, greeting, "checklist_overdue", "onboarding", dedupe_key)
+                send_email(conn, inst_id, email, subject, greeting, "checklist_overdue", checklist_type, dedupe_key)
         if not dry_run:
             conn.commit()
         sent += len(contacts)
@@ -163,6 +202,8 @@ def sweep_overdue_checklists(conn, inst_id, today_str, dry_run):
 
 
 def sweep_pending_timesheets(conn, inst_id, period_start, dry_run):
+    if not _category_enabled(conn, inst_id, "reminder_timesheet_enabled"):
+        return 0
     employees = conn.execute(
         "SELECT employee_id, full_name, work_email, personal_email FROM employees "
         "WHERE institution_id=? AND status='Active'",
@@ -210,6 +251,57 @@ def sweep_pending_timesheets(conn, inst_id, period_start, dry_run):
     return sent
 
 
+def sweep_holiday_eve_emails(conn, inst_id, dry_run):
+    """Emails every active employee when a public holiday falls tomorrow,
+    in the institution's own timezone — same "is a holiday exactly one
+    calendar day away" detection as the dashboard eve-banner
+    (routers/notifications.py's _holiday_eve_virtual_notification), but
+    gated by its own independent toggle (reminder_holidays_enabled) and
+    an independent channel (email, not a dashboard banner). Dedupe key
+    is per-employee-per-holiday, not just per-holiday, so one employee's
+    logged send doesn't suppress everyone else's for the same day."""
+    if not _category_enabled(conn, inst_id, "reminder_holidays_enabled"):
+        return 0
+    row = conn.execute("SELECT timezone FROM institutions WHERE id=?", (inst_id,)).fetchone()
+    try:
+        tz = ZoneInfo(row["timezone"] or "UTC")
+    except Exception:
+        tz = ZoneInfo("UTC")
+    tomorrow = (datetime.now(tz).date() + timedelta(days=1)).isoformat()
+    holiday = conn.execute(
+        "SELECT id, name FROM holidays WHERE institution_id=? AND date=?", (inst_id, tomorrow)
+    ).fetchone()
+    if not holiday:
+        return 0
+
+    employees = conn.execute(
+        "SELECT employee_id, full_name, work_email, personal_email FROM employees "
+        "WHERE institution_id=? AND status='Active'",
+        (inst_id,)
+    ).fetchall()
+    subject = f"Reminder: {holiday['name']} is tomorrow"
+    sent = 0
+    for emp in employees:
+        email = emp["work_email"] or emp["personal_email"]
+        if not email:
+            continue
+        dedupe_key = f"{emp['employee_id']}:holiday:{holiday['id']}"
+        if already_sent_recently(conn, inst_id, "holiday_reminder", dedupe_key, cooldown_days=0):
+            continue  # never re-send this employee for the same holiday
+
+        body = (
+            f"<p>Hi {emp['full_name'] or 'there'},</p>"
+            f"<p><strong>{holiday['name']}</strong> is a public holiday tomorrow ({tomorrow}).</p>"
+        )
+        if dry_run:
+            print(f"[DRY RUN] holiday_reminder -> {email}: {subject}")
+        else:
+            send_email(conn, inst_id, email, subject, body, "holiday_reminder", "holidays", dedupe_key)
+            conn.commit()
+        sent += 1
+    return sent
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dry-run", action="store_true", help="Print what would be sent without sending or logging anything")
@@ -224,19 +316,24 @@ def main():
         last_period_start = (today - timedelta(days=today.weekday() + 7)).isoformat()
 
         institutions = _enabled_institutions(conn)
-        total_checklist = total_timesheet = 0
+        total_checklist = total_timesheet = total_holiday = 0
         for inst in institutions:
             inst_id = inst["id"]
-            total_checklist += sweep_overdue_checklists(conn, inst_id, today_str, args.dry_run)
+            # Each sweep checks its own reminder_<category>_enabled column
+            # (see _category_enabled) — no need to pre-filter here.
+            total_checklist += sweep_overdue_checklists(conn, inst_id, today_str, "onboarding", args.dry_run)
+            total_checklist += sweep_overdue_checklists(conn, inst_id, today_str, "offboarding", args.dry_run)
             if is_monday:
                 total_timesheet += sweep_pending_timesheets(conn, inst_id, last_period_start, args.dry_run)
+            total_holiday += sweep_holiday_eve_emails(conn, inst_id, args.dry_run)
     finally:
         conn.close()
 
     msg = (
         f"Reminder sweep complete ({'dry run, ' if args.dry_run else ''}"
         f"{len(institutions)} institution(s)): "
-        f"{total_checklist} checklist reminder(s), {total_timesheet} timesheet reminder(s)"
+        f"{total_checklist} checklist reminder(s), {total_timesheet} timesheet reminder(s), "
+        f"{total_holiday} holiday reminder(s)"
         f"{' (timesheet check skipped, not Monday)' if not is_monday else ''}."
     )
     logger.info(msg)

@@ -319,6 +319,64 @@ def test_update_general_settings_invalid_timezone_returns_422(client, hr_manager
 
 
 # ---------------------------------------------------------------------------
+# Reminder settings (per-category email-reminder toggles, consumed by
+# scripts/send_reminders.py — see migrations/versions/
+# 20260922_0001_reminder_category_toggles.py)
+# ---------------------------------------------------------------------------
+REMINDER_SETTINGS_KEYS = (
+    "reminder_timesheet_enabled", "reminder_onboarding_enabled", "reminder_offboarding_enabled",
+    "reminder_holidays_enabled", "reminder_acknowledgement_enabled",
+)
+
+
+@pytest.fixture
+def restore_reminder_settings(client, hr_manager_auth):
+    original = client.get("/api/notifications/reminder-settings", headers=hr_manager_auth).json()
+    yield
+    client.put("/api/notifications/reminder-settings", headers=hr_manager_auth, json=original)
+
+
+def test_get_reminder_settings_requires_manage_role(client, make_test_user, test_institution):
+    token, _ = make_test_user(role="employee")
+    headers = {"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}
+    res = client.get("/api/notifications/reminder-settings", headers=headers)
+    assert res.status_code == 403
+
+
+def test_get_reminder_settings_returns_all_categories(client, hr_manager_auth):
+    res = client.get("/api/notifications/reminder-settings", headers=hr_manager_auth)
+    assert res.status_code == 200
+    body = res.json()
+    for key in REMINDER_SETTINGS_KEYS:
+        assert key in body and isinstance(body[key], bool)
+
+
+def test_update_reminder_settings_roundtrip(client, hr_manager_auth, restore_reminder_settings):
+    payload = {
+        "reminder_timesheet_enabled": False, "reminder_onboarding_enabled": True,
+        "reminder_offboarding_enabled": False, "reminder_holidays_enabled": True,
+        "reminder_acknowledgement_enabled": False,
+    }
+    res = client.put("/api/notifications/reminder-settings", headers=hr_manager_auth, json=payload)
+    assert res.status_code == 200
+    assert res.json() == payload
+
+    res = client.get("/api/notifications/reminder-settings", headers=hr_manager_auth)
+    assert res.json() == payload
+
+
+def test_update_reminder_settings_requires_manage_role(client, make_test_user, test_institution):
+    token, _ = make_test_user(role="employee")
+    headers = {"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}
+    res = client.put("/api/notifications/reminder-settings", headers=headers, json={
+        "reminder_timesheet_enabled": True, "reminder_onboarding_enabled": True,
+        "reminder_offboarding_enabled": True, "reminder_holidays_enabled": True,
+        "reminder_acknowledgement_enabled": True,
+    })
+    assert res.status_code == 403
+
+
+# ---------------------------------------------------------------------------
 # Holiday-eve virtual notification
 # ---------------------------------------------------------------------------
 @pytest.fixture

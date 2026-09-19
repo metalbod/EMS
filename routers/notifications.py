@@ -31,6 +31,24 @@ list, the same "compute lazily on read" philosophy this codebase uses
 everywhere else rather than a scheduled job. `timezone` is a genuinely
 new concept here — every other date/time in this app is naive UTC — but
 is only actually consulted by that one holiday-eve check today.
+
+Reminder settings (migrations/versions/20260922_0001_reminder_category_toggles.py):
+one boolean per reminder category (timesheet, onboarding, offboarding,
+holidays, acknowledgement) read by scripts/send_reminders.py's daily
+sweep to decide which categories to actually email out for a given
+institution. Each one only narrows — never replaces — the master
+`notifications_email_enabled` toggle above. `reminder_acknowledgement_enabled`
+is stored ahead of a "document acknowledgement" feature that doesn't
+exist yet; nothing reads it today.
+
+All three settings groups above (email/SMTP, general/holiday-eve,
+reminders) plus the institution-notification CRUD below are surfaced
+together on one consolidated frontend page/nav item ("Notifications",
+tabs: Announcements / SMTP Settings / Reminders) — see
+static/js/notifications.js's switchNotifTab. They used to be two
+separate nav items ("Notifications" and "Email Notifications"); merged
+to avoid ending up with two identically-named sidebar entries once the
+former's title changed to match the latter.
 """
 import json
 import logging
@@ -299,6 +317,58 @@ def update_notification_general_settings(
     return NotificationGeneralSettingsOut(
         timezone=row["timezone"], holiday_eve_announcements_enabled=bool(row["holiday_eve_announcements_enabled"])
     )
+
+
+REMINDER_CATEGORY_COLUMNS = (
+    "reminder_timesheet_enabled", "reminder_onboarding_enabled", "reminder_offboarding_enabled",
+    "reminder_holidays_enabled", "reminder_acknowledgement_enabled",
+)
+
+
+class ReminderSettingsIn(BaseModel):
+    reminder_timesheet_enabled: bool
+    reminder_onboarding_enabled: bool
+    reminder_offboarding_enabled: bool
+    reminder_holidays_enabled: bool
+    reminder_acknowledgement_enabled: bool
+
+
+class ReminderSettingsOut(ReminderSettingsIn):
+    pass
+
+
+@router.get("/api/notifications/reminder-settings")
+@db_session
+def get_reminder_settings(
+    conn, user: dict = Depends(require_roles(*NOTIFICATION_MANAGE_ROLES))
+) -> ReminderSettingsOut:
+    inst_id = need_inst(user)
+    row = conn.execute(
+        f"SELECT {', '.join(REMINDER_CATEGORY_COLUMNS)} FROM institutions WHERE id=?", (inst_id,)
+    ).fetchone()
+    return ReminderSettingsOut(**{c: bool(row[c]) for c in REMINDER_CATEGORY_COLUMNS})
+
+
+@router.put("/api/notifications/reminder-settings")
+@db_session
+def update_reminder_settings(
+    conn, body: ReminderSettingsIn, user: dict = Depends(require_roles(*NOTIFICATION_MANAGE_ROLES))
+) -> ReminderSettingsOut:
+    """Each category here only narrows scripts/send_reminders.py's daily
+    sweep — it's checked in addition to, never instead of, the master
+    `notifications_email_enabled` toggle on the SMTP Settings tab.
+    `reminder_acknowledgement_enabled` is stored ahead of the "document
+    acknowledgement" feature it will eventually gate; nothing reads it
+    yet (see the Reminders tab's "coming soon" row)."""
+    inst_id = need_inst(user)
+    assignments = ", ".join(f"{c}=?" for c in REMINDER_CATEGORY_COLUMNS)
+    values = [getattr(body, c) for c in REMINDER_CATEGORY_COLUMNS]
+    conn.execute(f"UPDATE institutions SET {assignments} WHERE id=?", (*values, inst_id))
+    conn.commit()
+    row = conn.execute(
+        f"SELECT {', '.join(REMINDER_CATEGORY_COLUMNS)} FROM institutions WHERE id=?", (inst_id,)
+    ).fetchone()
+    return ReminderSettingsOut(**{c: bool(row[c]) for c in REMINDER_CATEGORY_COLUMNS})
 
 
 def _holiday_eve_virtual_notification(conn, inst_id: int) -> Optional[Dict[str, Any]]:

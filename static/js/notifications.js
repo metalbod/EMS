@@ -67,6 +67,68 @@ const saveNotificationGeneralSettings = guardAsync(async function() {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Tab switching for the consolidated "Notifications" settings page
+// (Announcements / SMTP Settings / Reminders) — same pattern as the
+// Dashboard's switchDashTab (static/js/dashboard.js): each non-default
+// tab's data loads lazily, only the first time it's opened.
+// ---------------------------------------------------------------------------
+const _notifTabLoaded = { smtp: false, reminders: false };
+
+async function switchNotifTab(tabId) {
+  document.querySelectorAll('.notif-tab-panel').forEach(el => el.classList.toggle('hidden', el.id !== tabId));
+  document.querySelectorAll('[data-notiftab]').forEach(el => el.classList.toggle('pill-tab-active', el.dataset.notiftab === tabId));
+  if (tabId === 'notif-smtp' && !_notifTabLoaded.smtp) {
+    _notifTabLoaded.smtp = true;
+    await ensureModuleLoaded('email-notification-settings');
+    loadEmailNotificationSettingsPage();
+  }
+  if (tabId === 'notif-reminders' && !_notifTabLoaded.reminders) {
+    _notifTabLoaded.reminders = true;
+    loadReminderSettings();
+  }
+}
+
+function resetNotifTabs() {
+  // Always land back on Announcements and re-check per-tab data on every
+  // fresh visit to this page, rather than trusting stale state from a
+  // previous visit within the same session.
+  _notifTabLoaded.smtp = false;
+  _notifTabLoaded.reminders = false;
+  switchNotifTab('notif-announcements');
+}
+
+const REMINDER_CATEGORIES = ['timesheet', 'onboarding', 'offboarding', 'holidays', 'acknowledgement'];
+
+async function loadReminderSettings() {
+  const msg = document.getElementById('reminderSettingsMsg');
+  if (msg) msg.textContent = '';
+  const res = await api('/api/notifications/reminder-settings');
+  if (!res?.ok) return;
+  const s = await res.json();
+  REMINDER_CATEGORIES.forEach(cat => {
+    const box = document.getElementById(`reminderToggle_${cat}`);
+    if (box) box.checked = !!s[`reminder_${cat}_enabled`];
+  });
+}
+
+const saveReminderSettings = guardAsync(async function() {
+  const msg = document.getElementById('reminderSettingsMsg');
+  const body = {};
+  REMINDER_CATEGORIES.forEach(cat => {
+    body[`reminder_${cat}_enabled`] = document.getElementById(`reminderToggle_${cat}`).checked;
+  });
+  const res = await api('/api/notifications/reminder-settings', {method: 'PUT', body: JSON.stringify(body)});
+  if (res?.ok) {
+    msg.textContent = 'Settings saved.';
+    msg.className = 'text-xs text-green-600';
+  } else {
+    const d = await res.json();
+    msg.textContent = apiErrorText(d.detail, 'Failed to save settings.');
+    msg.className = 'text-xs text-red-600';
+  }
+});
+
 async function loadNotificationSettings() {
   const listEl=document.getElementById('notificationList');
   const emptyEl=document.getElementById('notificationEmpty');

@@ -30,6 +30,17 @@ PAST_DUE_DATE = "2020-01-01 00:00:00"
 
 
 @pytest.fixture
+def restore_reminder_settings(client, hr_manager_auth):
+    """test_institution is session-scoped, so a test that flips one of the
+    reminder_<category>_enabled toggles off has to put it back — otherwise
+    it leaks into whatever test runs next in the same session (same
+    pattern as tests/test_notifications.py's restore_general_settings)."""
+    original = client.get("/api/notifications/reminder-settings", headers=hr_manager_auth).json()
+    yield
+    client.put("/api/notifications/reminder-settings", headers=hr_manager_auth, json=original)
+
+
+@pytest.fixture
 def reminder_conn():
     """A raw bypass-RLS connection, same as the real script's main()
     obtains — needed because the sweep functions take a `conn`, not an
@@ -70,7 +81,7 @@ def test_overdue_checklist_item_notifies_direct_manager(
     inst_id = report_emp["institution_id"]
     today_str = datetime.now(timezone.utc).date().isoformat()
     with patch("core.email_engine.smtplib.SMTP"):
-        sent = send_reminders.sweep_overdue_checklists(reminder_conn, inst_id, today_str, dry_run=False)
+        sent = send_reminders.sweep_overdue_checklists(reminder_conn, inst_id, today_str, "onboarding", dry_run=False)
     assert sent >= 1
 
     log = client.get("/api/notifications/email-log", headers=hr_manager_auth).json()
@@ -95,8 +106,8 @@ def test_overdue_checklist_item_not_re_reminded_within_cooldown(
     inst_id = report_emp["institution_id"]
     today_str = datetime.now(timezone.utc).date().isoformat()
     with patch("core.email_engine.smtplib.SMTP"):
-        first_pass = send_reminders.sweep_overdue_checklists(reminder_conn, inst_id, today_str, dry_run=False)
-        second_pass = send_reminders.sweep_overdue_checklists(reminder_conn, inst_id, today_str, dry_run=False)
+        first_pass = send_reminders.sweep_overdue_checklists(reminder_conn, inst_id, today_str, "onboarding", dry_run=False)
+        second_pass = send_reminders.sweep_overdue_checklists(reminder_conn, inst_id, today_str, "onboarding", dry_run=False)
     assert first_pass >= 1
     assert second_pass == 0, "running the sweep again immediately must not re-send within the cooldown window"
 
@@ -119,7 +130,7 @@ def test_checklist_item_not_yet_due_is_not_reminded(
     inst_id = report_emp["institution_id"]
     today_str = datetime.now(timezone.utc).date().isoformat()
     with patch("core.email_engine.smtplib.SMTP"):
-        sent = send_reminders.sweep_overdue_checklists(reminder_conn, inst_id, today_str, dry_run=False)
+        sent = send_reminders.sweep_overdue_checklists(reminder_conn, inst_id, today_str, "onboarding", dry_run=False)
     assert sent == 0
 
     client.delete(f"/api/ob/checklists/{checklist['id']}", headers=hr_manager_auth)
@@ -207,3 +218,185 @@ def test_employee_member_of_only_a_non_active_project_is_not_reminded(
 
     log = client.get("/api/notifications/email-log", headers=hr_manager_auth).json()
     assert not any(r["recipient_email"] == emp_email for r in log)
+
+
+# ---------------------------------------------------------------------------
+# Per-category reminder toggles (institutions.reminder_<category>_enabled —
+# see migrations/versions/20260922_0001_reminder_category_toggles.py). Each
+# sweep function checks its own toggle (send_reminders._category_enabled),
+# so these are testable directly without going through main()'s loop.
+# ---------------------------------------------------------------------------
+def test_onboarding_reminder_toggle_off_suppresses_sweep(
+    client, hr_manager_auth, manager_with_report_and_emails_for_reminders,
+    configured_email_settings, restore_reminder_settings, reminder_conn
+):
+    report_emp, mgr_emp, mgr_email, report_email = manager_with_report_and_emails_for_reminders
+    checklist = client.post("/api/ob/checklists", headers=hr_manager_auth, json={
+        "employee_id": report_emp["employee_id"], "type": "onboarding",
+    }).json()
+    client.post(f"/api/ob/checklists/{checklist['id']}/items", headers=hr_manager_auth, json={
+        "title": "ZZ Toggle Off Item", "assigned_role": "manager", "due_date": PAST_DUE_DATE,
+    })
+
+    settings = client.get("/api/notifications/reminder-settings", headers=hr_manager_auth).json()
+    settings["reminder_onboarding_enabled"] = False
+    assert client.put("/api/notifications/reminder-settings", headers=hr_manager_auth, json=settings).status_code == 200
+
+    inst_id = report_emp["institution_id"]
+    today_str = datetime.now(timezone.utc).date().isoformat()
+    with patch("core.email_engine.smtplib.SMTP"):
+        sent = send_reminders.sweep_overdue_checklists(reminder_conn, inst_id, today_str, "onboarding", dry_run=False)
+    assert sent == 0, "reminder_onboarding_enabled=false must suppress the onboarding sweep entirely"
+
+    client.delete(f"/api/ob/checklists/{checklist['id']}", headers=hr_manager_auth)
+
+
+def test_offboarding_checklist_item_notified_independently_of_onboarding_type(
+    client, hr_manager_auth, manager_with_report_and_emails_for_reminders,
+    configured_email_settings, reminder_conn
+):
+    """The checklist sweep is split by ob_checklists.type — an offboarding
+    item must not be picked up by an 'onboarding'-typed sweep call, and
+    vice versa, since the two are independently toggleable."""
+    report_emp, mgr_emp, mgr_email, report_email = manager_with_report_and_emails_for_reminders
+    checklist = client.post("/api/ob/checklists", headers=hr_manager_auth, json={
+        "employee_id": report_emp["employee_id"], "type": "offboarding",
+    }).json()
+    client.post(f"/api/ob/checklists/{checklist['id']}/items", headers=hr_manager_auth, json={
+        "title": "ZZ Offboarding Overdue Item", "assigned_role": "manager", "due_date": PAST_DUE_DATE,
+    })
+
+    inst_id = report_emp["institution_id"]
+    today_str = datetime.now(timezone.utc).date().isoformat()
+    with patch("core.email_engine.smtplib.SMTP"):
+        onboarding_sent = send_reminders.sweep_overdue_checklists(reminder_conn, inst_id, today_str, "onboarding", dry_run=False)
+        offboarding_sent = send_reminders.sweep_overdue_checklists(reminder_conn, inst_id, today_str, "offboarding", dry_run=False)
+    assert onboarding_sent == 0, "an offboarding item must not be swept by the onboarding-typed call"
+    assert offboarding_sent >= 1
+
+    log = client.get("/api/notifications/email-log", headers=hr_manager_auth).json()
+    row = next(r for r in log if r["recipient_email"] == mgr_email and r["category"] == "checklist_overdue" and r["module"] == "offboarding")
+    assert row["status"] == "sent"
+
+    client.delete(f"/api/ob/checklists/{checklist['id']}", headers=hr_manager_auth)
+
+
+def test_timesheet_reminder_toggle_off_suppresses_sweep(
+    client, hr_manager_auth, make_test_employee, make_test_project, make_test_project_task,
+    configured_email_settings, restore_reminder_settings, reminder_conn
+):
+    emp_email = f"zztoggletimesheet_{os.urandom(4).hex()}@zzpytest.example.com"
+    emp = make_test_employee(full_name="ZZ Toggle Timesheet Employee", personal_email=emp_email)
+    project = make_test_project(name="ZZ Toggle Timesheet Project", member_ids=[emp["employee_id"]])
+    make_test_project_task(project["id"])
+
+    settings = client.get("/api/notifications/reminder-settings", headers=hr_manager_auth).json()
+    settings["reminder_timesheet_enabled"] = False
+    assert client.put("/api/notifications/reminder-settings", headers=hr_manager_auth, json=settings).status_code == 200
+
+    inst_id = emp["institution_id"]
+    last_monday = (datetime.now(timezone.utc).date() - timedelta(days=datetime.now(timezone.utc).date().weekday() + 7)).isoformat()
+    with patch("core.email_engine.smtplib.SMTP"):
+        sent = send_reminders.sweep_pending_timesheets(reminder_conn, inst_id, last_monday, dry_run=False)
+    assert sent == 0, "reminder_timesheet_enabled=false must suppress the timesheet sweep entirely"
+
+
+# ---------------------------------------------------------------------------
+# Holiday-eve email reminder (reminder_holidays_enabled) — independent of
+# the pre-existing dashboard "announce on the eve" banner toggle.
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def make_test_holiday_tomorrow(client, hr_manager_auth):
+    """Creates a real holiday dated "tomorrow" in the institution's own
+    (already-configured) timezone, deletes it on teardown."""
+    from zoneinfo import ZoneInfo
+    created_ids = []
+
+    def _make():
+        tz_name = client.get("/api/notifications/general-settings", headers=hr_manager_auth).json()["timezone"]
+        try:
+            tz = ZoneInfo(tz_name or "UTC")
+        except Exception:
+            tz = ZoneInfo("UTC")
+        tomorrow = (datetime.now(tz).date() + timedelta(days=1)).isoformat()
+        year = int(tomorrow[:4])
+        res = client.post(
+            "/api/holidays", headers=hr_manager_auth,
+            json={"name": "ZZ Reminder Eve Holiday", "date": tomorrow, "year": year},
+        )
+        assert res.status_code == 201, f"failed to create test holiday: {res.text}"
+        holiday = res.json()
+        created_ids.append(holiday["id"])
+        return holiday
+
+    yield _make
+
+    for hid in created_ids:
+        client.delete(f"/api/holidays/{hid}", headers=hr_manager_auth)
+
+
+def test_holiday_reminder_sent_when_enabled_and_holiday_tomorrow(
+    client, hr_manager_auth, make_test_employee, configured_email_settings,
+    restore_reminder_settings, make_test_holiday_tomorrow, reminder_conn
+):
+    emp_email = f"zzholidayreminder_{os.urandom(4).hex()}@zzpytest.example.com"
+    emp = make_test_employee(full_name="ZZ Holiday Reminder Employee", personal_email=emp_email)
+    inst_id = emp["institution_id"]
+    make_test_holiday_tomorrow()
+
+    settings = client.get("/api/notifications/reminder-settings", headers=hr_manager_auth).json()
+    settings["reminder_holidays_enabled"] = True
+    assert client.put("/api/notifications/reminder-settings", headers=hr_manager_auth, json=settings).status_code == 200
+
+    with patch("core.email_engine.smtplib.SMTP"):
+        first_pass = send_reminders.sweep_holiday_eve_emails(reminder_conn, inst_id, dry_run=False)
+        send_reminders.sweep_holiday_eve_emails(reminder_conn, inst_id, dry_run=False)
+    assert first_pass >= 1
+
+    # The sweep is institution-wide by design (every active employee gets
+    # reminded), so a second pass's aggregate return value isn't a safe
+    # thing to assert on here — under a parallel test run, another test in
+    # this same shared institution can create a brand-new employee between
+    # the two passes, who would then legitimately be swept for the first
+    # time on the "second" pass without that being a duplicate-send bug.
+    # What must never happen is *our* employee getting a second 'sent' row
+    # for this same holiday.
+    log = client.get("/api/notifications/email-log", headers=hr_manager_auth).json()
+    matches = [r for r in log if r["recipient_email"] == emp_email and r["category"] == "holiday_reminder"]
+    assert len(matches) == 1, "the same employee must never be re-reminded for the same holiday"
+    assert matches[0]["status"] == "sent"
+
+
+def test_holiday_reminder_not_sent_when_disabled(
+    client, hr_manager_auth, make_test_employee, configured_email_settings,
+    restore_reminder_settings, make_test_holiday_tomorrow, reminder_conn
+):
+    emp_email = f"zzholidaydisabled_{os.urandom(4).hex()}@zzpytest.example.com"
+    emp = make_test_employee(full_name="ZZ Holiday Disabled Employee", personal_email=emp_email)
+    inst_id = emp["institution_id"]
+    make_test_holiday_tomorrow()
+
+    settings = client.get("/api/notifications/reminder-settings", headers=hr_manager_auth).json()
+    settings["reminder_holidays_enabled"] = False
+    assert client.put("/api/notifications/reminder-settings", headers=hr_manager_auth, json=settings).status_code == 200
+
+    with patch("core.email_engine.smtplib.SMTP"):
+        sent = send_reminders.sweep_holiday_eve_emails(reminder_conn, inst_id, dry_run=False)
+    assert sent == 0
+
+
+def test_holiday_reminder_not_sent_when_no_holiday_tomorrow(
+    client, hr_manager_auth, make_test_employee, configured_email_settings,
+    restore_reminder_settings, reminder_conn
+):
+    emp_email = f"zznoholiday_{os.urandom(4).hex()}@zzpytest.example.com"
+    emp = make_test_employee(full_name="ZZ No Holiday Employee", personal_email=emp_email)
+    inst_id = emp["institution_id"]
+
+    settings = client.get("/api/notifications/reminder-settings", headers=hr_manager_auth).json()
+    settings["reminder_holidays_enabled"] = True
+    assert client.put("/api/notifications/reminder-settings", headers=hr_manager_auth, json=settings).status_code == 200
+
+    with patch("core.email_engine.smtplib.SMTP"):
+        sent = send_reminders.sweep_holiday_eve_emails(reminder_conn, inst_id, dry_run=False)
+    assert sent == 0

@@ -335,10 +335,6 @@
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
             AI Assistant
           </div>
-          <div id="nav-email-notification-settings" class="hidden nav-sub-item" onclick="showPage('settings-email-notifications');closeBurgerMenu();" data-page="settings-email-notifications">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
-            Email Notifications
-          </div>
         </div>
       </div>
       <!-- Compensation (HR Manager / Payroll Manager only) -->
@@ -1962,8 +1958,22 @@
         </div>
       </div>
 
-      <!-- SETTINGS: Notifications (HR Manager / HR Admin) -->
+      <!-- SETTINGS: Notifications (HR Manager / HR Admin) — consolidated hub:
+           Announcements (dashboard-banner CRUD + timezone/holiday-eve
+           general settings), SMTP Settings (BYO-SMTP config, hr_manager
+           only — hidden from hr_admin), Reminders (per-category email
+           toggles). Used to be two separate nav items ("Notifications" and
+           "Email Notifications"); merged so renaming the latter to
+           "Notifications" wouldn't leave two identically-labeled entries. -->
       <div id="page-settings-notifications" class="hidden">
+        <div class="flex items-center gap-1 flex-wrap mb-1">
+          <button class="pill-tab pill-tab-active" data-notiftab="notif-announcements" onclick="switchNotifTab('notif-announcements')">Announcements</button>
+          <button id="notif-tab-smtp-btn" class="pill-tab hidden" data-notiftab="notif-smtp" onclick="switchNotifTab('notif-smtp')">SMTP Settings</button>
+          <button class="pill-tab" data-notiftab="notif-reminders" onclick="switchNotifTab('notif-reminders')">Reminders</button>
+        </div>
+        <div class="mb-6" style="border-bottom:1px solid var(--line-2)"></div>
+
+        <div id="notif-announcements" class="notif-tab-panel">
         <div class="bg-white rounded-xl border border-slate-200 p-4 mb-5">
           <h4 class="text-sm font-semibold text-slate-700 mb-3">General Settings</h4>
           <div class="flex flex-wrap items-end gap-4">
@@ -2022,6 +2032,145 @@
           </table>
         </div>
         <p id="notificationEmpty" class="hidden text-center text-slate-400 text-sm py-12">No notifications configured yet.</p>
+        </div>
+
+        <!-- SMTP Settings tab — content is filled by ensureModuleLoaded('email-notification-settings')
+             + loadEmailNotificationSettingsPage() the first time this tab is
+             opened (see switchNotifTab), same lazy-load pattern the page
+             used when it had its own nav item. -->
+        <div id="notif-smtp" class="notif-tab-panel hidden">
+          <div class="mb-4">
+            <h3 class="text-lg font-semibold">SMTP Settings</h3>
+            <p class="text-xs text-slate-400 mt-1">Connect your own mailbox (SMTP) so approval requests, decisions, and other application emails go out from your own organization's address — not a shared platform sender. Turned off by default until you save valid settings here.</p>
+          </div>
+          <div class="bg-white rounded-xl border border-slate-200 p-6 max-w-xl">
+            <div id="emailSettingsStatusRow" class="flex items-center gap-2 mb-5">
+              <span id="emailSettingsStatusBadge" class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500">Loading…</span>
+              <span id="emailSettingsStatusDetail" class="text-xs text-slate-400"></span>
+            </div>
+
+            <div class="flex items-center gap-2 mb-4">
+              <input type="checkbox" id="emailSettingsEnabled" class="w-4 h-4"/>
+              <label for="emailSettingsEnabled" class="text-sm text-slate-700 cursor-pointer">Enable email notifications for this organization</label>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div class="col-span-2">
+                <label class="block text-xs font-medium text-slate-500 mb-1">SMTP Host</label>
+                <input id="emailSettingsHost" placeholder="smtp.office365.com" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"/>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-slate-500 mb-1">Port</label>
+                <input id="emailSettingsPort" type="number" placeholder="587" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"/>
+              </div>
+              <div class="flex items-end pb-2">
+                <label class="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+                  <input type="checkbox" id="emailSettingsUseTls" checked class="w-4 h-4"/> Use TLS
+                </label>
+              </div>
+              <div class="col-span-2">
+                <label class="block text-xs font-medium text-slate-500 mb-1">From Address</label>
+                <input id="emailSettingsFromAddress" placeholder="hr@yourcompany.com" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"/>
+              </div>
+              <div class="col-span-2">
+                <label class="block text-xs font-medium text-slate-500 mb-1">From Name <span class="text-slate-400">(optional)</span></label>
+                <input id="emailSettingsFromName" placeholder="Acme Corp HR" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"/>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-slate-500 mb-1">Username</label>
+                <input id="emailSettingsUsername" autocomplete="off" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"/>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-slate-500 mb-1">Password</label>
+                <input id="emailSettingsPassword" type="password" autocomplete="off" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"/>
+              </div>
+            </div>
+            <p class="text-xs text-slate-400 mt-2">Credentials are validated with a real login attempt before saving, and encrypted at rest — the password is never shown again after saving, so re-enter it any time you save changes here.</p>
+
+            <div class="flex items-center gap-2 mt-4">
+              <button onclick="saveEmailSettings()" class="btn-primary text-sm">Save Settings</button>
+              <button id="emailSettingsRemoveBtn" onclick="removeEmailSettings()" class="hidden text-sm px-3 py-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50">Remove Settings</button>
+            </div>
+            <p id="emailSettingsMsg" class="text-xs mt-3"></p>
+
+            <div id="emailSettingsTestRow" class="hidden flex items-center gap-2 mt-5 pt-5 border-t border-slate-100">
+              <input id="emailSettingsTestTo" placeholder="Send a test email to…" class="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm"/>
+              <button onclick="sendTestEmail()" class="btn-ghost text-sm">Send Test</button>
+            </div>
+          </div>
+
+          <div class="mt-6 max-w-xl">
+            <h4 class="text-sm font-semibold text-slate-700 mb-2">Recent Activity</h4>
+            <div class="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead class="bg-slate-50 border-b border-slate-200">
+                  <tr>
+                    <th class="text-left px-3 py-2 text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">When</th>
+                    <th class="text-left px-3 py-2 text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">To</th>
+                    <th class="text-left px-3 py-2 text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">Category</th>
+                    <th class="text-left px-3 py-2 text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">Status</th>
+                  </tr>
+                </thead>
+                <tbody id="emailLogList"></tbody>
+              </table>
+              <p id="emailLogEmpty" class="hidden text-center text-slate-400 text-sm py-8">No email activity yet.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Reminders tab — one checkbox per category read by
+             scripts/send_reminders.py's daily sweep (see
+             routers/notifications.py's ReminderSettingsIn/Out). Each
+             category only narrows the master "Enable email notifications"
+             toggle on the SMTP Settings tab, never replaces it. -->
+        <div id="notif-reminders" class="notif-tab-panel hidden">
+          <div class="mb-4">
+            <h3 class="text-lg font-semibold">Reminders</h3>
+            <p class="text-xs text-slate-400 mt-1">Choose which reminder categories go out by email. Each one only takes effect while email notifications are enabled on the SMTP Settings tab.</p>
+          </div>
+          <div class="bg-white rounded-xl border border-slate-200 overflow-x-auto max-w-2xl">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Category</th>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">What it sends</th>
+                  <th class="text-center px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Send via Email</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="border-t border-slate-100">
+                  <td class="px-4 py-3 font-medium text-slate-700">Timesheet</td>
+                  <td class="px-4 py-3 text-slate-500">Weekly reminder to employees with a missing timesheet on an active project.</td>
+                  <td class="px-4 py-3 text-center"><input type="checkbox" id="reminderToggle_timesheet" class="w-4 h-4"/></td>
+                </tr>
+                <tr class="border-t border-slate-100">
+                  <td class="px-4 py-3 font-medium text-slate-700">Onboarding</td>
+                  <td class="px-4 py-3 text-slate-500">Reminder to the responsible manager/role when an onboarding checklist item is overdue.</td>
+                  <td class="px-4 py-3 text-center"><input type="checkbox" id="reminderToggle_onboarding" class="w-4 h-4"/></td>
+                </tr>
+                <tr class="border-t border-slate-100">
+                  <td class="px-4 py-3 font-medium text-slate-700">Offboarding</td>
+                  <td class="px-4 py-3 text-slate-500">Reminder to the responsible manager/role when an offboarding checklist item is overdue.</td>
+                  <td class="px-4 py-3 text-center"><input type="checkbox" id="reminderToggle_offboarding" class="w-4 h-4"/></td>
+                </tr>
+                <tr class="border-t border-slate-100">
+                  <td class="px-4 py-3 font-medium text-slate-700">Holidays</td>
+                  <td class="px-4 py-3 text-slate-500">Emails every active employee the day before a public holiday (independent of the dashboard announcement in Announcements).</td>
+                  <td class="px-4 py-3 text-center"><input type="checkbox" id="reminderToggle_holidays" class="w-4 h-4"/></td>
+                </tr>
+                <tr class="border-t border-slate-100">
+                  <td class="px-4 py-3 font-medium text-slate-700">Acknowledgement <span class="text-xs text-slate-400 font-normal">(coming soon)</span></td>
+                  <td class="px-4 py-3 text-slate-400">For employees to acknowledge reading company documents (handbooks, policies) — not wired up yet.</td>
+                  <td class="px-4 py-3 text-center"><input type="checkbox" id="reminderToggle_acknowledgement" class="w-4 h-4" disabled/></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="flex items-center gap-3 mt-4">
+            <button onclick="saveReminderSettings()" class="btn-primary text-sm">Save</button>
+            <p id="reminderSettingsMsg" class="text-xs"></p>
+          </div>
+        </div>
       </div>
 
       <!-- SETTINGS: System-Wide Notifications (superadmin only) -->
@@ -2393,87 +2542,6 @@
             <button id="aiAssistantRemoveBtn" onclick="removeAiAssistantKey()" class="hidden text-sm px-3 py-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50">Remove Key</button>
           </div>
           <p id="aiAssistantMsg" class="text-xs mt-3"></p>
-        </div>
-      </div>
-
-      <!-- SETTINGS: Email Notifications (HR Manager only) -->
-      <div id="page-settings-email-notifications" class="hidden">
-        <div class="mb-4">
-          <h3 class="text-lg font-semibold">Email Notifications</h3>
-          <p class="text-xs text-slate-400 mt-1">Connect your own mailbox (SMTP) so approval requests, decisions, and other application emails go out from your own organization's address — not a shared platform sender. Turned off by default until you save valid settings here.</p>
-        </div>
-        <div class="bg-white rounded-xl border border-slate-200 p-6 max-w-xl">
-          <div id="emailSettingsStatusRow" class="flex items-center gap-2 mb-5">
-            <span id="emailSettingsStatusBadge" class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500">Loading…</span>
-            <span id="emailSettingsStatusDetail" class="text-xs text-slate-400"></span>
-          </div>
-
-          <div class="flex items-center gap-2 mb-4">
-            <input type="checkbox" id="emailSettingsEnabled" class="w-4 h-4"/>
-            <label for="emailSettingsEnabled" class="text-sm text-slate-700 cursor-pointer">Enable email notifications for this organization</label>
-          </div>
-
-          <div class="grid grid-cols-2 gap-3">
-            <div class="col-span-2">
-              <label class="block text-xs font-medium text-slate-500 mb-1">SMTP Host</label>
-              <input id="emailSettingsHost" placeholder="smtp.office365.com" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"/>
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-slate-500 mb-1">Port</label>
-              <input id="emailSettingsPort" type="number" placeholder="587" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"/>
-            </div>
-            <div class="flex items-end pb-2">
-              <label class="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
-                <input type="checkbox" id="emailSettingsUseTls" checked class="w-4 h-4"/> Use TLS
-              </label>
-            </div>
-            <div class="col-span-2">
-              <label class="block text-xs font-medium text-slate-500 mb-1">From Address</label>
-              <input id="emailSettingsFromAddress" placeholder="hr@yourcompany.com" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"/>
-            </div>
-            <div class="col-span-2">
-              <label class="block text-xs font-medium text-slate-500 mb-1">From Name <span class="text-slate-400">(optional)</span></label>
-              <input id="emailSettingsFromName" placeholder="Acme Corp HR" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"/>
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-slate-500 mb-1">Username</label>
-              <input id="emailSettingsUsername" autocomplete="off" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"/>
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-slate-500 mb-1">Password</label>
-              <input id="emailSettingsPassword" type="password" autocomplete="off" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"/>
-            </div>
-          </div>
-          <p class="text-xs text-slate-400 mt-2">Credentials are validated with a real login attempt before saving, and encrypted at rest — the password is never shown again after saving, so re-enter it any time you save changes here.</p>
-
-          <div class="flex items-center gap-2 mt-4">
-            <button onclick="saveEmailSettings()" class="btn-primary text-sm">Save Settings</button>
-            <button id="emailSettingsRemoveBtn" onclick="removeEmailSettings()" class="hidden text-sm px-3 py-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50">Remove Settings</button>
-          </div>
-          <p id="emailSettingsMsg" class="text-xs mt-3"></p>
-
-          <div id="emailSettingsTestRow" class="hidden flex items-center gap-2 mt-5 pt-5 border-t border-slate-100">
-            <input id="emailSettingsTestTo" placeholder="Send a test email to…" class="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm"/>
-            <button onclick="sendTestEmail()" class="btn-ghost text-sm">Send Test</button>
-          </div>
-        </div>
-
-        <div class="mt-6 max-w-xl">
-          <h4 class="text-sm font-semibold text-slate-700 mb-2">Recent Activity</h4>
-          <div class="bg-white rounded-xl border border-slate-200 overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead class="bg-slate-50 border-b border-slate-200">
-                <tr>
-                  <th class="text-left px-3 py-2 text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">When</th>
-                  <th class="text-left px-3 py-2 text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">To</th>
-                  <th class="text-left px-3 py-2 text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">Category</th>
-                  <th class="text-left px-3 py-2 text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">Status</th>
-                </tr>
-              </thead>
-              <tbody id="emailLogList"></tbody>
-            </table>
-            <p id="emailLogEmpty" class="hidden text-center text-slate-400 text-sm py-8">No email activity yet.</p>
-          </div>
         </div>
       </div>
 
