@@ -1,12 +1,18 @@
 """
-Institution Notifications — configured by HR Manager/HR Admin, shown as a
-dashboard banner to all non-superadmin roles while within [start_time, end_time].
-Overlapping active windows are rejected at save time so at most one
-notification is ever active for an institution at a given moment.
+Institution Notifications — configured by HR Manager/HR Admin, shown as
+dashboard banners to all non-superadmin roles while within each one's own
+[start_time, end_time]. Any number can be simultaneously active — they
+stack on the dashboard, each independently dismissible (see
+static/js/notifications.js). This used to reject a new/edited window that
+overlapped an existing one, on the premise that at most one notification
+should ever be active at a time; that restriction is gone.
 
 System-Wide Notifications — configured by superadmin only, shown as a red
-"urgency" banner above the institution notification banner, to ALL users
-across ALL institutions (including superadmin), e.g. system downtime.
+"urgency" banner above the institution notification banner(s), to ALL
+users across ALL institutions (including superadmin), e.g. system
+downtime. Deliberately NOT stackable — still at most one active at a
+time, overlap-rejected at save time exactly as before; this is reserved
+for rare, singular platform-wide announcements, not routine messaging.
 
 Email notification settings (Phase 1 of the email notification engine —
 see core/email_engine.py, core/approval_workflow.py's notification hooks,
@@ -14,11 +20,23 @@ and migrations/versions/20260919_0001_email_notifications.py): each
 institution configures its own SMTP mailbox (BYO-SMTP, same
 encrypted-credential pattern as the AI assistant's Anthropic BYOK key)
 to send approval/application emails from.
+
+Notification general settings (institution timezone + the "announce a
+public holiday on its eve" toggle — migrations/versions/
+20260921_0001_notification_stacking_and_holiday_eve.py): the holiday-eve
+banner is never a real institution_notifications row — it's computed
+fresh on every GET /api/notifications/active call (see
+_holiday_eve_virtual_notification) and merged into that same stackable
+list, the same "compute lazily on read" philosophy this codebase uses
+everywhere else rather than a scheduled job. `timezone` is a genuinely
+new concept here — every other date/time in this app is naive UTC — but
+is only actually consulted by that one holiday-eve check today.
 """
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
+from zoneinfo import ZoneInfo, available_timezones
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
@@ -227,19 +245,97 @@ def list_email_log(conn, limit: int = 50, user: dict = Depends(require_roles(*EM
 
 
 # ---------------------------------------------------------------------------
+# Notification general settings (institution timezone + holiday-eve
+# announcement toggle) — same early-registration reasoning as the
+# email-settings block above: /api/notifications/general-settings would
+# otherwise be swallowed by /api/notifications/{notification_id} below.
+# ---------------------------------------------------------------------------
+class NotificationGeneralSettingsIn(BaseModel):
+    timezone: str
+    holiday_eve_announcements_enabled: bool = False
+
+    @field_validator("timezone")
+    @classmethod
+    def _valid_timezone(cls, v):
+        v = v.strip()
+        if v not in available_timezones():
+            raise ValueError("Not a recognized IANA timezone name (e.g. 'Asia/Kuala_Lumpur')")
+        return v
+
+
+class NotificationGeneralSettingsOut(BaseModel):
+    timezone: str
+    holiday_eve_announcements_enabled: bool
+
+
+@router.get("/api/notifications/general-settings")
+@db_session
+def get_notification_general_settings(
+    conn, user: dict = Depends(require_roles(*NOTIFICATION_MANAGE_ROLES))
+) -> NotificationGeneralSettingsOut:
+    inst_id = need_inst(user)
+    row = conn.execute(
+        "SELECT timezone, holiday_eve_announcements_enabled FROM institutions WHERE id=?", (inst_id,)
+    ).fetchone()
+    return NotificationGeneralSettingsOut(
+        timezone=row["timezone"], holiday_eve_announcements_enabled=bool(row["holiday_eve_announcements_enabled"])
+    )
+
+
+@router.put("/api/notifications/general-settings")
+@db_session
+def update_notification_general_settings(
+    conn, body: NotificationGeneralSettingsIn, user: dict = Depends(require_roles(*NOTIFICATION_MANAGE_ROLES))
+) -> NotificationGeneralSettingsOut:
+    inst_id = need_inst(user)
+    conn.execute(
+        "UPDATE institutions SET timezone=?, holiday_eve_announcements_enabled=? WHERE id=?",
+        (body.timezone, body.holiday_eve_announcements_enabled, inst_id)
+    )
+    conn.commit()
+    row = conn.execute(
+        "SELECT timezone, holiday_eve_announcements_enabled FROM institutions WHERE id=?", (inst_id,)
+    ).fetchone()
+    return NotificationGeneralSettingsOut(
+        timezone=row["timezone"], holiday_eve_announcements_enabled=bool(row["holiday_eve_announcements_enabled"])
+    )
+
+
+def _holiday_eve_virtual_notification(conn, inst_id: int) -> Optional[Dict[str, Any]]:
+    """A synthetic "notification" for a public holiday exactly one
+    calendar day away in the institution's own timezone — computed fresh
+    on every call, never a real institution_notifications row. Its `id`
+    is a namespaced string ("holiday-eve-<holiday id>"), which can never
+    collide with a real row's integer id, so the frontend's existing
+    per-id dismiss-key scheme (static/js/notifications.js) works
+    unchanged for it — dismissing it today doesn't suppress a *different*
+    holiday's eve announcement next month, since each holiday's own id is
+    baked into the key."""
+    row = conn.execute(
+        "SELECT timezone, holiday_eve_announcements_enabled FROM institutions WHERE id=?", (inst_id,)
+    ).fetchone()
+    if not row or not row["holiday_eve_announcements_enabled"]:
+        return None
+    try:
+        tz = ZoneInfo(row["timezone"] or "UTC")
+    except Exception:
+        tz = ZoneInfo("UTC")
+    tomorrow = (datetime.now(tz).date() + timedelta(days=1)).isoformat()
+    holiday = conn.execute(
+        "SELECT id, name FROM holidays WHERE institution_id=? AND date=?", (inst_id, tomorrow)
+    ).fetchone()
+    if not holiday:
+        return None
+    return {
+        "id": f"holiday-eve-{holiday['id']}",
+        "message": f"Reminder: {holiday['name']} is tomorrow ({tomorrow}).",
+        "start_time": None, "end_time": None, "is_virtual": True,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Institution notifications
 # ---------------------------------------------------------------------------
-def _notification_overlaps(conn, inst_id, start_time, end_time, exclude_id=None):
-    q = """
-        SELECT id FROM institution_notifications
-        WHERE institution_id=? AND NOT (end_time <= ? OR start_time >= ?)
-    """
-    params: list = [inst_id, start_time, end_time]
-    if exclude_id is not None:
-        q += " AND id != ?"; params.append(exclude_id)
-    return conn.execute(q, params).fetchone() is not None
-
-
 @router.get("/api/notifications")
 @db_session
 def list_notifications(conn, user: dict = Depends(require_roles(*NOTIFICATION_MANAGE_ROLES))) -> List[Dict[str, Any]]:
@@ -252,17 +348,24 @@ def list_notifications(conn, user: dict = Depends(require_roles(*NOTIFICATION_MA
 
 @router.get("/api/notifications/active")
 @db_session
-def get_active_notification(conn, user: dict = Depends(get_current_user)) -> Optional[Dict[str, Any]]:
+def get_active_notifications(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
+    """Every currently-active institution notification (any number can
+    overlap — see module docstring), plus the holiday-eve announcement
+    when applicable, all in one stackable list."""
     inst_id = user.get("active_institution_id")
     if not inst_id or user["role"] == "superadmin":
-        return None
+        return []
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M")
-    row = conn.execute(
+    rows = conn.execute(
         "SELECT * FROM institution_notifications WHERE institution_id=? AND start_time<=? AND end_time>=? "
-        "ORDER BY start_time DESC LIMIT 1",
+        "ORDER BY start_time DESC",
         (inst_id, now, now)
-    ).fetchone()
-    return dict(row) if row else None
+    ).fetchall()
+    result = [dict(r) for r in rows]
+    holiday_eve = _holiday_eve_virtual_notification(conn, inst_id)
+    if holiday_eve:
+        result.append(holiday_eve)
+    return result
 
 
 @router.post("/api/notifications", status_code=201)
@@ -271,8 +374,6 @@ def create_notification(conn, body: NotificationIn, user: dict = Depends(require
     inst_id = need_inst(user)
     if body.end_time <= body.start_time:
         raise HTTPException(400, "End time must be after start time")
-    if _notification_overlaps(conn, inst_id, body.start_time, body.end_time):
-        raise HTTPException(400, "Another notification is already active/scheduled during this window")
     conn.execute(
         "INSERT INTO institution_notifications (institution_id,message,start_time,end_time,created_by) VALUES (?,?,?,?,?)",
         (inst_id, body.message, body.start_time, body.end_time, user["username"])
@@ -290,8 +391,6 @@ def update_notification(conn, notification_id: int, body: NotificationIn, user: 
         raise HTTPException(404, "Notification not found")
     if body.end_time <= body.start_time:
         raise HTTPException(400, "End time must be after start time")
-    if _notification_overlaps(conn, inst_id, body.start_time, body.end_time, exclude_id=notification_id):
-        raise HTTPException(400, "Another notification is already active/scheduled during this window")
     conn.execute(
         "UPDATE institution_notifications SET message=?,start_time=?,end_time=? WHERE id=?",
         (body.message, body.start_time, body.end_time, notification_id)

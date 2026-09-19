@@ -603,12 +603,11 @@
               <button onclick="dismissDashboardSystemNotification()" class="text-red-400 hover:text-red-600 shrink-0"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
             </div>
 
-            <!-- Institution notification banner (all roles except superadmin) -->
-            <div id="dashboardNotifBar" class="hidden items-start gap-3 bg-purple-50 border border-purple-200 rounded-xl px-4 py-3 mb-5">
-              <svg class="w-5 h-5 text-purple-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
-              <p id="dashboardNotifMsg" class="flex-1 text-sm text-purple-800 whitespace-pre-line"></p>
-              <button onclick="dismissDashboardNotification()" class="text-purple-400 hover:text-purple-600 shrink-0"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
-            </div>
+            <!-- Institution notification banners (all roles except superadmin) — any
+                 number can be simultaneously active; each gets its own row here,
+                 independently dismissible. Populated entirely by renderDashboardNotifications()
+                 in static/js/notifications.js — no static banner markup here anymore. -->
+            <div id="dashboardNotifList"></div>
 
             <!-- To-Do queue (all roles except superadmin) — always visible, even when empty -->
             <div id="dashboardTodoCard" class="hidden mb-6">
@@ -1962,8 +1961,44 @@
 
       <!-- SETTINGS: Notifications (HR Manager / HR Admin) -->
       <div id="page-settings-notifications" class="hidden">
+        <div class="bg-white rounded-xl border border-slate-200 p-4 mb-5">
+          <h4 class="text-sm font-semibold text-slate-700 mb-3">General Settings</h4>
+          <div class="flex flex-wrap items-end gap-4">
+            <div>
+              <label class="block text-xs font-medium text-slate-500 mb-1">Institution Timezone</label>
+              <select id="notifSettingsTimezone" class="border border-slate-200 rounded-lg px-3 py-2 text-sm" style="min-width:220px">
+                <option value="Asia/Kuala_Lumpur">Malaysia — Kuala Lumpur (UTC+8)</option>
+                <option value="Asia/Singapore">Singapore (UTC+8)</option>
+                <option value="Asia/Jakarta">Indonesia — Jakarta (UTC+7)</option>
+                <option value="Asia/Bangkok">Thailand — Bangkok (UTC+7)</option>
+                <option value="Asia/Manila">Philippines — Manila (UTC+8)</option>
+                <option value="Asia/Ho_Chi_Minh">Vietnam — Ho Chi Minh (UTC+7)</option>
+                <option value="Asia/Hong_Kong">Hong Kong (UTC+8)</option>
+                <option value="Asia/Shanghai">China — Shanghai (UTC+8)</option>
+                <option value="Asia/Tokyo">Japan — Tokyo (UTC+9)</option>
+                <option value="Asia/Seoul">South Korea — Seoul (UTC+9)</option>
+                <option value="Asia/Kolkata">India — Kolkata (UTC+5:30)</option>
+                <option value="Asia/Dubai">UAE — Dubai (UTC+4)</option>
+                <option value="Europe/London">United Kingdom — London</option>
+                <option value="Europe/Paris">Europe — Paris</option>
+                <option value="America/New_York">US — New York</option>
+                <option value="America/Los_Angeles">US — Los Angeles</option>
+                <option value="Australia/Sydney">Australia — Sydney</option>
+                <option value="UTC">UTC</option>
+              </select>
+            </div>
+            <div class="flex items-center gap-2 pb-2">
+              <input type="checkbox" id="notifSettingsHolidayEve" class="w-4 h-4"/>
+              <label for="notifSettingsHolidayEve" class="text-sm text-slate-700 cursor-pointer">Announce public holidays on the eve</label>
+            </div>
+            <button onclick="saveNotificationGeneralSettings()" class="btn-primary text-sm">Save</button>
+          </div>
+          <p class="text-xs text-slate-400 mt-2">The holiday-eve announcement is computed automatically from Holiday Manager (Leave settings) — it appears as a dashboard banner the day before each public holiday, in the timezone selected above, and isn't a notification you create yourself below.</p>
+          <p id="notifGeneralSettingsMsg" class="text-xs mt-2"></p>
+        </div>
+
         <div class="flex items-center justify-between mb-5">
-          <p class="text-sm text-slate-500">Configure a broadcast message shown to all employees on their dashboard for a scheduled time window. Only one notification can be active at a time.</p>
+          <p class="text-sm text-slate-500">Configure broadcast messages shown to all employees on their dashboard for a scheduled time window. Any number can be active at the same time — they stack.</p>
           <button onclick="openNotificationModal()" class="btn-primary text-sm flex items-center gap-2 shrink-0 ml-4">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
             Add Notification

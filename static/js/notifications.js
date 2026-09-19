@@ -33,6 +33,40 @@ function notifStatus(n) {
 }
 const NOTIF_STATUS_COLORS={'Active':'status-positive','Scheduled':'status-pending','Expired':'status-neutral'};
 
+async function loadNotificationGeneralSettings() {
+  const msg=document.getElementById('notifGeneralSettingsMsg');
+  if(msg) msg.textContent='';
+  const res=await api('/api/notifications/general-settings');
+  if(!res?.ok) return;
+  const s=await res.json();
+  const tzSel=document.getElementById('notifSettingsTimezone');
+  if(tzSel && s.timezone && ![...tzSel.options].some(o=>o.value===s.timezone)){
+    // The institution's saved timezone isn't in our curated dropdown list —
+    // add it so the select still shows the actual saved value rather than
+    // silently falling back to whatever option happens to be first.
+    tzSel.insertAdjacentHTML('beforeend', `<option value="${esc(s.timezone)}">${esc(s.timezone)}</option>`);
+  }
+  if(tzSel) tzSel.value=s.timezone;
+  document.getElementById('notifSettingsHolidayEve').checked=!!s.holiday_eve_announcements_enabled;
+}
+
+const saveNotificationGeneralSettings = guardAsync(async function() {
+  const msg=document.getElementById('notifGeneralSettingsMsg');
+  const body={
+    timezone: document.getElementById('notifSettingsTimezone').value,
+    holiday_eve_announcements_enabled: document.getElementById('notifSettingsHolidayEve').checked,
+  };
+  const res=await api('/api/notifications/general-settings', {method:'PUT', body: JSON.stringify(body)});
+  if(res?.ok){
+    msg.textContent='Settings saved.';
+    msg.className='text-xs mt-2 text-green-600';
+  } else {
+    const d=await res.json();
+    msg.textContent=apiErrorText(d.detail, 'Failed to save settings.');
+    msg.className='text-xs mt-2 text-red-600';
+  }
+});
+
 async function loadNotificationSettings() {
   const listEl=document.getElementById('notificationList');
   const emptyEl=document.getElementById('notificationEmpty');
@@ -111,20 +145,26 @@ async function deleteNotification(notificationId) {
 }
 
 // ---------------------------------------------------------------------------
-// Dashboard banner — shown to all roles except superadmin, dismissible per session
+// Dashboard banners — shown to all roles except superadmin, each
+// independently dismissible per session. Any number can be active at
+// once (see routers/notifications.py's module docstring) — including a
+// synthetic "public holiday tomorrow" entry (id like "holiday-eve-42")
+// merged in server-side alongside real institution_notifications rows;
+// the frontend treats every entry identically, real or virtual.
 // ---------------------------------------------------------------------------
 async function checkDashboardNotification() {
-  const bar=document.getElementById('dashboardNotifBar');
-  if(!bar) return;
-  if(currentUser?.role==='superadmin'){ bar.classList.add('hidden'); return; }
+  const container=document.getElementById('dashboardNotifList');
+  if(!container) return;
+  if(currentUser?.role==='superadmin'){ container.innerHTML=''; return; }
   const res=await api('/api/notifications/active');
-  const n=res?.ok?await res.json():null;
-  if(!n){ bar.classList.add('hidden'); return; }
-  if(sessionStorage.getItem(notifDismissKey(n.id))){ bar.classList.add('hidden'); return; }
-  document.getElementById('dashboardNotifMsg').innerHTML=linkify(n.message);
-  bar.dataset.notifId=n.id;
-  bar.classList.remove('hidden');
-  bar.classList.add('flex');
+  const list=res?.ok?await res.json():[];
+  const visible=list.filter(n=>!sessionStorage.getItem(notifDismissKey(n.id)));
+  container.innerHTML=visible.map(n=>`
+    <div class="flex items-start gap-3 bg-purple-50 border border-purple-200 rounded-xl px-4 py-3 mb-5" data-notif-id="${esc(String(n.id))}">
+      <svg class="w-5 h-5 text-purple-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+      <p class="flex-1 text-sm text-purple-800 whitespace-pre-line">${linkify(n.message)}</p>
+      <button onclick="dismissDashboardNotification('${String(n.id).replace(/'/g,"")}')" class="text-purple-400 hover:text-purple-600 shrink-0"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>`).join('');
 }
 
 function notifDismissKey(notifId) {
@@ -134,12 +174,9 @@ function notifDismissKey(notifId) {
   return `notifDismissed_${notifId}_${currentUser?.id}`;
 }
 
-function dismissDashboardNotification() {
-  const bar=document.getElementById('dashboardNotifBar');
-  const id=bar?.dataset?.notifId;
-  if(id) sessionStorage.setItem(notifDismissKey(id),'1');
-  bar.classList.add('hidden');
-  bar.classList.remove('flex');
+function dismissDashboardNotification(id) {
+  sessionStorage.setItem(notifDismissKey(id),'1');
+  document.querySelector(`#dashboardNotifList [data-notif-id="${CSS.escape(String(id))}"]`)?.remove();
 }
 
 // ---------------------------------------------------------------------------

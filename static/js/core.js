@@ -810,7 +810,7 @@ async function showPage(page) {
   if (page === 'timesheet-my')        loadTimesheetPage();
   if (page === 'timesheet-approvals') loadTimesheetApprovals();
   if (page === 'overtime-my')         loadMyOvertimePage();
-  if (page === 'settings-notifications') loadNotificationSettings();
+  if (page === 'settings-notifications') { loadNotificationSettings(); loadNotificationGeneralSettings(); }
   if (page === 'settings-system-notifications') loadSystemNotificationSettings();
   if (page === 'payroll-runs') loadPayrollRuns();
   if (page === 'payroll-my')   loadMyPayslips();

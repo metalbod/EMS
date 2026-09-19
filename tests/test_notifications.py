@@ -12,6 +12,7 @@ to a real user.
 """
 import itertools
 import random
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -25,6 +26,15 @@ def _unique_window():
     other tests/runs."""
     year = _time_salt + next(_time_counter)
     return f"{year}-01-01T09:00", f"{year}-01-01T17:00"
+
+
+def _active_window():
+    """A window that IS active right now (brackets the current UTC time),
+    distinguishable from `_unique_window()`'s far-future windows."""
+    now = datetime.now(timezone.utc)
+    start = (now - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M")
+    end = (now + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M")
+    return start, end
 
 
 @pytest.fixture
@@ -103,14 +113,16 @@ def test_create_notification_end_before_start_returns_400(client, hr_manager_aut
     assert res.status_code == 400
 
 
-def test_create_notification_overlap_rejected(client, hr_manager_auth, make_test_notification):
+def test_create_notification_overlap_allowed(client, hr_manager_auth, make_test_notification):
+    """Institution notifications stack — a second one in the same window is
+    no longer rejected."""
     existing = make_test_notification()
     res = client.post(
         "/api/notifications", headers=hr_manager_auth,
         json={"message": "ZZ Overlapping", "start_time": existing["start_time"], "end_time": existing["end_time"]},
     )
-    assert res.status_code == 400
-    assert "already active/scheduled" in res.json()["detail"]
+    assert res.status_code == 201
+    client.delete(f"/api/notifications/{res.json()['id']}", headers=hr_manager_auth)
 
 
 def test_list_notifications_includes_created(client, hr_manager_auth, make_test_notification):
@@ -139,14 +151,16 @@ def test_update_notification_not_found_returns_404(client, hr_manager_auth):
     assert res.status_code == 404
 
 
-def test_update_notification_overlap_with_another_rejected(client, hr_manager_auth, make_test_notification):
+def test_update_notification_overlap_with_another_allowed(client, hr_manager_auth, make_test_notification):
+    """Same relaxation applies on update — moving one notification's window
+    to overlap another's no longer rejects."""
     first = make_test_notification()
     second = make_test_notification()
     res = client.put(
         f"/api/notifications/{second['id']}", headers=hr_manager_auth,
         json={"message": "ZZ", "start_time": first["start_time"], "end_time": first["end_time"]},
     )
-    assert res.status_code == 400
+    assert res.status_code == 200
 
 
 def test_delete_notification_success(client, hr_manager_auth, make_test_notification):
@@ -157,7 +171,7 @@ def test_delete_notification_success(client, hr_manager_auth, make_test_notifica
     assert notif["id"] not in [n["id"] for n in listed]
 
 
-def test_active_notification_returns_none_when_window_is_future(client, make_test_user, test_institution, make_test_notification):
+def test_active_notifications_returns_empty_list_when_window_is_future(client, make_test_user, test_institution, make_test_notification):
     """The notification exists but its window is far in the future, so it's
     not 'active' right now."""
     make_test_notification()
@@ -165,13 +179,38 @@ def test_active_notification_returns_none_when_window_is_future(client, make_tes
     headers = {"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}
     res = client.get("/api/notifications/active", headers=headers)
     assert res.status_code == 200
-    assert res.json() is None
+    assert res.json() == []
 
 
-def test_active_notification_returns_none_for_superadmin(client, superadmin_headers):
+def test_active_notifications_returns_empty_list_for_superadmin(client, superadmin_headers):
     res = client.get("/api/notifications/active", headers=superadmin_headers)
     assert res.status_code == 200
-    assert res.json() is None
+    assert res.json() == []
+
+
+def test_active_notifications_stacks_multiple(client, make_test_user, test_institution, hr_manager_auth):
+    """Two institution notifications with overlapping active windows both
+    show up in the active list at once — they stack rather than the older
+    behavior of at most one being "the" active notification."""
+    start, end = _active_window()
+    created = []
+    for msg in ("ZZ Stack One", "ZZ Stack Two"):
+        res = client.post(
+            "/api/notifications", headers=hr_manager_auth,
+            json={"message": msg, "start_time": start, "end_time": end},
+        )
+        assert res.status_code == 201, res.text
+        created.append(res.json())
+
+    token, _ = make_test_user(role="employee")
+    headers = {"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}
+    res = client.get("/api/notifications/active", headers=headers)
+    assert res.status_code == 200
+    active_ids = {n["id"] for n in res.json()}
+    assert {c["id"] for c in created} <= active_ids
+
+    for c in created:
+        client.delete(f"/api/notifications/{c['id']}", headers=hr_manager_auth)
 
 
 # ---------------------------------------------------------------------------
@@ -227,3 +266,134 @@ def test_active_system_notification_returns_none_when_window_is_future(client, h
     res = client.get("/api/system-notifications/active", headers=hr_manager_auth)
     assert res.status_code == 200
     assert res.json() is None
+
+
+# ---------------------------------------------------------------------------
+# Notification general settings (institution timezone + holiday-eve toggle)
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def restore_general_settings(client, hr_manager_auth):
+    """test_institution is session-scoped, so any timezone/toggle change a
+    test makes here has to be put back — otherwise it leaks into whatever
+    test runs next in the same session."""
+    original = client.get("/api/notifications/general-settings", headers=hr_manager_auth).json()
+    yield
+    client.put("/api/notifications/general-settings", headers=hr_manager_auth, json=original)
+
+
+def test_get_general_settings_requires_manage_role(client, make_test_user, test_institution):
+    token, _ = make_test_user(role="employee")
+    headers = {"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}
+    res = client.get("/api/notifications/general-settings", headers=headers)
+    assert res.status_code == 403
+
+
+def test_general_settings_defaults_to_utc_and_disabled(client, hr_manager_auth):
+    res = client.get("/api/notifications/general-settings", headers=hr_manager_auth)
+    assert res.status_code == 200
+    body = res.json()
+    assert "timezone" in body
+    assert "holiday_eve_announcements_enabled" in body
+
+
+def test_update_general_settings_roundtrip(client, hr_manager_auth, restore_general_settings):
+    res = client.put(
+        "/api/notifications/general-settings", headers=hr_manager_auth,
+        json={"timezone": "Asia/Kuala_Lumpur", "holiday_eve_announcements_enabled": True},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["timezone"] == "Asia/Kuala_Lumpur"
+    assert body["holiday_eve_announcements_enabled"] is True
+
+    res = client.get("/api/notifications/general-settings", headers=hr_manager_auth)
+    assert res.json() == body
+
+
+def test_update_general_settings_invalid_timezone_returns_422(client, hr_manager_auth):
+    res = client.put(
+        "/api/notifications/general-settings", headers=hr_manager_auth,
+        json={"timezone": "Not/A_Real_Zone", "holiday_eve_announcements_enabled": False},
+    )
+    assert res.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Holiday-eve virtual notification
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def make_test_holiday_tomorrow_utc(client, hr_manager_auth):
+    """Creates a real holiday dated "tomorrow" in UTC (matches the default
+    institution timezone), deletes it on teardown."""
+    created_ids = []
+
+    def _make():
+        tomorrow = (datetime.now(timezone.utc).date() + timedelta(days=1)).isoformat()
+        year = int(tomorrow[:4])
+        res = client.post(
+            "/api/holidays", headers=hr_manager_auth,
+            json={"name": "ZZ Eve Test Holiday", "date": tomorrow, "year": year},
+        )
+        assert res.status_code == 201, f"failed to create test holiday: {res.text}"
+        holiday = res.json()
+        created_ids.append(holiday["id"])
+        return holiday
+
+    yield _make
+
+    for hid in created_ids:
+        client.delete(f"/api/holidays/{hid}", headers=hr_manager_auth)
+
+
+def _employee_active_headers(make_test_user, test_institution):
+    token, _ = make_test_user(role="employee")
+    return {"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}
+
+
+def test_holiday_eve_appears_when_enabled_and_holiday_tomorrow(
+    client, hr_manager_auth, make_test_user, test_institution, restore_general_settings, make_test_holiday_tomorrow_utc
+):
+    holiday = make_test_holiday_tomorrow_utc()
+    res = client.put(
+        "/api/notifications/general-settings", headers=hr_manager_auth,
+        json={"timezone": "UTC", "holiday_eve_announcements_enabled": True},
+    )
+    assert res.status_code == 200
+
+    headers = _employee_active_headers(make_test_user, test_institution)
+    res = client.get("/api/notifications/active", headers=headers)
+    assert res.status_code == 200
+    ids = [n["id"] for n in res.json()]
+    assert f"holiday-eve-{holiday['id']}" in ids
+
+
+def test_holiday_eve_absent_when_disabled(
+    client, hr_manager_auth, make_test_user, test_institution, restore_general_settings, make_test_holiday_tomorrow_utc
+):
+    holiday = make_test_holiday_tomorrow_utc()
+    res = client.put(
+        "/api/notifications/general-settings", headers=hr_manager_auth,
+        json={"timezone": "UTC", "holiday_eve_announcements_enabled": False},
+    )
+    assert res.status_code == 200
+
+    headers = _employee_active_headers(make_test_user, test_institution)
+    res = client.get("/api/notifications/active", headers=headers)
+    assert res.status_code == 200
+    ids = [n["id"] for n in res.json()]
+    assert f"holiday-eve-{holiday['id']}" not in ids
+
+
+def test_holiday_eve_absent_when_no_holiday_tomorrow(
+    client, hr_manager_auth, make_test_user, test_institution, restore_general_settings
+):
+    res = client.put(
+        "/api/notifications/general-settings", headers=hr_manager_auth,
+        json={"timezone": "UTC", "holiday_eve_announcements_enabled": True},
+    )
+    assert res.status_code == 200
+
+    headers = _employee_active_headers(make_test_user, test_institution)
+    res = client.get("/api/notifications/active", headers=headers)
+    assert res.status_code == 200
+    assert not any(str(n.get("id", "")).startswith("holiday-eve-") for n in res.json())
