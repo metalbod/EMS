@@ -131,7 +131,7 @@ def test_pending_timesheet_reminder_sent_and_not_duplicated(
 ):
     emp_email = f"zzremindts_{os.urandom(4).hex()}@zzpytest.example.com"
     emp = make_test_employee(full_name="ZZ Reminder Timesheet Employee", personal_email=emp_email)
-    project = make_test_project(name="ZZ Reminder Project", is_open_to_all=True)
+    project = make_test_project(name="ZZ Reminder Project", member_ids=[emp["employee_id"]])
     make_test_project_task(project["id"])
 
     inst_id = emp["institution_id"]
@@ -150,20 +150,56 @@ def test_pending_timesheet_reminder_sent_and_not_duplicated(
 def test_employee_with_no_project_access_is_not_reminded(
     client, hr_manager_auth, make_test_employee, configured_email_settings, reminder_conn
 ):
-    """An employee who isn't a member of any project, and no project in
-    the institution is open-to-all, has nothing to log — reminding them
-    would be a false positive."""
+    """An employee who isn't a specific member of any project has
+    nothing to log — reminding them would be a false positive. An
+    is_open_to_all project elsewhere in the institution must NOT grant
+    them blanket eligibility (that's the whole point of the fix this
+    test guards — see sweep_pending_timesheets' docstring)."""
     emp_email = f"zznoproj_{os.urandom(4).hex()}@zzpytest.example.com"
     emp = make_test_employee(full_name="ZZ No Project Employee", personal_email=emp_email)
     inst_id = emp["institution_id"]
 
-    # Guard: only meaningful if this institution currently has no
-    # open-to-all Active project — if some other test left one behind,
-    # this employee WOULD legitimately be reminded, so skip rather than
-    # false-fail.
-    has_open = client.get("/api/projects", headers=hr_manager_auth, params={"status": "Active"}).json()
-    if any(p.get("is_open_to_all") for p in has_open):
-        pytest.skip("an open-to-all Active project already exists in the shared test institution")
+    last_monday = (datetime.now(timezone.utc).date() - timedelta(days=datetime.now(timezone.utc).date().weekday() + 7)).isoformat()
+    with patch("core.email_engine.smtplib.SMTP"):
+        sent = send_reminders.sweep_pending_timesheets(reminder_conn, inst_id, last_monday, dry_run=False)
+
+    log = client.get("/api/notifications/email-log", headers=hr_manager_auth).json()
+    assert not any(r["recipient_email"] == emp_email for r in log)
+
+
+def test_employee_member_of_open_to_all_project_only_is_not_reminded(
+    client, hr_manager_auth, make_test_employee, make_test_project,
+    configured_email_settings, reminder_conn
+):
+    """is_open_to_all no longer grants blanket eligibility to everyone in
+    the institution — a specific project_members row is required, so an
+    employee who is NOT a named member of the open-to-all project still
+    isn't reminded even though they could technically log time there."""
+    emp_email = f"zzopentoall_{os.urandom(4).hex()}@zzpytest.example.com"
+    emp = make_test_employee(full_name="ZZ Open To All Non-Member Employee", personal_email=emp_email)
+    inst_id = emp["institution_id"]
+    make_test_project(name="ZZ Open To All Reminder Test", is_open_to_all=True)
+
+    last_monday = (datetime.now(timezone.utc).date() - timedelta(days=datetime.now(timezone.utc).date().weekday() + 7)).isoformat()
+    with patch("core.email_engine.smtplib.SMTP"):
+        sent = send_reminders.sweep_pending_timesheets(reminder_conn, inst_id, last_monday, dry_run=False)
+
+    log = client.get("/api/notifications/email-log", headers=hr_manager_auth).json()
+    assert not any(r["recipient_email"] == emp_email for r in log)
+
+
+def test_employee_member_of_only_a_non_active_project_is_not_reminded(
+    client, hr_manager_auth, make_test_employee, make_test_project,
+    configured_email_settings, reminder_conn
+):
+    """Membership in a Completed or On Hold project doesn't count towards
+    eligibility either — there's nothing currently open to log time
+    against, so reminding them would be a false positive."""
+    emp_email = f"zznonactive_{os.urandom(4).hex()}@zzpytest.example.com"
+    emp = make_test_employee(full_name="ZZ Non-Active Project Employee", personal_email=emp_email)
+    inst_id = emp["institution_id"]
+
+    make_test_project(name="ZZ Completed Project For Reminder Test", status="Completed", member_ids=[emp["employee_id"]])
 
     last_monday = (datetime.now(timezone.utc).date() - timedelta(days=datetime.now(timezone.utc).date().weekday() + 7)).isoformat()
     with patch("core.email_engine.smtplib.SMTP"):

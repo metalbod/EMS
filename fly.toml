@@ -7,12 +7,25 @@ app = 'ems-app'
 primary_region = 'nrt'
 
 [build]
+
+# "app" runs the exact command the Dockerfile's own CMD already used —
+# defining [processes] at all means every process group must be listed
+# explicitly, so this keeps the web server's behavior unchanged.
+# "reminders" (scripts/send_reminders.py, Phase 2 of the email
+# notification engine) is scheduled separately via `fly machine update
+# --schedule=daily` — see deploy.sh, which re-applies that after every
+# deploy since fly.toml itself can't express a schedule.
+[processes]
+  app = "uvicorn main:app --host 0.0.0.0 --port 8000"
+  reminders = "python3 scripts/send_reminders.py"
+
 [http_service]
   internal_port = 8000
   force_https = true
   auto_stop_machines = 'stop'
   auto_start_machines = true
   min_machines_running = 1
+  processes = ["app"]
 
   [[http_service.checks]]
     interval = '15s'
@@ -25,3 +38,10 @@ primary_region = 'nrt'
   memory = '512mb'
   cpus = 1
   memory_mb = 512
+  processes = ["app"]
+
+[[vm]]
+  memory = '256mb'
+  cpus = 1
+  memory_mb = 256
+  processes = ["reminders"]

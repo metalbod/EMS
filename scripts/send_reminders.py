@@ -24,13 +24,20 @@ For every institution with notifications_email_enabled=true, sweeps:
     while it stays overdue (checked every run, any day of the week).
 
   - Employees with no Submitted/Approved timesheet for the week that
-    just ended: only active employees who could plausibly have logged
-    anything (a member of at least one project, or the institution has
-    an is_open_to_all project) — reminded once per missed period, never
-    re-sent once logged (checked only when this script runs on a
-    Monday, regardless of what time Fly's scheduler actually wakes it —
-    the schedule only controls *when* this runs, not what it decides to
-    do that day).
+    just ended: only active employees who are a specific, named member
+    of at least one currently-Active project. An is_open_to_all project
+    deliberately does NOT grant blanket eligibility here (unlike
+    elsewhere in the app) — that made nearly every employee in an
+    institution "eligible" the moment any one open project existed,
+    which meant this reminder fired for the whole company regardless of
+    whether they actually had anything to log; a real project_members
+    row is required instead. Membership in an On Hold or Completed
+    project alone does NOT count either (there's nothing current to log
+    time against there). Reminded once per missed period, never re-sent
+    once logged (checked only when this script runs on a Monday,
+    regardless of what time Fly's scheduler actually wakes it — the
+    schedule only controls *when* this runs, not what it decides to do
+    that day).
 
 Both categories dedupe against email_log's dedupe_key column rather than
 any new tracking table.
@@ -156,11 +163,6 @@ def sweep_overdue_checklists(conn, inst_id, today_str, dry_run):
 
 
 def sweep_pending_timesheets(conn, inst_id, period_start, dry_run):
-    has_open_project = conn.execute(
-        "SELECT 1 FROM projects WHERE institution_id=? AND is_open_to_all=true AND status='Active' LIMIT 1",
-        (inst_id,)
-    ).fetchone() is not None
-
     employees = conn.execute(
         "SELECT employee_id, full_name, work_email, personal_email FROM employees "
         "WHERE institution_id=? AND status='Active'",
@@ -169,14 +171,13 @@ def sweep_pending_timesheets(conn, inst_id, period_start, dry_run):
 
     sent = 0
     for emp in employees:
-        if not has_open_project:
-            is_member = conn.execute(
-                "SELECT 1 FROM project_members pm JOIN projects p ON p.id = pm.project_id "
-                "WHERE p.institution_id=? AND pm.employee_id=? LIMIT 1",
-                (inst_id, emp["employee_id"])
-            ).fetchone()
-            if not is_member:
-                continue
+        is_member = conn.execute(
+            "SELECT 1 FROM project_members pm JOIN projects p ON p.id = pm.project_id "
+            "WHERE p.institution_id=? AND pm.employee_id=? AND p.status='Active' LIMIT 1",
+            (inst_id, emp["employee_id"])
+        ).fetchone()
+        if not is_member:
+            continue
 
         already_submitted = conn.execute(
             "SELECT 1 FROM timesheets WHERE institution_id=? AND employee_id=? AND period_start=? "
