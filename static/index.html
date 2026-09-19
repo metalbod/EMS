@@ -541,6 +541,22 @@
         </div>
         <!-- Institution dashboard -->
         <div id="instDash" class="hidden">
+          <!-- Notification banners — shown above everything else (before the
+               greeting), regardless of which dash tab is active, so they're
+               never hidden by switching away from the General tab. -->
+          <!-- System-wide notification banner (ALL roles, incl. superadmin) — red, highest priority -->
+          <div id="dashboardSystemNotifBar" class="hidden items-start gap-3 bg-red-50 border border-red-300 rounded-xl px-4 py-3 mb-5">
+            <svg class="w-5 h-5 text-red-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/></svg>
+            <p id="dashboardSystemNotifMsg" class="flex-1 text-sm text-red-800 font-medium whitespace-pre-line"></p>
+            <button onclick="dismissDashboardSystemNotification()" class="text-red-400 hover:text-red-600 shrink-0"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+          </div>
+
+          <!-- Institution notification banners (all roles except superadmin) — any
+               number can be simultaneously active; each gets its own row here,
+               independently dismissible. Populated entirely by checkDashboardNotification()
+               in static/js/notifications.js. -->
+          <div id="dashboardNotifList"></div>
+
           <!-- Greeting header: date + serif greeting, quick-action pills (employee
                role only, reusing the same shortcuts the old dashboardQuickActions
                block used) -->
@@ -594,21 +610,8 @@
           </div>
           <div class="mb-6" style="border-bottom:1px solid var(--line-2)"></div>
 
-          <!-- General tab: notifications + to-do (default landing tab, always visible, loads immediately) -->
+          <!-- General tab: to-do (default landing tab, always visible, loads immediately) -->
           <div id="dash-general" class="dash-tab-panel">
-            <!-- System-wide notification banner (ALL roles, incl. superadmin) — red, highest priority -->
-            <div id="dashboardSystemNotifBar" class="hidden items-start gap-3 bg-red-50 border border-red-300 rounded-xl px-4 py-3 mb-5">
-              <svg class="w-5 h-5 text-red-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/></svg>
-              <p id="dashboardSystemNotifMsg" class="flex-1 text-sm text-red-800 font-medium whitespace-pre-line"></p>
-              <button onclick="dismissDashboardSystemNotification()" class="text-red-400 hover:text-red-600 shrink-0"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
-            </div>
-
-            <!-- Institution notification banners (all roles except superadmin) — any
-                 number can be simultaneously active; each gets its own row here,
-                 independently dismissible. Populated entirely by renderDashboardNotifications()
-                 in static/js/notifications.js — no static banner markup here anymore. -->
-            <div id="dashboardNotifList"></div>
-
             <!-- To-Do queue (all roles except superadmin) — always visible, even when empty -->
             <div id="dashboardTodoCard" class="hidden mb-6">
               <h3 class="section-heading mb-3">Your to-do</h3>
