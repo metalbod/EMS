@@ -35,7 +35,13 @@ function fileResignationFromView() {
   if (!viewingId) return;
   const e = employees.find(em => em.employee_id === viewingId);
   if (!e) return;
-  openResignModal(viewingId, displayName(e.full_name, e.preferred_name));
+  const empId = viewingId, empName = displayName(e.full_name, e.preferred_name);
+  // Close the employee detail modal first — leaving it open underneath
+  // stacked two full-screen modals (doubled-up backdrop, and the Resign
+  // modal's own success path already calls closeViewModal() again, which
+  // is harmless once it's already closed).
+  closeViewModal();
+  openResignModal(empId, empName);
 }
 
 async function handleResignAttachFile(e) {

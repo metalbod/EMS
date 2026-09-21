@@ -340,15 +340,39 @@ describe('guardAsync', () => {
   // installSubmitGuards, replacing 31 hand-written re-entrancy-flag copies
   // (one per Save/Add/Create button wired via onclick instead of a form
   // submit) with one shared wrapper.
+  //
+  // Also disables the triggering button for the call's duration.
+  // installSubmitGuards() is meant to do this for onsubmit="..." forms,
+  // but its window[name] lookup can never find a handler declared
+  // `const fn = guardAsync(...)` — only var/plain function declarations
+  // become window properties, a top-level const/let never does — and
+  // that's how the large majority of onsubmit handlers in this codebase
+  // are actually declared (grep static/js/*.js for
+  // "^const \w+ = guardAsync"). Every one of those was silently getting
+  // no disable/re-enable at all: a slow request gave zero visual
+  // feedback, so a user would click again thinking the first click
+  // hadn't registered — a second click while inFlight is a no-op, so
+  // what looked like "it took two clicks" was really just the first
+  // request finishing on its own. Doing the disabling here instead
+  // fixes every affected form/button at once, whichever way it's wired.
+  function guardAsyncButton(evt) {
+    if (!evt || typeof evt.preventDefault !== 'function' || !evt.target) return null;
+    if (evt.target.tagName === 'BUTTON') return evt.target;
+    if (evt.target.tagName === 'FORM') return evt.target.querySelector('button[type="submit"]');
+    return null;
+  }
   function guardAsync(fn) {
     let inFlight = false;
     return async function guarded(...args) {
       if (inFlight) return;
       inFlight = true;
+      const btn = guardAsyncButton(args[0]);
+      if (btn) btn.disabled = true;
       try {
         return await fn.apply(this, args);
       } finally {
         inFlight = false;
+        if (btn) btn.disabled = false;
       }
     };
   }
@@ -394,6 +418,53 @@ describe('guardAsync', () => {
     const result = await guarded(2, 3);
     expect(inner).toHaveBeenCalledWith(2, 3);
     expect(result).toBe(5);
+  });
+
+  it('disables a form\'s submit button for the duration of an onsubmit-triggered call', async () => {
+    document.body.innerHTML = '<form id="f"><button type="submit" id="b">Go</button></form>';
+    const form = document.getElementById('f');
+    const btn = document.getElementById('b');
+    let resolveInner;
+    const guarded = guardAsync(async () => new Promise(r => { resolveInner = r; }));
+    const fakeEvent = { preventDefault: () => {}, target: form };
+    const call = guarded(fakeEvent);
+    expect(btn.disabled).toBe(true);
+    resolveInner();
+    await call;
+    expect(btn.disabled).toBe(false);
+  });
+
+  it('disables the button itself for an onclick-triggered call (no enclosing form)', async () => {
+    document.body.innerHTML = '<button id="b">Save</button>';
+    const btn = document.getElementById('b');
+    let resolveInner;
+    const guarded = guardAsync(async () => new Promise(r => { resolveInner = r; }));
+    const fakeEvent = { preventDefault: () => {}, target: btn };
+    const call = guarded(fakeEvent);
+    expect(btn.disabled).toBe(true);
+    resolveInner();
+    await call;
+    expect(btn.disabled).toBe(false);
+  });
+
+  it('a second click while disabled is a no-op — the eventual success is always the first click\'s', async () => {
+    document.body.innerHTML = '<form id="f"><button type="submit" id="b">Go</button></form>';
+    const form = document.getElementById('f');
+    const btn = document.getElementById('b');
+    const inner = vi.fn(() => new Promise(r => setTimeout(r, 5)));
+    const guarded = guardAsync(inner);
+    const fakeEvent = { preventDefault: () => {}, target: form };
+    const first = guarded(fakeEvent);
+    const second = guarded(fakeEvent); // the "impatient second click"
+    await Promise.all([first, second]);
+    expect(inner).toHaveBeenCalledTimes(1);
+    expect(btn.disabled).toBe(false);
+  });
+
+  it('does not throw and skips disabling when called with no event (e.g. onclick="fn()")', async () => {
+    const inner = vi.fn(async () => 'ok');
+    const guarded = guardAsync(inner);
+    await expect(guarded()).resolves.toBe('ok');
   });
 });
 

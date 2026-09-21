@@ -268,15 +268,38 @@ function installSubmitGuards() {
 // already in flight is a silent no-op, keyed per wrapped function (not per
 // argument), matching how e.g. saveObTemplateSet('onboarding') and
 // saveObTemplateSet('offboarding') already shared one guard.
+//
+// Also disables the triggering submit button for the call's duration —
+// installSubmitGuards() above is meant to provide that for onsubmit="..."
+// forms, but its window[name] lookup can never find a handler declared
+// `const fn = guardAsync(...)` (only `var`/plain function declarations
+// become window properties; a top-level const/let never does), so every
+// guardAsync-wrapped onsubmit handler — most of them, in practice — was
+// silently skipped by it and got no disable/re-enable at all. Without
+// that, a slow request gives zero visual feedback: the button stays
+// clickable, so a user assumes the first click didn't register and
+// clicks again — a second click while inFlight is a no-op (see below),
+// so what they perceive as "it took the second click" is really just
+// the first request finishing on its own. Doing it here instead fixes
+// every affected form/button at once, whichever way it's wired.
+function _guardAsyncButton(evt) {
+  if (!evt || typeof evt.preventDefault !== 'function' || !evt.target) return null;
+  if (evt.target.tagName === 'BUTTON') return evt.target;
+  if (evt.target.tagName === 'FORM') return evt.target.querySelector('button[type="submit"]');
+  return null;
+}
 function guardAsync(fn) {
   let inFlight = false;
   return async function guarded(...args) {
     if (inFlight) return;
     inFlight = true;
+    const btn = _guardAsyncButton(args[0]);
+    if (btn) btn.disabled = true;
     try {
       return await fn.apply(this, args);
     } finally {
       inFlight = false;
+      if (btn) btn.disabled = false;
     }
   };
 }
