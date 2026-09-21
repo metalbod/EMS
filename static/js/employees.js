@@ -272,6 +272,11 @@ function renderEmpTable() {
 function viewEmployee(id) {
   const e = employees.find(em=>em.employee_id===id); if(!e) return;
   viewingId = id;
+  document.getElementById('viewName').textContent = combinedName(e.full_name, e.preferred_name) || e.employee_id;
+  document.getElementById('viewMeta').textContent = [e.employee_id, e.designation, e.department].filter(Boolean).join(' · ') || '—';
+  const badge = document.getElementById('viewBadge');
+  badge.textContent = e.status;
+  badge.className = `badge ${e.status==='Active'?'status-positive':'status-neutral'}`;
   const role = currentUser.role;
   const canWrite  = HR_MANAGE_ROLES.includes(role);
   const canToggle = HR_MANAGER_ONLY_ROLES.includes(role);
