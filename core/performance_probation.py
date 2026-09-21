@@ -67,3 +67,44 @@ def create_probation_reviews(conn, inst_id: int, emp: Dict[str, Any], checklist_
                 (inst_id, cycle_id, emp["employee_id"], title, description, weight, user["username"])
             )
     conn.commit()
+
+
+def delete_probation_reviews(conn, inst_id: int, checklist_id: int) -> None:
+    """Deletes every probation cycle create_probation_reviews() started
+    for this onboarding checklist, and everything under them — none of
+    this has a real foreign-key constraint back to ob_checklists (unlike
+    ob_checklist_items, which does), so it would otherwise silently
+    survive as orphaned performance-management data once the checklist
+    that spawned it is deleted (routers/onboarding.py's
+    delete_ob_checklist). Mirrors create_probation_reviews' own shape:
+    cycle -> appraisal -> goals, plus whatever the employee did with
+    those afterward (a PIP check-in, a payout) that a plain cycle/
+    appraisal/goal delete would otherwise be blocked by (NO ACTION FKs)."""
+    cycle_ids = [r[0] for r in conn.execute(
+        "SELECT id FROM performance_cycles WHERE institution_id=? AND source_ob_checklist_id=?",
+        (inst_id, checklist_id)
+    ).fetchall()]
+    if not cycle_ids:
+        return
+    cycle_ph = ",".join("?" for _ in cycle_ids)
+
+    appraisal_ids = [r[0] for r in conn.execute(
+        f"SELECT id FROM appraisals WHERE cycle_id IN ({cycle_ph})", cycle_ids
+    ).fetchall()]
+    goal_ids = [r[0] for r in conn.execute(
+        f"SELECT id FROM goals WHERE cycle_id IN ({cycle_ph})", cycle_ids
+    ).fetchall()]
+
+    if appraisal_ids:
+        appraisal_ph = ",".join("?" for _ in appraisal_ids)
+        conn.execute(f"DELETE FROM performance_payouts WHERE appraisal_id IN ({appraisal_ph})", appraisal_ids)
+    if goal_ids:
+        goal_ph = ",".join("?" for _ in goal_ids)
+        conn.execute(f"DELETE FROM okr_key_results WHERE goal_id IN ({goal_ph})", goal_ids)
+
+    conn.execute(f"DELETE FROM pip_checkins WHERE cycle_id IN ({cycle_ph})", cycle_ids)
+    if appraisal_ids:
+        conn.execute(f"DELETE FROM appraisals WHERE id IN ({appraisal_ph})", appraisal_ids)
+    if goal_ids:
+        conn.execute(f"DELETE FROM goals WHERE id IN ({goal_ph})", goal_ids)
+    conn.execute(f"DELETE FROM performance_cycles WHERE id IN ({cycle_ph})", cycle_ids)

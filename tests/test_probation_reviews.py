@@ -155,6 +155,45 @@ def test_hr_admin_can_view_but_not_manage_probation_cycle(client, employee_with_
     client.delete(f"/api/ob/checklists/{checklist['id']}", headers=hr_manager_auth)
 
 
+def test_deleting_checklist_cascades_probation_cycles_appraisals_and_goals(
+    client, employee_with_login, hr_manager_auth
+):
+    """The checklist delete endpoint must clean up everything
+    create_probation_reviews() started for it (core/performance_probation.py's
+    delete_probation_reviews) — none of performance_cycles/appraisals/goals
+    has a real FK back to ob_checklists, so before this fix they'd silently
+    survive as orphaned rows once the checklist itself was gone."""
+    emp, headers = employee_with_login(full_name="ZZ Probation Cascade Delete")
+    start = client.post("/api/ob/checklists", headers=hr_manager_auth, json={
+        "employee_id": emp["employee_id"], "type": "onboarding", "enable_probation_review": True,
+    })
+    checklist = start.json()
+    reviews = client.get(f"/api/ob/checklists/{checklist['id']}/probation-reviews", headers=hr_manager_auth).json()
+    assert len(reviews) == 3
+    cycle_ids = [r["cycle_id"] for r in reviews]
+    appraisal_ids = [r["appraisal_id"] for r in reviews]
+
+    goal_ids = []
+    for cycle_id in cycle_ids:
+        goals = client.get(f"/api/performance/goals?cycle_id={cycle_id}&employee_id={emp['employee_id']}", headers=headers).json()
+        assert len(goals) == 6
+        goal_ids.extend(g["id"] for g in goals)
+
+    delete_res = client.delete(f"/api/ob/checklists/{checklist['id']}", headers=hr_manager_auth)
+    assert delete_res.status_code == 204, delete_res.text
+
+    remaining_cycles = {c["id"] for c in client.get("/api/performance/cycles", headers=hr_manager_auth).json()}
+    assert not (remaining_cycles & set(cycle_ids)), "probation cycles must not survive the checklist delete"
+
+    for appraisal_id in appraisal_ids:
+        res = client.get(f"/api/performance/appraisals/{appraisal_id}", headers=hr_manager_auth)
+        assert res.status_code == 404, f"appraisal {appraisal_id} must not survive the checklist delete"
+
+    for cycle_id, first_goal_id in zip(cycle_ids, goal_ids[::6]):
+        res = client.put(f"/api/performance/goals/{first_goal_id}", headers=headers, json={"actual_value": 3})
+        assert res.status_code == 404, f"goal {first_goal_id} must not survive the checklist delete"
+
+
 def test_plain_employee_does_not_see_other_employees_probation_cycles_in_list(
     client, employee_with_login, hr_manager_auth
 ):

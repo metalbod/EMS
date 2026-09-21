@@ -12,7 +12,7 @@ from core.org_queries import subordinates_in_clause, is_self_or_subordinate
 
 from core.ob_ld_shared import log_ob, auto_enroll_ld_course
 
-from core.performance_probation import create_probation_reviews
+from core.performance_probation import create_probation_reviews, delete_probation_reviews
 
 from core.roles import get_valid_roles
 
@@ -816,6 +816,11 @@ def delete_ob_checklist(conn, cl_id: int, user: dict = Depends(get_current_user)
         log_ob(conn, inst_id, cl_id, cl["employee_id"], cl["type"],
                "Checklist Deleted", "Checklist and all items removed", user)
         conn.commit()
+    # A checklist with probation enabled auto-started its own probation-review
+    # cycles (create_probation_reviews) — those have no real FK back to this
+    # checklist, so they'd otherwise survive as orphaned performance-management
+    # data once the checklist itself is gone.
+    delete_probation_reviews(conn, inst_id, cl_id)
     conn.execute("DELETE FROM ob_checklist_items WHERE checklist_id=?", (cl_id,))
     conn.execute("DELETE FROM ob_checklists WHERE id=? AND institution_id=?", (cl_id, inst_id))
     conn.commit()
