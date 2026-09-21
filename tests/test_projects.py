@@ -4,6 +4,8 @@ Task Assignments. Uses the shared make_test_project/make_test_project_task
 fixtures from conftest.py (also reused by leave/timesheets tests, since
 both need a real project+task to log time against).
 """
+from datetime import date, timedelta
+
 import pytest
 
 
@@ -384,6 +386,133 @@ def test_project_utilization_total_estimated_is_none_when_no_task_has_one(
     res = client.get("/api/projects/utilization", headers=hr_manager_auth)
     body = next(p for p in res.json() if p["id"] == project["id"])
     assert body["total_estimated_hours"] is None
+
+
+# ---------------------------------------------------------------------------
+# Monthly summary (Home dashboard's Timesheet tab — GET /api/projects/monthly-summary)
+# ---------------------------------------------------------------------------
+def _monday_of_week(d):
+    return d - timedelta(days=d.weekday())
+
+
+def _mid_last_month():
+    first_of_this_month = date.today().replace(day=1)
+    last_month_end = first_of_this_month - timedelta(days=1)
+    return last_month_end.replace(day=15)
+
+
+def _log_hours(client, headers, emp, project, task, entry_date, hours):
+    """Starts (get-or-creates) the timesheet whose week contains entry_date,
+    then logs an entry against it — mirrors test_timesheets.py's own
+    make_test_timesheet/entries flow, just parameterized on a real date
+    instead of a fixed far-future period, since this endpoint groups by
+    real calendar month."""
+    period_start = _monday_of_week(entry_date)
+    period_end = period_start + timedelta(days=6)
+    ts = client.post("/api/timesheets", headers=headers, json={
+        "employee_id": emp["employee_id"], "period_start": period_start.isoformat(), "period_end": period_end.isoformat(),
+    })
+    assert ts.status_code == 201, f"failed to start test timesheet: {ts.text}"
+    entry = client.post(f"/api/timesheets/{ts.json()['id']}/entries", headers=headers, json={
+        "project_id": project["id"], "task_id": task["id"], "date": entry_date.isoformat(), "hours": hours,
+    })
+    assert entry.status_code == 201, f"failed to log test entry: {entry.text}"
+
+
+def test_monthly_summary_requires_manage_role(client, make_test_user, test_institution):
+    token, _ = make_test_user(role="employee")
+    headers = {"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}
+    res = client.get("/api/projects/monthly-summary", headers=headers)
+    assert res.status_code == 403
+
+
+def test_monthly_summary_groups_hours_by_calendar_month(
+    client, hr_manager_auth, employee_with_login, make_test_project, make_test_project_task
+):
+    emp, headers = employee_with_login()
+    project = make_test_project(is_billable=True, is_open_to_all=True)
+    task = make_test_project_task(project["id"])
+
+    _log_hours(client, headers, emp, project, task, date.today(), 6)
+    _log_hours(client, headers, emp, project, task, _mid_last_month(), 4)
+
+    res = client.get("/api/projects/monthly-summary", headers=hr_manager_auth)
+    assert res.status_code == 200, res.text
+    body = res.json()
+
+    current = next(p for p in body["current_month"]["projects"] if p["project_id"] == project["id"])
+    assert current["total_hours"] == 6
+    last = next(p for p in body["last_month"]["projects"] if p["project_id"] == project["id"])
+    assert last["total_hours"] == 4
+
+
+def test_monthly_summary_excludes_non_billable_from_project_list_but_counts_in_split(
+    client, hr_manager_auth, employee_with_login, make_test_project, make_test_project_task
+):
+    emp, headers = employee_with_login()
+    billable = make_test_project(is_billable=True, is_open_to_all=True)
+    billable_task = make_test_project_task(billable["id"])
+    non_billable = make_test_project(is_billable=False, is_open_to_all=True)
+    non_billable_task = make_test_project_task(non_billable["id"])
+
+    _log_hours(client, headers, emp, billable, billable_task, date.today(), 5)
+    _log_hours(client, headers, emp, non_billable, non_billable_task, date.today(), 3)
+
+    res = client.get("/api/projects/monthly-summary", headers=hr_manager_auth)
+    body = res.json()["current_month"]
+    assert non_billable["id"] not in [p["project_id"] for p in body["projects"]]
+    assert billable["id"] in [p["project_id"] for p in body["projects"]]
+    assert body["billable_hours"] >= 5
+    assert body["non_billable_hours"] >= 3
+
+
+def test_monthly_summary_sorts_projects_by_total_hours_descending(
+    client, hr_manager_auth, employee_with_login, make_test_project, make_test_project_task
+):
+    emp, headers = employee_with_login()
+    small = make_test_project(is_billable=True, is_open_to_all=True, name="ZZ Small Hours Project")
+    small_task = make_test_project_task(small["id"])
+    big = make_test_project(is_billable=True, is_open_to_all=True, name="ZZ Big Hours Project")
+    big_task = make_test_project_task(big["id"])
+
+    _log_hours(client, headers, emp, small, small_task, date.today(), 2)
+    _log_hours(client, headers, emp, big, big_task, date.today(), 9)
+
+    res = client.get("/api/projects/monthly-summary", headers=hr_manager_auth)
+    ids_in_order = [p["project_id"] for p in res.json()["current_month"]["projects"]
+                     if p["project_id"] in (small["id"], big["id"])]
+    assert ids_in_order == [big["id"], small["id"]]
+
+
+def test_monthly_summary_top_resources_sorted_by_hours_descending(
+    client, hr_manager_auth, employee_with_login, make_test_project, make_test_project_task
+):
+    heavy, heavy_headers = employee_with_login(full_name="ZZ Heavy Resource")
+    light, light_headers = employee_with_login(full_name="ZZ Light Resource")
+    project = make_test_project(is_billable=True, is_open_to_all=True)
+    task = make_test_project_task(project["id"])
+
+    _log_hours(client, heavy_headers, heavy, project, task, date.today(), 7)
+    _log_hours(client, light_headers, light, project, task, date.today(), 2)
+
+    res = client.get("/api/projects/monthly-summary", headers=hr_manager_auth)
+    body = next(p for p in res.json()["current_month"]["projects"] if p["project_id"] == project["id"])
+    assert [r["employee_id"] for r in body["top_resources"]] == [heavy["employee_id"], light["employee_id"]]
+
+
+def test_monthly_summary_trend_pct_computed_against_prior_month(
+    client, hr_manager_auth, employee_with_login, make_test_project, make_test_project_task
+):
+    emp, headers = employee_with_login()
+    project = make_test_project(is_billable=True, is_open_to_all=True)
+    task = make_test_project_task(project["id"])
+
+    _log_hours(client, headers, emp, project, task, _mid_last_month(), 10)
+    _log_hours(client, headers, emp, project, task, date.today(), 15)
+
+    res = client.get("/api/projects/monthly-summary", headers=hr_manager_auth)
+    current = next(p for p in res.json()["current_month"]["projects"] if p["project_id"] == project["id"])
+    assert current["trend_pct"] == 50.0  # (15-10)/10 * 100
 
 
 def test_my_projects_empty_for_user_with_no_employee_record(client, hr_manager_auth):

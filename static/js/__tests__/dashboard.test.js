@@ -277,56 +277,51 @@ describe('Leave Calendar — merging leave entries and onboarding action items p
   });
 });
 
-// Matches dashboard.js's _utilBarInfo — the shared project/task hours-bar
-// helper on the Home dashboard's Timesheet tab. Green = on or under
-// estimate, red = over, grey = no estimate to compare against at all.
-describe('Project/task utilization bar (_utilBarInfo)', () => {
-  function utilBarInfo(logged, estimated) {
-    const hasEstimate = estimated != null && estimated > 0;
-    const over = hasEstimate && logged > estimated;
-    const pct = hasEstimate ? Math.min(100, Math.round(logged / estimated * 100)) : (logged > 0 ? 100 : 0);
-    const fmtH = n => (Math.round(n * 10) / 10).toString().replace(/\.0$/, '');
-    let rightText;
-    if (!hasEstimate) rightText = `${fmtH(logged)}h logged`;
-    else if (over) rightText = `${fmtH(logged)}h / ${fmtH(estimated)}h · ${fmtH(logged - estimated)}h over`;
-    else rightText = `${fmtH(logged)}h / ${fmtH(estimated)}h · ${fmtH(estimated - logged)}h left`;
-    return {
-      pct,
-      barColor: !hasEstimate ? 'bg-slate-300' : over ? 'bg-red-500' : 'bg-emerald-500',
-      textColor: over ? 'text-red-600 font-medium' : 'text-slate-500',
-      rightText,
-    };
+// Matches dashboard.js's _tsTrendBadge/_tsBillableSplitBar/_tsFmtH — the
+// Home dashboard's Timesheet tab, now a billable-project hours summary
+// for the current and last calendar month (replaced the old all-time
+// task-budget view, see routers/projects.py's get_project_monthly_summary).
+describe('Timesheet tab monthly summary (trend badge, billable split, hour formatting)', () => {
+  const fmtH = n => (Math.round(n * 10) / 10).toString().replace(/\.0$/, '');
+
+  function trendBadge(trendPct) {
+    if (trendPct == null) return { label: 'New', color: 'text-slate-400' };
+    if (trendPct === 0) return { label: '±0%', color: 'text-slate-400' };
+    const up = trendPct > 0;
+    return { label: `${up ? '▲' : '▼'} ${Math.abs(trendPct)}%`, color: up ? 'text-emerald-600' : 'text-slate-500' };
   }
 
-  it('is green with hours-left text when under the estimate', () => {
-    const info = utilBarInfo(6, 10);
-    expect(info.barColor).toBe('bg-emerald-500');
-    expect(info.pct).toBe(60);
-    expect(info.rightText).toBe('6h / 10h · 4h left');
-  });
-
-  it('is still green at exactly 100% of the estimate — over-budget is strictly greater than, not >=', () => {
-    const info = utilBarInfo(10, 10);
-    expect(info.barColor).toBe('bg-emerald-500');
-    expect(info.rightText).toBe('10h / 10h · 0h left');
-  });
-
-  it('turns red and caps the bar at 100% once logged hours exceed the estimate', () => {
-    const info = utilBarInfo(14, 10);
-    expect(info.barColor).toBe('bg-red-500');
-    expect(info.pct).toBe(100);
-    expect(info.rightText).toBe('14h / 10h · 4h over');
-  });
-
-  it('is grey with no comparison when there is no estimate at all', () => {
-    const info = utilBarInfo(7, null);
-    expect(info.barColor).toBe('bg-slate-300');
-    expect(info.textColor).toBe('text-slate-500');
-    expect(info.rightText).toBe('7h logged');
-  });
+  function billablePct(billable, nonBillable) {
+    const total = billable + nonBillable;
+    return total > 0 ? Math.round(billable / total * 100) : 0;
+  }
 
   it('rounds fractional hours to one decimal and drops a trailing .0', () => {
-    const info = utilBarInfo(3.25, 8);
-    expect(info.rightText).toBe('3.3h / 8h · 4.8h left');
+    expect(fmtH(3.25)).toBe('3.3');
+    expect(fmtH(10)).toBe('10');
+  });
+
+  it('labels a project with no prior-month baseline as "New" rather than a misleading 0%/∞%', () => {
+    expect(trendBadge(null)).toEqual({ label: 'New', color: 'text-slate-400' });
+  });
+
+  it('shows an up arrow in emerald when hours increased vs last month', () => {
+    expect(trendBadge(12.3)).toEqual({ label: '▲ 12.3%', color: 'text-emerald-600' });
+  });
+
+  it('shows a down arrow in neutral slate (not alarming red) when hours decreased', () => {
+    // Fewer hours logged isn't necessarily bad (could mean the project
+    // wound down as planned), so it's styled neutral, unlike the old
+    // over-estimate red warning this tab used to show.
+    expect(trendBadge(-8.1)).toEqual({ label: '▼ 8.1%', color: 'text-slate-500' });
+  });
+
+  it('shows a flat ±0% badge distinct from "New" when hours are unchanged', () => {
+    expect(trendBadge(0)).toEqual({ label: '±0%', color: 'text-slate-400' });
+  });
+
+  it('computes the billable-hours split bar width as a percentage of total hours', () => {
+    expect(billablePct(75, 25)).toBe(75);
+    expect(billablePct(0, 0)).toBe(0);
   });
 });

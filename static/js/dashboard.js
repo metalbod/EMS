@@ -277,56 +277,81 @@ function loadRecruitmentDash() {
 // text always spells out hours left/over explicitly rather than making
 // someone do that subtraction themselves from a bare "logged/estimate"
 // pair.
-function _utilBarInfo(logged, estimated) {
-  const hasEstimate = estimated != null && estimated > 0;
-  const over = hasEstimate && logged > estimated;
-  const pct = hasEstimate ? Math.min(100, Math.round(logged / estimated * 100)) : (logged > 0 ? 100 : 0);
-  const fmtH = n => (Math.round(n * 10) / 10).toString().replace(/\.0$/, '');
-  let rightText;
-  if (!hasEstimate) rightText = `${fmtH(logged)}h logged`;
-  else if (over) rightText = `${fmtH(logged)}h / ${fmtH(estimated)}h · ${fmtH(logged - estimated)}h over`;
-  else rightText = `${fmtH(logged)}h / ${fmtH(estimated)}h · ${fmtH(estimated - logged)}h left`;
-  return {
-    pct,
-    barColor: !hasEstimate ? 'bg-slate-300' : over ? 'bg-red-500' : 'bg-emerald-500',
-    textColor: over ? 'text-red-600 font-medium' : 'text-slate-500',
-    rightText,
-  };
+// Billable-project hours summary (Home > Timesheet tab) — replaces the
+// old all-time task-budget view with two side-by-side calendar months,
+// each project sorted by total hours logged (highest first) with its own
+// top resources (people, ranked by hours on it that month) and a
+// month-over-month trend. Same hand-rolled div-bar visual language as
+// every other dashboard chart (breakdownBar/segmentedBar above, the
+// Leave tab's utilization ranking) — no charting library anywhere in
+// this app. Fed by GET /api/projects/monthly-summary (routers/projects.py).
+const _tsFmtH = n => (Math.round(n * 10) / 10).toString().replace(/\.0$/, '');
+
+function _tsTrendBadge(trendPct) {
+  if (trendPct == null) return '<span class="text-xs text-slate-400">New</span>';
+  if (trendPct === 0) return '<span class="text-xs text-slate-400">±0%</span>';
+  const up = trendPct > 0;
+  return `<span class="text-xs ${up?'text-emerald-600':'text-slate-500'} font-medium">${up?'▲':'▼'} ${Math.abs(trendPct)}%</span>`;
+}
+
+function _tsBillableSplitBar(containerId, billable, nonBillable) {
+  const total = billable + nonBillable;
+  const pct = total > 0 ? Math.round(billable / total * 100) : 0;
+  document.getElementById(containerId).innerHTML = `
+    <div class="flex items-center justify-between text-xs text-slate-500 mb-1">
+      <span>Billable ${_tsFmtH(billable)}h</span><span>Non-billable ${_tsFmtH(nonBillable)}h</span>
+    </div>
+    <div class="bg-slate-100 rounded-full h-2">
+      <div class="bg-emerald-500 h-2 rounded-full" style="width:${pct}%"></div>
+    </div>`;
+}
+
+function _tsProjectCard(p, maxHours) {
+  const pct = maxHours > 0 ? Math.round(p.total_hours / maxHours * 100) : 0;
+  const resourceRows = p.top_resources.length ? p.top_resources.map(r => {
+    const rMax = p.top_resources[0].hours || 1;
+    const rPct = Math.round(r.hours / rMax * 100);
+    return `<div class="flex items-center gap-2">
+      <div class="w-32 text-xs text-slate-600 truncate shrink-0">${esc(displayName(r.full_name, r.preferred_name) || r.employee_id)}</div>
+      <div class="flex-1 bg-slate-100 rounded-full h-1.5">
+        <div class="bg-blue-400 h-1.5 rounded-full" style="width:${rPct}%"></div>
+      </div>
+      <div class="text-xs text-slate-500 shrink-0 whitespace-nowrap">${_tsFmtH(r.hours)}h</div>
+    </div>`;
+  }).join('') : '<p class="text-xs text-slate-400">No one logged time on this project yet.</p>';
+  return `<div class="bg-white rounded-xl border border-slate-200 p-4">
+    <div class="flex items-center justify-between gap-2 mb-1">
+      <h4 class="font-medium text-sm text-slate-800 truncate" title="${esc(p.name)}">${esc(p.name)}</h4>
+      <div class="flex items-center gap-2 shrink-0">
+        ${_tsTrendBadge(p.trend_pct)}
+        <span class="text-xs font-medium text-slate-700 whitespace-nowrap">${_tsFmtH(p.total_hours)}h</span>
+      </div>
+    </div>
+    <div class="bg-slate-100 rounded-full h-2 mb-3">
+      <div class="bg-emerald-500 h-2 rounded-full" style="width:${pct}%"></div>
+    </div>
+    <p class="text-xs text-slate-400 mb-1.5">Top resources</p>
+    <div class="space-y-1.5">${resourceRows}</div>
+  </div>`;
+}
+
+function _tsRenderMonth(prefix, month) {
+  document.getElementById(`tsSummary${prefix}Label`).textContent = month.label;
+  _tsBillableSplitBar(`tsSummary${prefix}Split`, month.billable_hours, month.non_billable_hours);
+  const listEl = document.getElementById(`tsSummary${prefix}List`);
+  const emptyEl = document.getElementById(`tsSummary${prefix}Empty`);
+  if (!month.projects.length) { listEl.innerHTML=''; emptyEl.classList.remove('hidden'); return; }
+  emptyEl.classList.add('hidden');
+  const maxHours = month.projects[0].total_hours;
+  listEl.innerHTML = month.projects.map(p => _tsProjectCard(p, maxHours)).join('');
 }
 
 function loadTimesheetDash() {
-  api('/api/projects/utilization').then(async res => {
+  api('/api/projects/monthly-summary').then(async res => {
     if (!res || !res.ok) return;
-    const projects = await res.json();
-    const listEl = document.getElementById('utilProjectList');
-    const emptyEl = document.getElementById('utilEmpty');
-    if (!projects.length) { listEl.innerHTML=''; emptyEl.classList.remove('hidden'); return; }
-    emptyEl.classList.add('hidden');
-    listEl.innerHTML = projects.map(p => {
-      const proj = _utilBarInfo(p.total_hours, p.total_estimated_hours);
-      const taskRows = p.tasks.length ? p.tasks.map(t => {
-        const info = _utilBarInfo(t.logged_hours, t.estimated_hours);
-        return `<div class="flex items-center gap-2">
-          <div class="w-40 text-xs text-slate-600 truncate shrink-0" title="${esc(t.name)}">${esc(t.name)}</div>
-          <div class="flex-1 bg-slate-100 rounded-full h-2">
-            <div class="${info.barColor} h-2 rounded-full" style="width:${info.pct}%"></div>
-          </div>
-          <div class="text-xs ${info.textColor} shrink-0 whitespace-nowrap">${info.rightText}</div>
-        </div>`;
-      }).join('') : '<p class="text-xs text-slate-400">No tasks defined yet.</p>';
-      return `<div class="bg-white rounded-xl border border-slate-200 p-5">
-        <div class="flex items-center justify-between mb-1.5">
-          <h4 class="font-medium text-sm text-slate-800">${esc(p.name)}</h4>
-        </div>
-        <div class="flex items-center gap-2 mb-4">
-          <div class="flex-1 bg-slate-100 rounded-full h-2.5">
-            <div class="${proj.barColor} h-2.5 rounded-full" style="width:${proj.pct}%"></div>
-          </div>
-          <div class="text-xs ${proj.textColor} shrink-0 whitespace-nowrap font-medium">${proj.rightText}</div>
-        </div>
-        <div class="space-y-2">${taskRows}</div>
-      </div>`;
-    }).join('');
+    const data = await res.json();
+    _tsRenderMonth('Current', data.current_month);
+    _tsRenderMonth('Last', data.last_month);
   });
 }
 
