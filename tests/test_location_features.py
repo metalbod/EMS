@@ -750,8 +750,17 @@ def test_capacity_forecast_reflects_planned_leave(client, hr_manager_auth, test_
     )
     lt = make_test_leave_type(requires_approval=False)
 
-    leave_start = (date.today() + timedelta(days=5)).isoformat()
-    leave_end = (date.today() + timedelta(days=6)).isoformat()
+    # A plain "today + 5/6 days" pair lands on a weekend on 2 out of 7 run
+    # days, and POST /api/leave/applications 400s on a range with no
+    # working days — shift forward to the next Monday/Tuesday pair (at
+    # least 5 days out, same as before) so this is a weekday span no
+    # matter which day the suite runs.
+    base = date.today() + timedelta(days=5)
+    days_to_next_monday = (7 - base.weekday()) % 7
+    leave_start_date = base + timedelta(days=days_to_next_monday)
+    leave_end_date = leave_start_date + timedelta(days=1)
+    leave_start = leave_start_date.isoformat()
+    leave_end = leave_end_date.isoformat()
     leave_res = client.post(
         "/api/leave/applications", headers=hr_manager_auth,
         json={"employee_id": emp["employee_id"], "leave_type_id": lt["id"], "start_date": leave_start, "end_date": leave_end},

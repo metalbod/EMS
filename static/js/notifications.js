@@ -132,7 +132,7 @@ const saveReminderSettings = guardAsync(async function() {
 async function loadNotificationSettings() {
   const listEl=document.getElementById('notificationList');
   const emptyEl=document.getElementById('notificationEmpty');
-  listEl.innerHTML='<tr><td colspan="5" class="text-slate-400 text-sm text-center py-8">Loading…</td></tr>';
+  listEl.innerHTML='<tr><td colspan="6" class="text-slate-400 text-sm text-center py-8">Loading…</td></tr>';
   const res=await api('/api/notifications');
   const rows=res?.ok?await res.json():[];
   notificationsCache=rows;
@@ -140,8 +140,12 @@ async function loadNotificationSettings() {
   emptyEl?.classList.add('hidden');
   listEl.innerHTML=rows.map(n=>{
     const status=notifStatus(n);
+    const audience=n.target_type==='under'
+      ?`Under: ${(n.target_employees||[]).map(t=>esc(displayName(t.full_name,t.preferred_name)||t.employee_id)).join(', ')||'—'}`
+      :'Everyone';
     return `<tr class="border-t border-slate-100">
       <td class="px-4 py-3 text-slate-700 max-w-md"><p class="line-clamp-2">${linkify(n.message)}</p></td>
+      <td class="px-4 py-3 text-slate-500 max-w-xs"><p class="line-clamp-2">${audience}</p></td>
       <td class="px-4 py-3 text-slate-500 whitespace-nowrap">${utcToLocalDisplay(n.start_time)}</td>
       <td class="px-4 py-3 text-slate-500 whitespace-nowrap">${utcToLocalDisplay(n.end_time)}</td>
       <td class="px-4 py-3"><span class="badge text-xs ${statusColor(NOTIF_STATUS_COLORS, status)}">${status}</span></td>
@@ -151,6 +155,55 @@ async function loadNotificationSettings() {
       </td>
     </tr>`;
   }).join('');
+}
+
+// ---------------------------------------------------------------------------
+// Notification audience picker — same searchable-checkbox-list pattern as
+// the Project modal's Team Members picker (static/js/timesheet.js's
+// renderProjectMembersChecklist/filterProjectMemberOptions), reusing the
+// same shared filterEmployeeOptions helper (static/js/employee-picker.js).
+// No "Select All", unlike that one — picking literally everyone here would
+// just be the "Everyone" radio option instead.
+// ---------------------------------------------------------------------------
+function renderNotifAudienceOptions(selectedIds) {
+  const wrap=document.getElementById('notifAudienceList');
+  const active=(employees||[]).filter(e=>e.status==='Active' || selectedIds.includes(e.employee_id));
+  wrap.innerHTML=active.map(e=>{
+    const label=`${displayName(e.full_name,e.preferred_name)} (${e.employee_id})`;
+    return `
+    <label class="notif-audience-option flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 cursor-pointer" data-label="${esc(label)}">
+      <input type="checkbox" class="notif-audience-checkbox" value="${e.employee_id}" ${selectedIds.includes(e.employee_id)?'checked':''}/>
+      ${esc(label)}
+    </label>`;
+  }).join('');
+  const searchEl=document.getElementById('notifAudienceSearch');
+  if(searchEl) searchEl.value='';
+  filterNotifAudienceOptions();
+}
+
+function filterNotifAudienceOptions() {
+  const q=document.getElementById('notifAudienceSearch')?.value||'';
+  const opts=[...document.querySelectorAll('.notif-audience-option')];
+  const matched=new Set(filterEmployeeOptions(
+    opts.map(el=>({value: el.querySelector('.notif-audience-checkbox').value, label: el.dataset.label})),
+    q
+  ).map(o=>o.value));
+  let visibleCount=0;
+  opts.forEach(opt=>{
+    const match=matched.has(opt.querySelector('.notif-audience-checkbox').value);
+    opt.classList.toggle('hidden', !match);
+    if(match) visibleCount++;
+  });
+  document.getElementById('notifAudienceNoMatch')?.classList.toggle('hidden', visibleCount>0);
+}
+
+function onNotificationAudienceChange() {
+  const under=document.getElementById('notifAudienceUnder').checked;
+  document.getElementById('notifAudienceUnderPicker').classList.toggle('hidden', !under);
+}
+
+function selectedNotifAudienceIds() {
+  return [...document.querySelectorAll('.notif-audience-checkbox:checked')].map(b=>b.value);
 }
 
 function updateNotificationWordCount() {
@@ -165,16 +218,23 @@ function updateNotificationWordCount() {
 function openNotificationModal(notificationId) {
   document.getElementById('notificationId').value=notificationId||'';
   document.getElementById('notificationModalTitle').textContent=notificationId?'Edit Notification':'Add Notification';
+  let targetType='everyone', selectedIds=[];
   if(notificationId){
     const n=notificationsCache.find(x=>x.id===notificationId);
     document.getElementById('notificationMessage').value=n?.message||'';
     document.getElementById('notificationStart').value=utcToLocalInput(n?.start_time)||'';
     document.getElementById('notificationEnd').value=utcToLocalInput(n?.end_time)||'';
+    targetType=n?.target_type||'everyone';
+    selectedIds=(n?.target_employees||[]).map(t=>t.employee_id);
   } else {
     document.getElementById('notificationMessage').value='';
     document.getElementById('notificationStart').value='';
     document.getElementById('notificationEnd').value='';
   }
+  document.getElementById('notifAudienceEveryone').checked=targetType!=='under';
+  document.getElementById('notifAudienceUnder').checked=targetType==='under';
+  renderNotifAudienceOptions(selectedIds);
+  onNotificationAudienceChange();
   updateNotificationWordCount();
   document.getElementById('notificationModal').classList.remove('hidden');
 }
@@ -188,14 +248,20 @@ const submitNotification = guardAsync(async function() {
   if(!message){ alert('Message is required'); return; }
   if(message.trim().split(/\s+/).filter(Boolean).length>500){ alert('Message must be 500 words or fewer'); return; }
   if(!startTime||!endTime){ alert('Start and end time are required'); return; }
-  const body={ message, start_time:localInputToUTC(startTime), end_time:localInputToUTC(endTime) };
+  const targetType=document.getElementById('notifAudienceUnder').checked?'under':'everyone';
+  const targetEmployeeIds=targetType==='under'?selectedNotifAudienceIds():[];
+  if(targetType==='under' && !targetEmployeeIds.length){ alert('Select at least one person for "All under"'); return; }
+  const body={
+    message, start_time:localInputToUTC(startTime), end_time:localInputToUTC(endTime),
+    target_type:targetType, target_employee_ids:targetEmployeeIds,
+  };
   const url=id?`/api/notifications/${id}`:'/api/notifications';
   const res=await api(url,{method:id?'PUT':'POST',body:JSON.stringify(body)});
   if(res?.ok){
     closeNotificationModal();
     loadNotificationSettings();
   } else {
-    const d=await res.json(); alert(d.detail||'Failed to save notification');
+    const d=await res.json(); alert(apiErrorText(d.detail, 'Failed to save notification'));
   }
 });
 

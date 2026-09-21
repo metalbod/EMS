@@ -2025,6 +2025,7 @@
             <thead class="bg-slate-50 border-b border-slate-200">
               <tr>
                 <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Message</th>
+                <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Audience</th>
                 <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Start</th>
                 <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">End</th>
                 <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
@@ -3360,6 +3361,25 @@
       <div class="grid grid-cols-2 gap-3">
         <div><label class="lbl">Start</label><input id="notificationStart" type="datetime-local" class="inp"/></div>
         <div><label class="lbl">End</label><input id="notificationEnd" type="datetime-local" class="inp"/></div>
+      </div>
+      <div>
+        <label class="lbl">Audience</label>
+        <div class="flex flex-col gap-2">
+          <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+            <input type="radio" name="notificationAudience" id="notifAudienceEveryone" value="everyone" onchange="onNotificationAudienceChange()" checked/> Everyone
+          </label>
+          <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+            <input type="radio" name="notificationAudience" id="notifAudienceUnder" value="under" onchange="onNotificationAudienceChange()"/> All under (select 1 or more)
+          </label>
+        </div>
+        <div id="notifAudienceUnderPicker" class="hidden mt-2 border border-slate-200 rounded-lg overflow-hidden">
+          <div class="px-2 py-1.5 border-b border-slate-100">
+            <input type="text" id="notifAudienceSearch" class="inp text-sm" placeholder="Search name or ID…" oninput="filterNotifAudienceOptions()"/>
+          </div>
+          <div id="notifAudienceList" class="text-sm max-h-40 overflow-y-auto"></div>
+          <p class="hidden text-center text-xs text-slate-400 py-3" id="notifAudienceNoMatch">No matches</p>
+        </div>
+        <p class="text-xs text-slate-400 mt-1">"All under" reaches the selected people plus everyone who reports up to them, at any depth.</p>
       </div>
       <div class="flex gap-2">
         <button type="button" onclick="submitNotification()" class="btn-primary">Save</button>

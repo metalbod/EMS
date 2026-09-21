@@ -7,6 +7,17 @@ static/js/notifications.js). This used to reject a new/edited window that
 overlapped an existing one, on the premise that at most one notification
 should ever be active at a time; that restriction is gone.
 
+Audience targeting (migrations/versions/20260922_0002_notification_audience_targeting.py):
+each notification is either target_type='everyone' (default, unchanged
+behavior) or 'under' — scoped to one or more anchor employees' entire
+downstream reporting chain (core/org_queries.py's is_self_or_subordinate/
+subordinates_in_clause; each anchor is included in their own chain, and
+multiple anchors are unioned). The two are mutually exclusive per
+notification, not combinable — picking 'everyone' has no narrower
+concept to combine with. Anchors live in institution_notification_targets,
+a child table with no institution_id of its own (RLS scoped through the
+parent notification, same EXISTS pattern as approval_workflow_steps).
+
 System-Wide Notifications — configured by superadmin only, shown as a red
 "urgency" banner above the institution notification banner(s), to ALL
 users across ALL institutions (including superadmin), e.g. system
@@ -57,9 +68,11 @@ from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo, available_timezones
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 from core.deps import get_current_user, need_inst, require_roles
+
+from core.org_queries import is_self_or_subordinate
 
 from core.secrets_encryption import encrypt_secret
 
@@ -98,6 +111,29 @@ class NotificationIn(BaseModel):
         if word_count > 500:
             raise ValueError(f"Message must be 500 words or fewer (currently {word_count})")
         return v
+
+
+class InstitutionNotificationIn(NotificationIn):
+    """Adds audience targeting — institution-notification-only, not shared
+    with System-Wide Notifications (those stay hardcoded "everyone across
+    every institution", no narrower concept to offer)."""
+    target_type: str = "everyone"  # 'everyone' | 'under'
+    target_employee_ids: List[str] = []
+
+    @field_validator("target_type")
+    @classmethod
+    def _valid_target_type(cls, v):
+        if v not in ("everyone", "under"):
+            raise ValueError("target_type must be 'everyone' or 'under'")
+        return v
+
+    @model_validator(mode="after")
+    def _under_needs_targets(self):
+        if self.target_type == "under" and not self.target_employee_ids:
+            raise ValueError("target_employee_ids is required when target_type is 'under'")
+        if self.target_type == "everyone":
+            self.target_employee_ids = []
+        return self
 
 
 # ---------------------------------------------------------------------------
@@ -406,6 +442,56 @@ def _holiday_eve_virtual_notification(conn, inst_id: int) -> Optional[Dict[str, 
 # ---------------------------------------------------------------------------
 # Institution notifications
 # ---------------------------------------------------------------------------
+def _attach_targets(conn, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Adds `target_employees` (list of {employee_id, full_name,
+    preferred_name}) to each row, for the 'under' rows — lets the
+    Announcements table show who a notification is scoped to without a
+    second round-trip per row. Empty list for 'everyone' rows."""
+    ids = [r["id"] for r in rows]
+    targets_by_notification: Dict[int, List[Dict[str, Any]]] = {i: [] for i in ids}
+    if ids:
+        placeholders = ",".join("?" for _ in ids)
+        target_rows = conn.execute(
+            f"""
+            SELECT t.notification_id, t.employee_id, e.full_name, e.preferred_name
+            FROM institution_notification_targets t
+            LEFT JOIN employees e ON e.employee_id = t.employee_id AND e.institution_id = ?
+            WHERE t.notification_id IN ({placeholders})
+            """,
+            [rows[0]["institution_id"] if rows else 0, *ids]
+        ).fetchall()
+        for t in target_rows:
+            targets_by_notification[t["notification_id"]].append({
+                "employee_id": t["employee_id"], "full_name": t["full_name"], "preferred_name": t["preferred_name"],
+            })
+    for r in rows:
+        r["target_employees"] = targets_by_notification.get(r["id"], [])
+    return rows
+
+
+def _save_notification_targets(conn, notification_id: int, employee_ids: List[str]) -> None:
+    conn.execute("DELETE FROM institution_notification_targets WHERE notification_id=?", (notification_id,))
+    for emp_id in employee_ids:
+        conn.execute(
+            "INSERT INTO institution_notification_targets (notification_id, employee_id) VALUES (?,?)",
+            (notification_id, emp_id)
+        )
+
+
+def _validate_target_employee_ids(conn, inst_id: int, employee_ids: List[str]) -> None:
+    if not employee_ids:
+        return
+    placeholders = ",".join("?" for _ in employee_ids)
+    rows = conn.execute(
+        f"SELECT employee_id FROM employees WHERE institution_id=? AND employee_id IN ({placeholders})",
+        [inst_id, *employee_ids]
+    ).fetchall()
+    found = {r["employee_id"] for r in rows}
+    missing = [e for e in employee_ids if e not in found]
+    if missing:
+        raise HTTPException(400, f"Unknown employee_id(s): {', '.join(missing)}")
+
+
 @router.get("/api/notifications")
 @db_session
 def list_notifications(conn, user: dict = Depends(require_roles(*NOTIFICATION_MANAGE_ROLES))) -> List[Dict[str, Any]]:
@@ -413,15 +499,16 @@ def list_notifications(conn, user: dict = Depends(require_roles(*NOTIFICATION_MA
     rows = conn.execute(
         "SELECT * FROM institution_notifications WHERE institution_id=? ORDER BY start_time DESC", (inst_id,)
     ).fetchall()
-    return [dict(r) for r in rows]
+    return _attach_targets(conn, [dict(r) for r in rows])
 
 
 @router.get("/api/notifications/active")
 @db_session
 def get_active_notifications(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
     """Every currently-active institution notification (any number can
-    overlap — see module docstring), plus the holiday-eve announcement
-    when applicable, all in one stackable list."""
+    overlap — see module docstring) whose audience includes this viewer,
+    plus the holiday-eve announcement when applicable, all in one
+    stackable list."""
     inst_id = user.get("active_institution_id")
     if not inst_id or user["role"] == "superadmin":
         return []
@@ -431,7 +518,19 @@ def get_active_notifications(conn, user: dict = Depends(get_current_user)) -> Li
         "ORDER BY start_time DESC",
         (inst_id, now, now)
     ).fetchall()
-    result = [dict(r) for r in rows]
+    viewer_employee_id = user.get("employee_id")
+    result = []
+    for row in rows:
+        d = dict(row)
+        if d["target_type"] == "under":
+            anchors = [t["employee_id"] for t in conn.execute(
+                "SELECT employee_id FROM institution_notification_targets WHERE notification_id=?", (d["id"],)
+            ).fetchall()]
+            if not viewer_employee_id or not any(
+                is_self_or_subordinate(conn, inst_id, anchor, viewer_employee_id) for anchor in anchors
+            ):
+                continue
+        result.append(d)
     holiday_eve = _holiday_eve_virtual_notification(conn, inst_id)
     if holiday_eve:
         result.append(holiday_eve)
@@ -440,34 +539,39 @@ def get_active_notifications(conn, user: dict = Depends(get_current_user)) -> Li
 
 @router.post("/api/notifications", status_code=201)
 @db_session
-def create_notification(conn, body: NotificationIn, user: dict = Depends(require_roles(*NOTIFICATION_MANAGE_ROLES))) -> Dict[str, Any]:
+def create_notification(conn, body: InstitutionNotificationIn, user: dict = Depends(require_roles(*NOTIFICATION_MANAGE_ROLES))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     if body.end_time <= body.start_time:
         raise HTTPException(400, "End time must be after start time")
+    _validate_target_employee_ids(conn, inst_id, body.target_employee_ids)
     conn.execute(
-        "INSERT INTO institution_notifications (institution_id,message,start_time,end_time,created_by) VALUES (?,?,?,?,?)",
-        (inst_id, body.message, body.start_time, body.end_time, user["username"])
+        "INSERT INTO institution_notifications (institution_id,message,start_time,end_time,created_by,target_type) VALUES (?,?,?,?,?,?)",
+        (inst_id, body.message, body.start_time, body.end_time, user["username"], body.target_type)
     )
     conn.commit()
     row = conn.execute("SELECT * FROM institution_notifications WHERE id=last_insert_rowid()").fetchone()
-    return dict(row)
+    _save_notification_targets(conn, row["id"], body.target_employee_ids)
+    conn.commit()
+    return _attach_targets(conn, [dict(row)])[0]
 
 
 @router.put("/api/notifications/{notification_id}")
 @db_session
-def update_notification(conn, notification_id: int, body: NotificationIn, user: dict = Depends(require_roles(*NOTIFICATION_MANAGE_ROLES))) -> Dict[str, Any]:
+def update_notification(conn, notification_id: int, body: InstitutionNotificationIn, user: dict = Depends(require_roles(*NOTIFICATION_MANAGE_ROLES))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     if not conn.execute("SELECT id FROM institution_notifications WHERE id=? AND institution_id=?", (notification_id, inst_id)).fetchone():
         raise HTTPException(404, "Notification not found")
     if body.end_time <= body.start_time:
         raise HTTPException(400, "End time must be after start time")
+    _validate_target_employee_ids(conn, inst_id, body.target_employee_ids)
     conn.execute(
-        "UPDATE institution_notifications SET message=?,start_time=?,end_time=? WHERE id=?",
-        (body.message, body.start_time, body.end_time, notification_id)
+        "UPDATE institution_notifications SET message=?,start_time=?,end_time=?,target_type=? WHERE id=?",
+        (body.message, body.start_time, body.end_time, body.target_type, notification_id)
     )
+    _save_notification_targets(conn, notification_id, body.target_employee_ids)
     conn.commit()
     row = conn.execute("SELECT * FROM institution_notifications WHERE id=?", (notification_id,)).fetchone()
-    return dict(row)
+    return _attach_targets(conn, [dict(row)])[0]
 
 
 @router.delete("/api/notifications/{notification_id}", status_code=204)

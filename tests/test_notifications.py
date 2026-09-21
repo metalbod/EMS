@@ -214,6 +214,139 @@ def test_active_notifications_stacks_multiple(client, make_test_user, test_insti
 
 
 # ---------------------------------------------------------------------------
+# Audience targeting ('everyone' vs 'under' — migrations/versions/
+# 20260922_0002_notification_audience_targeting.py)
+# ---------------------------------------------------------------------------
+def test_create_notification_under_requires_target_employee_ids(client, hr_manager_auth):
+    start, end = _unique_window()
+    res = client.post(
+        "/api/notifications", headers=hr_manager_auth,
+        json={"message": "ZZ Under No Targets", "start_time": start, "end_time": end, "target_type": "under"},
+    )
+    assert res.status_code == 422
+
+
+def test_create_notification_invalid_target_type_returns_422(client, hr_manager_auth):
+    start, end = _unique_window()
+    res = client.post(
+        "/api/notifications", headers=hr_manager_auth,
+        json={"message": "ZZ Bad Target Type", "start_time": start, "end_time": end, "target_type": "nobody"},
+    )
+    assert res.status_code == 422
+
+
+def test_create_notification_under_unknown_employee_id_returns_400(client, hr_manager_auth):
+    start, end = _unique_window()
+    res = client.post(
+        "/api/notifications", headers=hr_manager_auth,
+        json={"message": "ZZ Unknown Target", "start_time": start, "end_time": end,
+              "target_type": "under", "target_employee_ids": ["EMP_DOES_NOT_EXIST"]},
+    )
+    assert res.status_code == 400
+
+
+def test_create_notification_under_success_returns_target_employees(client, hr_manager_auth, make_test_employee, make_test_notification):
+    anchor = make_test_employee(full_name="ZZ Audience Anchor")
+    notif = make_test_notification(target_type="under", target_employee_ids=[anchor["employee_id"]])
+    assert notif["target_type"] == "under"
+    assert [t["employee_id"] for t in notif["target_employees"]] == [anchor["employee_id"]]
+
+    listed = client.get("/api/notifications", headers=hr_manager_auth).json()
+    row = next(n for n in listed if n["id"] == notif["id"])
+    assert [t["employee_id"] for t in row["target_employees"]] == [anchor["employee_id"]]
+
+
+def test_update_notification_can_change_audience(client, hr_manager_auth, make_test_employee, make_test_notification):
+    anchor = make_test_employee(full_name="ZZ Audience Switch Anchor")
+    notif = make_test_notification()
+    assert notif["target_type"] == "everyone"
+
+    res = client.put(
+        f"/api/notifications/{notif['id']}", headers=hr_manager_auth,
+        json={"message": notif["message"], "start_time": notif["start_time"], "end_time": notif["end_time"],
+              "target_type": "under", "target_employee_ids": [anchor["employee_id"]]},
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["target_type"] == "under"
+    assert [t["employee_id"] for t in res.json()["target_employees"]] == [anchor["employee_id"]]
+
+    # Switching back to 'everyone' clears the previously-saved targets.
+    res = client.put(
+        f"/api/notifications/{notif['id']}", headers=hr_manager_auth,
+        json={"message": notif["message"], "start_time": notif["start_time"], "end_time": notif["end_time"],
+              "target_type": "everyone"},
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["target_type"] == "everyone"
+    assert res.json()["target_employees"] == []
+
+
+def test_active_notification_under_reaches_anchor_and_transitive_subordinates_only(
+    client, hr_manager_auth, employee_with_login, test_institution
+):
+    """anchor <- report <- subreport, plus an unrelated outsider. The
+    'under' audience must include the anchor themselves (inclusive) and
+    every transitive report (subreport, not just the direct report), but
+    never someone outside that chain."""
+    anchor, anchor_headers = employee_with_login(full_name="ZZ Audience Chain Anchor")
+    report, report_headers = employee_with_login(full_name="ZZ Audience Chain Report", reports_to=anchor["employee_id"])
+    subreport, subreport_headers = employee_with_login(full_name="ZZ Audience Chain Subreport", reports_to=report["employee_id"])
+    outsider, outsider_headers = employee_with_login(full_name="ZZ Audience Chain Outsider")
+
+    start, end = _active_window()
+    res = client.post(
+        "/api/notifications", headers=hr_manager_auth,
+        json={"message": "ZZ Chain Notice", "start_time": start, "end_time": end,
+              "target_type": "under", "target_employee_ids": [anchor["employee_id"]]},
+    )
+    assert res.status_code == 201, res.text
+    notif_id = res.json()["id"]
+
+    def sees_it(headers):
+        active = client.get("/api/notifications/active", headers=headers).json()
+        return notif_id in {n["id"] for n in active}
+
+    assert sees_it(anchor_headers), "the anchor themselves must see their own 'under' notification"
+    assert sees_it(report_headers), "a direct report must see it"
+    assert sees_it(subreport_headers), "a transitive (grandchild) report must see it too"
+    assert not sees_it(outsider_headers), "someone outside the chain must not see it"
+
+    client.delete(f"/api/notifications/{notif_id}", headers=hr_manager_auth)
+
+
+def test_active_notification_under_multiple_anchors_is_a_union(
+    client, hr_manager_auth, employee_with_login
+):
+    """Two independent anchors on one notification — each anchor's own
+    report sees it (a union of subtrees), but someone under neither does
+    not."""
+    anchor_a, _ = employee_with_login(full_name="ZZ Union Anchor A")
+    report_a, report_a_headers = employee_with_login(full_name="ZZ Union Report A", reports_to=anchor_a["employee_id"])
+    anchor_b, _ = employee_with_login(full_name="ZZ Union Anchor B")
+    report_b, report_b_headers = employee_with_login(full_name="ZZ Union Report B", reports_to=anchor_b["employee_id"])
+    outsider, outsider_headers = employee_with_login(full_name="ZZ Union Outsider")
+
+    start, end = _active_window()
+    res = client.post(
+        "/api/notifications", headers=hr_manager_auth,
+        json={"message": "ZZ Union Notice", "start_time": start, "end_time": end,
+              "target_type": "under", "target_employee_ids": [anchor_a["employee_id"], anchor_b["employee_id"]]},
+    )
+    assert res.status_code == 201, res.text
+    notif_id = res.json()["id"]
+
+    def sees_it(headers):
+        active = client.get("/api/notifications/active", headers=headers).json()
+        return notif_id in {n["id"] for n in active}
+
+    assert sees_it(report_a_headers), "report A must see it via anchor A"
+    assert sees_it(report_b_headers), "report B must see it via anchor B"
+    assert not sees_it(outsider_headers), "someone under neither anchor must not see it"
+
+    client.delete(f"/api/notifications/{notif_id}", headers=hr_manager_auth)
+
+
+# ---------------------------------------------------------------------------
 # System-wide notifications (global — superadmin only)
 # ---------------------------------------------------------------------------
 def test_list_system_notifications_requires_superadmin(client, hr_manager_auth):
