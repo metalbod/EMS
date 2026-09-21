@@ -72,6 +72,15 @@ function renderGoalRow(g, editable) {
 // ---------------------------------------------------------------------------
 // Cycles (hr_manager)
 // ---------------------------------------------------------------------------
+// Expand a cycle row to see every appraisal under it (employee, status,
+// self/manager rating) — same expand-in-place pattern as the Projects
+// table's task sub-rows (static/js/timesheet.js's expandedProjectIds/
+// toggleProjectExpand). Lets HR spot exactly which appraisals are stuck
+// (e.g. still SelfReview) without leaving this page, most useful once a
+// cycle reaches Calibration and closeCycle's "N appraisal(s) have not
+// completed manager review yet" error needs a name attached to the N.
+let expandedCycleIds=new Set(), cycleAppraisalsByCycle={};
+
 async function loadPerformanceCycles() {
   const listEl=document.getElementById('perfCycleList');
   const emptyEl=document.getElementById('perfCycleEmpty');
@@ -93,11 +102,70 @@ async function loadPerformanceCycles() {
     if(c.status==='Draft') actions=`<button onclick="activateCycle(${c.id})" class="text-xs text-blue-600 hover:underline">Activate</button>`;
     else if(c.status==='Active') actions=`<button onclick="openCalibration(${c.id})" class="text-xs text-blue-600 hover:underline">Open Calibration</button>`;
     else if(c.status==='Calibration') actions=`<button onclick="closeCycle(${c.id})" class="text-xs text-blue-600 hover:underline">Close Cycle</button>`;
+    const expanded=expandedCycleIds.has(c.id);
     return `<tr class="border-t border-slate-100">
-      <td class="px-4 py-3 font-medium text-slate-800">${esc(c.name)}</td>
+      <td class="px-4 py-3 font-medium text-slate-800">
+        <div class="flex items-center gap-2">
+          <button onclick="toggleCycleExpand(${c.id})" class="shrink-0 p-0.5 text-slate-400 hover:text-slate-600" title="${expanded?'Collapse':'Expand'} appraisals">
+            <svg class="w-3.5 h-3.5 transition-transform ${expanded?'rotate-90':''}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+          </button>
+          <span>${esc(c.name)}</span>
+        </div>
+      </td>
       <td class="px-4 py-3 text-slate-500">${fmtDate(c.period_start)} → ${fmtDate(c.period_end)}</td>
       <td class="px-4 py-3"><span class="badge text-xs ${statusColor(PERF_STATUS_COLORS, c.status)}">${c.status}</span></td>
       <td class="px-4 py-3 text-right">${actions}</td>
+    </tr>${expanded?cycleAppraisalSubRows(c.id, c.status):''}`;
+  }).join('');
+}
+
+async function toggleCycleExpand(cycleId) {
+  if(expandedCycleIds.has(cycleId)) {
+    expandedCycleIds.delete(cycleId);
+    loadPerformanceCycles();
+    return;
+  }
+  expandedCycleIds.add(cycleId);
+  loadPerformanceCycles();
+  if(!cycleAppraisalsByCycle[cycleId]) {
+    const res=await api(`/api/performance/appraisals?cycle_id=${cycleId}`);
+    cycleAppraisalsByCycle[cycleId]=res?.ok?await res.json():[];
+    loadPerformanceCycles();
+  }
+}
+
+// Purely informational (no click-through) — nudging a stuck appraisal
+// still happens through the normal Team Appraisals/My Goals flow for
+// whoever owns that step; this view exists so HR can see who to nudge.
+// A row is flagged "Blocking close" once the cycle itself has reached
+// Calibration (i.e. closeCycle would reject it) and that appraisal still
+// hasn't reached Calibration/Finalized itself — the exact condition
+// routers/performance.py's close_performance_cycle checks.
+function cycleAppraisalSubRows(cycleId, cycleStatus) {
+  const appraisals=cycleAppraisalsByCycle[cycleId];
+  if(appraisals===undefined) {
+    return `<tr class="bg-slate-50/60"><td colspan="4" class="pl-12 pr-4 py-2.5 text-xs text-slate-400">Loading appraisals…</td></tr>`;
+  }
+  if(!appraisals.length) {
+    return `<tr class="bg-slate-50/60"><td colspan="4" class="pl-12 pr-4 py-2.5 text-xs text-slate-400">No appraisals under this cycle.</td></tr>`;
+  }
+  return appraisals.map(a=>{
+    const blocking=cycleStatus==='Calibration' && !['Calibration','Finalized'].includes(a.status);
+    return `<tr class="bg-slate-50/60 border-t border-slate-100">
+      <td class="pl-12 pr-4 py-2.5" colspan="2">
+        <div class="flex items-center gap-2 min-w-0">
+          <span class="text-slate-300 shrink-0">↳</span>
+          <div class="min-w-0">
+            <p class="text-slate-700 truncate">${esc(displayName(a.full_name,a.preferred_name))}${a.employee_id?` <span class="text-slate-400">(${esc(a.employee_id)})</span>`:''}</p>
+            <p class="text-xs text-slate-400 truncate">${esc(a.department||'')}${a.designation?' · '+esc(a.designation):''}</p>
+          </div>
+        </div>
+      </td>
+      <td class="px-4 py-2.5">
+        <span class="badge text-xs ${statusColor(APPR_STATUS_COLORS, a.status)}">${a.status}</span>
+        ${blocking?'<span class="badge text-xs bg-red-100 text-red-700 ml-1">Blocking close</span>':''}
+      </td>
+      <td class="px-4 py-2.5 text-right text-slate-500 text-xs">Self ${a.self_rating??'—'} · Mgr ${a.manager_rating??'—'}</td>
     </tr>`;
   }).join('');
 }
