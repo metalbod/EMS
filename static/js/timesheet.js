@@ -1,6 +1,6 @@
 // Timesheet / Projects
 // ---------------------------------------------------------------------------
-let projectsCache=[], myProjectsCache=[], projectFilter='';
+let projectsCache=[], myProjectsCache=[], projectFilter='', projectSearchTerm='';
 // pageSize is set well above any realistic project count — this list has no
 // pagination UI, only sorting, so createListState is used sort-only here.
 const projectList = createListState({ sortKey: 'name', pageSize: 10000 });
@@ -75,10 +75,30 @@ function setProjectSort(key) {
   renderProjectTable();
 }
 
+// Client-side only — projectsCache already holds every project the status
+// filter matched (createListState here is sort-only, pageSize:10000, no
+// server round-trip), so narrowing further by name/description as the
+// list grows doesn't need its own API call either. Case-insensitive by
+// virtue of lower-casing both sides before comparing.
+function filterProjectsBySearch(term) {
+  projectSearchTerm=term;
+  renderProjectTable();
+}
+
 function renderProjectTable() {
   const listEl=document.getElementById('projectList');
   const STATUS_COLORS={'Active':'status-positive','On Hold':'status-pending','Completed':'status-neutral'};
-  const { pageItems: sorted } = projectList.view(projectsCache);
+  const term=projectSearchTerm.trim().toLowerCase();
+  const searched=term?projectsCache.filter(p=>(p.name||'').toLowerCase().includes(term)||(p.description||'').toLowerCase().includes(term)):projectsCache;
+  const { pageItems: sorted } = projectList.view(searched);
+  // loadProjects() already handled the "no projects at all" empty state
+  // (projectEmpty) before ever calling this function, so reaching here
+  // with zero rows only happens when a search term filtered everything
+  // out — a different message, shown inline in the table itself.
+  if(!sorted.length && term){
+    listEl.innerHTML=`<tr><td colspan="7" class="text-slate-400 text-sm text-center py-8">No projects match "${esc(projectSearchTerm.trim())}".</td></tr>`;
+    return;
+  }
   listEl.innerHTML=sorted.map(p=>{
     const expanded=expandedProjectIds.has(p.id);
     return `

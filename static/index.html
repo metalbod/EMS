@@ -1783,17 +1783,20 @@
 
       <!-- PROJECTS (HR Manager) -->
       <div id="page-projects" class="hidden">
-        <div class="flex items-center justify-between mb-5">
+        <div class="flex items-center justify-between mb-5 gap-3 flex-wrap">
           <div class="flex gap-2">
             <button onclick="setProjectFilter('')" class="btn-ghost text-xs project-filter-btn project-filter-active">All</button>
             <button onclick="setProjectFilter('Active')" class="btn-ghost text-xs project-filter-btn">Active</button>
             <button onclick="setProjectFilter('On Hold')" class="btn-ghost text-xs project-filter-btn">On Hold</button>
             <button onclick="setProjectFilter('Completed')" class="btn-ghost text-xs project-filter-btn">Completed</button>
           </div>
-          <button onclick="openProjectModal()" class="btn-primary text-sm flex items-center gap-2">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-            Add Project
-          </button>
+          <div class="flex items-center gap-3">
+            <input id="projectSearch" type="text" placeholder="Search projects…" class="inp" style="width:220px" oninput="filterProjectsBySearch(this.value)"/>
+            <button onclick="openProjectModal()" class="btn-primary text-sm flex items-center gap-2 shrink-0">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+              Add Project
+            </button>
+          </div>
         </div>
         <div class="bg-white rounded-xl border border-slate-200 overflow-x-auto">
           <table class="w-full text-sm">
