@@ -188,6 +188,7 @@ function setAttSettingsTab(tab) {
 }
 
 async function loadAttendanceSettingsPage() {
+  loadTimesheetSettings();
   setAttSettingsTab('rules');
 }
 

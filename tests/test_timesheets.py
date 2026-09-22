@@ -484,3 +484,194 @@ def test_hr_sees_timesheet_pending_with_direct_manager_by_name(client, hr_manage
     assert row["pending_with"] == f"{mgr_emp['full_name']} (Direct Manager)"
 
     client.delete(f"/api/users/{user_id}", headers=hr_manager_auth)
+
+
+# ---------------------------------------------------------------------------
+# Standard Weekly Hours setting + Missing/short hours breakdown
+# (routers/timesheets.py's TIMESHEET_SETTINGS_MANAGE_ROLES,
+# _weekly_hours_breakdown — powers My Timesheet's "Missing hours" line and
+# its auto-populated public-holiday/approved-leave rows).
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def restore_timesheet_settings(client, hr_manager_auth):
+    original = client.get("/api/timesheets/settings", headers=hr_manager_auth).json()
+    yield
+    client.put("/api/timesheets/settings", headers=hr_manager_auth, json=original)
+
+
+def _start_timesheet_for_period(client, headers, employee_id, period_start, period_end):
+    res = client.post("/api/timesheets", headers=headers, json={
+        "employee_id": employee_id, "period_start": period_start, "period_end": period_end,
+    })
+    assert res.status_code == 201, f"failed to start test timesheet: {res.text}"
+    return res.json()
+
+
+def test_get_timesheet_settings_requires_manage_role(client, make_test_user, test_institution):
+    token, _ = make_test_user(role="employee")
+    headers = {"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}
+    res = client.get("/api/timesheets/settings", headers=headers)
+    assert res.status_code == 403
+
+
+def test_update_timesheet_settings_roundtrip(client, hr_manager_auth, restore_timesheet_settings):
+    res = client.get("/api/timesheets/settings", headers=hr_manager_auth)
+    assert res.status_code == 200
+    assert res.json()["standard_weekly_hours"] == 40.0
+
+    res = client.put("/api/timesheets/settings", headers=hr_manager_auth, json={"standard_weekly_hours": 37.5})
+    assert res.status_code == 200
+    assert res.json()["standard_weekly_hours"] == 37.5
+    assert client.get("/api/timesheets/settings", headers=hr_manager_auth).json()["standard_weekly_hours"] == 37.5
+
+
+def test_update_timesheet_settings_rejects_out_of_range(client, hr_manager_auth, restore_timesheet_settings):
+    assert client.put("/api/timesheets/settings", headers=hr_manager_auth, json={"standard_weekly_hours": 0}).status_code == 422
+    assert client.put("/api/timesheets/settings", headers=hr_manager_auth, json={"standard_weekly_hours": 200}).status_code == 422
+
+
+def test_update_timesheet_settings_requires_manage_role(client, make_test_user, test_institution):
+    token, _ = make_test_user(role="employee")
+    headers = {"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}
+    res = client.put("/api/timesheets/settings", headers=headers, json={"standard_weekly_hours": 35})
+    assert res.status_code == 403
+
+
+# A fixed Monday-Sunday week, far enough in the future to never collide
+# with "today" — 5 working weekdays (Mon 03-01 .. Fri 03-05). Same week
+# test_leave.py's WORK_WEEK_START/END already use, so a value like 40.0
+# expected_hours here is trivial to hand-verify.
+WEEK_START = "2027-03-01"  # Monday
+WEEK_END = "2027-03-07"    # Sunday
+
+
+def test_missing_hours_with_no_entries_equals_full_standard_week(
+    client, hr_manager_auth, employee_with_user, restore_timesheet_settings
+):
+    emp, headers = employee_with_user
+    ts = _start_timesheet_for_period(client, headers, emp["employee_id"], WEEK_START, WEEK_END)
+
+    detail = client.get(f"/api/timesheets/{ts['id']}", headers=hr_manager_auth).json()
+    assert detail["total_hours"] == 0
+    assert detail["expected_hours"] == 40.0
+    assert detail["holiday_hours"] == 0
+    assert detail["leave_hours"] == 0
+    assert detail["missing_hours"] == 40.0
+    assert detail["auto_entries"] == []
+
+
+def test_missing_hours_reflects_logged_entries(
+    client, hr_manager_auth, employee_with_user, open_task, restore_timesheet_settings
+):
+    """The exact example from the feature request: a 40h week with only
+    5 logged hours shows 35 missing."""
+    emp, headers = employee_with_user
+    ts = _start_timesheet_for_period(client, headers, emp["employee_id"], WEEK_START, WEEK_END)
+    project, task = open_task
+    res = client.post(f"/api/timesheets/{ts['id']}/entries", headers=headers, json={
+        "project_id": project["id"], "task_id": task["id"], "date": "2027-03-02", "hours": 5,
+    })
+    assert res.status_code == 201
+
+    detail = client.get(f"/api/timesheets/{ts['id']}", headers=hr_manager_auth).json()
+    assert detail["total_hours"] == 5
+    assert detail["missing_hours"] == 35.0
+
+
+def test_missing_hours_reduced_by_public_holiday(client, hr_manager_auth, employee_with_user, restore_timesheet_settings):
+    emp, headers = employee_with_user
+    period_start, period_end = "2027-03-08", "2027-03-14"  # a different week, isolated from other tests' holidays
+    holiday_date = "2027-03-10"  # Wednesday, inside this week
+    holiday = client.post("/api/holidays", headers=hr_manager_auth, json={
+        "name": "ZZ Timesheet Test Holiday", "date": holiday_date, "year": 2027,
+    })
+    assert holiday.status_code == 201, holiday.text
+    try:
+        ts = _start_timesheet_for_period(client, headers, emp["employee_id"], period_start, period_end)
+        detail = client.get(f"/api/timesheets/{ts['id']}", headers=hr_manager_auth).json()
+        assert detail["expected_hours"] == 40.0
+        assert detail["holiday_hours"] == 8.0
+        assert detail["missing_hours"] == 32.0
+        assert detail["auto_entries"] == [
+            {"date": holiday_date, "type": "holiday", "label": "ZZ Timesheet Test Holiday", "hours": 8.0}
+        ]
+    finally:
+        client.delete(f"/api/holidays/{holiday.json()['id']}", headers=hr_manager_auth)
+
+
+def test_missing_hours_reduced_by_approved_full_day_leave(
+    client, hr_manager_auth, employee_with_user, make_test_leave_type, restore_timesheet_settings
+):
+    emp, headers = employee_with_user
+    period_start, period_end = "2027-03-15", "2027-03-21"  # its own week, isolated from the holiday test
+    lt = make_test_leave_type(name="ZZ Timesheet Leave Type", requires_approval=False, annual_entitlement=14)
+    app = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": "2027-03-16", "end_date": "2027-03-17",  # Tue-Wed, 2 full days
+    })
+    assert app.status_code == 201 and app.json()["status"] == "Approved", app.text
+
+    ts = _start_timesheet_for_period(client, headers, emp["employee_id"], period_start, period_end)
+    detail = client.get(f"/api/timesheets/{ts['id']}", headers=hr_manager_auth).json()
+    assert detail["leave_hours"] == 16.0  # 2 days x 8h
+    assert detail["missing_hours"] == 24.0  # 40 - 16
+    assert sorted(e["date"] for e in detail["auto_entries"]) == ["2027-03-16", "2027-03-17"]
+    assert all(e["type"] == "leave" and e["label"] == "ZZ Timesheet Leave Type" and e["hours"] == 8.0 for e in detail["auto_entries"])
+
+
+def test_missing_hours_half_day_leave_credits_half_the_daily_rate(
+    client, hr_manager_auth, employee_with_user, make_test_leave_type, restore_timesheet_settings
+):
+    emp, headers = employee_with_user
+    period_start, period_end = "2027-03-22", "2027-03-28"
+    lt = make_test_leave_type(name="ZZ Half Day Leave Type", requires_approval=False, annual_entitlement=14)
+    app = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": "2027-03-23", "end_date": "2027-03-23", "start_day_period": "AM",
+    })
+    assert app.status_code == 201 and app.json()["status"] == "Approved", app.text
+
+    ts = _start_timesheet_for_period(client, headers, emp["employee_id"], period_start, period_end)
+    detail = client.get(f"/api/timesheets/{ts['id']}", headers=hr_manager_auth).json()
+    assert detail["leave_hours"] == 4.0
+    assert detail["auto_entries"] == [
+        {"date": "2027-03-23", "type": "leave", "label": "ZZ Half Day Leave Type (Half day)", "hours": 4.0}
+    ]
+
+
+def test_missing_hours_holiday_and_leave_on_same_day_credited_once_as_holiday(
+    client, hr_manager_auth, employee_with_user, make_test_leave_type, restore_timesheet_settings
+):
+    emp, headers = employee_with_user
+    period_start, period_end = "2027-03-29", "2027-04-04"
+    collision_date = "2027-03-31"  # Wednesday, inside this week
+
+    # Leave is applied for BEFORE the date becomes a holiday — applying
+    # for a date that's already a public holiday is itself rejected by
+    # POST /api/leave/applications ("no working days to apply"), so this
+    # order is the only way to actually get both an approved leave
+    # application and a later-added holiday on the same date, matching
+    # how sweep_holiday_leave_adjustments (routers/leave.py) documents
+    # this exact scenario happening in practice.
+    lt = make_test_leave_type(name="ZZ Collision Leave Type", requires_approval=False, annual_entitlement=14)
+    app = client.post("/api/leave/applications", headers=headers, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": collision_date, "end_date": collision_date,
+    })
+    assert app.status_code == 201 and app.json()["status"] == "Approved", app.text
+
+    holiday = client.post("/api/holidays", headers=hr_manager_auth, json={
+        "name": "ZZ Collision Holiday", "date": collision_date, "year": 2027,
+    })
+    assert holiday.status_code == 201, holiday.text
+
+    try:
+        ts = _start_timesheet_for_period(client, headers, emp["employee_id"], period_start, period_end)
+        detail = client.get(f"/api/timesheets/{ts['id']}", headers=hr_manager_auth).json()
+        assert detail["holiday_hours"] == 8.0
+        assert detail["leave_hours"] == 0.0
+        assert len(detail["auto_entries"]) == 1
+        assert detail["auto_entries"][0]["type"] == "holiday"
+        assert detail["missing_hours"] == 32.0
+    finally:
+        client.delete(f"/api/holidays/{holiday.json()['id']}", headers=hr_manager_auth)

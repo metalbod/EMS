@@ -1845,6 +1845,11 @@
                 <td id="timesheetTotalHours" class="px-4 py-2 font-medium">0</td>
                 <td colspan="2"></td>
               </tr>
+              <tr id="timesheetMissingRow" class="hidden border-t border-slate-100">
+                <td class="px-4 py-2 text-amber-700" colspan="3">Missing / short hours</td>
+                <td id="timesheetMissingHours" class="px-4 py-2 text-amber-700 font-medium">0</td>
+                <td colspan="2"></td>
+              </tr>
             </tfoot>
           </table>
         </div>
@@ -2284,6 +2289,15 @@
 
       <!-- SETTINGS: Attendance (HR Manager / HR Admin) -->
       <div id="page-settings-attendance" class="hidden">
+        <div class="bg-white rounded-xl border border-slate-200 px-4 py-3 mb-5 flex items-center gap-3 flex-wrap">
+          <div>
+            <label class="lbl mb-0">Standard Weekly Hours</label>
+            <p class="text-xs text-slate-400">A full working week (Mon–Fri), used by My Timesheet's "Missing hours" line.</p>
+          </div>
+          <input type="number" id="tsStandardWeeklyHours" class="inp w-24" min="0.5" max="168" step="0.5"/>
+          <button onclick="saveTimesheetSettings()" class="btn-primary text-xs">Save</button>
+          <span id="tsSettingsMsg" class="text-xs"></span>
+        </div>
         <div class="flex items-center gap-2 mb-5">
           <button onclick="setAttSettingsTab('rules')" class="btn-ghost text-xs att-tab-btn att-tab-active" data-tab="rules">Rules</button>
           <button onclick="setAttSettingsTab('shifts')" class="btn-ghost text-xs att-tab-btn" data-tab="shifts">Shifts</button>

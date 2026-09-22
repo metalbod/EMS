@@ -1,9 +1,9 @@
 """Timesheets (institution-scoped)."""
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from core.deps import get_current_user, need_inst
 
@@ -282,6 +282,123 @@ def start_timesheet(conn, body: TimesheetStartIn, user: dict = Depends(get_curre
     return dict(row)
 
 
+TIMESHEET_SETTINGS_MANAGE_ROLES = ("superadmin", "hr_manager", "hr_admin")
+
+
+class TimesheetSettingsIn(BaseModel):
+    standard_weekly_hours: float
+
+    @field_validator("standard_weekly_hours")
+    @classmethod
+    def _positive_and_reasonable(cls, v):
+        if not (0 < v <= 168):  # 168 = every hour of every day of the week
+            raise ValueError("standard_weekly_hours must be greater than 0 and at most 168")
+        return v
+
+
+class TimesheetSettingsOut(TimesheetSettingsIn):
+    pass
+
+
+@router.get("/api/timesheets/settings")
+@db_session
+def get_timesheet_settings(conn, user: dict = Depends(get_current_user)) -> TimesheetSettingsOut:
+    """Institution-wide "Missing hours" baseline (My Timesheet) — see
+    _weekly_hours_breakdown below. Settings -> Attendance page, next to
+    Shifts/Rules (a related work-time policy, not its own nav item for
+    one field)."""
+    if user["role"] not in TIMESHEET_SETTINGS_MANAGE_ROLES:
+        raise HTTPException(403, "Not authorized")
+    inst_id = need_inst(user)
+    row = conn.execute("SELECT standard_weekly_hours FROM institutions WHERE id=?", (inst_id,)).fetchone()
+    return TimesheetSettingsOut(standard_weekly_hours=float(row["standard_weekly_hours"]))
+
+
+@router.put("/api/timesheets/settings")
+@db_session
+def update_timesheet_settings(conn, body: TimesheetSettingsIn, user: dict = Depends(get_current_user)) -> TimesheetSettingsOut:
+    if user["role"] not in TIMESHEET_SETTINGS_MANAGE_ROLES:
+        raise HTTPException(403, "Not authorized")
+    inst_id = need_inst(user)
+    conn.execute("UPDATE institutions SET standard_weekly_hours=? WHERE id=?", (body.standard_weekly_hours, inst_id))
+    conn.commit()
+    return TimesheetSettingsOut(standard_weekly_hours=body.standard_weekly_hours)
+
+
+def _weekly_hours_breakdown(conn, inst_id: int, employee_id: str, period_start: str, period_end: str, total_hours: float) -> Dict[str, Any]:
+    """Powers My Timesheet's "Missing hours" line and its auto-populated
+    public-holiday/approved-leave rows. Mon-Fri are the only days counted
+    as "expected" (matches routers/leave.py's _compute_leave_days, which
+    treats weekends the same way for leave-balance purposes) — a
+    standard_weekly_hours of 40 means 8h/working day. Generalizes to any
+    period length, not just a 7-day week, so it stays correct for a
+    monthly/custom-range timesheet too (e.g. institutions.
+    standard_weekly_hours=40 over a full month works out to roughly
+    core/overtime.py's own MONTHLY_NORMAL_HOURS=176 approximation — same
+    8h x ~22 working-day reasoning, arrived at independently here).
+
+    A day that's both a public holiday and inside an approved leave range
+    is credited once, as a holiday — never double-counted."""
+    inst = conn.execute("SELECT standard_weekly_hours FROM institutions WHERE id=?", (inst_id,)).fetchone()
+    weekly_hours = float(inst["standard_weekly_hours"]) if inst and inst["standard_weekly_hours"] is not None else 40.0
+    daily_rate = weekly_hours / 5.0
+
+    d0 = datetime.strptime(period_start, "%Y-%m-%d").date()
+    d1 = datetime.strptime(period_end, "%Y-%m-%d").date()
+
+    holiday_rows = conn.execute(
+        "SELECT date, name FROM holidays WHERE institution_id=? AND date BETWEEN ? AND ?",
+        (inst_id, period_start, period_end)
+    ).fetchall()
+    holiday_by_date = {r["date"]: r["name"] for r in holiday_rows}
+
+    leave_apps = conn.execute("""
+        SELECT la.start_date, la.end_date, la.start_day_period, la.end_day_period, lt.name AS leave_type_name
+        FROM leave_applications la
+        JOIN leave_types lt ON lt.id = la.leave_type_id
+        WHERE la.institution_id=? AND la.employee_id=? AND la.status='Approved'
+          AND la.start_date<=? AND la.end_date>=?
+    """, (inst_id, employee_id, period_end, period_start)).fetchall()
+
+    working_days = 0
+    holiday_hours = 0.0
+    leave_hours = 0.0
+    auto_entries = []
+    d = d0
+    while d <= d1:
+        if d.weekday() < 5:
+            working_days += 1
+            ds = d.isoformat()
+            if ds in holiday_by_date:
+                holiday_hours += daily_rate
+                auto_entries.append({"date": ds, "type": "holiday", "label": holiday_by_date[ds], "hours": round(daily_rate, 2)})
+            else:
+                for app in leave_apps:
+                    if app["start_date"] <= ds <= app["end_date"]:
+                        fraction = 1.0
+                        if ds == app["start_date"] and app["start_day_period"]:
+                            fraction = 0.5
+                        elif ds == app["end_date"] and app["end_date"] != app["start_date"] and app["end_day_period"]:
+                            fraction = 0.5
+                        hrs = round(daily_rate * fraction, 2)
+                        leave_hours += hrs
+                        label = app["leave_type_name"] + (" (Half day)" if fraction == 0.5 else "")
+                        auto_entries.append({"date": ds, "type": "leave", "label": label, "hours": hrs})
+                        break  # first matching approved application wins this date
+        d += timedelta(days=1)
+
+    expected_hours = round(working_days * daily_rate, 2)
+    accounted_hours = round(total_hours + holiday_hours + leave_hours, 2)
+    return {
+        "expected_hours": expected_hours,
+        "holiday_hours": round(holiday_hours, 2),
+        "leave_hours": round(leave_hours, 2),
+        "accounted_hours": accounted_hours,
+        "missing_hours": max(0.0, round(expected_hours - accounted_hours, 2)),
+        "auto_entries": auto_entries,
+    }
+
+
 @router.get("/api/timesheets/{ts_id}")
 @db_session
 def get_timesheet(conn, ts_id: int, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
@@ -315,6 +432,7 @@ def get_timesheet(conn, ts_id: int, user: dict = Depends(get_current_user)) -> D
     result = dict(ts)
     result["entries"] = [dict(e) for e in entries]
     result["total_hours"] = sum(e["hours"] for e in result["entries"])
+    result.update(_weekly_hours_breakdown(conn, inst_id, ts["employee_id"], ts["period_start"], ts["period_end"], result["total_hours"]))
     approvals = [dict(r) for r in project_approvals]
     if user["role"] != "employee":
         approvals = annotate_actionability(conn, inst_id, "timesheet", approvals, user)

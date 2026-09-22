@@ -432,6 +432,74 @@ describe('My Timesheet — week label date format', () => {
   });
 });
 
+// Mirrors timesheet.js's renderTimesheetEntries row-merge logic: real
+// timesheet_entries and the read-only auto_entries (public holidays /
+// approved leave, from GET /api/timesheets/{id}'s _weekly_hours_breakdown)
+// are interleaved into one chronological list for display, with a real
+// entry sorting before an auto entry that falls on the same date.
+describe('My Timesheet — entries/auto_entries merge order', () => {
+  function mergeRows(entries, autoEntries) {
+    return [
+      ...entries.map(e => ({ ...e, _auto: false })),
+      ...autoEntries.map(e => ({ ...e, _auto: true })),
+    ].sort((a, b) => a.date === b.date ? (a._auto - b._auto) : (a.date < b.date ? -1 : 1));
+  }
+
+  it('interleaves auto entries with real entries in date order', () => {
+    const entries = [
+      { id: 1, date: '2027-03-02', project_name: 'ZZ Project', hours: 5 },
+      { id: 2, date: '2027-03-05', project_name: 'ZZ Project', hours: 3 },
+    ];
+    const autoEntries = [
+      { date: '2027-03-03', type: 'holiday', label: 'ZZ Holiday', hours: 8 },
+      { date: '2027-03-01', type: 'leave', label: 'ZZ Leave', hours: 8 },
+    ];
+    const merged = mergeRows(entries, autoEntries);
+    expect(merged.map(r => r.date)).toEqual(['2027-03-01', '2027-03-02', '2027-03-03', '2027-03-05']);
+    expect(merged.map(r => r._auto)).toEqual([true, false, true, false]);
+  });
+
+  it('puts a real entry before an auto entry that falls on the same date', () => {
+    const entries = [{ id: 1, date: '2027-03-03', project_name: 'ZZ Project', hours: 2 }];
+    const autoEntries = [{ date: '2027-03-03', type: 'holiday', label: 'ZZ Holiday', hours: 8 }];
+    const merged = mergeRows(entries, autoEntries);
+    expect(merged.map(r => r._auto)).toEqual([false, true]);
+  });
+});
+
+// Mirrors timesheet.js's renderTimesheetEntries Missing-hours footer row —
+// only shown when there's an actual gap (missing_hours > 0), matching the
+// exact 40h-week/5h-logged/35-missing example from the feature request.
+describe('My Timesheet — Missing hours row visibility', () => {
+  beforeEach(() => {
+    document.body.innerHTML = `
+      <span id="timesheetTotalHours"></span>
+      <table><tbody>
+        <tr id="timesheetMissingRow" class="hidden"><td id="timesheetMissingHours"></td></tr>
+      </tbody></table>
+    `;
+  });
+
+  function applyMissingRow(ts) {
+    const missingRow = document.getElementById('timesheetMissingRow');
+    const missing = ts.missing_hours || 0;
+    missingRow.classList.toggle('hidden', !(missing > 0));
+    document.getElementById('timesheetMissingHours').textContent = missing;
+  }
+
+  it('shows the row with the exact gap when hours are short', () => {
+    applyMissingRow({ total_hours: 5, expected_hours: 40, missing_hours: 35 });
+    const row = document.getElementById('timesheetMissingRow');
+    expect(row.classList.contains('hidden')).toBe(false);
+    expect(document.getElementById('timesheetMissingHours').textContent).toBe('35');
+  });
+
+  it('keeps the row hidden when nothing is missing', () => {
+    applyMissingRow({ total_hours: 40, expected_hours: 40, missing_hours: 0 });
+    expect(document.getElementById('timesheetMissingRow').classList.contains('hidden')).toBe(true);
+  });
+});
+
 // Mirrors timesheet.js's populateProjectCustomerOptions — rebuilds the
 // Customer field's <datalist> (see static/index.html's #projectCustomerOptions)
 // from every distinct, non-blank customer name already tagged on a project

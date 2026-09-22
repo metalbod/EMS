@@ -604,6 +604,32 @@ async function loadTimesheetPage() {
   await loadCurrentTimesheet();
 }
 
+// Standard Weekly Hours (Settings -> Attendance, next to Shifts/Rules —
+// see routers/timesheets.py's TIMESHEET_SETTINGS_MANAGE_ROLES) — the
+// "expected hours" baseline behind My Timesheet's Missing/short hours
+// line and auto-populated holiday/leave rows.
+async function loadTimesheetSettings() {
+  const res=await api('/api/timesheets/settings');
+  const input=document.getElementById('tsStandardWeeklyHours');
+  if(!input) return;
+  input.value=res?.ok ? (await res.json()).standard_weekly_hours : 40;
+}
+
+const saveTimesheetSettings = guardAsync(async function() {
+  const msg=document.getElementById('tsSettingsMsg');
+  const hours=parseFloat(document.getElementById('tsStandardWeeklyHours').value);
+  if(!hours || hours<=0){ msg.textContent='Enter a value greater than 0.'; msg.className='text-xs text-red-600'; return; }
+  const res=await api('/api/timesheets/settings',{method:'PUT',body:JSON.stringify({standard_weekly_hours:hours})});
+  if(res?.ok){
+    msg.textContent='Saved.';
+    msg.className='text-xs text-green-600';
+  } else {
+    const d=await res.json();
+    msg.textContent=apiErrorText(d.detail,'Failed to save.');
+    msg.className='text-xs text-red-600';
+  }
+});
+
 async function loadTsEntryTasks() {
   const projectId=document.getElementById('tsEntryProject').value;
   const taskSel=document.getElementById('tsEntryTask');
@@ -646,18 +672,40 @@ async function loadCurrentTimesheet() {
   renderTimesheetEntries();
 }
 
+// Public-holiday/approved-leave rows for this week, computed fresh by
+// GET /api/timesheets/{id} (routers/timesheets.py's _weekly_hours_breakdown)
+// every time the screen loads — never written to timesheet_entries, so
+// they're read-only here (no delete icon) and interleaved into the table
+// by date purely for display, alongside the real logged entries.
+function _timesheetAutoEntryRow(e) {
+  const badge=e.type==='holiday'?'Public Holiday':'Approved Leave';
+  return `
+    <tr class="border-t border-slate-100 bg-slate-50/70 text-slate-500 italic">
+      <td class="px-4 py-2">${fmtDate(e.date)}</td>
+      <td class="px-4 py-2" colspan="2"><span class="badge text-xs bg-slate-200 text-slate-600 not-italic mr-1.5">${badge}</span>${esc(e.label)}</td>
+      <td class="px-4 py-2">${e.hours}</td>
+      <td class="px-4 py-2"></td>
+      <td class="px-4 py-2"></td>
+    </tr>`;
+}
+
 function renderTimesheetEntries() {
   const ts=tsCurrentTimesheet;
   const tbody=document.getElementById('timesheetEntryBody');
   const emptyEl=document.getElementById('timesheetEntryEmpty');
   const isDraft=ts.status==='Draft';
 
-  if(!ts.entries.length){
+  const rows=[
+    ...ts.entries.map(e=>({...e, _auto:false})),
+    ...(ts.auto_entries||[]).map(e=>({...e, _auto:true})),
+  ].sort((a,b)=>a.date===b.date ? (a._auto - b._auto) : (a.date<b.date?-1:1));
+
+  if(!rows.length){
     tbody.innerHTML='';
     emptyEl.classList.remove('hidden');
   } else {
     emptyEl.classList.add('hidden');
-    tbody.innerHTML=ts.entries.map(e=>`
+    tbody.innerHTML=rows.map(e=>e._auto ? _timesheetAutoEntryRow(e) : `
       <tr class="border-t border-slate-100">
         <td class="px-4 py-2">${fmtDate(e.date)}</td>
         <td class="px-4 py-2">${esc(e.project_name)}</td>
@@ -668,6 +716,11 @@ function renderTimesheetEntries() {
       </tr>`).join('');
   }
   document.getElementById('timesheetTotalHours').textContent=ts.total_hours;
+
+  const missingRow=document.getElementById('timesheetMissingRow');
+  const missing=ts.missing_hours||0;
+  missingRow.classList.toggle('hidden', !(missing>0));
+  document.getElementById('timesheetMissingHours').textContent=missing;
 
   const badgeWrap=document.getElementById('timesheetStatusBadgeWrap');
   badgeWrap.innerHTML=`<span class="badge ${statusColor(TS_STATUS_COLORS, ts.status)}">${ts.status}</span>${ts.notes?` <span class="text-xs text-slate-400 ml-1">${esc(ts.notes)}</span>`:''}`;
