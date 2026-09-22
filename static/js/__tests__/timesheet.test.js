@@ -241,19 +241,20 @@ describe('Edit Project — Project Manager(s) eligibility filter', () => {
 // approval-authority list.
 describe('Edit Project — Team Members search + checkbox list', () => {
   const members = [
-    { id: 'A028', name: 'Cheah Wui Keat' },
-    { id: 'A026', name: 'Mohamad Syafiq' },
-    { id: 'A032', name: 'Raj Saraiya' },
-    { id: 'A109', name: 'Richie Teoh' },
+    { id: 'A028', name: 'Cheah Wui Keat', department: 'Engineering' },
+    { id: 'A026', name: 'Mohamad Syafiq', department: 'Sales' },
+    { id: 'A032', name: 'Raj Saraiya', department: 'Engineering' },
+    { id: 'A109', name: 'Richie Teoh', department: '' },
   ];
 
   beforeEach(() => {
     document.body.innerHTML = `
       <input type="text" id="projectMembersSearch"/>
+      <select id="projectMembersDeptSelect"><option value="">+ Add department…</option></select>
       <input type="checkbox" id="projectMembersSelectAll" />
       <div id="projectMembersList">
         ${members.map(m => `
-          <label class="project-member-option" data-label="${m.name} (${m.id})">
+          <label class="project-member-option" data-label="${m.name} (${m.id})" data-department="${m.department}">
             <input type="checkbox" class="project-member-checkbox" value="${m.id}"/>
             ${m.name} (${m.id})
           </label>`).join('')}
@@ -293,6 +294,22 @@ describe('Edit Project — Team Members search + checkbox list', () => {
     visibleCheckboxes().forEach(b => b.checked = checked);
   }
 
+  function populateProjectMembersDeptSelect() {
+    const sel = document.getElementById('projectMembersDeptSelect');
+    const depts = [...new Set(
+      [...document.querySelectorAll('.project-member-option')].map(opt => opt.dataset.department).filter(Boolean)
+    )].sort((a, b) => a.localeCompare(b));
+    sel.innerHTML = '<option value="">+ Add department…</option>' + depts.map(d => `<option value="${d}">${d}</option>`).join('');
+  }
+
+  function addProjectMembersByDepartment(dept) {
+    if (!dept) return;
+    document.querySelectorAll('.project-member-option').forEach(opt => {
+      if (opt.dataset.department === dept) opt.querySelector('.project-member-checkbox').checked = true;
+    });
+    syncProjectMembersSelectAll();
+  }
+
   function setSearch(q) {
     document.getElementById('projectMembersSearch').value = q;
     filterProjectMemberOptions();
@@ -329,6 +346,32 @@ describe('Edit Project — Team Members search + checkbox list', () => {
     toggleAllProjectMembers();
     expect(document.querySelector('.project-member-checkbox[value="A109"]').checked).toBe(true);
     expect(document.querySelector('.project-member-checkbox[value="A026"]').checked).toBe(false);
+  });
+
+  it('populates the department shortcut with distinct, sorted, non-blank department names', () => {
+    populateProjectMembersDeptSelect();
+    const options = [...document.getElementById('projectMembersDeptSelect').options].map(o => o.value);
+    expect(options).toEqual(['', 'Engineering', 'Sales']);
+  });
+
+  it('picking a department checks every employee in it, ignoring the current search filter', () => {
+    setSearch('richie');  // filters the list down to just A109 (no department)
+    addProjectMembersByDepartment('Engineering');
+    expect(document.querySelector('.project-member-checkbox[value="A028"]').checked).toBe(true);
+    expect(document.querySelector('.project-member-checkbox[value="A032"]').checked).toBe(true);
+    expect(document.querySelector('.project-member-checkbox[value="A026"]').checked).toBe(false);
+  });
+
+  it('adding a department is additive — it never unchecks an already-checked employee', () => {
+    document.querySelector('.project-member-checkbox[value="A026"]').checked = true;
+    addProjectMembersByDepartment('Engineering');
+    expect(document.querySelector('.project-member-checkbox[value="A026"]').checked).toBe(true);
+    expect(document.querySelector('.project-member-checkbox[value="A028"]').checked).toBe(true);
+  });
+
+  it('does nothing for an empty department value (the placeholder option)', () => {
+    addProjectMembersByDepartment('');
+    expect([...document.querySelectorAll('.project-member-checkbox')].some(b => b.checked)).toBe(false);
   });
 });
 

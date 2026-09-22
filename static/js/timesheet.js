@@ -309,14 +309,46 @@ function renderProjectMembersChecklist(selectedIds) {
   wrap.innerHTML=active.map(e=>{
     const label=`${displayName(e.full_name,e.preferred_name)} (${e.employee_id})`;
     return `
-    <label class="project-member-option flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 cursor-pointer" data-label="${esc(label)}">
+    <label class="project-member-option flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 cursor-pointer" data-label="${esc(label)}" data-department="${esc(e.department||'')}">
       <input type="checkbox" class="project-member-checkbox" value="${e.employee_id}" ${selectedIds.includes(e.employee_id)?'checked':''} onchange="syncProjectMembersSelectAll()"/>
       ${esc(label)}
     </label>`;
   }).join('') + `<div id="projectMembersNoMatch" class="hidden text-center text-xs text-slate-400 py-3">No matches</div>`;
   const searchEl=document.getElementById('projectMembersSearch');
   if(searchEl) searchEl.value='';
+  populateProjectMembersDeptSelect();
   filterProjectMemberOptions();
+}
+
+// Distinct, non-blank department names among the employees actually
+// offered in the checklist above (not the whole institution — an
+// employee not Active/not already a member never gets a checkbox here,
+// so their department shouldn't appear as a pickable shortcut either).
+// department is free text (no canonical list anywhere in this app — see
+// employees.department), so this is sourced the same way
+// attendance.js's Attendance Rule "Department" scope already does: a
+// distinct-and-sort over whatever's actually in use.
+function populateProjectMembersDeptSelect() {
+  const sel=document.getElementById('projectMembersDeptSelect');
+  if(!sel) return;
+  const depts=[...new Set(
+    [...document.querySelectorAll('.project-member-option')].map(opt=>opt.dataset.department).filter(Boolean)
+  )].sort((a,b)=>a.localeCompare(b));
+  sel.innerHTML='<option value="">+ Add department…</option>' + depts.map(d=>`<option value="${esc(d)}">${esc(d)}</option>`).join('');
+}
+
+// Checks every listed employee in the chosen department — deliberately
+// ignoring the current search term/hidden state (unlike Select All,
+// which only acts on what's currently visible) so picking a department
+// always adds everyone in it, not just whoever the search box happens
+// to be showing. Only ever adds — never unchecks anyone — so this
+// composes with manual checks and with picking further departments.
+function addProjectMembersByDepartment(dept) {
+  if(!dept) return;
+  document.querySelectorAll('.project-member-option').forEach(opt=>{
+    if(opt.dataset.department===dept) opt.querySelector('.project-member-checkbox').checked=true;
+  });
+  syncProjectMembersSelectAll();
 }
 
 function filterProjectMemberOptions() {

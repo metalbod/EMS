@@ -4620,8 +4620,11 @@
           <label class="lbl">Team Members</label>
           <p class="text-xs text-slate-400 -mt-1 mb-1.5">Who can log timesheet hours against this project.</p>
           <div class="border border-slate-200 rounded-lg overflow-hidden">
-            <div class="px-2 py-1.5 border-b border-slate-100">
-              <input type="text" id="projectMembersSearch" class="inp text-sm" placeholder="Search name or ID…" oninput="filterProjectMemberOptions()"/>
+            <div class="px-2 py-1.5 border-b border-slate-100 flex items-center gap-1.5">
+              <input type="text" id="projectMembersSearch" class="inp text-sm flex-1 min-w-0" placeholder="Search name or ID…" oninput="filterProjectMemberOptions()"/>
+              <select id="projectMembersDeptSelect" class="inp text-sm w-auto shrink-0" onchange="addProjectMembersByDepartment(this.value);this.value='';" title="Add every active employee in a department as a team member">
+                <option value="">+ Add department…</option>
+              </select>
             </div>
             <label class="flex items-center gap-2 px-3 py-2 border-b border-slate-100 bg-slate-50 text-sm font-medium cursor-pointer">
               <input type="checkbox" id="projectMembersSelectAll" onchange="toggleAllProjectMembers()"/> Select All
