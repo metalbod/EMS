@@ -388,3 +388,45 @@ describe('My Timesheet — week label date format', () => {
     expect(weekLabel('2026-08-31', '2026-09-06')).toBe('31-Aug-26 → 06-Sep-26');
   });
 });
+
+// Mirrors timesheet.js's populateProjectCustomerOptions — rebuilds the
+// Customer field's <datalist> (see static/index.html's #projectCustomerOptions)
+// from every distinct, non-blank customer name already tagged on a project
+// in projectsCache, so the Add/Edit Project modal suggests previously-used
+// names with no dedicated customers table or endpoint.
+describe('Add/Edit Project — Customer suggestions (<datalist>)', () => {
+  function esc(s) {
+    return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function populateProjectCustomerOptions(projectsCache) {
+    const names = [...new Set(projectsCache.map(p => (p.customer || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    return names.map(n => `<option value="${esc(n)}"></option>`).join('');
+  }
+
+  it('lists distinct customer names, sorted, excluding blank/missing ones', () => {
+    const projects = [
+      { id: 1, customer: 'Acme Corp' },
+      { id: 2, customer: 'Globex' },
+      { id: 3, customer: 'Acme Corp' },  // duplicate, listed once
+      { id: 4, customer: '' },           // blank, excluded
+      { id: 5, customer: null },         // missing, excluded
+      { id: 6, customer: '  Initech  ' },// trimmed
+    ];
+    const html = populateProjectCustomerOptions(projects);
+    expect(html).toBe(
+      '<option value="Acme Corp"></option>' +
+      '<option value="Globex"></option>' +
+      '<option value="Initech"></option>'
+    );
+  });
+
+  it('escapes HTML-significant characters in a customer name', () => {
+    const html = populateProjectCustomerOptions([{ id: 1, customer: 'A & B <Co>' }]);
+    expect(html).toBe('<option value="A &amp; B &lt;Co&gt;"></option>');
+  });
+
+  it('renders nothing when no project has a customer tagged', () => {
+    const html = populateProjectCustomerOptions([{ id: 1, customer: null }, { id: 2 }]);
+    expect(html).toBe('');
+  });
+});

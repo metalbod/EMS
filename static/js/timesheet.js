@@ -38,6 +38,7 @@ function isProjectManager() {
 // ---------------------------------------------------------------------------
 const PROJECT_TABLE_COLUMNS=[
   {key:'name', label:'Project'},
+  {key:'customer', label:'Customer'},
   {key:'status', label:'Status'},
   {key:'task_count', label:'Tasks'},
   {key:'member_count', label:'Team'},
@@ -48,17 +49,31 @@ const PROJECT_TABLE_COLUMNS=[
 async function loadProjects() {
   const listEl=document.getElementById('projectList');
   const emptyEl=document.getElementById('projectEmpty');
-  listEl.innerHTML='<tr><td colspan="7" class="text-slate-400 text-sm text-center py-8">Loading…</td></tr>';
+  listEl.innerHTML='<tr><td colspan="8" class="text-slate-400 text-sm text-center py-8">Loading…</td></tr>';
   let url='/api/projects';
   if(projectFilter) url+=`?status=${encodeURIComponent(projectFilter)}`;
   const res=await api(url);
   if(!res?.ok){ listEl.innerHTML=''; return; }
   const rows=await res.json();
   projectsCache=rows;
+  populateProjectCustomerOptions();
   if(!rows.length){ listEl.innerHTML=''; emptyEl?.classList.remove('hidden'); renderProjectTableHead(); return; }
   emptyEl?.classList.add('hidden');
   renderProjectTableHead();
   renderProjectTable();
+}
+
+// Rebuilds the Customer field's <datalist> from every distinct customer
+// name already tagged on a project in this institution (projectsCache),
+// so typing in the modal suggests previously-used names without a
+// dedicated customers table/endpoint. Cheap to just rebuild wholesale
+// each time loadProjects() runs — this list is never large enough to
+// warrant diffing.
+function populateProjectCustomerOptions() {
+  const dl=document.getElementById('projectCustomerOptions');
+  if(!dl) return;
+  const names=[...new Set(projectsCache.map(p=>(p.customer||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+  dl.innerHTML=names.map(n=>`<option value="${esc(n)}"></option>`).join('');
 }
 
 function renderProjectTableHead() {
@@ -89,14 +104,14 @@ function renderProjectTable() {
   const listEl=document.getElementById('projectList');
   const STATUS_COLORS={'Active':'status-positive','On Hold':'status-pending','Completed':'status-neutral'};
   const term=projectSearchTerm.trim().toLowerCase();
-  const searched=term?projectsCache.filter(p=>(p.name||'').toLowerCase().includes(term)||(p.description||'').toLowerCase().includes(term)):projectsCache;
+  const searched=term?projectsCache.filter(p=>(p.name||'').toLowerCase().includes(term)||(p.description||'').toLowerCase().includes(term)||(p.customer||'').toLowerCase().includes(term)):projectsCache;
   const { pageItems: sorted } = projectList.view(searched);
   // loadProjects() already handled the "no projects at all" empty state
   // (projectEmpty) before ever calling this function, so reaching here
   // with zero rows only happens when a search term filtered everything
   // out — a different message, shown inline in the table itself.
   if(!sorted.length && term){
-    listEl.innerHTML=`<tr><td colspan="7" class="text-slate-400 text-sm text-center py-8">No projects match "${esc(projectSearchTerm.trim())}".</td></tr>`;
+    listEl.innerHTML=`<tr><td colspan="8" class="text-slate-400 text-sm text-center py-8">No projects match "${esc(projectSearchTerm.trim())}".</td></tr>`;
     return;
   }
   listEl.innerHTML=sorted.map(p=>{
@@ -118,6 +133,7 @@ function renderProjectTable() {
           </div>
         </div>
       </td>
+      <td class="px-4 py-3 text-slate-600">${p.customer?esc(p.customer):'<span class="text-slate-300">—</span>'}</td>
       <td class="px-4 py-3"><span class="badge text-xs ${statusColor(STATUS_COLORS, p.status)}">${p.status}</span></td>
       <td class="px-4 py-3 text-slate-600">${p.task_count}</td>
       <td class="px-4 py-3 text-slate-600">${p.member_count}</td>
@@ -138,10 +154,10 @@ function renderProjectTable() {
 function projectTaskSubRows(projectId) {
   const tasks=projectTasksByProject[projectId];
   if(tasks===undefined) {
-    return `<tr class="bg-slate-50/60"><td colspan="7" class="pl-12 pr-4 py-2.5 text-xs text-slate-400">Loading tasks…</td></tr>`;
+    return `<tr class="bg-slate-50/60"><td colspan="8" class="pl-12 pr-4 py-2.5 text-xs text-slate-400">Loading tasks…</td></tr>`;
   }
   if(!tasks.length) {
-    return `<tr class="bg-slate-50/60"><td colspan="7" class="pl-12 pr-4 py-2.5 text-xs text-slate-400">No tasks yet.</td></tr>`;
+    return `<tr class="bg-slate-50/60"><td colspan="8" class="pl-12 pr-4 py-2.5 text-xs text-slate-400">No tasks yet.</td></tr>`;
   }
   return tasks.map(t=>`
     <tr class="bg-slate-50/60 border-t border-slate-100">
@@ -151,6 +167,7 @@ function projectTaskSubRows(projectId) {
           <span class="text-slate-700 truncate">${esc(t.name)}</span>
         </div>
       </td>
+      <td class="px-4 py-2.5 text-slate-300">—</td>
       <td class="px-4 py-2.5"><span class="badge text-xs ${statusColor(TASK_STATUS_COLORS, t.status)}">${t.status}</span></td>
       <td class="px-4 py-2.5 text-slate-300">—</td>
       <td class="px-4 py-2.5 text-slate-300">—</td>
@@ -344,6 +361,7 @@ async function openProjectModal(projectId) {
     const p=projectsCache.find(x=>x.id===projectId);
     document.getElementById('projectName').value=p?.name||'';
     document.getElementById('projectDesc').value=p?.description||'';
+    document.getElementById('projectCustomer').value=p?.customer||'';
     document.getElementById('projectStatus').value=p?.status||'Active';
     document.getElementById('projectStart').value=p?.start_date||'';
     document.getElementById('projectEnd').value=p?.end_date||'';
@@ -357,6 +375,7 @@ async function openProjectModal(projectId) {
   } else {
     document.getElementById('projectName').value='';
     document.getElementById('projectDesc').value='';
+    document.getElementById('projectCustomer').value='';
     document.getElementById('projectStatus').value='Active';
     document.getElementById('projectStart').value='';
     document.getElementById('projectEnd').value='';
@@ -375,6 +394,7 @@ const submitProject = guardAsync(async function() {
   const body={
     name: document.getElementById('projectName').value.trim(),
     description: document.getElementById('projectDesc').value.trim()||null,
+    customer: document.getElementById('projectCustomer').value.trim()||null,
     status: document.getElementById('projectStatus').value,
     start_date: document.getElementById('projectStart').value||null,
     end_date: document.getElementById('projectEnd').value||null,

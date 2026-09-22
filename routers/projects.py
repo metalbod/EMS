@@ -21,6 +21,7 @@ PROJECT_MANAGE_ROLES = ("superadmin", "hr_manager")
 class ProjectIn(BaseModel):
     name: str
     description: Optional[str] = None
+    customer: Optional[str] = None  # free text, optional — tagged for reporting/filtering, no dedicated customers table
     status: str = "Active"  # Active | On Hold | Completed
     start_date: Optional[str] = None  # informational only — not checked against timesheet entries
     end_date: Optional[str] = None
@@ -292,8 +293,8 @@ def create_project(conn, body: ProjectIn, user: dict = Depends(get_current_user)
     if body.start_date and body.end_date and body.end_date < body.start_date:
         raise HTTPException(400, "End date must be on or after start date")
     conn.execute(
-        "INSERT INTO projects (institution_id,name,description,status,start_date,end_date,is_open_to_all,is_billable,created_by) VALUES (?,?,?,?,?,?,?,?,?)",
-        (inst_id, body.name, body.description, body.status, body.start_date, body.end_date,
+        "INSERT INTO projects (institution_id,name,description,customer,status,start_date,end_date,is_open_to_all,is_billable,created_by) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (inst_id, body.name, body.description, body.customer, body.status, body.start_date, body.end_date,
          body.is_open_to_all, body.is_billable, user["username"])
     )
     project_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -317,8 +318,8 @@ def update_project(conn, project_id: int, body: ProjectIn, user: dict = Depends(
     if body.start_date and body.end_date and body.end_date < body.start_date:
         raise HTTPException(400, "End date must be on or after start date")
     conn.execute(
-        "UPDATE projects SET name=?,description=?,status=?,start_date=?,end_date=?,is_open_to_all=?,is_billable=? WHERE id=?",
-        (body.name, body.description, body.status, body.start_date, body.end_date,
+        "UPDATE projects SET name=?,description=?,customer=?,status=?,start_date=?,end_date=?,is_open_to_all=?,is_billable=? WHERE id=?",
+        (body.name, body.description, body.customer, body.status, body.start_date, body.end_date,
          body.is_open_to_all, body.is_billable, project_id)
     )
     _set_project_managers(conn, inst_id, project_id, body.manager_ids)
@@ -353,10 +354,10 @@ def duplicate_project(conn, project_id: int, body: ProjectDuplicateIn, user: dic
     byte-for-byte one: the new project always starts Active regardless of
     the source's status, and copied tasks reset to Not Started with no
     dates (status/dates are execution-specific, not template data worth
-    preserving). Description, is_open_to_all and is_billable always carry
-    over unconditionally — duplicate_scope only controls tasks/managers/
-    members, per the 3 options offered in the UI. Managers and Team
-    Members travel together as one "Members" unit."""
+    preserving). Description, customer, is_open_to_all and is_billable
+    always carry over unconditionally — duplicate_scope only controls
+    tasks/managers/members, per the 3 options offered in the UI. Managers
+    and Team Members travel together as one "Members" unit."""
     require_permission(conn, user, "projects_tasks.manage_projects_tasks_assignments")
     inst_id = need_inst(user)
     source = conn.execute("SELECT * FROM projects WHERE id=? AND institution_id=?", (project_id, inst_id)).fetchone()
@@ -370,8 +371,8 @@ def duplicate_project(conn, project_id: int, body: ProjectDuplicateIn, user: dic
     include_members = body.duplicate_scope in ("tasks_and_members", "members_only")
 
     conn.execute(
-        "INSERT INTO projects (institution_id,name,description,status,is_open_to_all,is_billable,created_by) VALUES (?,?,?,?,?,?,?)",
-        (inst_id, name, source["description"], "Active", source["is_open_to_all"], source["is_billable"], user["username"])
+        "INSERT INTO projects (institution_id,name,description,customer,status,is_open_to_all,is_billable,created_by) VALUES (?,?,?,?,?,?,?,?)",
+        (inst_id, name, source["description"], source["customer"], "Active", source["is_open_to_all"], source["is_billable"], user["username"])
     )
     new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 

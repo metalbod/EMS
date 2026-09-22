@@ -4587,6 +4587,11 @@
       <div id="projectTab-details" class="project-tab-pane space-y-4">
         <div><label class="lbl">Project Name <span class="text-red-500">*</span></label><input id="projectName" class="inp" required/></div>
         <div><label class="lbl">Description</label><textarea id="projectDesc" class="inp" rows="2"></textarea></div>
+        <div>
+          <label class="lbl">Customer</label>
+          <input id="projectCustomer" class="inp" list="projectCustomerOptions" placeholder="Optional — start typing to see previous customers"/>
+          <datalist id="projectCustomerOptions"></datalist>
+        </div>
         <div><label class="lbl">Status</label>
           <select id="projectStatus" class="inp">
             <option value="Active">Active</option>

@@ -67,6 +67,40 @@ def test_update_project_not_found_returns_404(client, hr_manager_auth):
     assert res.status_code == 404
 
 
+def test_create_project_with_customer(client, hr_manager_auth, make_test_project):
+    project = make_test_project(name="ZZ Customer Project", customer="ZZ Customer Co")
+    assert project["customer"] == "ZZ Customer Co"
+
+    listing = client.get("/api/projects", headers=hr_manager_auth).json()
+    row = next(p for p in listing if p["id"] == project["id"])
+    assert row["customer"] == "ZZ Customer Co"
+
+
+def test_create_project_without_customer_defaults_to_none(client, make_test_project):
+    project = make_test_project(name="ZZ No Customer Project")
+    assert project["customer"] is None
+
+
+def test_update_project_can_set_and_clear_customer(client, hr_manager_auth, make_test_project):
+    project = make_test_project()
+    res = client.put(
+        f"/api/projects/{project['id']}", headers=hr_manager_auth,
+        json={"name": project["name"], "status": "Active", "customer": "ZZ Updated Customer"},
+    )
+    assert res.status_code == 200
+    assert res.json()["customer"] == "ZZ Updated Customer"
+
+    # customer has no default in ProjectIn beyond None, so omitting it on a
+    # later update (a full-replace PUT, same as every other project field)
+    # clears it rather than leaving the previous value in place.
+    res = client.put(
+        f"/api/projects/{project['id']}", headers=hr_manager_auth,
+        json={"name": project["name"], "status": "Active"},
+    )
+    assert res.status_code == 200
+    assert res.json()["customer"] is None
+
+
 def test_create_project_with_managers(client, hr_manager_auth, make_test_employee):
     mgr1 = make_test_employee(full_name="ZZ Project Manager One")
     mgr2 = make_test_employee(full_name="ZZ Project Manager Two")
@@ -241,7 +275,7 @@ def test_duplicate_project_carries_description_and_flags_and_forces_active(
     client, hr_manager_auth, make_test_project
 ):
     project = make_test_project(
-        name="ZZ Source Project", description="ZZ desc", status="Completed",
+        name="ZZ Source Project", description="ZZ desc", customer="ZZ Dup Customer Co", status="Completed",
         is_open_to_all=True, is_billable=True,
     )
     res = client.post(f"/api/projects/{project['id']}/duplicate", headers=hr_manager_auth,
@@ -250,6 +284,7 @@ def test_duplicate_project_carries_description_and_flags_and_forces_active(
     dup = res.json()
     assert dup["name"] == "ZZ Dup Flags"
     assert dup["description"] == "ZZ desc"
+    assert dup["customer"] == "ZZ Dup Customer Co"
     assert dup["is_open_to_all"] in (True, 1)
     assert dup["is_billable"] in (True, 1)
     assert dup["status"] == "Active"  # fresh-start clone, regardless of source status
