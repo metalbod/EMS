@@ -464,6 +464,7 @@ REMINDER_SETTINGS_HOUR_KEYS = (
     "reminder_timesheet_hour", "reminder_onboarding_hour",
     "reminder_offboarding_hour", "reminder_holidays_hour",
 )
+REMINDER_SETTINGS_DAY_OF_WEEK_KEYS = ("reminder_timesheet_day_of_week",)
 
 
 @pytest.fixture
@@ -488,6 +489,8 @@ def test_get_reminder_settings_returns_all_categories(client, hr_manager_auth):
         assert key in body and isinstance(body[key], bool)
     for key in REMINDER_SETTINGS_HOUR_KEYS:
         assert key in body and isinstance(body[key], int) and 0 <= body[key] <= 23
+    for key in REMINDER_SETTINGS_DAY_OF_WEEK_KEYS:
+        assert key in body and isinstance(body[key], int) and 0 <= body[key] <= 6
 
 
 def test_update_reminder_settings_roundtrip(client, hr_manager_auth, restore_reminder_settings):
@@ -497,6 +500,7 @@ def test_update_reminder_settings_roundtrip(client, hr_manager_auth, restore_rem
         "reminder_acknowledgement_enabled": False,
         "reminder_timesheet_hour": 7, "reminder_onboarding_hour": 9,
         "reminder_offboarding_hour": 17, "reminder_holidays_hour": 6,
+        "reminder_timesheet_day_of_week": 4,
     }
     res = client.put("/api/notifications/reminder-settings", headers=hr_manager_auth, json=payload)
     assert res.status_code == 200
@@ -513,6 +517,19 @@ def test_update_reminder_settings_rejects_out_of_range_hour(client, hr_manager_a
         "reminder_acknowledgement_enabled": True,
         "reminder_timesheet_hour": 24, "reminder_onboarding_hour": 8,
         "reminder_offboarding_hour": 8, "reminder_holidays_hour": 8,
+        "reminder_timesheet_day_of_week": 0,
+    })
+    assert res.status_code == 422
+
+
+def test_update_reminder_settings_rejects_out_of_range_day_of_week(client, hr_manager_auth, restore_reminder_settings):
+    res = client.put("/api/notifications/reminder-settings", headers=hr_manager_auth, json={
+        "reminder_timesheet_enabled": True, "reminder_onboarding_enabled": True,
+        "reminder_offboarding_enabled": True, "reminder_holidays_enabled": True,
+        "reminder_acknowledgement_enabled": True,
+        "reminder_timesheet_hour": 8, "reminder_onboarding_hour": 8,
+        "reminder_offboarding_hour": 8, "reminder_holidays_hour": 8,
+        "reminder_timesheet_day_of_week": 7,
     })
     assert res.status_code == 422
 
@@ -526,6 +543,7 @@ def test_update_reminder_settings_requires_manage_role(client, make_test_user, t
         "reminder_acknowledgement_enabled": True,
         "reminder_timesheet_hour": 8, "reminder_onboarding_hour": 8,
         "reminder_offboarding_hour": 8, "reminder_holidays_hour": 8,
+        "reminder_timesheet_day_of_week": 0,
     })
     assert res.status_code == 403
 

@@ -367,7 +367,14 @@ REMINDER_HOUR_COLUMNS = (
     "reminder_timesheet_hour", "reminder_onboarding_hour",
     "reminder_offboarding_hour", "reminder_holidays_hour",
 )
-_ALL_REMINDER_SETTINGS_COLUMNS = REMINDER_CATEGORY_COLUMNS + REMINDER_HOUR_COLUMNS
+
+# Only the timesheet sweep is weekly, not daily — see the 20260922_0004
+# migration's docstring. 0=Monday..6=Sunday (Python's date.weekday()
+# convention, what core/tasks.py's reminder_sweep_timesheets compares
+# against), not ISO-8601's 1-7.
+REMINDER_DAY_OF_WEEK_COLUMNS = ("reminder_timesheet_day_of_week",)
+
+_ALL_REMINDER_SETTINGS_COLUMNS = REMINDER_CATEGORY_COLUMNS + REMINDER_HOUR_COLUMNS + REMINDER_DAY_OF_WEEK_COLUMNS
 
 
 class ReminderSettingsIn(BaseModel):
@@ -380,12 +387,20 @@ class ReminderSettingsIn(BaseModel):
     reminder_onboarding_hour: int
     reminder_offboarding_hour: int
     reminder_holidays_hour: int
+    reminder_timesheet_day_of_week: int
 
     @field_validator(*REMINDER_HOUR_COLUMNS)
     @classmethod
     def _hour_in_range(cls, v):
         if not (0 <= v <= 23):
             raise ValueError("hour must be between 0 and 23")
+        return v
+
+    @field_validator(*REMINDER_DAY_OF_WEEK_COLUMNS)
+    @classmethod
+    def _day_of_week_in_range(cls, v):
+        if not (0 <= v <= 6):
+            raise ValueError("day_of_week must be between 0 (Monday) and 6 (Sunday)")
         return v
 
 
@@ -419,10 +434,12 @@ def update_reminder_settings(
     institution's own `timezone`) controls *when* beat's every-30-minute
     tick actually runs that category's sweep for this institution — see
     core/tasks.py's reminder_sweep_checklists/_holidays/_timesheets and
-    their _reminder_category_due_now helper. `reminder_acknowledgement_enabled`
-    is stored ahead of the "document acknowledgement" feature it will
-    eventually gate; nothing reads it yet (see the Reminders tab's
-    "coming soon" row) — it has no `_hour` column for the same reason."""
+    their _reminder_category_due_now helper. `reminder_timesheet_day_of_week`
+    (0=Monday..6=Sunday) additionally gates the timesheet sweep to one day a
+    week, same helper. `reminder_acknowledgement_enabled` is stored ahead of
+    the "document acknowledgement" feature it will eventually gate; nothing
+    reads it yet (see the Reminders tab's "coming soon" row) — it has no
+    `_hour`/`_day_of_week` column for the same reason."""
     inst_id = need_inst(user)
     assignments = ", ".join(f"{c}=?" for c in _ALL_REMINDER_SETTINGS_COLUMNS)
     values = [getattr(body, c) for c in _ALL_REMINDER_SETTINGS_COLUMNS]

@@ -276,6 +276,11 @@ Checking-and-skipping every 30 minutes for an institution whose hour hasn't
 arrived yet is cheap (a few SELECTs, no emails), and every sweep already
 dedupes sends via `email_log`, so the two ticks that fall inside an
 institution's configured hour are harmless rather than a double-send risk.
+`reminder_sweep_timesheets` additionally checks `institutions.
+reminder_timesheet_day_of_week` (0=Monday..6=Sunday) since that sweep is
+weekly, not daily — and always computes "the week that just ended" as the
+most recently *completed* Monday-Sunday week relative to whichever day it
+fires on, not the week ending on that configured day.
 
 This still doesn't need Redis or a separate worker: since production runs
 `task_always_eager=True` (above), beat's `.apply_async()` calls are

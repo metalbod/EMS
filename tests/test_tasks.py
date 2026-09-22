@@ -188,6 +188,44 @@ def test_reminder_sweep_timesheets_task_skips_when_hour_matches_but_not_monday(
         "the timesheet sweep must only run on a Monday in the institution's own timezone, even if the hour matches"
 
 
+def test_reminder_sweep_timesheets_task_uses_institution_configured_day_of_week(
+    client, hr_manager_auth, make_test_employee, make_test_project, make_test_project_task, configured_email_settings
+):
+    """reminder_timesheet_day_of_week (Settings -> Notifications -> Reminders,
+    default 0=Monday) lets an institution move the sweep to any weekday — and
+    "the week that just ended" must still mean the most recently *completed*
+    Monday-Sunday week regardless of which day the sweep itself runs on, not
+    the week ending on that configured day. Verified via the dedupe_key
+    (f"{employee_id}:{period_start}") email_log actually stores, since the
+    date only otherwise appears in the email body, which isn't logged."""
+    emp_email = f"zztaskwed_{os.urandom(4).hex()}@zzpytest.example.com"
+    emp = make_test_employee(full_name="ZZ Task Timesheet Wednesday Employee", personal_email=emp_email)
+    project = make_test_project(name="ZZ Task Reminder Wednesday Project", member_ids=[emp["employee_id"]])
+    make_test_project_task(project["id"])
+
+    settings = client.get("/api/notifications/reminder-settings", headers=hr_manager_auth).json()
+    original_day = settings["reminder_timesheet_day_of_week"]
+    settings["reminder_timesheet_day_of_week"] = 2  # Wednesday
+    assert client.put("/api/notifications/reminder-settings", headers=hr_manager_auth, json=settings).status_code == 200
+
+    a_wednesday = (_FIXED_MONDAY + timedelta(days=2)).replace(hour=_DEFAULT_HOUR)
+    assert a_wednesday.weekday() == 2
+    expected_last_period_start = (_FIXED_MONDAY.date() - timedelta(days=7)).isoformat()  # the Monday before _FIXED_MONDAY
+
+    try:
+        with patch("core.email_engine.smtplib.SMTP"), patch("core.tasks._reminder_local_now", return_value=a_wednesday):
+            result = reminder_sweep_timesheets()
+        assert result["sent"] >= 1
+
+        log = client.get("/api/notifications/email-log", headers=hr_manager_auth).json()
+        row = next(r for r in log if r["recipient_email"] == emp_email and r["category"] == "timesheet_reminder")
+        assert row["status"] == "sent"
+        assert row["dedupe_key"] == f"{emp['employee_id']}:{expected_last_period_start}"
+    finally:
+        settings["reminder_timesheet_day_of_week"] = original_day
+        client.put("/api/notifications/reminder-settings", headers=hr_manager_auth, json=settings)
+
+
 def test_reminder_sweep_holidays_task_emails_when_holiday_tomorrow(
     client, hr_manager_auth, make_test_employee, configured_email_settings
 ):

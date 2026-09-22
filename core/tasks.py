@@ -288,9 +288,17 @@ def reminder_sweep_timesheets(self):
     """Beat-scheduled (see beat_schedule above): pending-timesheet nudges for
     the week that just ended, for every notifications_email_enabled
     institution whose own reminder_timesheet_hour matches the current local
-    hour there — and only on a Monday *in that institution's own timezone*
-    (replaces the old script's UTC-based is_monday check, which could be
-    off by a day for an institution far enough from UTC)."""
+    hour there — and only on that institution's own configured
+    reminder_timesheet_day_of_week (0=Monday..6=Sunday; Settings ->
+    Notifications -> Reminders tab), checked *in that institution's own
+    timezone* (replaces the old script's UTC-based is_monday check, which
+    could be off by a day for an institution far enough from UTC).
+
+    "The week that just ended" is always the most recently *completed*
+    Monday-Sunday week, regardless of which day the sweep itself fires
+    on — e.g. an institution configured to remind on Wednesday still
+    means "you didn't submit last week's timesheet," not "the week
+    ending this Wednesday," since the current week isn't over yet."""
     from datetime import timedelta
 
     from db import get_db, set_rls_context
@@ -304,9 +312,10 @@ def reminder_sweep_timesheets(self):
             if not _reminder_category_due_now(inst, "reminder_timesheet_hour"):
                 continue
             local_now = _reminder_local_now(inst)
-            if local_now.weekday() != 0:  # Monday
+            if local_now.weekday() != inst["reminder_timesheet_day_of_week"]:
                 continue
-            last_period_start = (local_now.date() - timedelta(days=7)).isoformat()
+            current_week_monday = local_now.date() - timedelta(days=local_now.weekday())
+            last_period_start = (current_week_monday - timedelta(days=7)).isoformat()
             sent += sr.sweep_pending_timesheets(conn, inst["id"], last_period_start, dry_run=False)
         logger.info(f"Task {self.request.id}: timesheet reminder sweep sent {sent} email(s)")
         return {"sent": sent}

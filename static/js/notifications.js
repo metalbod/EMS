@@ -102,6 +102,10 @@ const REMINDER_CATEGORIES = ['timesheet', 'onboarding', 'offboarding', 'holidays
 // 'acknowledgement' has no configurable hour — its toggle is a disabled
 // "coming soon" row (see static/index.html), nothing reads its schedule yet.
 const REMINDER_HOUR_CATEGORIES = ['timesheet', 'onboarding', 'offboarding', 'holidays'];
+// Only the timesheet sweep is weekly, not daily, so it's the only row with a
+// Day column (see static/index.html — the others show a static "Daily" cell).
+const REMINDER_DAY_OF_WEEK_CATEGORIES = ['timesheet'];
+const REMINDER_DAY_LABELS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
 function _reminderHourLabel(h) {
   const period = h < 12 ? 'AM' : 'PM';
@@ -122,10 +126,24 @@ function _populateReminderHourSelects() {
   });
 }
 
+function _populateReminderDaySelects() {
+  REMINDER_DAY_OF_WEEK_CATEGORIES.forEach(cat => {
+    const sel = document.getElementById(`reminderDay_${cat}`);
+    if (!sel || sel.options.length) return; // already populated
+    REMINDER_DAY_LABELS.forEach((label, i) => {
+      const opt = document.createElement('option');
+      opt.value = String(i);
+      opt.textContent = label;
+      sel.appendChild(opt);
+    });
+  });
+}
+
 async function loadReminderSettings() {
   const msg = document.getElementById('reminderSettingsMsg');
   if (msg) msg.textContent = '';
   _populateReminderHourSelects();
+  _populateReminderDaySelects();
   const res = await api('/api/notifications/reminder-settings');
   if (!res?.ok) return;
   const s = await res.json();
@@ -137,6 +155,10 @@ async function loadReminderSettings() {
     const sel = document.getElementById(`reminderHour_${cat}`);
     if (sel) sel.value = String(s[`reminder_${cat}_hour`]);
   });
+  REMINDER_DAY_OF_WEEK_CATEGORIES.forEach(cat => {
+    const sel = document.getElementById(`reminderDay_${cat}`);
+    if (sel) sel.value = String(s[`reminder_${cat}_day_of_week`]);
+  });
 }
 
 const saveReminderSettings = guardAsync(async function() {
@@ -147,6 +169,9 @@ const saveReminderSettings = guardAsync(async function() {
   });
   REMINDER_HOUR_CATEGORIES.forEach(cat => {
     body[`reminder_${cat}_hour`] = Number(document.getElementById(`reminderHour_${cat}`).value);
+  });
+  REMINDER_DAY_OF_WEEK_CATEGORIES.forEach(cat => {
+    body[`reminder_${cat}_day_of_week`] = Number(document.getElementById(`reminderDay_${cat}`).value);
   });
   const res = await api('/api/notifications/reminder-settings', {method: 'PUT', body: JSON.stringify(body)});
   if (res?.ok) {

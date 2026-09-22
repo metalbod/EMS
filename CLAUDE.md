@@ -150,7 +150,12 @@ wrapper everywhere.
   (Settings -> Notifications -> Reminders tab, `institutions.
   reminder_<category>_hour`) is checked inside each task against that
   institution's own `timezone` column (`core/tasks.py`'s
-  `_reminder_category_due_now`), same "compute it, don't schedule it"
+  `_reminder_category_due_now`). The timesheet sweep additionally has a
+  configurable `reminder_timesheet_day_of_week` (0=Monday..6=Sunday,
+  since it's weekly, not daily) — "the week that just ended" is always
+  computed as the most recently *completed* Monday-Sunday week relative
+  to whichever day it actually fires on, not the week ending on that
+  day. Same "compute it, don't schedule it"
   philosophy as everything else in this bullet.
 - **Tests run against a dedicated test Supabase project, not prod** —
   `TEST_DATABASE_URL`/`TEST_ADMIN_DATABASE_URL` in `.env`,
