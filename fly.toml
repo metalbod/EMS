@@ -11,13 +11,17 @@ primary_region = 'nrt'
 # "app" runs the exact command the Dockerfile's own CMD already used —
 # defining [processes] at all means every process group must be listed
 # explicitly, so this keeps the web server's behavior unchanged.
-# "reminders" (scripts/send_reminders.py, Phase 2 of the email
-# notification engine) is scheduled separately via `fly machine update
-# --schedule=daily` — see deploy.sh, which re-applies that after every
-# deploy since fly.toml itself can't express a schedule.
+# "reminders" runs Celery beat (core/tasks.py's beat_schedule) as a single
+# always-on process — it ticks its own internal clock and fires each
+# reminder sweep at its configured time, so unlike the old Fly-native
+# `fly machine update --schedule=daily` approach, this machine is never
+# expected to stop/start and can hold any number of independently-timed
+# tasks. No Redis/worker needed: production runs Celery in eager mode
+# (CELERY_TASK_ALWAYS_EAGER, see core/tasks.py), so beat executes each
+# sweep inline in this same process when it comes due.
 [processes]
   app = "uvicorn main:app --host 0.0.0.0 --port 8000"
-  reminders = "python3 scripts/send_reminders.py"
+  reminders = "celery -A core.tasks beat --loglevel=info"
 
 [http_service]
   internal_port = 8000

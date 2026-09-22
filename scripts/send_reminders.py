@@ -4,14 +4,18 @@ core/email_engine.py and migrations/versions/20260919_0001_email_notifications.p
 20260920_0001_email_log_dedupe_key.py).
 
 Standalone script (same pattern as celery_worker.py/apply_migration.py at
-the repo root), meant to be invoked once a day by a Fly.io scheduled
-machine — provisioning that machine (a "reminders" process group in
-fly.toml, `fly scale count`, and `fly machine update --schedule=daily`,
-re-applied after every deploy since a redeploy can silently drop a
-machine's schedule) is deliberately NOT part of this script or of
-deploy.sh; that's a separate, manual infrastructure step. This script
-has no HTTP endpoint or auth of its own, since only Fly's own scheduler
-is expected to run it.
+the repo root). In production this isn't invoked directly — its sweep
+functions (sweep_overdue_checklists, sweep_pending_timesheets,
+sweep_holiday_eve_emails, _enabled_institutions) are called by the
+beat-scheduled tasks in core/tasks.py (reminder_sweep_checklists/
+_holidays/_timesheets, see its beat_schedule and the "reminders" process
+group in fly.toml — `celery -A core.tasks beat`) rather than duplicated
+there, so there's exactly one implementation of each sweep. This file
+stays around unchanged as the manual entry point: `python3
+scripts/send_reminders.py [--dry-run]`, e.g. via `fly ssh console` to
+run a real sweep on demand against production. It has no HTTP endpoint
+or auth of its own — running it is an infra/ops action, not an
+app-level one.
 
 For every institution with notifications_email_enabled=true, sweeps
 whichever of the following categories that institution has separately

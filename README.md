@@ -253,6 +253,30 @@ problem in practice, the fix is to actually provision Redis + a Fly worker
 process and unset `CELERY_TASK_ALWAYS_EAGER` in production — the code path
 already supports it, it's just not deployed that way today.
 
+### Celery Beat (scheduled reminder sweeps)
+
+Production *does* run one persistent Celery process — `celery -A core.tasks
+beat`, as the "reminders" process group (`fly.toml`), a single always-on Fly
+machine (no `--schedule`/stop-start, unlike a Fly-native scheduled machine).
+It fires the tasks in `core/tasks.py`'s `app.conf.beat_schedule`
+(`reminder_sweep_checklists`, `_holidays`, `_timesheets` — overdue
+onboarding/offboarding items, pending timesheets, holiday-eve emails; see
+`scripts/send_reminders.py`'s module docstring for what each sweep actually
+does) at their configured times.
+
+This still doesn't need Redis or a separate worker: since production runs
+`task_always_eager=True` (above), beat's `.apply_async()` calls are
+intercepted before touching the broker and execute the task **inline, in the
+beat process itself**, exactly like an HTTP-triggered task executes inline in
+its request. Beat is only a clock here — it decides *when*, eager mode
+decides *how*.
+
+`scripts/send_reminders.py` still exists unchanged as a manual CLI
+(`python3 scripts/send_reminders.py --dry-run`, or via `fly ssh console` to
+run for real against production — see its own module docstring) — the beat
+tasks call its sweep functions directly rather than duplicating them, so
+there's exactly one implementation of each sweep either way.
+
 ### Async Endpoint Pattern
 
 ```python

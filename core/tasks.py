@@ -6,6 +6,7 @@ import json
 from datetime import date
 from celery import Celery
 from celery.result import AsyncResult
+from celery.schedules import crontab
 import psycopg2
 
 logger = logging.getLogger("ems")
@@ -141,6 +142,129 @@ app.conf.update(
     task_eager_propagates=ALWAYS_EAGER,
     task_store_eager_result=ALWAYS_EAGER,  # Store results for eager tasks so AsyncResult works
 )
+
+# Celery beat schedule for the reminder sweeps — see reminder_sweep_checklists/
+# _holidays/_timesheets below. This is what runs on the Fly "reminders" process
+# group now (`celery -A core.tasks beat`, see fly.toml), replacing the old
+# Fly-native `fly machine update --schedule=daily` mechanism, which could only
+# stop/start one whole machine on a fixed interval anchored to whenever it was
+# last (re)scheduled — not a real clock time, and not able to hold more than
+# one schedule at all. Beat ticks inside a single always-on machine instead,
+# so each entry below gets its own real time-of-day, and adding a new
+# reminder category later is just one more dict entry, not new Fly infra.
+#
+# Because production runs task_always_eager=True (see ALWAYS_EAGER above),
+# beat firing one of these still needs no Redis/worker: `.apply_async()` is
+# intercepted before it ever touches the broker and just runs the task
+# inline, in the beat process itself, via the in-process "memory://" broker
+# — the same mechanism routers/payroll.py and the bulk-upload endpoint
+# already rely on when called from a request.
+#
+# Times are given in UTC because Celery's `timezone` setting above is UTC
+# (kept as-is rather than switched per-entry, to not disturb task_time_limit/
+# enable_utc semantics elsewhere). Malaysia (Asia/Kuala_Lumpur) is a fixed
+# UTC+8 with no DST, so 08:00 MYT is always 00:00 UTC the same calendar day
+# — including for the Monday timesheet sweep, since 00:00 UTC Monday is
+# still Monday in MYT (it became Monday in MYT 8 hours earlier).
+app.conf.beat_schedule = {
+    "reminder-sweep-checklists": {
+        "task": "core.tasks.reminder_sweep_checklists",
+        "schedule": crontab(hour=0, minute=0),  # 08:00 Asia/Kuala_Lumpur, daily
+    },
+    "reminder-sweep-holidays": {
+        "task": "core.tasks.reminder_sweep_holidays",
+        "schedule": crontab(hour=0, minute=0),  # 08:00 Asia/Kuala_Lumpur, daily
+    },
+    "reminder-sweep-timesheets": {
+        "task": "core.tasks.reminder_sweep_timesheets",
+        "schedule": crontab(hour=0, minute=0, day_of_week="monday"),  # 08:00 Asia/Kuala_Lumpur, Mondays only
+    },
+}
+
+
+def _send_reminders_module():
+    """Lazily imports scripts/send_reminders.py as a top-level module, the
+    same way tests/test_send_reminders.py does — it's a standalone script
+    (no package __init__.py in scripts/), so it isn't importable as
+    `scripts.send_reminders` without this sys.path trick. Reused here
+    rather than duplicated so the beat-scheduled tasks below call the
+    exact same, already-tested sweep functions the manual
+    `python3 scripts/send_reminders.py [--dry-run]` CLI still uses."""
+    import sys
+
+    scripts_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts")
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    import send_reminders
+    return send_reminders
+
+
+@app.task(bind=True, **_RETRY_KWARGS)
+def reminder_sweep_checklists(self):
+    """Beat-scheduled (see beat_schedule above): overdue onboarding/offboarding
+    checklist items, across every notifications_email_enabled institution."""
+    from datetime import datetime, timezone
+
+    from db import get_db, set_rls_context
+
+    sr = _send_reminders_module()
+    set_rls_context(None, bypass_rls=True)
+    conn = get_db()
+    try:
+        today_str = datetime.now(timezone.utc).date().isoformat()
+        sent = 0
+        for inst in sr._enabled_institutions(conn):
+            sent += sr.sweep_overdue_checklists(conn, inst["id"], today_str, "onboarding", dry_run=False)
+            sent += sr.sweep_overdue_checklists(conn, inst["id"], today_str, "offboarding", dry_run=False)
+        logger.info(f"Task {self.request.id}: checklist reminder sweep sent {sent} email(s)")
+        return {"sent": sent}
+    finally:
+        conn.close()
+
+
+@app.task(bind=True, **_RETRY_KWARGS)
+def reminder_sweep_holidays(self):
+    """Beat-scheduled (see beat_schedule above): "holiday is tomorrow" emails,
+    across every notifications_email_enabled institution."""
+    from db import get_db, set_rls_context
+
+    sr = _send_reminders_module()
+    set_rls_context(None, bypass_rls=True)
+    conn = get_db()
+    try:
+        sent = 0
+        for inst in sr._enabled_institutions(conn):
+            sent += sr.sweep_holiday_eve_emails(conn, inst["id"], dry_run=False)
+        logger.info(f"Task {self.request.id}: holiday reminder sweep sent {sent} email(s)")
+        return {"sent": sent}
+    finally:
+        conn.close()
+
+
+@app.task(bind=True, **_RETRY_KWARGS)
+def reminder_sweep_timesheets(self):
+    """Beat-scheduled (see beat_schedule above): pending-timesheet nudges for
+    the week that just ended, across every notifications_email_enabled
+    institution. Only scheduled on Mondays (see beat_schedule) — mirrors the
+    old script's own is_monday gate, just expressed as a crontab day_of_week
+    instead of an in-code check, since beat now controls when this runs at all."""
+    from datetime import datetime, timedelta, timezone
+
+    from db import get_db, set_rls_context
+
+    sr = _send_reminders_module()
+    set_rls_context(None, bypass_rls=True)
+    conn = get_db()
+    try:
+        today = datetime.now(timezone.utc).date()
+        last_period_start = (today - timedelta(days=today.weekday() + 7)).isoformat()
+        sent = 0
+        for inst in sr._enabled_institutions(conn):
+            sent += sr.sweep_pending_timesheets(conn, inst["id"], last_period_start, dry_run=False)
+        logger.info(f"Task {self.request.id}: timesheet reminder sweep sent {sent} email(s)")
+        return {"sent": sent}
+    finally:
+        conn.close()
 
 
 @app.task(bind=True, **_RETRY_KWARGS)

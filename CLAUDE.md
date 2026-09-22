@@ -131,11 +131,20 @@ wrapper everywhere.
   pattern in new files — if a second invocation mode is ever genuinely
   needed again, resolve it once at process start (e.g. `sys.path`/
   `sys.modules` aliasing in `main.py`), not per-file.
-- **No cron/scheduled jobs anywhere in this stack.** Anything that looks
+- **Almost nothing in this stack runs on a schedule.** Anything that looks
   like it needs one (leave carry-forward expiry, attendance absence
   detection, overtime detection) is instead computed **lazily on
   read/use** or triggered by an adjacent action (timesheet submission
-  triggers overtime detection, not a nightly job).
+  triggers overtime detection, not a nightly job). The one deliberate
+  exception is the email reminder sweeps (`core/tasks.py`'s
+  `beat_schedule` — overdue checklists, pending timesheets, holiday-eve
+  emails), which run on Celery beat as the Fly "reminders" process group
+  (`fly.toml`), always-on rather than stop/started. Beat fires each sweep
+  inline with no Redis/worker needed, since production runs Celery in
+  eager mode (`CELERY_TASK_ALWAYS_EAGER`, see `core/tasks.py` and
+  README.md's Async Operations section) — `.apply_async()` never touches
+  a real broker. Adding another scheduled task is one more
+  `beat_schedule` entry, not new Fly infra.
 - **Tests run against a dedicated test Supabase project, not prod** —
   `TEST_DATABASE_URL`/`TEST_ADMIN_DATABASE_URL` in `.env`,
   `tests/conftest.py` swaps them in for `DATABASE_URL`/`ADMIN_DATABASE_URL`
