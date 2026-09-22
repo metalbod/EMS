@@ -148,10 +148,25 @@ app.conf.update(
 # group now (`celery -A core.tasks beat`, see fly.toml), replacing the old
 # Fly-native `fly machine update --schedule=daily` mechanism, which could only
 # stop/start one whole machine on a fixed interval anchored to whenever it was
-# last (re)scheduled — not a real clock time, and not able to hold more than
-# one schedule at all. Beat ticks inside a single always-on machine instead,
-# so each entry below gets its own real time-of-day, and adding a new
-# reminder category later is just one more dict entry, not new Fly infra.
+# last (re)scheduled — not a real clock time, not configurable anywhere, and
+# not able to hold more than one schedule at all.
+#
+# Each entry below just ticks beat every 30 minutes, in UTC — the *real*
+# per-institution, per-category schedule lives in the DB (institutions.
+# reminder_<category>_hour, Settings -> Notifications -> Reminders tab,
+# routers/notifications.py's ReminderSettingsIn) and is evaluated inside each
+# task via _reminder_category_due_now below, against that institution's own
+# `timezone` column. Celery's beat_schedule dict is fixed at process startup
+# and has no supported way to hot-reload from the DB, so rather than pulling
+# in a DB-backed scheduler (cuts against this app's no-ORM/raw-SQL
+# conventions), beat's job here is only ever "check every 30 minutes" — the
+# actual decision of whether *this* institution's *this* category is due
+# right now happens in plain Python, same spirit as this app's "no cron,
+# compute lazily" convention elsewhere (see CLAUDE.md). Firing a sweep for an
+# institution when nothing is actually due is cheap (a few SELECTs, no
+# emails) and every sweep already dedupes sends via email_log, so a 30-minute
+# poll granularity (an institution's configured hour matches for both the
+# :00 and :30 tick within it) is safe by construction, not by convention.
 #
 # Because production runs task_always_eager=True (see ALWAYS_EAGER above),
 # beat firing one of these still needs no Redis/worker: `.apply_async()` is
@@ -159,25 +174,18 @@ app.conf.update(
 # inline, in the beat process itself, via the in-process "memory://" broker
 # — the same mechanism routers/payroll.py and the bulk-upload endpoint
 # already rely on when called from a request.
-#
-# Times are given in UTC because Celery's `timezone` setting above is UTC
-# (kept as-is rather than switched per-entry, to not disturb task_time_limit/
-# enable_utc semantics elsewhere). Malaysia (Asia/Kuala_Lumpur) is a fixed
-# UTC+8 with no DST, so 08:00 MYT is always 00:00 UTC the same calendar day
-# — including for the Monday timesheet sweep, since 00:00 UTC Monday is
-# still Monday in MYT (it became Monday in MYT 8 hours earlier).
 app.conf.beat_schedule = {
     "reminder-sweep-checklists": {
         "task": "core.tasks.reminder_sweep_checklists",
-        "schedule": crontab(hour=0, minute=0),  # 08:00 Asia/Kuala_Lumpur, daily
+        "schedule": crontab(minute="*/30"),
     },
     "reminder-sweep-holidays": {
         "task": "core.tasks.reminder_sweep_holidays",
-        "schedule": crontab(hour=0, minute=0),  # 08:00 Asia/Kuala_Lumpur, daily
+        "schedule": crontab(minute="*/30"),
     },
     "reminder-sweep-timesheets": {
         "task": "core.tasks.reminder_sweep_timesheets",
-        "schedule": crontab(hour=0, minute=0, day_of_week="monday"),  # 08:00 Asia/Kuala_Lumpur, Mondays only
+        "schedule": crontab(minute="*/30"),
     },
 }
 
@@ -199,23 +207,54 @@ def _send_reminders_module():
     return send_reminders
 
 
+def _reminder_local_now(inst):
+    """The current time in an institution's own `timezone` column (same
+    fallback-to-UTC-on-bad-value behavior as
+    scripts/send_reminders.py's sweep_holiday_eve_emails)."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    try:
+        tz = ZoneInfo(inst["timezone"] or "UTC")
+    except Exception:
+        tz = ZoneInfo("UTC")
+    return datetime.now(tz)
+
+
+def _reminder_category_due_now(inst, hour_column):
+    """True when `inst[hour_column]` (0-23, Settings -> Notifications ->
+    Reminders tab) matches the current hour in this institution's own
+    timezone. Beat ticks every 30 minutes (see beat_schedule above), so
+    this is true for two consecutive ticks within the configured hour —
+    harmless, since every sweep function this gates is already
+    idempotent via email_log dedupe."""
+    return _reminder_local_now(inst).hour == inst[hour_column]
+
+
 @app.task(bind=True, **_RETRY_KWARGS)
 def reminder_sweep_checklists(self):
     """Beat-scheduled (see beat_schedule above): overdue onboarding/offboarding
-    checklist items, across every notifications_email_enabled institution."""
-    from datetime import datetime, timezone
-
+    checklist items, for every notifications_email_enabled institution whose
+    own reminder_onboarding_hour/reminder_offboarding_hour matches the
+    current local hour there — the two are gated independently since
+    they're separately-configurable rows on the Reminders tab."""
     from db import get_db, set_rls_context
 
     sr = _send_reminders_module()
     set_rls_context(None, bypass_rls=True)
     conn = get_db()
     try:
-        today_str = datetime.now(timezone.utc).date().isoformat()
         sent = 0
         for inst in sr._enabled_institutions(conn):
-            sent += sr.sweep_overdue_checklists(conn, inst["id"], today_str, "onboarding", dry_run=False)
-            sent += sr.sweep_overdue_checklists(conn, inst["id"], today_str, "offboarding", dry_run=False)
+            due_onboarding = _reminder_category_due_now(inst, "reminder_onboarding_hour")
+            due_offboarding = _reminder_category_due_now(inst, "reminder_offboarding_hour")
+            if not due_onboarding and not due_offboarding:
+                continue
+            today_str = _reminder_local_now(inst).date().isoformat()
+            if due_onboarding:
+                sent += sr.sweep_overdue_checklists(conn, inst["id"], today_str, "onboarding", dry_run=False)
+            if due_offboarding:
+                sent += sr.sweep_overdue_checklists(conn, inst["id"], today_str, "offboarding", dry_run=False)
         logger.info(f"Task {self.request.id}: checklist reminder sweep sent {sent} email(s)")
         return {"sent": sent}
     finally:
@@ -225,7 +264,8 @@ def reminder_sweep_checklists(self):
 @app.task(bind=True, **_RETRY_KWARGS)
 def reminder_sweep_holidays(self):
     """Beat-scheduled (see beat_schedule above): "holiday is tomorrow" emails,
-    across every notifications_email_enabled institution."""
+    for every notifications_email_enabled institution whose own
+    reminder_holidays_hour matches the current local hour there."""
     from db import get_db, set_rls_context
 
     sr = _send_reminders_module()
@@ -234,6 +274,8 @@ def reminder_sweep_holidays(self):
     try:
         sent = 0
         for inst in sr._enabled_institutions(conn):
+            if not _reminder_category_due_now(inst, "reminder_holidays_hour"):
+                continue
             sent += sr.sweep_holiday_eve_emails(conn, inst["id"], dry_run=False)
         logger.info(f"Task {self.request.id}: holiday reminder sweep sent {sent} email(s)")
         return {"sent": sent}
@@ -244,11 +286,12 @@ def reminder_sweep_holidays(self):
 @app.task(bind=True, **_RETRY_KWARGS)
 def reminder_sweep_timesheets(self):
     """Beat-scheduled (see beat_schedule above): pending-timesheet nudges for
-    the week that just ended, across every notifications_email_enabled
-    institution. Only scheduled on Mondays (see beat_schedule) — mirrors the
-    old script's own is_monday gate, just expressed as a crontab day_of_week
-    instead of an in-code check, since beat now controls when this runs at all."""
-    from datetime import datetime, timedelta, timezone
+    the week that just ended, for every notifications_email_enabled
+    institution whose own reminder_timesheet_hour matches the current local
+    hour there — and only on a Monday *in that institution's own timezone*
+    (replaces the old script's UTC-based is_monday check, which could be
+    off by a day for an institution far enough from UTC)."""
+    from datetime import timedelta
 
     from db import get_db, set_rls_context
 
@@ -256,10 +299,14 @@ def reminder_sweep_timesheets(self):
     set_rls_context(None, bypass_rls=True)
     conn = get_db()
     try:
-        today = datetime.now(timezone.utc).date()
-        last_period_start = (today - timedelta(days=today.weekday() + 7)).isoformat()
         sent = 0
         for inst in sr._enabled_institutions(conn):
+            if not _reminder_category_due_now(inst, "reminder_timesheet_hour"):
+                continue
+            local_now = _reminder_local_now(inst)
+            if local_now.weekday() != 0:  # Monday
+                continue
+            last_period_start = (local_now.date() - timedelta(days=7)).isoformat()
             sent += sr.sweep_pending_timesheets(conn, inst["id"], last_period_start, dry_run=False)
         logger.info(f"Task {self.request.id}: timesheet reminder sweep sent {sent} email(s)")
         return {"sent": sent}

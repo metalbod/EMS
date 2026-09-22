@@ -137,7 +137,11 @@ def _dedupe_contacts(contacts):
 
 
 def _enabled_institutions(conn):
-    return conn.execute("SELECT id FROM institutions WHERE notifications_email_enabled=true").fetchall()
+    """Full institution rows (not just id) — core/tasks.py's beat-scheduled
+    reminder tasks need each institution's own timezone and
+    reminder_<category>_hour columns to decide whether a sweep is due right
+    now, not just its id."""
+    return conn.execute("SELECT * FROM institutions WHERE notifications_email_enabled=true").fetchall()
 
 
 _CHECKLIST_TYPE_TOGGLE_COLUMN = {"onboarding": "reminder_onboarding_enabled", "offboarding": "reminder_offboarding_enabled"}

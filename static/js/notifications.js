@@ -99,16 +99,43 @@ function resetNotifTabs() {
 }
 
 const REMINDER_CATEGORIES = ['timesheet', 'onboarding', 'offboarding', 'holidays', 'acknowledgement'];
+// 'acknowledgement' has no configurable hour — its toggle is a disabled
+// "coming soon" row (see static/index.html), nothing reads its schedule yet.
+const REMINDER_HOUR_CATEGORIES = ['timesheet', 'onboarding', 'offboarding', 'holidays'];
+
+function _reminderHourLabel(h) {
+  const period = h < 12 ? 'AM' : 'PM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:00 ${period}`;
+}
+
+function _populateReminderHourSelects() {
+  REMINDER_HOUR_CATEGORIES.forEach(cat => {
+    const sel = document.getElementById(`reminderHour_${cat}`);
+    if (!sel || sel.options.length) return; // already populated
+    for (let h = 0; h < 24; h++) {
+      const opt = document.createElement('option');
+      opt.value = String(h);
+      opt.textContent = _reminderHourLabel(h);
+      sel.appendChild(opt);
+    }
+  });
+}
 
 async function loadReminderSettings() {
   const msg = document.getElementById('reminderSettingsMsg');
   if (msg) msg.textContent = '';
+  _populateReminderHourSelects();
   const res = await api('/api/notifications/reminder-settings');
   if (!res?.ok) return;
   const s = await res.json();
   REMINDER_CATEGORIES.forEach(cat => {
     const box = document.getElementById(`reminderToggle_${cat}`);
     if (box) box.checked = !!s[`reminder_${cat}_enabled`];
+  });
+  REMINDER_HOUR_CATEGORIES.forEach(cat => {
+    const sel = document.getElementById(`reminderHour_${cat}`);
+    if (sel) sel.value = String(s[`reminder_${cat}_hour`]);
   });
 }
 
@@ -117,6 +144,9 @@ const saveReminderSettings = guardAsync(async function() {
   const body = {};
   REMINDER_CATEGORIES.forEach(cat => {
     body[`reminder_${cat}_enabled`] = document.getElementById(`reminderToggle_${cat}`).checked;
+  });
+  REMINDER_HOUR_CATEGORIES.forEach(cat => {
+    body[`reminder_${cat}_hour`] = Number(document.getElementById(`reminderHour_${cat}`).value);
   });
   const res = await api('/api/notifications/reminder-settings', {method: 'PUT', body: JSON.stringify(body)});
   if (res?.ok) {

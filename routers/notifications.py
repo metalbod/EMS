@@ -360,6 +360,15 @@ REMINDER_CATEGORY_COLUMNS = (
     "reminder_holidays_enabled", "reminder_acknowledgement_enabled",
 )
 
+# Categories with a configurable sweep hour — excludes 'acknowledgement',
+# which has no hour column (see the 20260922_0003 migration's docstring:
+# that category is disabled/unused, nothing reads it yet).
+REMINDER_HOUR_COLUMNS = (
+    "reminder_timesheet_hour", "reminder_onboarding_hour",
+    "reminder_offboarding_hour", "reminder_holidays_hour",
+)
+_ALL_REMINDER_SETTINGS_COLUMNS = REMINDER_CATEGORY_COLUMNS + REMINDER_HOUR_COLUMNS
+
 
 class ReminderSettingsIn(BaseModel):
     reminder_timesheet_enabled: bool
@@ -367,6 +376,17 @@ class ReminderSettingsIn(BaseModel):
     reminder_offboarding_enabled: bool
     reminder_holidays_enabled: bool
     reminder_acknowledgement_enabled: bool
+    reminder_timesheet_hour: int
+    reminder_onboarding_hour: int
+    reminder_offboarding_hour: int
+    reminder_holidays_hour: int
+
+    @field_validator(*REMINDER_HOUR_COLUMNS)
+    @classmethod
+    def _hour_in_range(cls, v):
+        if not (0 <= v <= 23):
+            raise ValueError("hour must be between 0 and 23")
+        return v
 
 
 class ReminderSettingsOut(ReminderSettingsIn):
@@ -380,9 +400,11 @@ def get_reminder_settings(
 ) -> ReminderSettingsOut:
     inst_id = need_inst(user)
     row = conn.execute(
-        f"SELECT {', '.join(REMINDER_CATEGORY_COLUMNS)} FROM institutions WHERE id=?", (inst_id,)
+        f"SELECT {', '.join(_ALL_REMINDER_SETTINGS_COLUMNS)} FROM institutions WHERE id=?", (inst_id,)
     ).fetchone()
-    return ReminderSettingsOut(**{c: bool(row[c]) for c in REMINDER_CATEGORY_COLUMNS})
+    return ReminderSettingsOut(**{
+        c: (bool(row[c]) if c in REMINDER_CATEGORY_COLUMNS else row[c]) for c in _ALL_REMINDER_SETTINGS_COLUMNS
+    })
 
 
 @router.put("/api/notifications/reminder-settings")
@@ -390,21 +412,28 @@ def get_reminder_settings(
 def update_reminder_settings(
     conn, body: ReminderSettingsIn, user: dict = Depends(require_roles(*NOTIFICATION_MANAGE_ROLES))
 ) -> ReminderSettingsOut:
-    """Each category here only narrows scripts/send_reminders.py's daily
-    sweep — it's checked in addition to, never instead of, the master
-    `notifications_email_enabled` toggle on the SMTP Settings tab.
-    `reminder_acknowledgement_enabled` is stored ahead of the "document
-    acknowledgement" feature it will eventually gate; nothing reads it
-    yet (see the Reminders tab's "coming soon" row)."""
+    """Each category's `_enabled` toggle only narrows the reminder sweep
+    Celery beat runs (core/tasks.py) — checked in addition to, never
+    instead of, the master `notifications_email_enabled` toggle on the
+    SMTP Settings tab. Each category's `_hour` (0-23, in the
+    institution's own `timezone`) controls *when* beat's every-30-minute
+    tick actually runs that category's sweep for this institution — see
+    core/tasks.py's reminder_sweep_checklists/_holidays/_timesheets and
+    their _reminder_category_due_now helper. `reminder_acknowledgement_enabled`
+    is stored ahead of the "document acknowledgement" feature it will
+    eventually gate; nothing reads it yet (see the Reminders tab's
+    "coming soon" row) — it has no `_hour` column for the same reason."""
     inst_id = need_inst(user)
-    assignments = ", ".join(f"{c}=?" for c in REMINDER_CATEGORY_COLUMNS)
-    values = [getattr(body, c) for c in REMINDER_CATEGORY_COLUMNS]
+    assignments = ", ".join(f"{c}=?" for c in _ALL_REMINDER_SETTINGS_COLUMNS)
+    values = [getattr(body, c) for c in _ALL_REMINDER_SETTINGS_COLUMNS]
     conn.execute(f"UPDATE institutions SET {assignments} WHERE id=?", (*values, inst_id))
     conn.commit()
     row = conn.execute(
-        f"SELECT {', '.join(REMINDER_CATEGORY_COLUMNS)} FROM institutions WHERE id=?", (inst_id,)
+        f"SELECT {', '.join(_ALL_REMINDER_SETTINGS_COLUMNS)} FROM institutions WHERE id=?", (inst_id,)
     ).fetchone()
-    return ReminderSettingsOut(**{c: bool(row[c]) for c in REMINDER_CATEGORY_COLUMNS})
+    return ReminderSettingsOut(**{
+        c: (bool(row[c]) if c in REMINDER_CATEGORY_COLUMNS else row[c]) for c in _ALL_REMINDER_SETTINGS_COLUMNS
+    })
 
 
 def _holiday_eve_virtual_notification(conn, inst_id: int) -> Optional[Dict[str, Any]]:

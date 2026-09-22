@@ -144,7 +144,14 @@ wrapper everywhere.
   eager mode (`CELERY_TASK_ALWAYS_EAGER`, see `core/tasks.py` and
   README.md's Async Operations section) — `.apply_async()` never touches
   a real broker. Adding another scheduled task is one more
-  `beat_schedule` entry, not new Fly infra.
+  `beat_schedule` entry, not new Fly infra. beat itself only ticks every
+  30 minutes in UTC — it has no supported way to hot-reload a schedule
+  from the DB, so the *real*, per-institution, per-category hour
+  (Settings -> Notifications -> Reminders tab, `institutions.
+  reminder_<category>_hour`) is checked inside each task against that
+  institution's own `timezone` column (`core/tasks.py`'s
+  `_reminder_category_due_now`), same "compute it, don't schedule it"
+  philosophy as everything else in this bullet.
 - **Tests run against a dedicated test Supabase project, not prod** —
   `TEST_DATABASE_URL`/`TEST_ADMIN_DATABASE_URL` in `.env`,
   `tests/conftest.py` swaps them in for `DATABASE_URL`/`ADMIN_DATABASE_URL`

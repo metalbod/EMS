@@ -2144,15 +2144,16 @@
         <div id="notif-reminders" class="notif-tab-panel hidden">
           <div class="mb-4">
             <h3 class="text-lg font-semibold">Reminders</h3>
-            <p class="text-xs text-slate-400 mt-1">Choose which reminder categories go out by email. Each one only takes effect while email notifications are enabled on the SMTP Settings tab.</p>
+            <p class="text-xs text-slate-400 mt-1">Choose which reminder categories go out by email, and what time of day each one is checked. Each one only takes effect while email notifications are enabled on the SMTP Settings tab. Times are in this institution's own timezone (General tab) — the sweep itself runs every 30 minutes and only sends for a category once its configured hour is reached.</p>
           </div>
-          <div class="bg-white rounded-xl border border-slate-200 overflow-x-auto max-w-2xl">
+          <div class="bg-white rounded-xl border border-slate-200 overflow-x-auto max-w-3xl">
             <table class="w-full text-sm">
               <thead class="bg-slate-50 border-b border-slate-200">
                 <tr>
                   <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Category</th>
                   <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">What it sends</th>
                   <th class="text-center px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Send via Email</th>
+                  <th class="text-center px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Time</th>
                 </tr>
               </thead>
               <tbody>
@@ -2160,26 +2161,31 @@
                   <td class="px-4 py-3 font-medium text-slate-700">Timesheet</td>
                   <td class="px-4 py-3 text-slate-500">Weekly reminder to employees with a missing timesheet on an active project.</td>
                   <td class="px-4 py-3 text-center"><input type="checkbox" id="reminderToggle_timesheet" class="w-4 h-4"/></td>
+                  <td class="px-4 py-3 text-center"><select id="reminderHour_timesheet" class="border border-slate-200 rounded-lg text-xs px-2 py-1"></select></td>
                 </tr>
                 <tr class="border-t border-slate-100">
                   <td class="px-4 py-3 font-medium text-slate-700">Onboarding</td>
                   <td class="px-4 py-3 text-slate-500">Reminder to the responsible manager/role when an onboarding checklist item is overdue.</td>
                   <td class="px-4 py-3 text-center"><input type="checkbox" id="reminderToggle_onboarding" class="w-4 h-4"/></td>
+                  <td class="px-4 py-3 text-center"><select id="reminderHour_onboarding" class="border border-slate-200 rounded-lg text-xs px-2 py-1"></select></td>
                 </tr>
                 <tr class="border-t border-slate-100">
                   <td class="px-4 py-3 font-medium text-slate-700">Offboarding</td>
                   <td class="px-4 py-3 text-slate-500">Reminder to the responsible manager/role when an offboarding checklist item is overdue.</td>
                   <td class="px-4 py-3 text-center"><input type="checkbox" id="reminderToggle_offboarding" class="w-4 h-4"/></td>
+                  <td class="px-4 py-3 text-center"><select id="reminderHour_offboarding" class="border border-slate-200 rounded-lg text-xs px-2 py-1"></select></td>
                 </tr>
                 <tr class="border-t border-slate-100">
                   <td class="px-4 py-3 font-medium text-slate-700">Holidays</td>
                   <td class="px-4 py-3 text-slate-500">Emails every active employee the day before a public holiday (independent of the dashboard announcement in Announcements).</td>
                   <td class="px-4 py-3 text-center"><input type="checkbox" id="reminderToggle_holidays" class="w-4 h-4"/></td>
+                  <td class="px-4 py-3 text-center"><select id="reminderHour_holidays" class="border border-slate-200 rounded-lg text-xs px-2 py-1"></select></td>
                 </tr>
                 <tr class="border-t border-slate-100">
                   <td class="px-4 py-3 font-medium text-slate-700">Acknowledgement <span class="text-xs text-slate-400 font-normal">(coming soon)</span></td>
                   <td class="px-4 py-3 text-slate-400">For employees to acknowledge reading company documents (handbooks, policies) — not wired up yet.</td>
                   <td class="px-4 py-3 text-center"><input type="checkbox" id="reminderToggle_acknowledgement" class="w-4 h-4" disabled/></td>
+                  <td class="px-4 py-3 text-center text-slate-300">—</td>
                 </tr>
               </tbody>
             </table>

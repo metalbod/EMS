@@ -78,23 +78,31 @@ def test_untracked_task_id_is_hr_tier_only(client, make_test_user, hr_manager_au
 # The sweep logic itself (who gets emailed, dedupe, per-category toggles) is
 # exhaustively covered by tests/test_send_reminders.py against the same
 # underlying scripts/send_reminders.py functions these tasks call — these
-# tests only cover the wrapper: each task loops enabled institutions, calls
-# through, and (for reminder_sweep_timesheets) computes the right period.
+# tests only cover the wrapper: each task loops enabled institutions, checks
+# each institution's own reminder_<category>_hour (Settings -> Notifications
+# -> Reminders tab) against the current local time there, and calls through
+# when due. Real wall-clock time is never relied on for "is it due" — every
+# test below pins core.tasks._reminder_local_now to a fixed Monday morning
+# instead, so these pass regardless of what day/hour they actually run.
 # ---------------------------------------------------------------------------
+_FIXED_MONDAY = datetime(2026, 9, 21, tzinfo=timezone.utc)  # a real Monday
+_DEFAULT_HOUR = 8  # institutions.reminder_<category>_hour's migration default
+
+
 def test_beat_schedule_has_expected_reminder_entries():
     schedule = celery_app.conf.beat_schedule
-    daily = crontab(hour=0, minute=0)  # 08:00 Asia/Kuala_Lumpur (UTC+8, no DST)
-    monday = crontab(hour=0, minute=0, day_of_week="monday")
+    every_30_min = crontab(minute="*/30")
 
-    assert schedule["reminder-sweep-checklists"]["task"] == "core.tasks.reminder_sweep_checklists"
-    assert schedule["reminder-sweep-checklists"]["schedule"] == daily
-    assert schedule["reminder-sweep-holidays"]["task"] == "core.tasks.reminder_sweep_holidays"
-    assert schedule["reminder-sweep-holidays"]["schedule"] == daily
-    assert schedule["reminder-sweep-timesheets"]["task"] == "core.tasks.reminder_sweep_timesheets"
-    assert schedule["reminder-sweep-timesheets"]["schedule"] == monday
+    for name, task_name in (
+        ("reminder-sweep-checklists", "core.tasks.reminder_sweep_checklists"),
+        ("reminder-sweep-holidays", "core.tasks.reminder_sweep_holidays"),
+        ("reminder-sweep-timesheets", "core.tasks.reminder_sweep_timesheets"),
+    ):
+        assert schedule[name]["task"] == task_name
+        assert schedule[name]["schedule"] == every_30_min
 
 
-def test_reminder_sweep_checklists_task_emails_overdue_item(
+def test_reminder_sweep_checklists_task_emails_overdue_item_when_hour_matches(
     client, hr_manager_auth, make_test_employee, configured_email_settings
 ):
     mgr_email = f"zztaskckmgr_{os.urandom(4).hex()}@zzpytest.example.com"
@@ -107,7 +115,8 @@ def test_reminder_sweep_checklists_task_emails_overdue_item(
         "title": "ZZ Task Overdue Item", "assigned_role": "manager", "due_date": "2020-01-01 00:00:00",
     })
 
-    with patch("core.email_engine.smtplib.SMTP"):
+    due_now = _FIXED_MONDAY.replace(hour=_DEFAULT_HOUR)
+    with patch("core.email_engine.smtplib.SMTP"), patch("core.tasks._reminder_local_now", return_value=due_now):
         result = reminder_sweep_checklists()
     assert result["sent"] >= 1
 
@@ -118,7 +127,31 @@ def test_reminder_sweep_checklists_task_emails_overdue_item(
     client.delete(f"/api/ob/checklists/{checklist['id']}", headers=hr_manager_auth)
 
 
-def test_reminder_sweep_timesheets_task_emails_pending_member(
+def test_reminder_sweep_checklists_task_skips_institution_when_hour_does_not_match(
+    client, hr_manager_auth, make_test_employee, configured_email_settings
+):
+    mgr_email = f"zztaskckmgroff_{os.urandom(4).hex()}@zzpytest.example.com"
+    mgr = make_test_employee(full_name="ZZ Task Checklist Off-Hour Manager", personal_email=mgr_email)
+    report = make_test_employee(full_name="ZZ Task Checklist Off-Hour Report", reports_to=mgr["employee_id"])
+    checklist = client.post("/api/ob/checklists", headers=hr_manager_auth, json={
+        "employee_id": report["employee_id"], "type": "onboarding",
+    }).json()
+    client.post(f"/api/ob/checklists/{checklist['id']}/items", headers=hr_manager_auth, json={
+        "title": "ZZ Off-Hour Overdue Item", "assigned_role": "manager", "due_date": "2020-01-01 00:00:00",
+    })
+
+    not_due = _FIXED_MONDAY.replace(hour=(_DEFAULT_HOUR + 12) % 24)  # 12h away from the configured hour
+    with patch("core.email_engine.smtplib.SMTP"), patch("core.tasks._reminder_local_now", return_value=not_due):
+        reminder_sweep_checklists()
+
+    log = client.get("/api/notifications/email-log", headers=hr_manager_auth).json()
+    assert not any(r["recipient_email"] == mgr_email for r in log), \
+        "an institution whose configured hour doesn't match the current one must not be swept"
+
+    client.delete(f"/api/ob/checklists/{checklist['id']}", headers=hr_manager_auth)
+
+
+def test_reminder_sweep_timesheets_task_emails_pending_member_on_monday(
     client, hr_manager_auth, make_test_employee, make_test_project, make_test_project_task, configured_email_settings
 ):
     emp_email = f"zztaskts_{os.urandom(4).hex()}@zzpytest.example.com"
@@ -126,13 +159,33 @@ def test_reminder_sweep_timesheets_task_emails_pending_member(
     project = make_test_project(name="ZZ Task Reminder Project", member_ids=[emp["employee_id"]])
     make_test_project_task(project["id"])
 
-    with patch("core.email_engine.smtplib.SMTP"):
+    due_now = _FIXED_MONDAY.replace(hour=_DEFAULT_HOUR)
+    assert due_now.weekday() == 0
+    with patch("core.email_engine.smtplib.SMTP"), patch("core.tasks._reminder_local_now", return_value=due_now):
         result = reminder_sweep_timesheets()
     assert result["sent"] >= 1
 
     log = client.get("/api/notifications/email-log", headers=hr_manager_auth).json()
     row = next(r for r in log if r["recipient_email"] == emp_email and r["category"] == "timesheet_reminder")
     assert row["status"] == "sent"
+
+
+def test_reminder_sweep_timesheets_task_skips_when_hour_matches_but_not_monday(
+    client, hr_manager_auth, make_test_employee, make_test_project, make_test_project_task, configured_email_settings
+):
+    emp_email = f"zztasktstue_{os.urandom(4).hex()}@zzpytest.example.com"
+    emp = make_test_employee(full_name="ZZ Task Timesheet Tuesday Employee", personal_email=emp_email)
+    project = make_test_project(name="ZZ Task Reminder Tuesday Project", member_ids=[emp["employee_id"]])
+    make_test_project_task(project["id"])
+
+    a_tuesday = (_FIXED_MONDAY + timedelta(days=1)).replace(hour=_DEFAULT_HOUR)
+    assert a_tuesday.weekday() == 1
+    with patch("core.email_engine.smtplib.SMTP"), patch("core.tasks._reminder_local_now", return_value=a_tuesday):
+        reminder_sweep_timesheets()
+
+    log = client.get("/api/notifications/email-log", headers=hr_manager_auth).json()
+    assert not any(r["recipient_email"] == emp_email for r in log), \
+        "the timesheet sweep must only run on a Monday in the institution's own timezone, even if the hour matches"
 
 
 def test_reminder_sweep_holidays_task_emails_when_holiday_tomorrow(
@@ -146,13 +199,18 @@ def test_reminder_sweep_holidays_task_emails_when_holiday_tomorrow(
     settings["reminder_holidays_enabled"] = True
     assert client.put("/api/notifications/reminder-settings", headers=hr_manager_auth, json=settings).status_code == 200
 
+    # sweep_holiday_eve_emails (scripts/send_reminders.py) computes "tomorrow"
+    # from the real clock in the institution's own timezone — unaffected by
+    # the core.tasks._reminder_local_now patch below, which only gates
+    # whether this task considers the sweep due right now.
     tomorrow = (datetime.now(timezone.utc).date() + timedelta(days=1)).isoformat()
     holiday = client.post("/api/holidays", headers=hr_manager_auth, json={
         "name": "ZZ Task Reminder Eve Holiday", "date": tomorrow, "year": int(tomorrow[:4]),
     }).json()
 
+    due_now = _FIXED_MONDAY.replace(hour=_DEFAULT_HOUR)
     try:
-        with patch("core.email_engine.smtplib.SMTP"):
+        with patch("core.email_engine.smtplib.SMTP"), patch("core.tasks._reminder_local_now", return_value=due_now):
             result = reminder_sweep_holidays()
         assert result["sent"] >= 1
 

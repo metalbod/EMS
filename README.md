@@ -262,14 +262,28 @@ It fires the tasks in `core/tasks.py`'s `app.conf.beat_schedule`
 (`reminder_sweep_checklists`, `_holidays`, `_timesheets` — overdue
 onboarding/offboarding items, pending timesheets, holiday-eve emails; see
 `scripts/send_reminders.py`'s module docstring for what each sweep actually
-does) at their configured times.
+does) every 30 minutes.
+
+That 30-minute tick is only beat's own clock, not the reminder schedule
+itself — Celery's `beat_schedule` dict is fixed at process startup with no
+supported way to hot-reload from the DB, so each task instead checks, per
+institution, whether *that institution's own* configured hour
+(`institutions.reminder_<category>_hour` — Settings -> Notifications ->
+Reminders tab, `routers/notifications.py`'s `ReminderSettingsIn`) matches
+the current hour in *that institution's own* `timezone` column
+(`core/tasks.py`'s `_reminder_category_due_now`) before actually sweeping.
+Checking-and-skipping every 30 minutes for an institution whose hour hasn't
+arrived yet is cheap (a few SELECTs, no emails), and every sweep already
+dedupes sends via `email_log`, so the two ticks that fall inside an
+institution's configured hour are harmless rather than a double-send risk.
 
 This still doesn't need Redis or a separate worker: since production runs
 `task_always_eager=True` (above), beat's `.apply_async()` calls are
 intercepted before touching the broker and execute the task **inline, in the
 beat process itself**, exactly like an HTTP-triggered task executes inline in
-its request. Beat is only a clock here — it decides *when*, eager mode
-decides *how*.
+its request. Beat is only a clock here — it decides *when to check*, the
+per-institution hour decides *whether to actually sweep*, and eager mode
+decides *how* the task runs.
 
 `scripts/send_reminders.py` still exists unchanged as a manual CLI
 (`python3 scripts/send_reminders.py --dry-run`, or via `fly ssh console` to
