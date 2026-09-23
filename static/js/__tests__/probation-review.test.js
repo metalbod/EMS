@@ -34,7 +34,7 @@ describe('Probation Review panel — status label mapping', () => {
 
 // Matches performance.js's populateCycleSelect — a company accumulates many
 // Closed cycles over time (standard org-wide ones, plus 3 per employee per
-// probation review), so every cycle dropdown (My Goals, Team Appraisals,
+// probation review), so every cycle dropdown (My Goals, Team Review,
 // Calibration) defaults to hiding them, with a "Show closed" checkbox to
 // opt back in per page.
 describe('Performance cycle dropdown — hiding Closed cycles by default', () => {

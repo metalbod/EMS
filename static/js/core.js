@@ -803,7 +803,7 @@ async function showPage(page) {
     'ben-compliance':'Benefits — Compliance & Reporting',
     'payroll-mybenefits':'My Benefits',
     'payroll-runs':'Payroll Runs', 'payroll-my':'My Payslips', 'payroll-myrewards':'My Total Rewards',
-    'perf-my':'My Goals & Appraisal', 'perf-team':'Team Appraisals',
+    'perf-my':'My Goals & Appraisal', 'perf-team':'Team Review',
     'perf-cycles':'Performance Cycles', 'perf-calibration':'Calibration',
     'attendance-clock':'Clock In / Out', 'attendance-review':'Attendance Review',
     'settings-attendance':'Settings — Attendance',
@@ -865,7 +865,7 @@ async function showPage(page) {
   if (page === 'payroll-mybenefits') loadMyBenefitsPage();
   if (page === 'payroll-myrewards') loadMyTotalRewards();
   if (page === 'perf-my')          loadMyPerformancePage();
-  if (page === 'perf-team')        { loadTeamAppraisalsPage(); loadPipList(); }
+  if (page === 'perf-team')        { resetPerfTeamTabs(); loadTeamAppraisalsPage(); loadPipList(); }
   if (page === 'perf-cycles')      loadPerformanceCycles();
   if (page === 'perf-calibration') loadCalibrationPage();
   if (page === 'attendance-clock')     loadAttendanceClockPage();

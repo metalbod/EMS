@@ -103,7 +103,7 @@ function setObFilter(type, status) {
 // Probation Review (Month 1/2/3) — employee-scoped Performance cycles, opted
 // into per-employee by HR (not every employee goes through probation). Fully
 // reuses the Performance module's own Self/Manager review UI — "View" just
-// deep-links into My Goals & Appraisal / Team Appraisals with the relevant
+// deep-links into My Goals & Appraisal / Team Review with the relevant
 // cycle preselected, rather than duplicating that UI here.
 // ---------------------------------------------------------------------------
 async function renderObProbationPanel(clId, cl) {

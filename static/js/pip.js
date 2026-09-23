@@ -1,5 +1,5 @@
 // Performance Improvement Plan (PIP) — manager-initiated, HR-approved.
-// Lives on the Team Appraisals page (page-perf-team), the one page both
+// Lives on the Team Review page (page-perf-team), the one page both
 // manager and hr_manager already see. Reuses perfCyclesCache/
 // loadPerfCyclesCache (performance.js) rather than a separate fetch —
 // PIP cycles are just performance_cycles rows with cycle_type='pip'.

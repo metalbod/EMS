@@ -276,7 +276,7 @@ def list_performance_cycles(conn, user: dict = Depends(get_current_user)) -> Lis
     ).fetchall()
     # Standard (org-wide) cycles stay visible to everyone in the
     # institution — their name/dates aren't sensitive, and every module
-    # page that lists cycles (My Goals, Team Appraisals, Calibration, the
+    # page that lists cycles (My Goals, Team Review, Calibration, the
     # HR admin Cycles table) needs to see them to populate its selector.
     # A probation or PIP cycle's *name* embeds the employee's full name,
     # so leaving those unfiltered would leak who's on probation/a PIP to

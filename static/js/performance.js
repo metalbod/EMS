@@ -6,7 +6,7 @@ let currentGoalForForm=null; // full goal object (incl. key_results) when editin
 // Standard cycles run for months/years and a company accumulates many of
 // them (plus one per employee per probation month — see core/
 // performance_probation.py), so every cycle-picker defaults to hiding
-// Closed ones — otherwise My Goals/Team Appraisals/Calibration's dropdown
+// Closed ones — otherwise My Goals/Team Review/Calibration's dropdown
 // fills up with old, already-finalized reviews. Each page keeps its own
 // toggle state (independent, not shared) since e.g. HR reviewing
 // Calibration for the current quarter has no bearing on whether an
@@ -92,7 +92,7 @@ async function loadPerformanceCycles() {
   // never manually Activated (created pre-Active, single appraisal
   // already in place), so an "Activate" click here would incorrectly
   // fan out appraisals to the whole company. They're still fully visible
-  // via the My Goals/Team Appraisals cycle dropdowns (populateCycleSelect),
+  // via the My Goals/Team Review cycle dropdowns (populateCycleSelect),
   // just not in this HR create/activate/close list.
   const standardCycles=perfCyclesCache.filter(c=>c.cycle_type!=='probation');
   if(!standardCycles.length){ listEl.innerHTML=''; emptyEl?.classList.remove('hidden'); return; }
@@ -135,7 +135,7 @@ async function toggleCycleExpand(cycleId) {
 }
 
 // Purely informational (no click-through) — nudging a stuck appraisal
-// still happens through the normal Team Appraisals/My Goals flow for
+// still happens through the normal Team Review/My Goals flow for
 // whoever owns that step; this view exists so HR can see who to nudge.
 // A row is flagged "Blocking close" once the cycle itself has reached
 // Calibration (i.e. closeCycle would reject it) and that appraisal still
@@ -394,8 +394,23 @@ const submitSelfReview = guardAsync(async function(appraisalId) {
 });
 
 // ---------------------------------------------------------------------------
-// Team Appraisals (manager / hr_manager)
+// Team Review (manager / hr_manager) — Appraisals and Performance
+// Improvement Plan as two top-bar tabs on the same page. Both sections'
+// data still loads together on every page visit (core.js's showPage —
+// loadTeamAppraisalsPage/loadPipList, pip.js), so switching tabs is a
+// pure visibility toggle with nothing to (re)fetch.
 // ---------------------------------------------------------------------------
+function switchPerfTeamTab(tabId) {
+  document.querySelectorAll('.perf-team-tab-panel').forEach(el => el.classList.toggle('hidden', el.id !== tabId));
+  document.querySelectorAll('[data-perfteamtab]').forEach(btn => {
+    btn.classList.toggle('pill-tab-active', btn.dataset.perfteamtab === tabId);
+  });
+}
+
+// Always land back on Appraisals on a fresh visit, rather than trusting
+// stale tab state left over from a previous visit this session.
+function resetPerfTeamTabs() { switchPerfTeamTab('perfteam-appraisals'); }
+
 async function loadTeamAppraisalsPage() {
   await loadPerfCyclesCache();
   populateCycleSelect('perfTeamCycleSelect', perfCyclesCache, perfShowClosed.team);
