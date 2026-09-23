@@ -83,6 +83,14 @@ function orgToggleCollapse(id) {
 
 function renderOrgChart(nodes) {
   const NODE_W=180,NODE_H=70,GAP_X=30,GAP_Y=60;
+  // From this depth down, a node lays its own children out in a vertical,
+  // indented column instead of spreading them horizontally — depth 0 (the
+  // root) is the only level that still arranges its children (depth 1,
+  // direct reports) horizontally, matching "the first 2 levels" (root +
+  // direct reports) staying as today; direct reports' own children
+  // (depth 2, grandchildren) and everything deeper cascade vertically.
+  const VERTICAL_FROM_DEPTH=1;
+  const V_GAP_Y=14,V_INDENT=44;
   const byId={};nodes.forEach(n=>byId[n.employee_id]=n);
   const children={};const roots=[];
   nodes.forEach(n=>{
@@ -104,22 +112,55 @@ function renderOrgChart(nodes) {
     return n;
   }
 
+  // Returns {w,h}: the footprint this node's subtree occupies from (x,y).
+  // Below VERTICAL_FROM_DEPTH, siblings still spread left-to-right under
+  // their parent exactly as before (w = summed children widths, h = one
+  // row down to the tallest child's subtree). From VERTICAL_FROM_DEPTH on,
+  // a node's own position is fixed at the (x,y) it's given (no centering —
+  // there's only one column, not a row to center within) and its children
+  // cascade in a vertical, indented column below it instead: w = the
+  // widest indented child's own right edge, h = the full stacked column
+  // height. Height has to be tracked explicitly once branches can grow
+  // vertically at different rates — every row used to be a uniform
+  // NODE_H+GAP_Y tall, so only width ever varied.
   const pos={};let maxX=0,maxY=0;
-  function layout(id,x,y){
-    pos[id]={x,y};if(y>maxY)maxY=y;
+  function layout(id,x,y,depth){
     const kids=orgCollapsed.has(id)?[]:(children[id]||[]);
-    if(!kids.length){if(x+NODE_W>maxX)maxX=x+NODE_W;return NODE_W;}
-    let totalW=0;
+    pos[id]={x,y};
+    if(x+NODE_W>maxX)maxX=x+NODE_W;
+    if(y+NODE_H>maxY)maxY=y+NODE_H;
+    if(!kids.length) return {w:NODE_W,h:NODE_H};
+
+    if(depth<VERTICAL_FROM_DEPTH){
+      let totalW=0,maxKidH=0;
+      const childY=y+NODE_H+GAP_Y;
+      kids.forEach(kid=>{
+        const {w,h}=layout(kid,x+totalW,childY,depth+1);
+        totalW+=w+GAP_X;
+        if(h>maxKidH)maxKidH=h;
+      });
+      totalW-=GAP_X;
+      const center=x+totalW/2-NODE_W/2;
+      pos[id]={x:center,y};
+      if(center+NODE_W>maxX)maxX=center+NODE_W;
+      return {w:totalW,h:NODE_H+GAP_Y+maxKidH};
+    }
+
+    let curY=y+NODE_H+V_GAP_Y,maxRight=x+NODE_W;
     kids.forEach(kid=>{
-      const w=layout(kid,x+totalW,y+NODE_H+GAP_Y);
-      totalW+=w+GAP_X;
+      const {w,h}=layout(kid,x+V_INDENT,curY,depth+1);
+      curY+=h+V_GAP_Y;
+      if(x+V_INDENT+w>maxRight)maxRight=x+V_INDENT+w;
     });
-    totalW-=GAP_X;
-    const center=x+totalW/2-NODE_W/2;pos[id]={x:center,y};
-    if(center+NODE_W>maxX)maxX=center+NODE_W;return totalW;
+    if(maxRight>maxX)maxX=maxRight;
+    return {w:maxRight-x,h:curY-V_GAP_Y-y};
   }
-  let cx=0;layoutRoots.forEach(r=>{const w=layout(r,cx,0);cx+=w+GAP_X*2;});
-  const contentW=Math.max(maxX+40,400),contentH=maxY+NODE_H+40;
+  let cx=0;layoutRoots.forEach(r=>{const {w}=layout(r,cx,0,0);cx+=w+GAP_X*2;});
+  // maxY is already each node's bottom edge (y+NODE_H), tracked inside
+  // layout() itself now that branches can reach different depths at
+  // different rates — no further +NODE_H needed here (unlike the old
+  // uniform-row scheme, where maxY was still a row's top y).
+  const contentW=Math.max(maxX+40,400),contentH=maxY+40;
   const svg=document.getElementById('orgSvg');
   const wrap=document.getElementById('orgChartWrap');
   const viewW=Math.max(wrap?.clientWidth||contentW,contentW);
