@@ -22,7 +22,12 @@ import between the two.
 from datetime import date
 from typing import Any, Dict, List, Tuple
 
-# Fixed rubric — no per-institution configuration screen, ships as-is.
+# Fallback rubric only — used when an institution hasn't defined its own
+# criteria in probation_goal_templates (Settings -> Performance, hr_manager
+# only; see routers/performance.py's probation-goal-template endpoints and
+# migrations/versions/20260923_0001_add_probation_goal_templates.py). Kept
+# here, unchanged, as the zero-configuration default every institution
+# started with before that screen existed.
 PROBATION_RUBRIC = (
     ("Job Knowledge", "Understands the role's responsibilities and required skills."),
     ("Quality of Work", "Accuracy, thoroughness, and consistency of work produced."),
@@ -33,13 +38,34 @@ PROBATION_RUBRIC = (
 )
 
 
+def _probation_goal_criteria(conn, inst_id: int) -> List[Tuple[str, str, float]]:
+    """(title, description, weight%) for this institution's probation goal
+    criteria — its own probation_goal_templates rows if it has any, else
+    the fixed PROBATION_RUBRIC default. Template weights are *relative*
+    (not required to sum to 100 — see the migration's docstring), so
+    they're normalized proportionally to 100% here, at the one place
+    they're actually turned into real goal rows; the settings screen
+    itself never has to enforce a running total."""
+    rows = conn.execute(
+        "SELECT name, description, weight FROM probation_goal_templates WHERE institution_id=? ORDER BY sort_order, id",
+        (inst_id,)
+    ).fetchall()
+    if not rows:
+        even_weight = round(100 / len(PROBATION_RUBRIC), 2)
+        return [(title, description, even_weight) for title, description in PROBATION_RUBRIC]
+    total_weight = sum(r["weight"] for r in rows)
+    return [(r["name"], r["description"], round(r["weight"] / total_weight * 100, 2)) for r in rows]
+
+
 def create_probation_reviews(conn, inst_id: int, emp: Dict[str, Any], checklist_id: int,
                              month_windows: List[Tuple[int, date, date]], user: dict) -> None:
     """Creates one probation cycle per (month_number, period_start, period_end)
-    window — each already Active with a single appraisal and the fixed
-    6-criterion rubric seeded as goals, ready for the employee to
-    self-review immediately."""
-    weight = round(100 / len(PROBATION_RUBRIC), 2)
+    window — each already Active with a single appraisal and this
+    institution's probation goal criteria seeded as goals (its own
+    probation_goal_templates rows, or the built-in default rubric if it
+    hasn't defined any — see _probation_goal_criteria), ready for the
+    employee to self-review immediately."""
+    criteria = _probation_goal_criteria(conn, inst_id)
     for month, period_start, period_end in month_windows:
         conn.execute(
             """
@@ -57,7 +83,7 @@ def create_probation_reviews(conn, inst_id: int, emp: Dict[str, Any], checklist_
             "INSERT INTO appraisals (institution_id,cycle_id,employee_id,status) VALUES (?,?,?,'SelfReview')",
             (inst_id, cycle_id, emp["employee_id"])
         )
-        for title, description in PROBATION_RUBRIC:
+        for title, description, weight in criteria:
             conn.execute(
                 """
                 INSERT INTO goals (institution_id,cycle_id,employee_id,goal_type,title,description,

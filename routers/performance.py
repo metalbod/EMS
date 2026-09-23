@@ -854,3 +854,152 @@ def cancel_bonus_payout(conn, payout_id: int, user: dict = Depends(require_roles
     _log_appraisal(conn, inst_id, payout["appraisal_id"], payout["employee_id"], "Bonus Cancelled",
                     f"RM {payout['amount']:.2f} cancelled before payout", user)
     conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# Probation Goal Template (per-institution) — the criteria auto-seeded onto
+# every Probation Review (Month 1/2/3) cycle onboarding opts an employee
+# into (core/performance_probation.py's create_probation_reviews). Settings
+# -> Performance page, hr_manager only (PERFORMANCE_MANAGE_ROLES, matching
+# every other Performance admin action in this file).
+#
+# weight is a *relative* weight, not required to sum to 100 — normalized
+# proportionally at cycle-creation time (create_probation_reviews), so
+# adding/editing/removing one criterion here never requires rebalancing
+# every other row by hand first.
+# ---------------------------------------------------------------------------
+class ProbationGoalTemplateIn(BaseModel):
+    name: str
+    description: Optional[str] = None
+    weight: float = 1.0
+
+    @field_validator("name")
+    @classmethod
+    def _name_not_blank(cls, v):
+        v = v.strip()
+        if not v:
+            raise ValueError("name is required")
+        return v
+
+    @field_validator("weight")
+    @classmethod
+    def _weight_positive(cls, v):
+        if v <= 0:
+            raise ValueError("weight must be greater than 0")
+        return v
+
+
+class ProbationGoalTemplateReorderIn(BaseModel):
+    ids: List[int]  # every existing row's id, in the desired display order
+
+
+@router.get("/api/performance/probation-goal-template")
+@db_session
+def list_probation_goal_template(conn, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))) -> List[Dict[str, Any]]:
+    inst_id = need_inst(user)
+    rows = conn.execute(
+        "SELECT * FROM probation_goal_templates WHERE institution_id=? ORDER BY sort_order, id", (inst_id,)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@router.post("/api/performance/probation-goal-template", status_code=201)
+@db_session
+def create_probation_goal_template_criterion(
+    conn, body: ProbationGoalTemplateIn, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))
+) -> Dict[str, Any]:
+    inst_id = need_inst(user)
+    next_order = conn.execute(
+        "SELECT COALESCE(MAX(sort_order),-1)+1 FROM probation_goal_templates WHERE institution_id=?", (inst_id,)
+    ).fetchone()[0]
+    conn.execute(
+        "INSERT INTO probation_goal_templates (institution_id,name,description,weight,sort_order) VALUES (?,?,?,?,?)",
+        (inst_id, body.name, body.description, body.weight, next_order)
+    )
+    row = conn.execute(
+        "SELECT * FROM probation_goal_templates WHERE id=last_insert_rowid()"
+    ).fetchone()
+    conn.commit()
+    return dict(row)
+
+
+@router.post("/api/performance/probation-goal-template/load-defaults", status_code=201)
+@db_session
+def load_default_probation_goal_template(conn, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))) -> List[Dict[str, Any]]:
+    """One-time convenience for a first-time visit to Settings -> Performance:
+    bulk-inserts the original 6 hardcoded PROBATION_RUBRIC criteria as real,
+    editable rows. Refuses if the institution already has any rows, so it
+    can't be used to silently duplicate an already-customized list."""
+    from core.performance_probation import PROBATION_RUBRIC
+
+    inst_id = need_inst(user)
+    existing = conn.execute(
+        "SELECT COUNT(*) FROM probation_goal_templates WHERE institution_id=?", (inst_id,)
+    ).fetchone()[0]
+    if existing:
+        raise HTTPException(400, "This institution already has probation goal criteria defined")
+    for i, (name, description) in enumerate(PROBATION_RUBRIC):
+        conn.execute(
+            "INSERT INTO probation_goal_templates (institution_id,name,description,weight,sort_order) VALUES (?,?,?,1,?)",
+            (inst_id, name, description, i)
+        )
+    conn.commit()
+    rows = conn.execute(
+        "SELECT * FROM probation_goal_templates WHERE institution_id=? ORDER BY sort_order, id", (inst_id,)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@router.put("/api/performance/probation-goal-template/reorder")
+@db_session
+def reorder_probation_goal_template(
+    conn, body: ProbationGoalTemplateReorderIn, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))
+) -> List[Dict[str, Any]]:
+    inst_id = need_inst(user)
+    existing_ids = {r[0] for r in conn.execute(
+        "SELECT id FROM probation_goal_templates WHERE institution_id=?", (inst_id,)
+    ).fetchall()}
+    if set(body.ids) != existing_ids:
+        raise HTTPException(400, "ids must be exactly the institution's current set of criteria, in the new order")
+    for i, cid in enumerate(body.ids):
+        conn.execute("UPDATE probation_goal_templates SET sort_order=? WHERE id=? AND institution_id=?", (i, cid, inst_id))
+    conn.commit()
+    rows = conn.execute(
+        "SELECT * FROM probation_goal_templates WHERE institution_id=? ORDER BY sort_order, id", (inst_id,)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@router.put("/api/performance/probation-goal-template/{template_id}")
+@db_session
+def update_probation_goal_template_criterion(
+    conn, template_id: int, body: ProbationGoalTemplateIn, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))
+) -> Dict[str, Any]:
+    inst_id = need_inst(user)
+    existing = conn.execute(
+        "SELECT id FROM probation_goal_templates WHERE id=? AND institution_id=?", (template_id, inst_id)
+    ).fetchone()
+    if not existing:
+        raise HTTPException(404, "Criterion not found")
+    conn.execute(
+        "UPDATE probation_goal_templates SET name=?,description=?,weight=?,updated_at=to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS') WHERE id=?",
+        (body.name, body.description, body.weight, template_id)
+    )
+    conn.commit()
+    row = conn.execute("SELECT * FROM probation_goal_templates WHERE id=?", (template_id,)).fetchone()
+    return dict(row)
+
+
+@router.delete("/api/performance/probation-goal-template/{template_id}", status_code=204)
+@db_session
+def delete_probation_goal_template_criterion(
+    conn, template_id: int, user: dict = Depends(require_roles(*PERFORMANCE_MANAGE_ROLES))
+) -> None:
+    inst_id = need_inst(user)
+    existing = conn.execute(
+        "SELECT id FROM probation_goal_templates WHERE id=? AND institution_id=?", (template_id, inst_id)
+    ).fetchone()
+    if not existing:
+        raise HTTPException(404, "Criterion not found")
+    conn.execute("DELETE FROM probation_goal_templates WHERE id=?", (template_id,))
+    conn.commit()

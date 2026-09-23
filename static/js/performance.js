@@ -554,3 +554,113 @@ const saveCalibration = guardAsync(async function(appraisalId) {
   const res=await api(`/api/performance/appraisals/${appraisalId}/calibrate`,{method:'POST',body:JSON.stringify({calibrated_rating,calibration_notes})});
   if(res?.ok){ loadCalibrationPage(); } else { const d=await res.json(); alert(d.detail||'Failed to save'); }
 });
+
+// ---------------------------------------------------------------------------
+// Settings -> Performance: Probation Goal Template (per-institution, hr_manager
+// only). Seeded as goals on every Probation Review (Month 1/2/3) cycle —
+// see core/performance_probation.py's _probation_goal_criteria. Weight is
+// relative (not a percentage), normalized server-side when a cycle is
+// actually created, so this screen never has to validate a running total.
+// ---------------------------------------------------------------------------
+let probGoalTemplateCache=[];
+
+async function loadProbationGoalTemplatePage() {
+  const res=await api('/api/performance/probation-goal-template');
+  probGoalTemplateCache=res?.ok?await res.json():[];
+  renderProbationGoalTemplate();
+}
+
+function renderProbationGoalTemplate() {
+  const emptyEl=document.getElementById('probGoalTemplateEmpty');
+  const wrapEl=document.getElementById('probGoalTemplateWrap');
+  const addBtn=document.getElementById('probGoalTemplateAddBtn');
+  if(!probGoalTemplateCache.length){
+    emptyEl.classList.remove('hidden');
+    wrapEl.classList.add('hidden');
+    addBtn.classList.remove('hidden');
+    return;
+  }
+  emptyEl.classList.add('hidden');
+  wrapEl.classList.remove('hidden');
+  addBtn.classList.remove('hidden');
+  document.getElementById('probGoalTemplateList').innerHTML=probGoalTemplateCache.map((c,i)=>`
+    <tr class="border-t border-slate-100">
+      <td class="px-2 py-2.5 text-center whitespace-nowrap">
+        <button onclick="moveProbationGoalTemplateCriterion(${c.id},-1)" ${i===0?'disabled':''} class="text-slate-400 hover:text-slate-700 disabled:opacity-25 disabled:hover:text-slate-400 px-0.5" title="Move up">▲</button>
+        <button onclick="moveProbationGoalTemplateCriterion(${c.id},1)" ${i===probGoalTemplateCache.length-1?'disabled':''} class="text-slate-400 hover:text-slate-700 disabled:opacity-25 disabled:hover:text-slate-400 px-0.5" title="Move down">▼</button>
+      </td>
+      <td class="px-4 py-2.5 font-medium text-slate-800">${esc(c.name)}</td>
+      <td class="px-4 py-2.5 text-slate-500">${esc(c.description||'')}</td>
+      <td class="px-4 py-2.5 text-right text-slate-600">${c.weight}</td>
+      <td class="px-4 py-2.5 text-right whitespace-nowrap">
+        <button onclick="openProbationGoalTemplateModal(${c.id})" class="text-xs text-blue-600 hover:underline mr-3">Edit</button>
+        <button onclick="deleteProbationGoalTemplateCriterion(${c.id})" class="text-xs text-red-600 hover:underline">Delete</button>
+      </td>
+    </tr>`).join('');
+}
+
+const loadDefaultProbationGoalTemplate = guardAsync(async function() {
+  const res=await api('/api/performance/probation-goal-template/load-defaults',{method:'POST'});
+  if(res?.ok){
+    probGoalTemplateCache=await res.json();
+    renderProbationGoalTemplate();
+  } else {
+    const d=await res.json(); alert(d.detail||'Failed to load default criteria');
+  }
+});
+
+const moveProbationGoalTemplateCriterion = guardAsync(async function(id, dir) {
+  const idx=probGoalTemplateCache.findIndex(c=>c.id===id);
+  const swapWith=idx+dir;
+  if(idx<0||swapWith<0||swapWith>=probGoalTemplateCache.length) return;
+  const ids=probGoalTemplateCache.map(c=>c.id);
+  [ids[idx],ids[swapWith]]=[ids[swapWith],ids[idx]];
+  const res=await api('/api/performance/probation-goal-template/reorder',{method:'PUT',body:JSON.stringify({ids})});
+  if(res?.ok){
+    probGoalTemplateCache=await res.json();
+    renderProbationGoalTemplate();
+  } else {
+    const d=await res.json(); alert(d.detail||'Failed to reorder');
+  }
+});
+
+function openProbationGoalTemplateModal(id) {
+  const c=id?probGoalTemplateCache.find(x=>x.id===id):null;
+  document.getElementById('probGoalTemplateModalTitle').textContent=id?'Edit Criterion':'Add Criterion';
+  document.getElementById('probGoalTemplateId').value=id||'';
+  document.getElementById('probGoalTemplateName').value=c?.name||'';
+  document.getElementById('probGoalTemplateDesc').value=c?.description||'';
+  document.getElementById('probGoalTemplateWeight').value=c?.weight??1;
+  document.getElementById('probGoalTemplateFormErr').classList.add('hidden');
+  document.getElementById('probGoalTemplateModal').classList.remove('hidden');
+}
+function closeProbationGoalTemplateModal() { closeModal('probGoalTemplateModal'); }
+
+const submitProbationGoalTemplateForm = guardAsync(async function(e) {
+  e.preventDefault();
+  const err=document.getElementById('probGoalTemplateFormErr');
+  err.classList.add('hidden');
+  const id=document.getElementById('probGoalTemplateId').value;
+  const body={
+    name: document.getElementById('probGoalTemplateName').value.trim(),
+    description: document.getElementById('probGoalTemplateDesc').value.trim()||null,
+    weight: parseFloat(document.getElementById('probGoalTemplateWeight').value),
+  };
+  const url=id?`/api/performance/probation-goal-template/${id}`:'/api/performance/probation-goal-template';
+  const res=await api(url,{method:id?'PUT':'POST',body:JSON.stringify(body)});
+  if(res?.ok){
+    closeProbationGoalTemplateModal();
+    loadProbationGoalTemplatePage();
+  } else {
+    const d=await res.json();
+    err.textContent=apiErrorText(d.detail,'Failed to save criterion');
+    err.classList.remove('hidden');
+  }
+});
+
+async function deleteProbationGoalTemplateCriterion(id) {
+  if(!confirm('Remove this criterion? Existing probation cycles already created keep their goals as-is — this only affects new ones going forward.')) return;
+  const res=await api(`/api/performance/probation-goal-template/${id}`,{method:'DELETE'});
+  if(res?.ok||res?.status===204) loadProbationGoalTemplatePage();
+  else { const d=await res.json(); alert(d.detail||'Failed to delete'); }
+}

@@ -24,7 +24,7 @@ const HR_STAFF_ROLES = ['hr_manager','hr_admin'];                  // no superad
 const HR_MANAGER_ONLY_ROLES = ['superadmin','hr_manager'];         // no hr_admin
 const COMPENSATION_STAFF_ROLES = ['hr_manager','payroll_manager','compensation_manager'];
 const BENEFITS_DASHBOARD_ROLES = ['hr_manager','compensation_manager','manager'];
-const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','leave-my','leave-approvals','leave-holidays','resignation-approvals','projects','timesheet-my','timesheet-approvals','overtime-my','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','comp-paygrades','comp-joblevels','comp-jobroles','comp-meritcycles','comp-bonusplans','comp-commissions','comp-equity','comp-totalrewards','comp-payequity','ben-plans','ben-periods','ben-lifeevents','ben-claims','ben-compliance','payroll-runs','payroll-my','payroll-myrewards','payroll-mybenefits','perf-my','perf-team','perf-cycles','perf-calibration','attendance-clock','attendance-review','settings-attendance','settings-approval-workflow','settings-roles','settings-document-types','settings-offer-letter-templates','settings-ai-assistant','coming-soon'];
+const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','leave-my','leave-approvals','leave-holidays','resignation-approvals','projects','timesheet-my','timesheet-approvals','overtime-my','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','comp-paygrades','comp-joblevels','comp-jobroles','comp-meritcycles','comp-bonusplans','comp-commissions','comp-equity','comp-totalrewards','comp-payequity','ben-plans','ben-periods','ben-lifeevents','ben-claims','ben-compliance','payroll-runs','payroll-my','payroll-myrewards','payroll-mybenefits','perf-my','perf-team','perf-cycles','perf-calibration','attendance-clock','attendance-review','settings-attendance','settings-approval-workflow','settings-roles','settings-document-types','settings-offer-letter-templates','settings-performance','settings-ai-assistant','coming-soon'];
 
 // ---------------------------------------------------------------------------
 // Lazy module loading (Speed Audit item 7)
@@ -668,6 +668,9 @@ function applyRoleUI() {
   document.getElementById('nav-roles')?.classList.toggle('hidden', !canRoles);
   document.getElementById('nav-document-types')?.classList.toggle('hidden', !canDocTypes);
   document.getElementById('nav-offer-letter-templates')?.classList.toggle('hidden', !canManage);
+  // hr_manager only, matching routers/performance.py's PERFORMANCE_MANAGE_ROLES
+  // (every other Performance admin action in this app is gated the same way).
+  document.getElementById('nav-settings-performance')?.classList.toggle('hidden', role !== 'hr_manager');
   document.getElementById('nav-ai-assistant-settings')?.classList.toggle('hidden', !canAiSettings);
 
   // Compensation: its own top-level menu, visible to HR Manager, Payroll
@@ -808,6 +811,7 @@ async function showPage(page) {
     'settings-roles':'Settings — Roles',
     'settings-document-types':'Settings — Document Types',
     'settings-offer-letter-templates':'Settings — Letter Templates',
+    'settings-performance':'Settings — Performance',
     'settings-ai-assistant':'Settings — AI Assistant'
   };
   document.getElementById('pageTitle').textContent = titles[page] || page;
@@ -871,6 +875,7 @@ async function showPage(page) {
   if (page === 'settings-roles') loadRolesPage();
   if (page === 'settings-document-types') loadEmployeeDocTypesPage();
   if (page === 'settings-offer-letter-templates') loadOfferTemplates();
+  if (page === 'settings-performance') loadProbationGoalTemplatePage();
   if (page === 'settings-ai-assistant') loadAiAssistantSettingsPage();
 }
 

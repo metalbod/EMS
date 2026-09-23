@@ -7,6 +7,8 @@ coverage (standard org-wide cycles) — none of that behavior changes
 here, since every branch this feature adds is guarded on
 cycle_type=='probation'.
 """
+import pytest
+
 from conftest import _valid_employee_payload
 
 
@@ -218,5 +220,72 @@ def test_plain_employee_does_not_see_other_employees_probation_cycles_in_list(
 
     hr_cycles = client.get("/api/performance/cycles", headers=hr_manager_auth).json()
     assert sum(1 for c in hr_cycles if c["employee_id"] == subject["employee_id"]) == 3
+
+    client.delete(f"/api/ob/checklists/{checklist['id']}", headers=hr_manager_auth)
+
+
+# ---------------------------------------------------------------------------
+# Institution-configurable goal criteria (Settings -> Performance, see
+# routers/performance.py's probation-goal-template endpoints and
+# core/performance_probation.py's _probation_goal_criteria) — what actually
+# gets seeded as goals when a probation cycle is created. The CRUD screen
+# itself (permissions, validation, reorder) is covered in
+# tests/test_performance.py; this is specifically about
+# create_probation_reviews consuming it correctly, including the relative-
+# weight normalization.
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def clean_probation_goal_template(client, hr_manager_auth):
+    def _clear():
+        rows = client.get("/api/performance/probation-goal-template", headers=hr_manager_auth).json()
+        for r in rows:
+            client.delete(f"/api/performance/probation-goal-template/{r['id']}", headers=hr_manager_auth)
+    _clear()
+    yield
+    _clear()
+
+
+def test_probation_review_uses_institutions_custom_goal_template(
+    client, employee_with_login, hr_manager_auth, clean_probation_goal_template
+):
+    client.post("/api/performance/probation-goal-template", headers=hr_manager_auth,
+                json={"name": "ZZ Custom Criterion A", "weight": 1})
+    client.post("/api/performance/probation-goal-template", headers=hr_manager_auth,
+                json={"name": "ZZ Custom Criterion B", "weight": 3})
+
+    emp, headers = employee_with_login(full_name="ZZ Probation Custom Template")
+    start = client.post("/api/ob/checklists", headers=hr_manager_auth, json={
+        "employee_id": emp["employee_id"], "type": "onboarding", "enable_probation_review": True,
+    })
+    checklist = start.json()
+    cycle_id = client.get(f"/api/ob/checklists/{checklist['id']}/probation-reviews", headers=hr_manager_auth).json()[0]["cycle_id"]
+
+    goals = client.get(f"/api/performance/goals?cycle_id={cycle_id}&employee_id={emp['employee_id']}", headers=headers).json()
+    assert {g["title"] for g in goals} == {"ZZ Custom Criterion A", "ZZ Custom Criterion B"}
+    weight_by_title = {g["title"]: g["weight"] for g in goals}
+    # Relative weights [1, 3] (sum 4) normalize proportionally to 100.
+    assert weight_by_title["ZZ Custom Criterion A"] == 25.0
+    assert weight_by_title["ZZ Custom Criterion B"] == 75.0
+
+    client.delete(f"/api/ob/checklists/{checklist['id']}", headers=hr_manager_auth)
+
+
+def test_probation_review_falls_back_to_default_rubric_when_institution_has_no_template(
+    client, employee_with_login, hr_manager_auth, clean_probation_goal_template
+):
+    emp, headers = employee_with_login(full_name="ZZ Probation Default Template")
+    start = client.post("/api/ob/checklists", headers=hr_manager_auth, json={
+        "employee_id": emp["employee_id"], "type": "onboarding", "enable_probation_review": True,
+    })
+    checklist = start.json()
+    cycle_id = client.get(f"/api/ob/checklists/{checklist['id']}/probation-reviews", headers=hr_manager_auth).json()[0]["cycle_id"]
+
+    goals = client.get(f"/api/performance/goals?cycle_id={cycle_id}&employee_id={emp['employee_id']}", headers=headers).json()
+    assert {g["title"] for g in goals} == {
+        "Job Knowledge", "Quality of Work", "Productivity",
+        "Attendance & Punctuality", "Communication", "Cultural Fit",
+    }
+    for g in goals:
+        assert g["weight"] == 16.67
 
     client.delete(f"/api/ob/checklists/{checklist['id']}", headers=hr_manager_auth)

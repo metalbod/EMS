@@ -902,3 +902,114 @@ def test_pip_hidden_from_unrelated_employee_in_cycle_list(
     assert not any(c["id"] == cycle["id"] for c in bystander_cycles), (
         "a plain employee unrelated to a PIP must never see it in the cycle list"
     )
+
+
+# ---------------------------------------------------------------------------
+# Settings -> Performance: Probation Goal Template (per-institution CRUD
+# list — routers/performance.py's probation-goal-template endpoints). What
+# actually happens when a cycle is created from these rows is covered in
+# tests/test_probation_reviews.py, alongside the rest of the probation-
+# review creation flow; this file only covers the settings-screen CRUD
+# itself (permissions, validation, reorder).
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def clean_probation_goal_template(client, hr_manager_auth):
+    def _clear():
+        rows = client.get("/api/performance/probation-goal-template", headers=hr_manager_auth).json()
+        for r in rows:
+            client.delete(f"/api/performance/probation-goal-template/{r['id']}", headers=hr_manager_auth)
+    _clear()
+    yield
+    _clear()
+
+
+def test_list_probation_goal_template_requires_manage_role(client, employee_with_user):
+    _, emp_headers = employee_with_user
+    res = client.get("/api/performance/probation-goal-template", headers=emp_headers)
+    assert res.status_code == 403
+
+
+def test_create_probation_goal_template_criterion(client, hr_manager_auth, clean_probation_goal_template):
+    res = client.post("/api/performance/probation-goal-template", headers=hr_manager_auth, json={
+        "name": "ZZ Criterion One", "description": "First criterion", "weight": 2,
+    })
+    assert res.status_code == 201, res.text
+    body = res.json()
+    assert body["name"] == "ZZ Criterion One"
+    assert body["weight"] == 2
+    assert body["sort_order"] == 0
+
+    listing = client.get("/api/performance/probation-goal-template", headers=hr_manager_auth).json()
+    assert [r["name"] for r in listing] == ["ZZ Criterion One"]
+
+
+def test_create_probation_goal_template_rejects_blank_name(client, hr_manager_auth, clean_probation_goal_template):
+    res = client.post("/api/performance/probation-goal-template", headers=hr_manager_auth, json={"name": "   "})
+    assert res.status_code == 422
+
+
+def test_create_probation_goal_template_rejects_non_positive_weight(client, hr_manager_auth, clean_probation_goal_template):
+    res = client.post("/api/performance/probation-goal-template", headers=hr_manager_auth, json={"name": "ZZ X", "weight": 0})
+    assert res.status_code == 422
+
+
+def test_new_criterion_is_appended_after_existing_ones(client, hr_manager_auth, clean_probation_goal_template):
+    first = client.post("/api/performance/probation-goal-template", headers=hr_manager_auth, json={"name": "ZZ First"}).json()
+    second = client.post("/api/performance/probation-goal-template", headers=hr_manager_auth, json={"name": "ZZ Second"}).json()
+    assert first["sort_order"] < second["sort_order"]
+
+
+def test_update_probation_goal_template_criterion(client, hr_manager_auth, clean_probation_goal_template):
+    created = client.post("/api/performance/probation-goal-template", headers=hr_manager_auth, json={"name": "ZZ Before", "weight": 1}).json()
+    res = client.put(f"/api/performance/probation-goal-template/{created['id']}", headers=hr_manager_auth, json={
+        "name": "ZZ After", "description": "Updated", "weight": 3,
+    })
+    assert res.status_code == 200, res.text
+    assert res.json()["name"] == "ZZ After"
+    assert res.json()["weight"] == 3
+
+
+def test_update_probation_goal_template_not_found_returns_404(client, hr_manager_auth, clean_probation_goal_template):
+    res = client.put("/api/performance/probation-goal-template/999999999", headers=hr_manager_auth, json={"name": "ZZ"})
+    assert res.status_code == 404
+
+
+def test_delete_probation_goal_template_criterion(client, hr_manager_auth, clean_probation_goal_template):
+    created = client.post("/api/performance/probation-goal-template", headers=hr_manager_auth, json={"name": "ZZ Doomed"}).json()
+    res = client.delete(f"/api/performance/probation-goal-template/{created['id']}", headers=hr_manager_auth)
+    assert res.status_code == 204
+    assert client.get("/api/performance/probation-goal-template", headers=hr_manager_auth).json() == []
+
+
+def test_load_default_probation_goal_template(client, hr_manager_auth, clean_probation_goal_template):
+    res = client.post("/api/performance/probation-goal-template/load-defaults", headers=hr_manager_auth)
+    assert res.status_code == 201, res.text
+    rows = res.json()
+    assert len(rows) == 6
+    assert rows[0]["name"] == "Job Knowledge"
+    assert all(r["weight"] == 1 for r in rows)
+
+    # Refuses when the institution already has rows, so it can't be used
+    # to silently duplicate an already-customized list.
+    again = client.post("/api/performance/probation-goal-template/load-defaults", headers=hr_manager_auth)
+    assert again.status_code == 400
+
+
+def test_reorder_probation_goal_template(client, hr_manager_auth, clean_probation_goal_template):
+    a = client.post("/api/performance/probation-goal-template", headers=hr_manager_auth, json={"name": "ZZ A"}).json()
+    b = client.post("/api/performance/probation-goal-template", headers=hr_manager_auth, json={"name": "ZZ B"}).json()
+    c = client.post("/api/performance/probation-goal-template", headers=hr_manager_auth, json={"name": "ZZ C"}).json()
+
+    res = client.put("/api/performance/probation-goal-template/reorder", headers=hr_manager_auth, json={
+        "ids": [c["id"], a["id"], b["id"]],
+    })
+    assert res.status_code == 200, res.text
+    assert [r["name"] for r in res.json()] == ["ZZ C", "ZZ A", "ZZ B"]
+
+
+def test_reorder_probation_goal_template_rejects_mismatched_ids(client, hr_manager_auth, clean_probation_goal_template):
+    a = client.post("/api/performance/probation-goal-template", headers=hr_manager_auth, json={"name": "ZZ A"}).json()
+    res = client.put("/api/performance/probation-goal-template/reorder", headers=hr_manager_auth, json={
+        "ids": [a["id"], 999999999],
+    })
+    assert res.status_code == 400
