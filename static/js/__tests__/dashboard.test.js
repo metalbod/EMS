@@ -277,23 +277,23 @@ describe('Leave Calendar — merging leave entries and onboarding action items p
   });
 });
 
-// Matches dashboard.js's _tsTrendBadge/_tsBillableSplitBar/_tsFmtH — the
-// Home dashboard's Timesheet tab, now a billable-project hours summary
-// for the current and last calendar month (replaced the old all-time
-// task-budget view, see routers/projects.py's get_project_monthly_summary).
-describe('Timesheet tab monthly summary (trend badge, billable split, hour formatting)', () => {
+// Matches dashboard.js's _tsFmtH/_tsMonthColumn/_tsMissingRow — the Home
+// dashboard's Timesheet tab: a 6-month column chart of total *approved*
+// clocked hours (each column split billable/non-billable) plus a top-10
+// missing-hours ranking (replaced the old billable-project/top-resources
+// breakdown, see routers/projects.py's get_timesheet_dashboard).
+describe('Timesheet tab dashboard (monthly bar heights, missing-hours bar width, hour formatting)', () => {
   const fmtH = n => (Math.round(n * 10) / 10).toString().replace(/\.0$/, '');
+  const BAR_MAX_PX = 140;
 
-  function trendBadge(trendPct) {
-    if (trendPct == null) return { label: 'New', color: 'text-slate-400' };
-    if (trendPct === 0) return { label: '±0%', color: 'text-slate-400' };
-    const up = trendPct > 0;
-    return { label: `${up ? '▲' : '▼'} ${Math.abs(trendPct)}%`, color: up ? 'text-emerald-600' : 'text-slate-500' };
+  function barPx(month, maxHours) {
+    const total = maxHours > 0 ? Math.round(month.total_hours / maxHours * BAR_MAX_PX) : 0;
+    const billable = month.total_hours > 0 ? Math.round(month.billable_hours / month.total_hours * total) : 0;
+    return { billablePx: billable, nonBillablePx: total - billable };
   }
 
-  function billablePct(billable, nonBillable) {
-    const total = billable + nonBillable;
-    return total > 0 ? Math.round(billable / total * 100) : 0;
+  function missingBarPct(missingHours, maxMissing) {
+    return maxMissing > 0 ? Math.round(missingHours / maxMissing * 100) : 0;
   }
 
   it('rounds fractional hours to one decimal and drops a trailing .0', () => {
@@ -301,27 +301,33 @@ describe('Timesheet tab monthly summary (trend badge, billable split, hour forma
     expect(fmtH(10)).toBe('10');
   });
 
-  it('labels a project with no prior-month baseline as "New" rather than a misleading 0%/∞%', () => {
-    expect(trendBadge(null)).toEqual({ label: 'New', color: 'text-slate-400' });
+  it('sizes the tallest month\'s bar to the full pixel height', () => {
+    const month = { total_hours: 100, billable_hours: 100, non_billable_hours: 0 };
+    expect(barPx(month, 100)).toEqual({ billablePx: 140, nonBillablePx: 0 });
   });
 
-  it('shows an up arrow in emerald when hours increased vs last month', () => {
-    expect(trendBadge(12.3)).toEqual({ label: '▲ 12.3%', color: 'text-emerald-600' });
+  it('splits a month\'s bar into billable/non-billable segments proportional to its own total', () => {
+    const month = { total_hours: 80, billable_hours: 60, non_billable_hours: 20 };
+    // bar is 80% of the 140px max (112px), split 75%/25% within that -> 84/28
+    expect(barPx(month, 100)).toEqual({ billablePx: 84, nonBillablePx: 28 });
   });
 
-  it('shows a down arrow in neutral slate (not alarming red) when hours decreased', () => {
-    // Fewer hours logged isn't necessarily bad (could mean the project
-    // wound down as planned), so it's styled neutral, unlike the old
-    // over-estimate red warning this tab used to show.
-    expect(trendBadge(-8.1)).toEqual({ label: '▼ 8.1%', color: 'text-slate-500' });
+  it('renders a zero-hour month as an empty (0px) bar rather than dividing by zero', () => {
+    const month = { total_hours: 0, billable_hours: 0, non_billable_hours: 0 };
+    expect(barPx(month, 100)).toEqual({ billablePx: 0, nonBillablePx: 0 });
   });
 
-  it('shows a flat ±0% badge distinct from "New" when hours are unchanged', () => {
-    expect(trendBadge(0)).toEqual({ label: '±0%', color: 'text-slate-400' });
+  it('never fails to render when every month in the range is zero (max clamped to 1)', () => {
+    const month = { total_hours: 0, billable_hours: 0, non_billable_hours: 0 };
+    expect(barPx(month, Math.max(0, 1))).toEqual({ billablePx: 0, nonBillablePx: 0 });
   });
 
-  it('computes the billable-hours split bar width as a percentage of total hours', () => {
-    expect(billablePct(75, 25)).toBe(75);
-    expect(billablePct(0, 0)).toBe(0);
+  it('sizes the missing-hours bar relative to the top-of-list (most-behind) employee', () => {
+    expect(missingBarPct(5, 20)).toBe(25);
+    expect(missingBarPct(20, 20)).toBe(100);
+  });
+
+  it('shows a zero-width missing-hours bar when the list is empty (no divide-by-zero)', () => {
+    expect(missingBarPct(0, 0)).toBe(0);
   });
 });

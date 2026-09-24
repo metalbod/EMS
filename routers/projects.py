@@ -1,5 +1,5 @@
 """Projects and Project Tasks (managed by HR Manager) — feeds Timesheet's project selector."""
-from datetime import date
+from datetime import date, timedelta
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,6 +12,8 @@ from db import get_db
 from core.db_session import db_session
 
 from core.permission_matrix import require_permission
+
+from routers.timesheets import _weekly_hours_breakdown
 
 router = APIRouter()
 
@@ -180,90 +182,94 @@ def _shift_month(d: date, months: int) -> date:
     return date(y, m, 1)
 
 
-@router.get("/api/projects/monthly-summary")
+@router.get("/api/projects/timesheet-dashboard")
 @db_session
-def get_project_monthly_summary(conn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
-    """Billable-project hours for the current and previous calendar month
-    (grouped on timesheet_entries.date, the per-entry day field — not
-    timesheets.period_start, which is the parent week's bounds), each
-    project sorted by total hours logged and carrying its own top
-    resources (people, ranked by hours on that project that month) plus a
-    month-over-month trend against the prior month. Also a company-wide
-    billable/non-billable hours split per month. Powers the Home
-    dashboard's Timesheet tab (static/js/dashboard.js's loadTimesheetDash)."""
+def get_timesheet_dashboard(conn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    """Home dashboard's Timesheet tab (static/js/dashboard.js's
+    loadTimesheetDash): total *approved* clocked hours per calendar month
+    for the trailing 6 months (grouped on timesheet_entries.date, the
+    per-entry day field — not timesheets.period_start, the parent week's
+    bounds), split billable/non-billable within each month, plus a
+    top-10 ranking of active employees by missing hours so far this
+    month.
+
+    "Approved" respects the dual approval-tracking path from the
+    2026-09-17 per-project split (migrations/versions/20260917_0001_
+    per_project_timesheet_overtime_approval.py): an entry counts if its
+    (timesheet, project) has a timesheet_project_approvals row with
+    status='Approved', or — when no split row exists at all (a
+    pre-split timesheet, or a project this timesheet was never split
+    for) — if the parent timesheet's own whole-record status is
+    'Approved'.
+
+    Missing hours reuses routers/timesheets.py's own
+    _weekly_hours_breakdown (the same expected-vs-accounted math behind
+    My Timesheet's "Missing/short hours" line), just run once per active
+    employee over the whole month instead of one employee's one week —
+    capped at today so future days in the current month never count as
+    "missing" yet."""
     require_permission(conn, user, "projects_tasks.utilization_report")
     inst_id = need_inst(user)
 
-    today = date.today().replace(day=1)
-    months = {"current": today, "last": _shift_month(today, -1), "before_last": _shift_month(today, -2)}
-    month_keys = {k: _month_str(v) for k, v in months.items()}
+    today = date.today()
+    month_starts = [_shift_month(today.replace(day=1), -i) for i in range(5, -1, -1)]
+    range_start = month_starts[0]
+    range_end_exclusive = _shift_month(month_starts[-1], 1)  # first day of the month after the current one
 
-    def _billable_split(month_key: str) -> Dict[str, float]:
-        row = conn.execute("""
-            SELECT
-                COALESCE(SUM(CASE WHEN p.is_billable THEN te.hours ELSE 0 END),0) AS billable_hours,
-                COALESCE(SUM(CASE WHEN NOT p.is_billable THEN te.hours ELSE 0 END),0) AS non_billable_hours
-            FROM timesheet_entries te
-            JOIN projects p ON p.id = te.project_id
-            WHERE te.institution_id=? AND SUBSTR(te.date,1,7)=?
-        """, (inst_id, month_key)).fetchone()
-        return {"billable_hours": row["billable_hours"], "non_billable_hours": row["non_billable_hours"]}
+    rows = conn.execute("""
+        SELECT SUBSTR(te.date,1,7) AS ym,
+               COALESCE(SUM(CASE WHEN p.is_billable THEN te.hours ELSE 0 END),0) AS billable_hours,
+               COALESCE(SUM(CASE WHEN NOT p.is_billable THEN te.hours ELSE 0 END),0) AS non_billable_hours
+        FROM timesheet_entries te
+        JOIN timesheets t ON t.id = te.timesheet_id
+        JOIN projects p ON p.id = te.project_id
+        LEFT JOIN timesheet_project_approvals tpa
+            ON tpa.timesheet_id = te.timesheet_id AND tpa.project_id = te.project_id
+        WHERE te.institution_id=? AND te.date >= ? AND te.date < ?
+          AND ((tpa.id IS NOT NULL AND tpa.status='Approved') OR (tpa.id IS NULL AND t.status='Approved'))
+        GROUP BY ym
+    """, (inst_id, range_start.isoformat(), range_end_exclusive.isoformat())).fetchall()
+    by_month = {r["ym"]: r for r in rows}
 
-    def _project_totals(month_key: str) -> Dict[int, float]:
-        rows = conn.execute("""
-            SELECT te.project_id, COALESCE(SUM(te.hours),0) AS total_hours
-            FROM timesheet_entries te
-            JOIN projects p ON p.id = te.project_id
-            WHERE te.institution_id=? AND p.is_billable=true AND SUBSTR(te.date,1,7)=?
-            GROUP BY te.project_id
-        """, (inst_id, month_key)).fetchall()
-        return {r["project_id"]: r["total_hours"] for r in rows}
+    months_out = []
+    for ms in month_starts:
+        key = _month_str(ms)
+        row = by_month.get(key)
+        billable = row["billable_hours"] if row else 0
+        non_billable = row["non_billable_hours"] if row else 0
+        months_out.append({
+            "year_month": key, "label": ms.strftime("%b %Y"),
+            "billable_hours": billable, "non_billable_hours": non_billable,
+            "total_hours": billable + non_billable,
+        })
 
-    def _top_resources(project_id: int, month_key: str, limit: int = 5) -> List[Dict[str, Any]]:
-        rows = conn.execute("""
-            SELECT t.employee_id, e.full_name, e.preferred_name, COALESCE(SUM(te.hours),0) AS hours
-            FROM timesheet_entries te
-            JOIN timesheets t ON t.id = te.timesheet_id
-            LEFT JOIN employees e ON e.employee_id = t.employee_id AND e.institution_id = te.institution_id
-            WHERE te.institution_id=? AND te.project_id=? AND SUBSTR(te.date,1,7)=?
-            GROUP BY t.employee_id, e.full_name, e.preferred_name
-            ORDER BY hours DESC
-            LIMIT ?
-        """, (inst_id, project_id, month_key, limit)).fetchall()
-        return [dict(r) for r in rows]
+    month_start = today.replace(day=1)
+    breakdown_end = min(today, _shift_month(month_start, 1) - timedelta(days=1))
+    emp_rows = conn.execute("""
+        SELECT e.employee_id, e.full_name, e.preferred_name,
+               COALESCE(SUM(te.hours), 0) AS total_hours
+        FROM employees e
+        LEFT JOIN timesheets t ON t.employee_id = e.employee_id AND t.institution_id = e.institution_id
+        LEFT JOIN timesheet_entries te ON te.timesheet_id = t.id AND te.date >= ? AND te.date <= ?
+        WHERE e.institution_id=? AND e.status='Active'
+        GROUP BY e.employee_id, e.full_name, e.preferred_name
+    """, (month_start.isoformat(), breakdown_end.isoformat(), inst_id)).fetchall()
 
-    totals = {k: _project_totals(month_keys[k]) for k in months}
-    project_ids = set(totals["current"]) | set(totals["last"])
-    proj_rows: Dict[int, Dict[str, Any]] = {}
-    if project_ids:
-        placeholders = ",".join("?" for _ in project_ids)
-        rows = conn.execute(
-            f"SELECT id, name, (SELECT COUNT(*) FROM project_members pm WHERE pm.project_id=projects.id) AS member_count "
-            f"FROM projects WHERE institution_id=? AND id IN ({placeholders})",
-            [inst_id, *project_ids]
-        ).fetchall()
-        proj_rows = {r["id"]: dict(r) for r in rows}
-
-    def _month_payload(key: str, baseline_key: str) -> Dict[str, Any]:
-        month_totals = totals[key]
-        baseline_totals = totals[baseline_key]
-        projects_out = []
-        for pid, hours in month_totals.items():
-            if pid not in proj_rows:
-                continue
-            prev = baseline_totals.get(pid, 0)
-            trend_pct = round((hours - prev) / prev * 100, 1) if prev else None
-            projects_out.append({
-                "project_id": pid, "name": proj_rows[pid]["name"], "member_count": proj_rows[pid]["member_count"],
-                "total_hours": hours, "trend_pct": trend_pct,
-                "top_resources": _top_resources(pid, month_keys[key]),
+    missing = []
+    for r in emp_rows:
+        bd = _weekly_hours_breakdown(conn, inst_id, r["employee_id"], month_start.isoformat(),
+                                      breakdown_end.isoformat(), r["total_hours"])
+        if bd["missing_hours"] > 0:
+            missing.append({
+                "employee_id": r["employee_id"], "full_name": r["full_name"], "preferred_name": r["preferred_name"],
+                "missing_hours": bd["missing_hours"],
             })
-        projects_out.sort(key=lambda p: p["total_hours"], reverse=True)
-        return {"label": months[key].strftime("%B %Y"), "projects": projects_out, **_billable_split(month_keys[key])}
+    missing.sort(key=lambda m: m["missing_hours"], reverse=True)
 
     return {
-        "current_month": _month_payload("current", "last"),
-        "last_month": _month_payload("last", "before_last"),
+        "months": months_out,
+        "missing_hours_month_label": today.strftime("%B %Y"),
+        "missing_hours_top10": missing[:10],
     }
 
 

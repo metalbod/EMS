@@ -4,6 +4,7 @@ Task Assignments. Uses the shared make_test_project/make_test_project_task
 fixtures from conftest.py (also reused by leave/timesheets tests, since
 both need a real project+task to log time against).
 """
+import os
 from datetime import date, timedelta
 
 import pytest
@@ -424,130 +425,187 @@ def test_project_utilization_total_estimated_is_none_when_no_task_has_one(
 
 
 # ---------------------------------------------------------------------------
-# Monthly summary (Home dashboard's Timesheet tab — GET /api/projects/monthly-summary)
+# Timesheet dashboard (Home dashboard's Timesheet tab —
+# GET /api/projects/timesheet-dashboard)
 # ---------------------------------------------------------------------------
 def _monday_of_week(d):
     return d - timedelta(days=d.weekday())
 
 
-def _mid_last_month():
-    first_of_this_month = date.today().replace(day=1)
-    last_month_end = first_of_this_month - timedelta(days=1)
-    return last_month_end.replace(day=15)
+def _ym(d):
+    return d.strftime("%Y-%m")
 
 
-def _log_hours(client, headers, emp, project, task, entry_date, hours):
-    """Starts (get-or-creates) the timesheet whose week contains entry_date,
-    then logs an entry against it — mirrors test_timesheets.py's own
-    make_test_timesheet/entries flow, just parameterized on a real date
-    instead of a fixed far-future period, since this endpoint groups by
-    real calendar month."""
+def _add_months(d, delta):
+    m = d.month - 1 + delta
+    y = d.year + m // 12
+    m = m % 12 + 1
+    return d.replace(year=y, month=m, day=1)
+
+
+def _log_and_approve_hours(client, headers, emp, project, task, entry_date, hours, approver_headers):
+    """Starts (get-or-creates) the timesheet whose week contains
+    entry_date, logs an entry, submits it, and — only when
+    approver_headers is given — approves that project on it. The
+    timesheet-dashboard endpoint only counts *approved* hours, so a test
+    proving that must be able to log hours that stay merely Submitted."""
     period_start = _monday_of_week(entry_date)
     period_end = period_start + timedelta(days=6)
     ts = client.post("/api/timesheets", headers=headers, json={
         "employee_id": emp["employee_id"], "period_start": period_start.isoformat(), "period_end": period_end.isoformat(),
     })
     assert ts.status_code == 201, f"failed to start test timesheet: {ts.text}"
-    entry = client.post(f"/api/timesheets/{ts.json()['id']}/entries", headers=headers, json={
+    ts_id = ts.json()["id"]
+    entry = client.post(f"/api/timesheets/{ts_id}/entries", headers=headers, json={
         "project_id": project["id"], "task_id": task["id"], "date": entry_date.isoformat(), "hours": hours,
     })
     assert entry.status_code == 201, f"failed to log test entry: {entry.text}"
+    submit = client.patch(f"/api/timesheets/{ts_id}/status", headers=headers, json={"status": "Submitted"})
+    assert submit.status_code == 200, submit.text
+    if approver_headers:
+        approve = client.patch(f"/api/timesheets/{ts_id}/projects/{project['id']}/status", headers=approver_headers,
+                                json={"status": "Approved"})
+        assert approve.status_code == 200, approve.text
+    return ts_id
 
 
-def test_monthly_summary_requires_manage_role(client, make_test_user, test_institution):
+def test_timesheet_dashboard_requires_manage_role(client, make_test_user, test_institution):
     token, _ = make_test_user(role="employee")
     headers = {"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}
-    res = client.get("/api/projects/monthly-summary", headers=headers)
+    res = client.get("/api/projects/timesheet-dashboard", headers=headers)
     assert res.status_code == 403
 
 
-def test_monthly_summary_groups_hours_by_calendar_month(
-    client, hr_manager_auth, employee_with_login, make_test_project, make_test_project_task
-):
-    emp, headers = employee_with_login()
-    project = make_test_project(is_billable=True, is_open_to_all=True)
-    task = make_test_project_task(project["id"])
-
-    _log_hours(client, headers, emp, project, task, date.today(), 6)
-    _log_hours(client, headers, emp, project, task, _mid_last_month(), 4)
-
-    res = client.get("/api/projects/monthly-summary", headers=hr_manager_auth)
+def test_timesheet_dashboard_covers_trailing_six_months_in_order(client, hr_manager_auth):
+    res = client.get("/api/projects/timesheet-dashboard", headers=hr_manager_auth)
     assert res.status_code == 200, res.text
-    body = res.json()
+    months = res.json()["months"]
+    assert len(months) == 6
+    today = date.today().replace(day=1)
+    expected_keys = [_ym(_add_months(today, -i)) for i in range(5, -1, -1)]
+    assert [m["year_month"] for m in months] == expected_keys
+    assert months[-1]["label"] == date.today().strftime("%b %Y")
+    assert all(m["total_hours"] == m["billable_hours"] + m["non_billable_hours"] for m in months)
 
-    current = next(p for p in body["current_month"]["projects"] if p["project_id"] == project["id"])
-    assert current["total_hours"] == 6
-    last = next(p for p in body["last_month"]["projects"] if p["project_id"] == project["id"])
-    assert last["total_hours"] == 4
+
+def test_timesheet_dashboard_missing_hours_month_label_is_current_month(client, hr_manager_auth):
+    res = client.get("/api/projects/timesheet-dashboard", headers=hr_manager_auth)
+    assert res.json()["missing_hours_month_label"] == date.today().strftime("%B %Y")
 
 
-def test_monthly_summary_excludes_non_billable_from_project_list_but_counts_in_split(
+def test_timesheet_dashboard_missing_hours_top10_shape(client, hr_manager_auth):
+    """Structural invariants that must hold no matter how much other test
+    data has already piled up in the shared test institution (see the
+    isolated-institution test below for the actual ranking behavior)."""
+    res = client.get("/api/projects/timesheet-dashboard", headers=hr_manager_auth)
+    top10 = res.json()["missing_hours_top10"]
+    assert len(top10) <= 10
+    assert all(e["missing_hours"] > 0 for e in top10)
+    hours = [e["missing_hours"] for e in top10]
+    assert hours == sorted(hours, reverse=True)
+
+
+def test_timesheet_dashboard_only_counts_approved_hours(
     client, hr_manager_auth, employee_with_login, make_test_project, make_test_project_task
 ):
-    emp, headers = employee_with_login()
-    billable = make_test_project(is_billable=True, is_open_to_all=True)
-    billable_task = make_test_project_task(billable["id"])
-    non_billable = make_test_project(is_billable=False, is_open_to_all=True)
-    non_billable_task = make_test_project_task(non_billable["id"])
-
-    _log_hours(client, headers, emp, billable, billable_task, date.today(), 5)
-    _log_hours(client, headers, emp, non_billable, non_billable_task, date.today(), 3)
-
-    res = client.get("/api/projects/monthly-summary", headers=hr_manager_auth)
-    body = res.json()["current_month"]
-    assert non_billable["id"] not in [p["project_id"] for p in body["projects"]]
-    assert billable["id"] in [p["project_id"] for p in body["projects"]]
-    assert body["billable_hours"] >= 5
-    assert body["non_billable_hours"] >= 3
-
-
-def test_monthly_summary_sorts_projects_by_total_hours_descending(
-    client, hr_manager_auth, employee_with_login, make_test_project, make_test_project_task
-):
-    emp, headers = employee_with_login()
-    small = make_test_project(is_billable=True, is_open_to_all=True, name="ZZ Small Hours Project")
-    small_task = make_test_project_task(small["id"])
-    big = make_test_project(is_billable=True, is_open_to_all=True, name="ZZ Big Hours Project")
-    big_task = make_test_project_task(big["id"])
-
-    _log_hours(client, headers, emp, small, small_task, date.today(), 2)
-    _log_hours(client, headers, emp, big, big_task, date.today(), 9)
-
-    res = client.get("/api/projects/monthly-summary", headers=hr_manager_auth)
-    ids_in_order = [p["project_id"] for p in res.json()["current_month"]["projects"]
-                     if p["project_id"] in (small["id"], big["id"])]
-    assert ids_in_order == [big["id"], small["id"]]
-
-
-def test_monthly_summary_top_resources_sorted_by_hours_descending(
-    client, hr_manager_auth, employee_with_login, make_test_project, make_test_project_task
-):
-    heavy, heavy_headers = employee_with_login(full_name="ZZ Heavy Resource")
-    light, light_headers = employee_with_login(full_name="ZZ Light Resource")
-    project = make_test_project(is_billable=True, is_open_to_all=True)
+    """The merely-Submitted employee's hours must not move the current
+    month's billable total at all — only the Approved one's do. Two
+    different employees on the same project (rather than one employee on
+    two projects) avoids the same-timesheet's own status/lock
+    interactions entirely."""
+    approved_emp, approved_headers = employee_with_login(full_name="ZZ Approved Hours Employee")
+    unapproved_emp, unapproved_headers = employee_with_login(full_name="ZZ Unapproved Hours Employee")
+    project = make_test_project(is_billable=True, is_open_to_all=True, name="ZZ Dashboard Approval Project")
     task = make_test_project_task(project["id"])
 
-    _log_hours(client, heavy_headers, heavy, project, task, date.today(), 7)
-    _log_hours(client, light_headers, light, project, task, date.today(), 2)
+    before = client.get("/api/projects/timesheet-dashboard", headers=hr_manager_auth).json()["months"][-1]["billable_hours"]
 
-    res = client.get("/api/projects/monthly-summary", headers=hr_manager_auth)
-    body = next(p for p in res.json()["current_month"]["projects"] if p["project_id"] == project["id"])
-    assert [r["employee_id"] for r in body["top_resources"]] == [heavy["employee_id"], light["employee_id"]]
+    _log_and_approve_hours(client, approved_headers, approved_emp, project, task, date.today(), 5, hr_manager_auth)
+    _log_and_approve_hours(client, unapproved_headers, unapproved_emp, project, task, date.today(), 3, None)
+
+    after = client.get("/api/projects/timesheet-dashboard", headers=hr_manager_auth).json()["months"][-1]["billable_hours"]
+    assert after - before == 5
 
 
-def test_monthly_summary_trend_pct_computed_against_prior_month(
+def test_timesheet_dashboard_splits_billable_and_non_billable(
     client, hr_manager_auth, employee_with_login, make_test_project, make_test_project_task
 ):
-    emp, headers = employee_with_login()
-    project = make_test_project(is_billable=True, is_open_to_all=True)
-    task = make_test_project_task(project["id"])
+    billable_emp, billable_headers = employee_with_login(full_name="ZZ Billable Split Employee")
+    non_billable_emp, non_billable_headers = employee_with_login(full_name="ZZ Non-billable Split Employee")
+    billable_project = make_test_project(is_billable=True, is_open_to_all=True, name="ZZ Split Billable Project")
+    billable_task = make_test_project_task(billable_project["id"])
+    non_billable_project = make_test_project(is_billable=False, is_open_to_all=True, name="ZZ Split Non-billable Project")
+    non_billable_task = make_test_project_task(non_billable_project["id"])
 
-    _log_hours(client, headers, emp, project, task, _mid_last_month(), 10)
-    _log_hours(client, headers, emp, project, task, date.today(), 15)
+    before = client.get("/api/projects/timesheet-dashboard", headers=hr_manager_auth).json()["months"][-1]
 
-    res = client.get("/api/projects/monthly-summary", headers=hr_manager_auth)
-    current = next(p for p in res.json()["current_month"]["projects"] if p["project_id"] == project["id"])
-    assert current["trend_pct"] == 50.0  # (15-10)/10 * 100
+    _log_and_approve_hours(client, billable_headers, billable_emp, billable_project, billable_task,
+                            date.today(), 5, hr_manager_auth)
+    _log_and_approve_hours(client, non_billable_headers, non_billable_emp, non_billable_project, non_billable_task,
+                            date.today(), 3, hr_manager_auth)
+
+    after = client.get("/api/projects/timesheet-dashboard", headers=hr_manager_auth).json()["months"][-1]
+    assert after["billable_hours"] - before["billable_hours"] == 5
+    assert after["non_billable_hours"] - before["non_billable_hours"] == 3
+    assert after["total_hours"] - before["total_hours"] == 8
+
+
+def test_timesheet_dashboard_missing_hours_ranked_descending_isolated(client, superadmin_headers):
+    """Isolated in its own throwaway institution (same technique as
+    test_rls_enforcement.py's "institution B") instead of the shared
+    test_institution — that one accumulates far too many employees across
+    a full suite run (many of whom never log any hours at all) to assert
+    a specific ranking against an unknown, unbounded set of competitors
+    for a top-10-capped list."""
+    from conftest import _valid_employee_payload
+
+    payload = {
+        "name": "ZZ Missing Hours Test Institution", "code": f"ZZMH{os.urandom(4).hex()}".upper(),
+        "contact_email": "zzmissinghours@example.com",
+        "admin_username": f"zzmissing_admin_{os.urandom(4).hex()}",
+        "admin_full_name": "ZZ Missing Hours Admin", "admin_password": "ZzPytest@123",
+    }
+    create = client.post("/api/institutions", headers=superadmin_headers, json=payload)
+    assert create.status_code == 201, create.text
+    inst_b = create.json()
+    login = client.post("/api/auth/login", json={
+        "username": payload["admin_username"], "password": payload["admin_password"],
+        "institution_code": inst_b["code"],
+    })
+    assert login.status_code == 200
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    busy = client.post("/api/employees", headers=headers, json=_valid_employee_payload(full_name="ZZ Busy Employee")).json()
+    idle = client.post("/api/employees", headers=headers, json=_valid_employee_payload(full_name="ZZ Idle Employee")).json()
+    project = client.post("/api/projects", headers=headers, json={
+        "name": "ZZ Missing Hours Project", "status": "Active", "is_open_to_all": True,
+    }).json()
+    task = client.post(f"/api/projects/{project['id']}/tasks", headers=headers, json={
+        "name": "ZZ Missing Hours Task", "status": "Not Started",
+    }).json()
+
+    today = date.today()
+    period_start = _monday_of_week(today)
+    ts = client.post("/api/timesheets", headers=headers, json={
+        "employee_id": busy["employee_id"], "period_start": period_start.isoformat(),
+        "period_end": (period_start + timedelta(days=6)).isoformat(),
+    }).json()
+    entry = client.post(f"/api/timesheets/{ts['id']}/entries", headers=headers, json={
+        "project_id": project["id"], "task_id": task["id"], "date": today.isoformat(), "hours": 8,
+    })
+    assert entry.status_code == 201, entry.text
+
+    res = client.get("/api/projects/timesheet-dashboard", headers=headers)
+    assert res.status_code == 200, res.text
+    top10 = res.json()["missing_hours_top10"]
+
+    idle_entry = next(e for e in top10 if e["employee_id"] == idle["employee_id"])
+    busy_entry = next((e for e in top10 if e["employee_id"] == busy["employee_id"]), None)
+    busy_missing = busy_entry["missing_hours"] if busy_entry else 0.0
+    assert idle_entry["missing_hours"] > busy_missing, \
+        "an employee who logged no hours must show more missing hours than one who logged some"
+    hours = [e["missing_hours"] for e in top10]
+    assert hours == sorted(hours, reverse=True)
 
 
 def test_my_projects_empty_for_user_with_no_employee_record(client, hr_manager_auth):

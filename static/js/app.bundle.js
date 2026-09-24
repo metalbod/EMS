@@ -53,32 +53,20 @@ function createListState({sortKey:e,sortDir:t="asc",pageSize:n=10,sortValue:a}){
             <div class="${statusColor(o,i,"bg-slate-400")} h-2 rounded-full" style="width:${Math.round(d/l*100)}%"></div>
           </div>
           <div class="text-xs text-slate-500 w-5 text-right">${d}</div>
-        </div>`).join("")||'<p class="text-slate-400 text-sm">No requisitions yet.</p>'})}const _tsFmtH=e=>(Math.round(e*10)/10).toString().replace(/\.0$/,"");function _tsTrendBadge(e){if(e==null)return'<span class="text-xs text-slate-400">New</span>';if(e===0)return'<span class="text-xs text-slate-400">\xB10%</span>';const t=e>0;return`<span class="text-xs ${t?"text-emerald-600":"text-slate-500"} font-medium">${t?"\u25B2":"\u25BC"} ${Math.abs(e)}%</span>`}function _tsBillableSplitBar(e,t,n){const a=t+n,s=a>0?Math.round(t/a*100):0;document.getElementById(e).innerHTML=`
-    <div class="flex items-center justify-between text-xs text-slate-500 mb-1">
-      <span>Billable ${_tsFmtH(t)}h</span><span>Non-billable ${_tsFmtH(n)}h</span>
+        </div>`).join("")||'<p class="text-slate-400 text-sm">No requisitions yet.</p>'})}const _tsFmtH=e=>(Math.round(e*10)/10).toString().replace(/\.0$/,""),_TS_BAR_MAX_PX=140;function _tsMonthColumn(e,t){const n=t>0?Math.round(e.total_hours/t*_TS_BAR_MAX_PX):0,a=e.total_hours>0?Math.round(e.billable_hours/e.total_hours*n):0,s=n-a;return`<div class="flex-1 flex flex-col items-center gap-1.5 min-w-0">
+    <div class="text-xs font-medium text-slate-700 whitespace-nowrap">${_tsFmtH(e.total_hours)}h</div>
+    <div class="w-full max-w-[3.25rem] flex flex-col-reverse rounded-md overflow-hidden bg-slate-50" style="height:${_TS_BAR_MAX_PX}px">
+      <div class="bg-emerald-500" style="height:${a}px"></div>
+      <div class="bg-slate-300" style="height:${s}px"></div>
     </div>
-    <div class="bg-slate-100 rounded-full h-2">
-      <div class="bg-emerald-500 h-2 rounded-full" style="width:${s}%"></div>
-    </div>`}function _tsProjectCard(e,t){const n=t>0?Math.round(e.total_hours/t*100):0,a=e.top_resources.length?e.top_resources.map(s=>{const o=e.top_resources[0].hours||1,l=Math.round(s.hours/o*100);return`<div class="flex items-center gap-2">
-      <div class="w-32 text-xs text-slate-600 truncate shrink-0">${esc(displayName(s.full_name,s.preferred_name)||s.employee_id)}</div>
-      <div class="flex-1 bg-slate-100 rounded-full h-1.5">
-        <div class="bg-blue-400 h-1.5 rounded-full" style="width:${l}%"></div>
-      </div>
-      <div class="text-xs text-slate-500 shrink-0 whitespace-nowrap">${_tsFmtH(s.hours)}h</div>
-    </div>`}).join(""):'<p class="text-xs text-slate-400">No one logged time on this project yet.</p>';return`<div class="bg-white rounded-xl border border-slate-200 p-4">
-    <div class="flex items-center justify-between gap-2 mb-1">
-      <h4 class="font-medium text-sm text-slate-800 truncate" title="${esc(e.name)}">${esc(e.name)}</h4>
-      <div class="flex items-center gap-2 shrink-0">
-        ${_tsTrendBadge(e.trend_pct)}
-        <span class="text-xs font-medium text-slate-700 whitespace-nowrap">${_tsFmtH(e.total_hours)}h</span>
-      </div>
+    <div class="text-xs text-slate-400 whitespace-nowrap">${esc(e.label)}</div>
+  </div>`}function _tsMissingRow(e,t){const n=t>0?Math.round(e.missing_hours/t*100):0;return`<div class="flex items-center gap-2">
+    <div class="w-40 text-xs text-slate-600 truncate shrink-0">${esc(displayName(e.full_name,e.preferred_name)||e.employee_id)}</div>
+    <div class="flex-1 bg-slate-100 rounded-full h-2">
+      <div class="bg-amber-500 h-2 rounded-full" style="width:${n}%"></div>
     </div>
-    <div class="bg-slate-100 rounded-full h-2 mb-3">
-      <div class="bg-emerald-500 h-2 rounded-full" style="width:${n}%"></div>
-    </div>
-    <p class="text-xs text-slate-400 mb-1.5">Top resources</p>
-    <div class="space-y-1.5">${a}</div>
-  </div>`}function _tsRenderMonth(e,t){document.getElementById(`tsSummary${e}Label`).textContent=t.label,_tsBillableSplitBar(`tsSummary${e}Split`,t.billable_hours,t.non_billable_hours);const n=document.getElementById(`tsSummary${e}List`),a=document.getElementById(`tsSummary${e}Empty`);if(!t.projects.length){n.innerHTML="",a.classList.remove("hidden");return}a.classList.add("hidden");const s=t.projects[0].total_hours;n.innerHTML=t.projects.map(o=>_tsProjectCard(o,s)).join("")}function loadTimesheetDash(){api("/api/projects/monthly-summary").then(async e=>{if(!e||!e.ok)return;const t=await e.json();_tsRenderMonth("Current",t.current_month),_tsRenderMonth("Last",t.last_month)})}function loadCompensationDash(){var n,a;const e=BENEFITS_DASHBOARD_ROLES.includes(currentUser==null?void 0:currentUser.role);(n=document.getElementById("benefitsDashSection"))==null||n.classList.toggle("hidden",!e),e&&api("/api/benefits/reports/dashboard").then(async s=>{var r,c;if(!s||!s.ok)return;const o=await s.json();_lastBenefitsDashboard=o,document.getElementById("bdActivePlans").textContent=o.total_active_plans,document.getElementById("bdEnrolledEmployees").textContent=o.total_enrolled_employees,document.getElementById("bdEmployerCost").textContent=fmtCurrency(o.total_monthly_employer_cost),document.getElementById("bdClaimsPaid").textContent=fmtCurrency(o.total_claims_paid_ytd);const l=document.getElementById("bdDeptCostList");(r=document.getElementById("bdDeptCostEmpty"))==null||r.classList.toggle("hidden",o.department_costs.length>0);const i=Math.max(...o.department_costs.map(m=>m.monthly_employer_cost_total),1);l.innerHTML=o.department_costs.map(m=>`
+    <div class="text-xs text-slate-500 shrink-0 whitespace-nowrap">${_tsFmtH(e.missing_hours)}h</div>
+  </div>`}function loadTimesheetDash(){api("/api/projects/timesheet-dashboard").then(async e=>{if(!e||!e.ok)return;const t=await e.json(),n=document.getElementById("tsMonthlyChart"),a=document.getElementById("tsMonthlyEmpty"),s=t.months.some(r=>r.total_hours>0);a.classList.toggle("hidden",s);const o=Math.max(...t.months.map(r=>r.total_hours),1);n.innerHTML=t.months.map(r=>_tsMonthColumn(r,o)).join(""),document.getElementById("tsMissingMonthLabel").textContent=t.missing_hours_month_label;const l=document.getElementById("tsMissingList"),i=document.getElementById("tsMissingEmpty");if(!t.missing_hours_top10.length){l.innerHTML="",i.classList.remove("hidden");return}i.classList.add("hidden");const d=t.missing_hours_top10[0].missing_hours;l.innerHTML=t.missing_hours_top10.map(r=>_tsMissingRow(r,d)).join("")})}function loadCompensationDash(){var n,a;const e=BENEFITS_DASHBOARD_ROLES.includes(currentUser==null?void 0:currentUser.role);(n=document.getElementById("benefitsDashSection"))==null||n.classList.toggle("hidden",!e),e&&api("/api/benefits/reports/dashboard").then(async s=>{var r,c;if(!s||!s.ok)return;const o=await s.json();_lastBenefitsDashboard=o,document.getElementById("bdActivePlans").textContent=o.total_active_plans,document.getElementById("bdEnrolledEmployees").textContent=o.total_enrolled_employees,document.getElementById("bdEmployerCost").textContent=fmtCurrency(o.total_monthly_employer_cost),document.getElementById("bdClaimsPaid").textContent=fmtCurrency(o.total_claims_paid_ytd);const l=document.getElementById("bdDeptCostList");(r=document.getElementById("bdDeptCostEmpty"))==null||r.classList.toggle("hidden",o.department_costs.length>0);const i=Math.max(...o.department_costs.map(m=>m.monthly_employer_cost_total),1);l.innerHTML=o.department_costs.map(m=>`
         <div class="flex items-center gap-2">
           <div class="w-28 text-xs text-slate-600 truncate" title="${esc(m.department)}">${esc(m.department)}</div>
           <div class="flex-1 bg-slate-100 rounded-full h-2">

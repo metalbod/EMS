@@ -762,25 +762,29 @@
             </div>
           </div>
 
-          <!-- Timesheet tab: billable-project hours for the current and last
-               calendar month, sorted by total hours logged, each project's
-               top resources ranked by hours on it that month, plus a
-               month-over-month trend and a billable/non-billable split.
-               HR Manager / superadmin only — lazy-loaded. -->
+          <!-- Timesheet tab: total *approved* clocked hours per calendar
+               month for the trailing 6 months, each month's bar split into
+               billable/non-billable, plus a top-10 ranking of employees by
+               missing hours this month. HR Manager / superadmin only —
+               lazy-loaded. -->
           <div id="dash-timesheet" class="dash-tab-panel hidden">
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div>
-                <h3 class="section-heading mb-1" id="tsSummaryCurrentLabel">Current Month</h3>
-                <div id="tsSummaryCurrentSplit" class="mb-4"></div>
-                <div id="tsSummaryCurrentList" class="space-y-3"></div>
-                <p id="tsSummaryCurrentEmpty" class="hidden text-slate-400 text-sm">No billable project hours logged yet this month.</p>
+            <div class="bg-white rounded-xl border border-slate-200 p-5 mb-6">
+              <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+                <h3 class="section-heading mb-0">Approved Clocked Hours — Last 6 Months</h3>
+                <div class="flex items-center gap-4 text-xs text-slate-500">
+                  <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-emerald-500 inline-block"></span>Billable</span>
+                  <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-slate-300 inline-block"></span>Non-billable</span>
+                </div>
               </div>
-              <div>
-                <h3 class="section-heading mb-1" id="tsSummaryLastLabel">Last Month</h3>
-                <div id="tsSummaryLastSplit" class="mb-4"></div>
-                <div id="tsSummaryLastList" class="space-y-3"></div>
-                <p id="tsSummaryLastEmpty" class="hidden text-slate-400 text-sm">No billable project hours logged last month.</p>
-              </div>
+              <div id="tsMonthlyChart" class="flex items-stretch gap-3 sm:gap-5"></div>
+              <p id="tsMonthlyEmpty" class="hidden text-slate-400 text-sm mt-2">No approved timesheet hours in this range yet.</p>
+            </div>
+
+            <div class="bg-white rounded-xl border border-slate-200 p-5">
+              <h3 class="section-heading mb-1">Top 10 — Missing Hours This Month</h3>
+              <p class="text-xs text-slate-400 mb-3">Employees furthest behind on expected hours for <span id="tsMissingMonthLabel">—</span>, based on logged vs. expected working hours to date.</p>
+              <div id="tsMissingList" class="space-y-2"></div>
+              <p id="tsMissingEmpty" class="hidden text-slate-400 text-sm">No one is behind on hours this month.</p>
             </div>
           </div>
 

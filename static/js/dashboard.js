@@ -277,81 +277,63 @@ function loadRecruitmentDash() {
 // text always spells out hours left/over explicitly rather than making
 // someone do that subtraction themselves from a bare "logged/estimate"
 // pair.
-// Billable-project hours summary (Home > Timesheet tab) — replaces the
-// old all-time task-budget view with two side-by-side calendar months,
-// each project sorted by total hours logged (highest first) with its own
-// top resources (people, ranked by hours on it that month) and a
-// month-over-month trend. Same hand-rolled div-bar visual language as
-// every other dashboard chart (breakdownBar/segmentedBar above, the
-// Leave tab's utilization ranking) — no charting library anywhere in
-// this app. Fed by GET /api/projects/monthly-summary (routers/projects.py).
+// Approved clocked hours summary (Home > Timesheet tab) — a 6-month
+// column chart of total *approved* hours per calendar month, each
+// column split into a billable (bottom) / non-billable (top) stack, plus
+// a top-10 ranking of employees by missing hours this month. Same
+// hand-rolled div-bar visual language as every other dashboard chart
+// (breakdownBar/segmentedBar above, the Leave tab's utilization ranking)
+// — no charting library anywhere in this app. Columns use fixed pixel
+// heights (not nested percentages) so the billable/non-billable split
+// renders correctly regardless of the month's share of the tallest bar.
+// Fed by GET /api/projects/timesheet-dashboard (routers/projects.py).
 const _tsFmtH = n => (Math.round(n * 10) / 10).toString().replace(/\.0$/, '');
+const _TS_BAR_MAX_PX = 140;
 
-function _tsTrendBadge(trendPct) {
-  if (trendPct == null) return '<span class="text-xs text-slate-400">New</span>';
-  if (trendPct === 0) return '<span class="text-xs text-slate-400">±0%</span>';
-  const up = trendPct > 0;
-  return `<span class="text-xs ${up?'text-emerald-600':'text-slate-500'} font-medium">${up?'▲':'▼'} ${Math.abs(trendPct)}%</span>`;
-}
-
-function _tsBillableSplitBar(containerId, billable, nonBillable) {
-  const total = billable + nonBillable;
-  const pct = total > 0 ? Math.round(billable / total * 100) : 0;
-  document.getElementById(containerId).innerHTML = `
-    <div class="flex items-center justify-between text-xs text-slate-500 mb-1">
-      <span>Billable ${_tsFmtH(billable)}h</span><span>Non-billable ${_tsFmtH(nonBillable)}h</span>
+function _tsMonthColumn(m, maxHours) {
+  const barPx = maxHours > 0 ? Math.round(m.total_hours / maxHours * _TS_BAR_MAX_PX) : 0;
+  const billablePx = m.total_hours > 0 ? Math.round(m.billable_hours / m.total_hours * barPx) : 0;
+  const nonBillablePx = barPx - billablePx;
+  return `<div class="flex-1 flex flex-col items-center gap-1.5 min-w-0">
+    <div class="text-xs font-medium text-slate-700 whitespace-nowrap">${_tsFmtH(m.total_hours)}h</div>
+    <div class="w-full max-w-[3.25rem] flex flex-col-reverse rounded-md overflow-hidden bg-slate-50" style="height:${_TS_BAR_MAX_PX}px">
+      <div class="bg-emerald-500" style="height:${billablePx}px"></div>
+      <div class="bg-slate-300" style="height:${nonBillablePx}px"></div>
     </div>
-    <div class="bg-slate-100 rounded-full h-2">
-      <div class="bg-emerald-500 h-2 rounded-full" style="width:${pct}%"></div>
-    </div>`;
-}
-
-function _tsProjectCard(p, maxHours) {
-  const pct = maxHours > 0 ? Math.round(p.total_hours / maxHours * 100) : 0;
-  const resourceRows = p.top_resources.length ? p.top_resources.map(r => {
-    const rMax = p.top_resources[0].hours || 1;
-    const rPct = Math.round(r.hours / rMax * 100);
-    return `<div class="flex items-center gap-2">
-      <div class="w-32 text-xs text-slate-600 truncate shrink-0">${esc(displayName(r.full_name, r.preferred_name) || r.employee_id)}</div>
-      <div class="flex-1 bg-slate-100 rounded-full h-1.5">
-        <div class="bg-blue-400 h-1.5 rounded-full" style="width:${rPct}%"></div>
-      </div>
-      <div class="text-xs text-slate-500 shrink-0 whitespace-nowrap">${_tsFmtH(r.hours)}h</div>
-    </div>`;
-  }).join('') : '<p class="text-xs text-slate-400">No one logged time on this project yet.</p>';
-  return `<div class="bg-white rounded-xl border border-slate-200 p-4">
-    <div class="flex items-center justify-between gap-2 mb-1">
-      <h4 class="font-medium text-sm text-slate-800 truncate" title="${esc(p.name)}">${esc(p.name)}</h4>
-      <div class="flex items-center gap-2 shrink-0">
-        ${_tsTrendBadge(p.trend_pct)}
-        <span class="text-xs font-medium text-slate-700 whitespace-nowrap">${_tsFmtH(p.total_hours)}h</span>
-      </div>
-    </div>
-    <div class="bg-slate-100 rounded-full h-2 mb-3">
-      <div class="bg-emerald-500 h-2 rounded-full" style="width:${pct}%"></div>
-    </div>
-    <p class="text-xs text-slate-400 mb-1.5">Top resources</p>
-    <div class="space-y-1.5">${resourceRows}</div>
+    <div class="text-xs text-slate-400 whitespace-nowrap">${esc(m.label)}</div>
   </div>`;
 }
 
-function _tsRenderMonth(prefix, month) {
-  document.getElementById(`tsSummary${prefix}Label`).textContent = month.label;
-  _tsBillableSplitBar(`tsSummary${prefix}Split`, month.billable_hours, month.non_billable_hours);
-  const listEl = document.getElementById(`tsSummary${prefix}List`);
-  const emptyEl = document.getElementById(`tsSummary${prefix}Empty`);
-  if (!month.projects.length) { listEl.innerHTML=''; emptyEl.classList.remove('hidden'); return; }
-  emptyEl.classList.add('hidden');
-  const maxHours = month.projects[0].total_hours;
-  listEl.innerHTML = month.projects.map(p => _tsProjectCard(p, maxHours)).join('');
+function _tsMissingRow(e, maxMissing) {
+  const pct = maxMissing > 0 ? Math.round(e.missing_hours / maxMissing * 100) : 0;
+  return `<div class="flex items-center gap-2">
+    <div class="w-40 text-xs text-slate-600 truncate shrink-0">${esc(displayName(e.full_name, e.preferred_name) || e.employee_id)}</div>
+    <div class="flex-1 bg-slate-100 rounded-full h-2">
+      <div class="bg-amber-500 h-2 rounded-full" style="width:${pct}%"></div>
+    </div>
+    <div class="text-xs text-slate-500 shrink-0 whitespace-nowrap">${_tsFmtH(e.missing_hours)}h</div>
+  </div>`;
 }
 
 function loadTimesheetDash() {
-  api('/api/projects/monthly-summary').then(async res => {
+  api('/api/projects/timesheet-dashboard').then(async res => {
     if (!res || !res.ok) return;
     const data = await res.json();
-    _tsRenderMonth('Current', data.current_month);
-    _tsRenderMonth('Last', data.last_month);
+
+    const chartEl = document.getElementById('tsMonthlyChart');
+    const chartEmptyEl = document.getElementById('tsMonthlyEmpty');
+    const anyHours = data.months.some(m => m.total_hours > 0);
+    chartEmptyEl.classList.toggle('hidden', anyHours);
+    const maxHours = Math.max(...data.months.map(m => m.total_hours), 1);
+    chartEl.innerHTML = data.months.map(m => _tsMonthColumn(m, maxHours)).join('');
+
+    document.getElementById('tsMissingMonthLabel').textContent = data.missing_hours_month_label;
+    const missingListEl = document.getElementById('tsMissingList');
+    const missingEmptyEl = document.getElementById('tsMissingEmpty');
+    if (!data.missing_hours_top10.length) { missingListEl.innerHTML = ''; missingEmptyEl.classList.remove('hidden'); return; }
+    missingEmptyEl.classList.add('hidden');
+    const maxMissing = data.missing_hours_top10[0].missing_hours;
+    missingListEl.innerHTML = data.missing_hours_top10.map(e => _tsMissingRow(e, maxMissing)).join('');
   });
 }
 
