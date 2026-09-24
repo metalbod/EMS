@@ -159,6 +159,31 @@ def _log_candidate(conn, inst_id: int, cand_id: int, action: str, detail: str, b
     )
 
 
+def _log_requisition(conn, inst_id: int, req_id: int, action: str, detail: str, user: dict):
+    conn.execute(
+        "INSERT INTO requisition_audit_log (institution_id,requisition_id,action,detail,performed_by,performer_role) VALUES (?,?,?,?,?,?)",
+        (inst_id, req_id, action, detail, user["username"], user["role"])
+    )
+
+
+# Every editable field on a requisition (create_requisition's own INSERT
+# column list) — used by update_requisition to log exactly which fields
+# actually changed, not just a generic "Requisition updated".
+_REQUISITION_DIFF_FIELDS = (
+    "title", "department", "headcount", "employment_type",
+    "description", "requirements", "salary_min", "salary_max", "priority",
+)
+
+
+def _requisition_edit_detail(old_row, new_body) -> str:
+    changes = []
+    for field in _REQUISITION_DIFF_FIELDS:
+        old_val, new_val = old_row[field], getattr(new_body, field)
+        if old_val != new_val:
+            changes.append(f"{field}: {old_val!r} → {new_val!r}")
+    return "; ".join(changes) if changes else "No fields changed"
+
+
 def _log_employee_note(conn, inst_id: int, employee_id: str, body: str, by: str):
     """Confirmation letters are about an employee, not a candidate — there's
     no candidate_audit_log to write to, so this uses hr_notes instead,
@@ -470,6 +495,7 @@ def create_requisition(conn, body: RequisitionIn, user: dict = Depends(get_curre
           body.description, body.requirements, body.salary_min, body.salary_max,
           body.priority, user["username"]))
     rid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    _log_requisition(conn, inst_id, rid, "Created", f"Requisition '{body.title}' created ({body.headcount} headcount)", user)
     conn.commit()
     row = conn.execute("SELECT * FROM job_requisitions WHERE id=?", (rid,)).fetchone()
     return dict(row)
@@ -496,6 +522,7 @@ def update_requisition(conn, req_id: int, body: RequisitionIn, user: dict = Depe
     r = _get_req(conn, inst_id, req_id)
     if r["status"] not in ("Draft",):
         raise HTTPException(400, "Only Draft requisitions can be edited")
+    edit_detail = _requisition_edit_detail(r, body)
     conn.execute("""
         UPDATE job_requisitions SET title=?,department=?,headcount=?,employment_type=?,
             description=?,requirements=?,salary_min=?,salary_max=?,priority=?
@@ -503,6 +530,7 @@ def update_requisition(conn, req_id: int, body: RequisitionIn, user: dict = Depe
     """, (body.title, body.department, body.headcount, body.employment_type,
           body.description, body.requirements, body.salary_min, body.salary_max,
           body.priority, req_id, inst_id))
+    _log_requisition(conn, inst_id, req_id, "Updated", edit_detail, user)
     conn.commit()
     row = conn.execute("SELECT * FROM job_requisitions WHERE id=?", (req_id,)).fetchone()
     return dict(row)
@@ -527,6 +555,8 @@ def submit_requisition(conn, req_id: int, user: dict = Depends(get_current_user)
     new_status = "Approved" if auto_approved else "Pending Approval"
     conn.execute("UPDATE job_requisitions SET status=?,approval_workflow_id=?,approval_step=? WHERE id=?",
                  (new_status, workflow_id, step_order, req_id))
+    _log_requisition(conn, inst_id, req_id, "Submitted",
+                     "Auto-approved (no applicable approval step)" if auto_approved else "Submitted for approval", user)
     conn.commit()
     row = conn.execute("SELECT * FROM job_requisitions WHERE id=?", (req_id,)).fetchone()
     return dict(row)
@@ -558,9 +588,14 @@ def approve_requisition(conn, req_id: int, body: RequisitionApprovalIn,
             raise HTTPException(403, "Only HR Manager can approve/reject requisitions")
         outcome, next_step = ("rejected" if action == "reject" else "approved"), None
 
+    step_label = f"step {r['approval_step']}" if r["approval_step"] is not None else "the approval"
+    comment_suffix = f" — {body.comments}" if body.comments else ""
+
     if outcome == "advanced":
         conn.execute("UPDATE job_requisitions SET approval_step=?,approval_comments=? WHERE id=?",
                      (next_step, body.comments, req_id))
+        _log_requisition(conn, inst_id, req_id, "Approval Advanced",
+                         f"Cleared {step_label}, now awaiting step {next_step}{comment_suffix}", user)
         conn.commit()
         return dict(conn.execute("SELECT * FROM job_requisitions WHERE id=?", (req_id,)).fetchone())
 
@@ -569,6 +604,8 @@ def approve_requisition(conn, req_id: int, body: RequisitionApprovalIn,
         UPDATE job_requisitions SET status=?, approved_by=?, approval_comments=?, approval_step=NULL
         WHERE id=?
     """, (new_status, user["username"], body.comments, req_id))
+    _log_requisition(conn, inst_id, req_id, new_status,
+                     f"{'Approved' if outcome == 'approved' else 'Rejected'} at {step_label}{comment_suffix}", user)
     conn.commit()
     row = conn.execute("SELECT * FROM job_requisitions WHERE id=?", (req_id,)).fetchone()
     return dict(row)
@@ -583,9 +620,23 @@ def close_requisition(conn, req_id: int, user: dict = Depends(get_current_user))
         "UPDATE job_requisitions SET status='Closed', closed_at=to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS') WHERE id=? AND institution_id=?",
         (req_id, inst_id)
     )
+    _log_requisition(conn, inst_id, req_id, "Closed", "Requisition closed", user)
     conn.commit()
     row = conn.execute("SELECT * FROM job_requisitions WHERE id=?", (req_id,)).fetchone()
     return dict(row)
+
+
+@router.get("/api/recruitment/requisitions/{req_id}/audit-log")
+@db_session
+def get_requisition_audit_log(conn, req_id: int, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
+    require_permission(conn, user, "recruitment.view_requisition_audit_log")
+    inst_id = need_inst(user)
+    _get_req(conn, inst_id, req_id)
+    rows = conn.execute(
+        "SELECT * FROM requisition_audit_log WHERE requisition_id=? AND institution_id=? ORDER BY created_at DESC",
+        (req_id, inst_id)
+    ).fetchall()
+    return [dict(r) for r in rows]
 
 
 # ---------------------------------------------------------------------------

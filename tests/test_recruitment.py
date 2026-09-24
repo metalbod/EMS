@@ -173,6 +173,117 @@ def test_close_requisition_success(client, hr_manager_auth):
 
 
 # ---------------------------------------------------------------------------
+# Requisition audit log / History
+# ---------------------------------------------------------------------------
+def test_requisition_audit_log_records_creation_and_edit(client, hr_manager_auth):
+    req = client.post("/api/recruitment/requisitions", headers=hr_manager_auth,
+                       json={"title": _unique_title(), "department": "Sales", "headcount": 2}).json()
+    client.put(f"/api/recruitment/requisitions/{req['id']}", headers=hr_manager_auth, json={
+        "title": "ZZ Edited Title", "department": "Sales", "headcount": 5,
+    })
+    res = client.get(f"/api/recruitment/requisitions/{req['id']}/audit-log", headers=hr_manager_auth)
+    assert res.status_code == 200
+    rows = res.json()
+    actions = [r["action"] for r in rows]
+    assert "Created" in actions
+    assert "Updated" in actions
+    updated = next(r for r in rows if r["action"] == "Updated")
+    assert "headcount" in updated["detail"].lower() or "title" in updated["detail"].lower()
+
+
+def test_requisition_audit_log_records_submit_and_approve_single_step(client, hr_manager_auth):
+    """Default requisition approval chain is a single hr_manager step, so
+    approve here is terminal — outcome='approved' directly, no 'advanced'
+    branch."""
+    req = client.post("/api/recruitment/requisitions", headers=hr_manager_auth,
+                       json={"title": _unique_title(), "department": "Sales"}).json()
+    client.patch(f"/api/recruitment/requisitions/{req['id']}/submit", headers=hr_manager_auth)
+    client.patch(f"/api/recruitment/requisitions/{req['id']}/approve", headers=hr_manager_auth,
+                 json={"action": "approve", "comments": "ZZ approved"})
+    res = client.get(f"/api/recruitment/requisitions/{req['id']}/audit-log", headers=hr_manager_auth)
+    actions = [r["action"] for r in res.json()]
+    assert "Submitted" in actions
+    assert "Approved" in actions
+
+
+def test_requisition_audit_log_records_rejection(client, hr_manager_auth):
+    req = client.post("/api/recruitment/requisitions", headers=hr_manager_auth,
+                       json={"title": _unique_title(), "department": "Sales"}).json()
+    client.patch(f"/api/recruitment/requisitions/{req['id']}/submit", headers=hr_manager_auth)
+    client.patch(f"/api/recruitment/requisitions/{req['id']}/approve", headers=hr_manager_auth,
+                 json={"action": "reject", "comments": "ZZ not needed"})
+    res = client.get(f"/api/recruitment/requisitions/{req['id']}/audit-log", headers=hr_manager_auth)
+    rows = res.json()
+    rejected = next(r for r in rows if r["action"] == "Rejected")
+    assert "ZZ not needed" in rejected["detail"]
+
+
+def test_requisition_audit_log_records_close(client, hr_manager_auth):
+    req = client.post("/api/recruitment/requisitions", headers=hr_manager_auth,
+                       json={"title": _unique_title(), "department": "Sales"}).json()
+    client.patch(f"/api/recruitment/requisitions/{req['id']}/close", headers=hr_manager_auth)
+    res = client.get(f"/api/recruitment/requisitions/{req['id']}/audit-log", headers=hr_manager_auth)
+    assert "Closed" in [r["action"] for r in res.json()]
+
+
+def test_requisition_audit_log_records_per_step_approval_trail(client, hr_manager_auth):
+    """The actual gap this feature closes: with a multi-step chain, every
+    intermediate step's clearance must get its own audit row (who/when),
+    not just the final approved_by on job_requisitions — which used to be
+    the only place any approver identity was recorded, and got overwritten
+    by the last step every time."""
+    wf = client.post("/api/approval-workflows", headers=hr_manager_auth, json={
+        "module": "requisition", "name": "ZZ Two Step Requisition Chain", "mode": "sequential",
+    }).json()
+    # A default requisition workflow may already have been lazily created by
+    # an earlier test in this session (see get_or_create_default_workflow) —
+    # create_workflow then leaves this new one as non-default. Force it to
+    # be the one start_workflow() actually picks up.
+    client.put(f"/api/approval-workflows/{wf['id']}", headers=hr_manager_auth,
+               json={"name": wf["name"], "is_default": True, "mode": "sequential"})
+    client.post(f"/api/approval-workflows/{wf['id']}/steps", headers=hr_manager_auth,
+                json={"approver_type": "hr_manager"})
+    client.post(f"/api/approval-workflows/{wf['id']}/steps", headers=hr_manager_auth,
+                json={"approver_type": "hr_manager"})
+    try:
+        req = client.post("/api/recruitment/requisitions", headers=hr_manager_auth,
+                           json={"title": _unique_title(), "department": "Sales"}).json()
+        client.patch(f"/api/recruitment/requisitions/{req['id']}/submit", headers=hr_manager_auth)
+
+        step1 = client.patch(f"/api/recruitment/requisitions/{req['id']}/approve", headers=hr_manager_auth,
+                              json={"action": "approve", "comments": "ZZ step 1 cleared"})
+        assert step1.status_code == 200, step1.text
+        assert step1.json()["status"] == "Pending Approval"
+        assert step1.json()["approval_step"] == 2
+
+        step2 = client.patch(f"/api/recruitment/requisitions/{req['id']}/approve", headers=hr_manager_auth,
+                              json={"action": "approve", "comments": "ZZ step 2 cleared"})
+        assert step2.status_code == 200, step2.text
+        assert step2.json()["status"] == "Approved"
+
+        res = client.get(f"/api/recruitment/requisitions/{req['id']}/audit-log", headers=hr_manager_auth)
+        rows = res.json()
+        actions = [r["action"] for r in rows]
+        assert "Approval Advanced" in actions, "clearing step 1 of a multi-step chain must log its own row"
+        advanced = next(r for r in rows if r["action"] == "Approval Advanced")
+        assert "step 1" in advanced["detail"].lower()
+        assert "ZZ step 1 cleared" in advanced["detail"]
+        approved = next(r for r in rows if r["action"] == "Approved")
+        assert "ZZ step 2 cleared" in approved["detail"]
+    finally:
+        client.delete(f"/api/approval-workflows/{wf['id']}", headers=hr_manager_auth)
+
+
+def test_requisition_audit_log_requires_permission(client, hr_manager_auth, make_test_user, test_institution):
+    req = client.post("/api/recruitment/requisitions", headers=hr_manager_auth,
+                       json={"title": _unique_title(), "department": "Sales"}).json()
+    token, _ = make_test_user(role="employee")
+    headers = {"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}
+    res = client.get(f"/api/recruitment/requisitions/{req['id']}/audit-log", headers=headers)
+    assert res.status_code == 403
+
+
+# ---------------------------------------------------------------------------
 # Candidates / ATS
 # ---------------------------------------------------------------------------
 def test_list_candidates_requires_auth(client):

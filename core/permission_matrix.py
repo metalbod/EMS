@@ -224,6 +224,8 @@ MATRIX: List[Dict[str, Any]] = [
             _action("Approve requisition", "POST /api/recruitment/requisitions/{id}/approve", _flat("hr_manager"),
                      note=CONFIGURABLE + " — approval-workflow engine; HR fallback here is hr_manager only (narrower than most other modules, no hr_admin)."),
             _action("View candidate audit log", "GET /api/recruitment/candidates/{id}/audit", _flat(*_RECRUIT_WRITE)),
+            _action("View requisition audit log", "GET /api/recruitment/requisitions/{id}/audit-log", _flat(*_RECRUIT_WRITE),
+                     note="Every create/edit/submit/approval-step/reject/close event — same tier as the candidate audit log above."),
             _action("View candidate stage timing", "GET /api/recruitment/candidates/{id}/stage-history", _flat(*_RECRUIT_WRITE, "manager"),
                      note="Deliberately broader than the audit log above — manager included so a hiring manager can see how long their own candidates have sat in each stage."),
             _action("Manage offer letter templates", "routers/recruitment.py offer-letter-templates CRUD", _flat(*_RECRUIT_WRITE)),
@@ -515,6 +517,7 @@ ENFORCED_ACTION_KEYS = frozenset({
     # in the router instead, matching routers/payroll.py's own convention.
     "recruitment.create_edit_requisition_candidate_interview_offer",
     "recruitment.view_candidate_audit_log",
+    "recruitment.view_requisition_audit_log",
     # NOT recruitment.view_requisitions_candidates_interviews_offers —
     # NO_RESTRICTION at the matrix level (though several of the underlying
     # GET endpoints, e.g. list_offers/get_offer, are actually gated the
