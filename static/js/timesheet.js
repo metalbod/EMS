@@ -812,13 +812,20 @@ function _tsOnCellInput(rowIdx, date, value) {
 async function _tsOnRowProjectChange(rowIdx, projectId) {
   const row=tsGridRows[rowIdx];
   row.project_id=projectId?parseInt(projectId):null;
+  // _tsGridRowHtml switches a row from its picker dropdowns to plain-text
+  // display the moment project_id+task_id are both set (isNew becomes
+  // false) — project_name/task_name have to be captured right here, not
+  // left to be filled in later, or that display mode renders blank/'—'.
+  row.project_name=projectId ? (myProjectsCache||[]).find(p=>p.id===row.project_id)?.name : null;
   row.task_id=null;
+  row.task_name=null;
   const taskSel=document.getElementById(`tsGridRowTaskSelect${rowIdx}`);
   if(!projectId){ taskSel.innerHTML='<option value="">Select task…</option>'; taskSel.disabled=true; return; }
   taskSel.disabled=false;
   taskSel.innerHTML='<option value="">Loading…</option>';
   const res=await api(`/api/projects/${projectId}/tasks`);
   const tasks=res?.ok?await res.json():[];
+  row._availableTasks=tasks; // so _tsOnRowTaskChange can resolve the chosen task's name below
   taskSel.innerHTML=tasks.length
     ? '<option value="">Select task…</option>'+tasks.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('')
     : '<option value="">No tasks defined for this project</option>';
@@ -826,15 +833,18 @@ async function _tsOnRowProjectChange(rowIdx, projectId) {
 
 function _tsOnRowTaskChange(rowIdx, taskId) {
   const row=tsGridRows[rowIdx];
-  if(!taskId){ row.task_id=null; return; }
+  if(!taskId){ row.task_id=null; row.task_name=null; return; }
   const dup=tsGridRows.some((r,i)=>i!==rowIdx && r.project_id===row.project_id && r.task_id===parseInt(taskId));
   if(dup){
     alert('This project/task is already a row above — enter hours there instead of adding a duplicate row.');
     document.getElementById(`tsGridRowTaskSelect${rowIdx}`).value='';
     row.task_id=null;
+    row.task_name=null;
     return;
   }
   row.task_id=parseInt(taskId);
+  row.task_name=(row._availableTasks||[]).find(t=>t.id===row.task_id)?.name || null;
+  renderTimesheetGrid(); // collapse straight to the ready-to-fill row now that both are picked, instead of waiting for some later, unrelated render
 }
 
 function addTimesheetGridRow() {

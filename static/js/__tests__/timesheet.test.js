@@ -466,6 +466,54 @@ describe('My Timesheet grid — grouping entries into rows', () => {
   });
 });
 
+// Regression test: _tsGridRowHtml switches a freshly-added "+ Add Row"
+// row from its project/task picker dropdowns to plain-text display the
+// moment both project_id and task_id are set (same isNew check a row
+// built from real entries uses) — picking project/task from the
+// dropdowns has to capture project_name/task_name right then, or that
+// display mode renders blank/'—' instead of the name, since the row
+// never went through _tsBuildGridRowsFromEntries to get them.
+describe('My Timesheet grid — picking project/task on a new row captures names', () => {
+  const myProjectsCache = [{ id: 10, name: 'ZZ Project' }, { id: 20, name: 'ZZ Other Project' }];
+
+  function onRowProjectChange(row, projectId, availableTasks) {
+    row.project_id = projectId ? parseInt(projectId) : null;
+    row.project_name = projectId ? myProjectsCache.find(p => p.id === row.project_id)?.name : null;
+    row.task_id = null;
+    row.task_name = null;
+    row._availableTasks = availableTasks;
+  }
+
+  function onRowTaskChange(row, taskId) {
+    if (!taskId) { row.task_id = null; row.task_name = null; return; }
+    row.task_id = parseInt(taskId);
+    row.task_name = (row._availableTasks || []).find(t => t.id === row.task_id)?.name || null;
+  }
+
+  it('stores the project name when a project is picked', () => {
+    const row = { project_id: null, task_id: null, cells: {} };
+    onRowProjectChange(row, '10', [{ id: 1, name: 'Dev' }]);
+    expect(row.project_name).toBe('ZZ Project');
+  });
+
+  it('stores the task name when a task is picked, so the row is ready to render in display mode', () => {
+    const row = { project_id: null, task_id: null, cells: {} };
+    onRowProjectChange(row, '10', [{ id: 1, name: 'Dev' }, { id: 2, name: 'QA' }]);
+    onRowTaskChange(row, '2');
+    expect(row.project_id).toBe(10);
+    expect(row.project_name).toBe('ZZ Project');
+    expect(row.task_id).toBe(2);
+    expect(row.task_name).toBe('QA');
+  });
+
+  it('clears the captured names when the project selection is cleared', () => {
+    const row = { project_id: 10, project_name: 'ZZ Project', task_id: 1, task_name: 'Dev', cells: {} };
+    onRowProjectChange(row, '', []);
+    expect(row.project_name).toBe(null);
+    expect(row.task_name).toBe(null);
+  });
+});
+
 // Mirrors timesheet.js's _tsIsProjectEditable — same rule as
 // routers/timesheets.py's _check_timesheet_entry_editable: no per-project
 // split yet → editable only while Draft; once split, a project is locked
