@@ -12,6 +12,13 @@ const projectList = createListState({ sortKey: 'name', pageSize: 10000 });
 // path, so editing a task there can't leave this cache stale.
 let expandedProjectIds=new Set(), projectTasksByProject={};
 let tsCurrentWeekStart=null, tsCurrentTimesheet=null;
+// My Timesheet's weekly grid (rows = distinct project/task the employee
+// picked, columns = the 7 days) — see loadCurrentTimesheet/renderTimesheetGrid
+// below. tsGridRows holds the editable draft state (rebuilt fresh from
+// tsCurrentTimesheet.entries on every load — never trusted stale across a
+// save); tsPendingDeleteEntryIds queues entries whose row was removed in
+// this draft, applied on the next Save Week alongside whatever else changed.
+let tsGridRows=[], tsPendingDeleteEntryIds=[], tsWeekDates=[];
 let tsApprovalFilter='Submitted', tsApprovalEmployeeFilter='', tsApprovalPeriodFrom='', tsApprovalPeriodTo='', tsApprovalProjectFilter='';
 let tsApprovalEmployeeOptionsBuilt=false, tsApprovalProjectOptionsBuilt=false;
 const TS_STATUS_COLORS={'Draft':'status-neutral','Submitted':'status-pending','Approved':'status-positive','Rejected':'status-negative'};
@@ -597,10 +604,6 @@ async function loadTimesheetPage() {
   if(!tsCurrentWeekStart) tsCurrentWeekStart=tsGetMonday(new Date());
   const res=await api('/api/projects/mine');
   myProjectsCache=res?.ok?await res.json():[];
-  document.getElementById('tsEntryProject').innerHTML=myProjectsCache.length
-    ? myProjectsCache.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')
-    : '<option value="">No assigned projects</option>';
-  await loadTsEntryTasks();
   await loadCurrentTimesheet();
 }
 
@@ -630,17 +633,6 @@ const saveTimesheetSettings = guardAsync(async function() {
   }
 });
 
-async function loadTsEntryTasks() {
-  const projectId=document.getElementById('tsEntryProject').value;
-  const taskSel=document.getElementById('tsEntryTask');
-  if(!projectId){ taskSel.innerHTML='<option value="">—</option>'; return; }
-  const res=await api(`/api/projects/${projectId}/tasks`);
-  const tasks=res?.ok?await res.json():[];
-  taskSel.innerHTML=tasks.length
-    ? tasks.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('')
-    : '<option value="">No tasks defined for this project</option>';
-}
-
 function shiftTimesheetWeek(dir) {
   tsCurrentWeekStart.setDate(tsCurrentWeekStart.getDate()+dir*7);
   loadCurrentTimesheet();
@@ -650,6 +642,7 @@ async function loadCurrentTimesheet() {
   const start=tsFmt(tsCurrentWeekStart);
   const end=new Date(tsCurrentWeekStart); end.setDate(end.getDate()+6);
   const endStr=tsFmt(end);
+  tsWeekDates=[...Array(7)].map((_,i)=>{ const d=new Date(tsCurrentWeekStart); d.setDate(d.getDate()+i); return tsFmt(d); });
   // fmtDate() here (not the raw ISO start/endStr, which the API call below
   // needs as-is) — matches every other date-range label in the app
   // (Payroll runs, Leave, PIP/Performance cycles, Employee contract dates
@@ -659,9 +652,11 @@ async function loadCurrentTimesheet() {
 
   const empId=currentUser?.employee_id;
   if(!empId){
-    document.getElementById('timesheetEntryBody').innerHTML='';
-    document.getElementById('timesheetEntryEmpty').classList.remove('hidden');
-    document.getElementById('timesheetAddForm').classList.add('hidden');
+    document.getElementById('tsGridBody').innerHTML='';
+    document.getElementById('tsGridHead').innerHTML='';
+    document.getElementById('tsGridFoot').innerHTML='';
+    document.getElementById('tsGridAddRowBtn').classList.add('hidden');
+    document.getElementById('tsWeekDescWrap').classList.add('hidden');
     document.getElementById('timesheetSubmitBtn').classList.add('hidden');
     return;
   }
@@ -669,94 +664,254 @@ async function loadCurrentTimesheet() {
   const ts=await res.json();
   const detailRes=await api(`/api/timesheets/${ts.id}`);
   tsCurrentTimesheet=await detailRes.json();
-  renderTimesheetEntries();
+  tsPendingDeleteEntryIds=[];
+  tsGridRows=_tsBuildGridRowsFromEntries(tsCurrentTimesheet.entries);
+  renderTimesheetGrid();
 }
 
-// Public-holiday/approved-leave rows for this week, computed fresh by
-// GET /api/timesheets/{id} (routers/timesheets.py's _weekly_hours_breakdown)
-// every time the screen loads — never written to timesheet_entries, so
-// they're read-only here (no delete icon) and interleaved into the table
-// by date purely for display, alongside the real logged entries.
-function _timesheetAutoEntryRow(e) {
-  const badge=e.type==='holiday'?'Public Holiday':'Approved Leave';
-  return `
-    <tr class="border-t border-slate-100 bg-slate-50/70 text-slate-500 italic">
-      <td class="px-4 py-2">${fmtDate(e.date)}</td>
-      <td class="px-4 py-2" colspan="2"><span class="badge text-xs bg-slate-200 text-slate-600 not-italic mr-1.5">${badge}</span>${esc(e.label)}</td>
-      <td class="px-4 py-2">${e.hours}</td>
-      <td class="px-4 py-2"></td>
-      <td class="px-4 py-2"></td>
+// Groups tsCurrentTimesheet.entries (one row per logged date+project+task —
+// still the real underlying shape) into one grid row per distinct
+// project/task, one cell per day. `value`/`original_value` start equal;
+// only `value` is mutated by the user, so Save Week can diff against
+// `original_value` to know what actually changed.
+function _tsBuildGridRowsFromEntries(entries) {
+  const byKey={};
+  (entries||[]).forEach(e=>{
+    const key=`${e.project_id}:${e.task_id}`;
+    if(!byKey[key]) byKey[key]={project_id:e.project_id, task_id:e.task_id, project_name:e.project_name, task_name:e.task_name, cells:{}};
+    byKey[key].cells[e.date]={entry_id:e.id, value:e.hours, original_value:e.hours};
+  });
+  return Object.values(byKey);
+}
+
+// Mirrors routers/timesheets.py's _check_timesheet_entry_editable: a
+// timesheet never split per-project is open exactly while Draft; once
+// split, a project is locked only while Submitted/Approved — Rejected
+// (or never-submitted) is open again for just that project.
+function _tsIsProjectEditable(ts, projectId) {
+  const approvals=ts.project_approvals||[];
+  if(!approvals.length) return ts.status==='Draft';
+  const row=approvals.find(p=>p.project_id===projectId);
+  return !row || row.status==='Rejected';
+}
+
+function _tsDayHeaderLabel(dateStr) {
+  const d=new Date(dateStr+'T00:00:00');
+  const WD=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  return `${WD[d.getDay()]}<br>${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function renderTimesheetGridHead() {
+  document.getElementById('tsGridHead').innerHTML=`<tr>
+    <th class="px-3 py-2 text-left" style="min-width:220px">Project / Task</th>
+    ${tsWeekDates.map(d=>`<th class="px-1 py-2 text-center w-14">${_tsDayHeaderLabel(d)}</th>`).join('')}
+    <th class="px-3 py-2 text-right w-20">Total</th>
+    <th class="w-8"></th>
+  </tr>`;
+}
+
+// Public-holiday/approved-leave rows — computed fresh by GET
+// /api/timesheets/{id} (routers/timesheets.py's _weekly_hours_breakdown)
+// every time the screen loads, never written to timesheet_entries, so
+// they're always read-only here. One row per category (not one per
+// holiday/leave instance) — if two different leave types land in the
+// same week, both fit in the one "Approved Leave" row, each day-cell's
+// own tooltip naming which one applies that day.
+function _tsAutoRowsHtml(ts) {
+  const byType={holiday:{}, leave:{}};
+  (ts.auto_entries||[]).forEach(e=>{ byType[e.type][e.date]=e; });
+  return ['holiday','leave'].map(type=>{
+    const byDate=byType[type];
+    if(!Object.keys(byDate).length) return '';
+    const label=type==='holiday'?'Public Holidays':'Approved Leave';
+    let total=0;
+    const cells=tsWeekDates.map(d=>{
+      const e=byDate[d];
+      if(!e) return `<td class="px-1 py-2 text-center text-slate-300">—</td>`;
+      total+=e.hours;
+      return `<td class="px-1 py-2 text-center" title="${esc(e.label)}">${e.hours}</td>`;
+    }).join('');
+    return `<tr class="bg-slate-50/70 text-slate-500 italic border-t border-slate-100">
+      <td class="px-3 py-2">${label}</td>
+      ${cells}
+      <td class="px-3 py-2 text-right">${total}</td>
+      <td></td>
     </tr>`;
+  }).join('');
 }
 
-function renderTimesheetEntries() {
+function _tsGridRowHtml(row, idx) {
   const ts=tsCurrentTimesheet;
-  const tbody=document.getElementById('timesheetEntryBody');
-  const emptyEl=document.getElementById('timesheetEntryEmpty');
-  const isDraft=ts.status==='Draft';
+  const isNew=!row.project_id;
+  const editable=isNew || _tsIsProjectEditable(ts, row.project_id);
+  let rowTotal=0;
+  const cells=tsWeekDates.map(d=>{
+    const cell=row.cells[d]||{};
+    rowTotal+=parseFloat(cell.value)||0;
+    if(!editable) return `<td class="px-1 py-2 text-center text-slate-600">${cell.value?cell.value:'—'}</td>`;
+    return `<td class="px-1 py-1 text-center"><input type="number" step="0.5" min="0" max="24" class="ts-grid-cell inp text-sm text-center px-1 py-1" style="width:100%" value="${cell.value?cell.value:''}" data-row="${idx}" data-date="${d}" oninput="_tsOnCellInput(${idx}, '${d}', this.value)"/></td>`;
+  }).join('');
+  const projectTaskCell=isNew
+    ? `<div class="flex flex-col gap-1">
+        <select class="inp text-xs" onchange="_tsOnRowProjectChange(${idx}, this.value)">
+          <option value="">Select project…</option>
+          ${(myProjectsCache||[]).map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}
+        </select>
+        <select id="tsGridRowTaskSelect${idx}" class="inp text-xs" onchange="_tsOnRowTaskChange(${idx}, this.value)" ${row.project_id?'':'disabled'}>
+          <option value="">Select task…</option>
+        </select>
+      </div>`
+    : `<div class="font-medium text-slate-800">${esc(row.project_name)}</div><div class="text-xs text-slate-500">${esc(row.task_name||'—')}</div>${!editable?'<span class="badge text-xs bg-slate-100 text-slate-500 mt-0.5">Locked</span>':''}`;
+  return `<tr class="border-t border-slate-100" data-row-index="${idx}">
+    <td class="px-3 py-2">${projectTaskCell}</td>
+    ${cells}
+    <td class="px-3 py-2 text-right font-medium">${rowTotal||''}</td>
+    <td class="text-center">${editable?`<button onclick="removeTimesheetGridRow(${idx})" class="text-slate-300 hover:text-red-500" title="Remove row"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>`:''}</td>
+  </tr>`;
+}
 
-  const rows=[
-    ...ts.entries.map(e=>({...e, _auto:false})),
-    ...(ts.auto_entries||[]).map(e=>({...e, _auto:true})),
-  ].sort((a,b)=>a.date===b.date ? (a._auto - b._auto) : (a.date<b.date?-1:1));
+function renderTimesheetGrid() {
+  const ts=tsCurrentTimesheet;
+  renderTimesheetGridHead();
+  document.getElementById('tsGridBody').innerHTML=_tsAutoRowsHtml(ts) + tsGridRows.map((r,i)=>_tsGridRowHtml(r,i)).join('');
 
-  if(!rows.length){
-    tbody.innerHTML='';
-    emptyEl.classList.remove('hidden');
-  } else {
-    emptyEl.classList.add('hidden');
-    tbody.innerHTML=rows.map(e=>e._auto ? _timesheetAutoEntryRow(e) : `
-      <tr class="border-t border-slate-100">
-        <td class="px-4 py-2">${fmtDate(e.date)}</td>
-        <td class="px-4 py-2">${esc(e.project_name)}</td>
-        <td class="px-4 py-2">${esc(e.task_name||'—')}</td>
-        <td class="px-4 py-2">${e.hours}</td>
-        <td class="px-4 py-2 text-slate-500">${esc(e.description||'')}</td>
-        <td class="px-4 py-2 text-right">${isDraft?`<button onclick="deleteTimesheetEntry(${e.id})" class="text-slate-300 hover:text-red-500"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>`:''}</td>
-      </tr>`).join('');
-  }
-  document.getElementById('timesheetTotalHours').textContent=ts.total_hours;
-
-  const missingRow=document.getElementById('timesheetMissingRow');
+  const dayTotals=tsWeekDates.map(d=>tsGridRows.reduce((s,r)=>s+(parseFloat(r.cells[d]?.value)||0),0));
+  const grandTotal=dayTotals.reduce((s,v)=>s+v,0);
   const missing=ts.missing_hours||0;
-  missingRow.classList.toggle('hidden', !(missing>0));
-  document.getElementById('timesheetMissingHours').textContent=missing;
+  document.getElementById('tsGridFoot').innerHTML=`
+    <tr class="border-t border-slate-200 bg-slate-50 font-medium">
+      <td class="px-3 py-2">Total</td>
+      ${dayTotals.map(v=>`<td class="px-1 py-2 text-center">${v||''}</td>`).join('')}
+      <td class="px-3 py-2 text-right">${grandTotal}</td>
+      <td></td>
+    </tr>
+    <tr id="timesheetMissingRow" class="${missing>0?'':'hidden'} border-t border-slate-100">
+      <td class="px-3 py-2 text-amber-700" colspan="8">Missing / short hours</td>
+      <td id="timesheetMissingHours" class="px-3 py-2 text-amber-700 font-medium text-right">${missing}</td>
+      <td></td>
+    </tr>`;
 
   const badgeWrap=document.getElementById('timesheetStatusBadgeWrap');
   badgeWrap.innerHTML=`<span class="badge ${statusColor(TS_STATUS_COLORS, ts.status)}">${ts.status}</span>${ts.notes?` <span class="text-xs text-slate-400 ml-1">${esc(ts.notes)}</span>`:''}`;
 
-  document.getElementById('timesheetAddForm').classList.toggle('hidden', !isDraft);
-  document.getElementById('timesheetSubmitBtn').classList.toggle('hidden', !isDraft);
-  document.getElementById('tsEntryDate').value='';
-  document.getElementById('tsEntryHours').value='';
-  document.getElementById('tsEntryDesc').value='';
+  const isDraftOrOpen=tsGridRows.some((r,i)=>!r.project_id || _tsIsProjectEditable(ts, r.project_id)) || ts.status==='Draft';
+  document.getElementById('tsGridAddRowBtn').classList.toggle('hidden', !isDraftOrOpen);
+  document.getElementById('tsGridSaveBtn').classList.toggle('hidden', !isDraftOrOpen);
+  document.getElementById('timesheetSubmitBtn').classList.toggle('hidden', ts.status!=='Draft');
+  document.getElementById('tsWeekDescription').value=ts.description||'';
+  document.getElementById('tsWeekDescription').disabled=!isDraftOrOpen;
+  document.getElementById('tsGridSaveMsg').textContent='';
 }
 
-const addTimesheetEntry = guardAsync(async function() {
-  const projectId=document.getElementById('tsEntryProject').value;
-  if(!projectId){ alert('You have no assigned projects to log time against. Ask HR to add you to a project.'); return; }
-  const taskId=document.getElementById('tsEntryTask').value;
-  if(!taskId){ alert('This project has no tasks defined yet. Ask HR to add a task before logging time.'); return; }
-  const date=document.getElementById('tsEntryDate').value;
-  const hours=parseFloat(document.getElementById('tsEntryHours').value);
-  if(!date||!hours){ alert('Date and hours are required.'); return; }
-  const body={ project_id:parseInt(projectId), task_id:parseInt(taskId), date, hours, description:document.getElementById('tsEntryDesc').value.trim()||null };
-  const res=await api(`/api/timesheets/${tsCurrentTimesheet.id}/entries`,{method:'POST',body:JSON.stringify(body)});
-  if(res?.ok){
-    const detailRes=await api(`/api/timesheets/${tsCurrentTimesheet.id}`);
-    tsCurrentTimesheet=await detailRes.json();
-    renderTimesheetEntries();
+function _tsOnCellInput(rowIdx, date, value) {
+  const row=tsGridRows[rowIdx];
+  if(!row.cells[date]) row.cells[date]={entry_id:null, original_value:0};
+  row.cells[date].value=value;
+}
+
+async function _tsOnRowProjectChange(rowIdx, projectId) {
+  const row=tsGridRows[rowIdx];
+  row.project_id=projectId?parseInt(projectId):null;
+  row.task_id=null;
+  const taskSel=document.getElementById(`tsGridRowTaskSelect${rowIdx}`);
+  if(!projectId){ taskSel.innerHTML='<option value="">Select task…</option>'; taskSel.disabled=true; return; }
+  taskSel.disabled=false;
+  taskSel.innerHTML='<option value="">Loading…</option>';
+  const res=await api(`/api/projects/${projectId}/tasks`);
+  const tasks=res?.ok?await res.json():[];
+  taskSel.innerHTML=tasks.length
+    ? '<option value="">Select task…</option>'+tasks.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('')
+    : '<option value="">No tasks defined for this project</option>';
+}
+
+function _tsOnRowTaskChange(rowIdx, taskId) {
+  const row=tsGridRows[rowIdx];
+  if(!taskId){ row.task_id=null; return; }
+  const dup=tsGridRows.some((r,i)=>i!==rowIdx && r.project_id===row.project_id && r.task_id===parseInt(taskId));
+  if(dup){
+    alert('This project/task is already a row above — enter hours there instead of adding a duplicate row.');
+    document.getElementById(`tsGridRowTaskSelect${rowIdx}`).value='';
+    row.task_id=null;
+    return;
+  }
+  row.task_id=parseInt(taskId);
+}
+
+function addTimesheetGridRow() {
+  tsGridRows.push({project_id:null, task_id:null, cells:{}});
+  renderTimesheetGrid();
+}
+
+// Removing a row never fires a request itself — it just drops the row
+// from view and queues whatever entries it had for deletion, applied
+// (along with every other change) the next time Save Week runs. A
+// brand-new, never-saved row has nothing to queue.
+function removeTimesheetGridRow(idx) {
+  const row=tsGridRows[idx];
+  Object.values(row.cells).forEach(c=>{ if(c.entry_id) tsPendingDeleteEntryIds.push(c.entry_id); });
+  tsGridRows.splice(idx,1);
+  renderTimesheetGrid();
+}
+
+const saveTimesheetGrid = guardAsync(async function() {
+  const ts=tsCurrentTimesheet;
+
+  // A row with hours typed in but no project/task chosen yet would
+  // otherwise be silently skipped below (no request to fail, no error
+  // to show) — catch it before anything saves so the hours aren't lost
+  // without the person realizing why.
+  const incompleteRow=tsGridRows.some(row => (!row.project_id || !row.task_id) && tsWeekDates.some(d => (parseFloat(row.cells[d]?.value)||0) > 0));
+  if(incompleteRow){
+    alert('One row has hours entered but no project/task selected yet — pick both before saving, or clear those hours.');
+    return;
+  }
+
+  const calls=[];
+
+  tsPendingDeleteEntryIds.forEach(id=>{
+    calls.push(api(`/api/timesheets/${ts.id}/entries/${id}`,{method:'DELETE'}));
+  });
+
+  tsGridRows.forEach(row=>{
+    if(!row.project_id || !row.task_id) return; // a blank "+ Add Row" nobody filled in — nothing to save
+    tsWeekDates.forEach(date=>{
+      const cell=row.cells[date]||{};
+      const newVal=parseFloat(cell.value)||0;
+      const origVal=parseFloat(cell.original_value)||0;
+      if(newVal>0 && !cell.entry_id){
+        calls.push(api(`/api/timesheets/${ts.id}/entries`,{method:'POST',body:JSON.stringify({project_id:row.project_id, task_id:row.task_id, date, hours:newVal})}));
+      } else if(newVal>0 && cell.entry_id && newVal!==origVal){
+        calls.push(api(`/api/timesheets/${ts.id}/entries/${cell.entry_id}`,{method:'PUT',body:JSON.stringify({hours:newVal})}));
+      } else if(newVal<=0 && cell.entry_id){
+        calls.push(api(`/api/timesheets/${ts.id}/entries/${cell.entry_id}`,{method:'DELETE'}));
+      }
+    });
+  });
+
+  const newDescription=document.getElementById('tsWeekDescription').value.trim()||null;
+  if(newDescription!==(ts.description||null)){
+    calls.push(api(`/api/timesheets/${ts.id}/description`,{method:'PUT',body:JSON.stringify({description:newDescription})}));
+  }
+
+  const msgEl=document.getElementById('tsGridSaveMsg');
+  if(!calls.length){ msgEl.textContent='Nothing to save.'; msgEl.className='text-xs text-slate-400'; return; }
+
+  const settled=await Promise.allSettled(calls);
+  let failures=0;
+  for(const r of settled){
+    if(r.status==='rejected' || (r.value && !r.value.ok)) failures++;
+  }
+
+  await loadCurrentTimesheet();
+  const finalMsgEl=document.getElementById('tsGridSaveMsg');
+  if(failures>0){
+    finalMsgEl.textContent=`Saved, but ${failures} change(s) failed — check locked rows and try again.`;
+    finalMsgEl.className='text-xs text-red-600';
   } else {
-    const d=await res.json(); alert(d.detail||'Failed to add entry');
+    finalMsgEl.textContent='Saved.';
+    finalMsgEl.className='text-xs text-green-600';
   }
 });
-
-async function deleteTimesheetEntry(entryId) {
-  await api(`/api/timesheets/${tsCurrentTimesheet.id}/entries/${entryId}`,{method:'DELETE'});
-  const detailRes=await api(`/api/timesheets/${tsCurrentTimesheet.id}`);
-  tsCurrentTimesheet=await detailRes.json();
-  renderTimesheetEntries();
-}
 
 const submitTimesheet = guardAsync(async function() {
   if(!confirm('Submit this timesheet for approval? You will not be able to edit it afterwards.')) return;

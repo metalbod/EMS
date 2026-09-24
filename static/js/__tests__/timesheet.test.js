@@ -432,70 +432,124 @@ describe('My Timesheet — week label date format', () => {
   });
 });
 
-// Mirrors timesheet.js's renderTimesheetEntries row-merge logic: real
-// timesheet_entries and the read-only auto_entries (public holidays /
-// approved leave, from GET /api/timesheets/{id}'s _weekly_hours_breakdown)
-// are interleaved into one chronological list for display, with a real
-// entry sorting before an auto entry that falls on the same date.
-describe('My Timesheet — entries/auto_entries merge order', () => {
-  function mergeRows(entries, autoEntries) {
-    return [
-      ...entries.map(e => ({ ...e, _auto: false })),
-      ...autoEntries.map(e => ({ ...e, _auto: true })),
-    ].sort((a, b) => a.date === b.date ? (a._auto - b._auto) : (a.date < b.date ? -1 : 1));
+// Mirrors timesheet.js's _tsBuildGridRowsFromEntries: the weekly grid's
+// rows are distinct project/task pairs, not one row per logged date —
+// entries on the same project/task but different days collapse into one
+// row's per-date cells.
+describe('My Timesheet grid — grouping entries into rows', () => {
+  function buildGridRowsFromEntries(entries) {
+    const byKey = {};
+    (entries || []).forEach(e => {
+      const key = `${e.project_id}:${e.task_id}`;
+      if (!byKey[key]) byKey[key] = { project_id: e.project_id, task_id: e.task_id, project_name: e.project_name, task_name: e.task_name, cells: {} };
+      byKey[key].cells[e.date] = { entry_id: e.id, value: e.hours, original_value: e.hours };
+    });
+    return Object.values(byKey);
   }
 
-  it('interleaves auto entries with real entries in date order', () => {
-    const entries = [
-      { id: 1, date: '2027-03-02', project_name: 'ZZ Project', hours: 5 },
-      { id: 2, date: '2027-03-05', project_name: 'ZZ Project', hours: 3 },
-    ];
-    const autoEntries = [
-      { date: '2027-03-03', type: 'holiday', label: 'ZZ Holiday', hours: 8 },
-      { date: '2027-03-01', type: 'leave', label: 'ZZ Leave', hours: 8 },
-    ];
-    const merged = mergeRows(entries, autoEntries);
-    expect(merged.map(r => r.date)).toEqual(['2027-03-01', '2027-03-02', '2027-03-03', '2027-03-05']);
-    expect(merged.map(r => r._auto)).toEqual([true, false, true, false]);
+  it('groups entries on the same project/task across different days into one row', () => {
+    const rows = buildGridRowsFromEntries([
+      { id: 1, project_id: 10, task_id: 1, project_name: 'ZZ Project', task_name: 'Dev', date: '2027-03-01', hours: 4 },
+      { id: 2, project_id: 10, task_id: 1, project_name: 'ZZ Project', task_name: 'Dev', date: '2027-03-02', hours: 3 },
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].cells['2027-03-01'].value).toBe(4);
+    expect(rows[0].cells['2027-03-02'].value).toBe(3);
   });
 
-  it('puts a real entry before an auto entry that falls on the same date', () => {
-    const entries = [{ id: 1, date: '2027-03-03', project_name: 'ZZ Project', hours: 2 }];
-    const autoEntries = [{ date: '2027-03-03', type: 'holiday', label: 'ZZ Holiday', hours: 8 }];
-    const merged = mergeRows(entries, autoEntries);
-    expect(merged.map(r => r._auto)).toEqual([false, true]);
+  it('keeps different tasks on the same project as separate rows', () => {
+    const rows = buildGridRowsFromEntries([
+      { id: 1, project_id: 10, task_id: 1, project_name: 'ZZ Project', task_name: 'Dev', date: '2027-03-01', hours: 4 },
+      { id: 2, project_id: 10, task_id: 2, project_name: 'ZZ Project', task_name: 'QA', date: '2027-03-01', hours: 2 },
+    ]);
+    expect(rows).toHaveLength(2);
   });
 });
 
-// Mirrors timesheet.js's renderTimesheetEntries Missing-hours footer row —
-// only shown when there's an actual gap (missing_hours > 0), matching the
-// exact 40h-week/5h-logged/35-missing example from the feature request.
-describe('My Timesheet — Missing hours row visibility', () => {
-  beforeEach(() => {
-    document.body.innerHTML = `
-      <span id="timesheetTotalHours"></span>
-      <table><tbody>
-        <tr id="timesheetMissingRow" class="hidden"><td id="timesheetMissingHours"></td></tr>
-      </tbody></table>
-    `;
+// Mirrors timesheet.js's _tsIsProjectEditable — same rule as
+// routers/timesheets.py's _check_timesheet_entry_editable: no per-project
+// split yet → editable only while Draft; once split, a project is locked
+// unless its own row is Rejected (or was never submitted at all).
+describe('My Timesheet grid — per-project row editability', () => {
+  function isProjectEditable(ts, projectId) {
+    const approvals = ts.project_approvals || [];
+    if (!approvals.length) return ts.status === 'Draft';
+    const row = approvals.find(p => p.project_id === projectId);
+    return !row || row.status === 'Rejected';
+  }
+
+  it('is editable for every project while Draft and not yet split', () => {
+    expect(isProjectEditable({ status: 'Draft', project_approvals: [] }, 10)).toBe(true);
   });
 
-  function applyMissingRow(ts) {
-    const missingRow = document.getElementById('timesheetMissingRow');
+  it('is locked for every project once Submitted and not yet split', () => {
+    expect(isProjectEditable({ status: 'Submitted', project_approvals: [] }, 10)).toBe(false);
+  });
+
+  it('locks only the specific project that is Submitted once split, leaving others open', () => {
+    const ts = { status: 'Submitted', project_approvals: [{ project_id: 10, status: 'Submitted' }] };
+    expect(isProjectEditable(ts, 10)).toBe(false);
+    expect(isProjectEditable(ts, 99)).toBe(true); // no row yet for project 99 — never submitted
+  });
+
+  it('reopens a Rejected project even though the timesheet as a whole is split', () => {
+    const ts = { status: 'Submitted', project_approvals: [{ project_id: 10, status: 'Rejected' }] };
+    expect(isProjectEditable(ts, 10)).toBe(true);
+  });
+});
+
+// Mirrors timesheet.js's saveTimesheetGrid diff logic: for each grid
+// cell, decide POST (new value, nothing saved yet) / PUT (changed from
+// what was loaded) / DELETE (cleared back to empty) / no-op (unchanged).
+describe('My Timesheet grid — Save Week cell diffing', () => {
+  function diffCell(cell) {
+    const newVal = parseFloat(cell.value) || 0;
+    const origVal = parseFloat(cell.original_value) || 0;
+    if (newVal > 0 && !cell.entry_id) return 'POST';
+    if (newVal > 0 && cell.entry_id && newVal !== origVal) return 'PUT';
+    if (newVal <= 0 && cell.entry_id) return 'DELETE';
+    return null;
+  }
+
+  it('creates a new entry for a freshly-filled cell', () => {
+    expect(diffCell({ value: 5, original_value: 0, entry_id: null })).toBe('POST');
+  });
+
+  it('updates an existing entry whose value changed', () => {
+    expect(diffCell({ value: 6, original_value: 4, entry_id: 101 })).toBe('PUT');
+  });
+
+  it('deletes an existing entry cleared back to empty', () => {
+    expect(diffCell({ value: 0, original_value: 4, entry_id: 101 })).toBe('DELETE');
+  });
+
+  it('does nothing for a cell left at its loaded value', () => {
+    expect(diffCell({ value: 4, original_value: 4, entry_id: 101 })).toBe(null);
+  });
+
+  it('does nothing for a cell that stays empty', () => {
+    expect(diffCell({ value: 0, original_value: 0, entry_id: null })).toBe(null);
+  });
+});
+
+// Mirrors timesheet.js's renderTimesheetGrid Missing-hours footer row —
+// only shown when there's an actual gap (missing_hours > 0), matching the
+// exact 40h-week/5h-logged/35-missing example from the feature request.
+describe('My Timesheet grid — Missing hours row visibility', () => {
+  function missingRowHtml(ts) {
     const missing = ts.missing_hours || 0;
-    missingRow.classList.toggle('hidden', !(missing > 0));
-    document.getElementById('timesheetMissingHours').textContent = missing;
+    return `<tr id="timesheetMissingRow" class="${missing > 0 ? '' : 'hidden'}"><td id="timesheetMissingHours">${missing}</td></tr>`;
   }
 
   it('shows the row with the exact gap when hours are short', () => {
-    applyMissingRow({ total_hours: 5, expected_hours: 40, missing_hours: 35 });
+    document.body.innerHTML = `<table><tbody>${missingRowHtml({ total_hours: 5, expected_hours: 40, missing_hours: 35 })}</tbody></table>`;
     const row = document.getElementById('timesheetMissingRow');
     expect(row.classList.contains('hidden')).toBe(false);
     expect(document.getElementById('timesheetMissingHours').textContent).toBe('35');
   });
 
   it('keeps the row hidden when nothing is missing', () => {
-    applyMissingRow({ total_hours: 40, expected_hours: 40, missing_hours: 0 });
+    document.body.innerHTML = `<table><tbody>${missingRowHtml({ total_hours: 40, expected_hours: 40, missing_hours: 0 })}</tbody></table>`;
     expect(document.getElementById('timesheetMissingRow').classList.contains('hidden')).toBe(true);
   });
 });

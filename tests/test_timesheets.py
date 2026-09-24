@@ -227,6 +227,129 @@ def test_delete_entry_success(client, employee_with_user, make_test_timesheet, o
 
 
 # ---------------------------------------------------------------------------
+# Editing a cell in place (My Timesheet's weekly grid — Save Week diffs
+# against what's loaded and PUTs any cell whose value changed, instead of
+# deleting and re-creating it).
+# ---------------------------------------------------------------------------
+def test_update_entry_hours_success(client, employee_with_user, make_test_timesheet, open_task):
+    emp, headers = employee_with_user
+    ts = make_test_timesheet()
+    project, task = open_task
+    entry = client.post(f"/api/timesheets/{ts['id']}/entries", headers=headers, json={
+        "project_id": project["id"], "task_id": task["id"], "date": ENTRY_DATE, "hours": 4,
+    }).json()
+    res = client.put(f"/api/timesheets/{ts['id']}/entries/{entry['id']}", headers=headers, json={"hours": 6.5})
+    assert res.status_code == 200, res.text
+    assert res.json()["hours"] == 6.5
+
+    detail = client.get(f"/api/timesheets/{ts['id']}", headers=headers).json()
+    assert next(e for e in detail["entries"] if e["id"] == entry["id"])["hours"] == 6.5
+
+
+def test_update_entry_hours_out_of_range_returns_400(client, employee_with_user, make_test_timesheet, open_task):
+    emp, headers = employee_with_user
+    ts = make_test_timesheet()
+    project, task = open_task
+    entry = client.post(f"/api/timesheets/{ts['id']}/entries", headers=headers, json={
+        "project_id": project["id"], "task_id": task["id"], "date": ENTRY_DATE, "hours": 4,
+    }).json()
+    res = client.put(f"/api/timesheets/{ts['id']}/entries/{entry['id']}", headers=headers, json={"hours": 25})
+    assert res.status_code == 400
+
+
+def test_update_entry_not_found_returns_404(client, employee_with_user, make_test_timesheet):
+    emp, headers = employee_with_user
+    ts = make_test_timesheet()
+    res = client.put(f"/api/timesheets/{ts['id']}/entries/999999999", headers=headers, json={"hours": 5})
+    assert res.status_code == 404
+
+
+def test_update_entry_requires_ownership(client, employee_with_user, make_test_employee, hr_manager_auth, make_test_timesheet, open_task):
+    emp, headers = employee_with_user
+    ts = make_test_timesheet()
+    project, task = open_task
+    entry = client.post(f"/api/timesheets/{ts['id']}/entries", headers=headers, json={
+        "project_id": project["id"], "task_id": task["id"], "date": ENTRY_DATE, "hours": 4,
+    }).json()
+
+    other_emp = make_test_employee()
+    username = f"zztstest_{other_emp['employee_id'].lower()}"
+    password = "ZzPytest@123"
+    client.post("/api/users", headers=hr_manager_auth, json={
+        "username": username, "full_name": "ZZ Other Employee", "password": password,
+        "role": "employee", "employee_id": other_emp["employee_id"],
+    })
+    login = client.post("/api/auth/login", json={"username": username, "password": password, "institution_code": "ZZPYTEST"})
+    other_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    res = client.put(f"/api/timesheets/{ts['id']}/entries/{entry['id']}", headers=other_headers, json={"hours": 6})
+    assert res.status_code == 403
+
+
+def test_update_entry_blocked_after_submit(client, hr_manager_auth, employee_with_user, make_test_timesheet, open_task):
+    emp, headers = employee_with_user
+    ts = make_test_timesheet()
+    project, task = open_task
+    entry = client.post(f"/api/timesheets/{ts['id']}/entries", headers=headers, json={
+        "project_id": project["id"], "task_id": task["id"], "date": ENTRY_DATE, "hours": 4,
+    }).json()
+    assert client.patch(f"/api/timesheets/{ts['id']}/status", headers=headers, json={"status": "Submitted"}).status_code == 200
+
+    res = client.put(f"/api/timesheets/{ts['id']}/entries/{entry['id']}", headers=headers, json={"hours": 6})
+    assert res.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# One description per week (not per entry — see migrations/versions/
+# 20260924_0001_add_timesheet_weekly_description.py)
+# ---------------------------------------------------------------------------
+def test_update_description_roundtrip(client, employee_with_user, make_test_timesheet):
+    emp, headers = employee_with_user
+    ts = make_test_timesheet()
+    res = client.put(f"/api/timesheets/{ts['id']}/description", headers=headers, json={"description": "Worked on ZZ launch prep"})
+    assert res.status_code == 200, res.text
+    assert res.json()["description"] == "Worked on ZZ launch prep"
+
+    detail = client.get(f"/api/timesheets/{ts['id']}", headers=headers).json()
+    assert detail["description"] == "Worked on ZZ launch prep"
+
+
+def test_update_description_requires_ownership(client, employee_with_user, make_test_employee, hr_manager_auth, make_test_timesheet):
+    emp, headers = employee_with_user
+    ts = make_test_timesheet()
+
+    other_emp = make_test_employee()
+    username = f"zztstest_{other_emp['employee_id'].lower()}"
+    password = "ZzPytest@123"
+    client.post("/api/users", headers=hr_manager_auth, json={
+        "username": username, "full_name": "ZZ Other Employee Desc", "password": password,
+        "role": "employee", "employee_id": other_emp["employee_id"],
+    })
+    login = client.post("/api/auth/login", json={"username": username, "password": password, "institution_code": "ZZPYTEST"})
+    other_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    res = client.put(f"/api/timesheets/{ts['id']}/description", headers=other_headers, json={"description": "Sneaky"})
+    assert res.status_code == 403
+
+
+def test_update_description_blocked_after_submit(client, employee_with_user, make_test_timesheet, open_task):
+    """Submit splits into one timesheet_project_approvals row per project
+    (see test_full_draft_submit_approve_lifecycle) — with only one project
+    on this timesheet, that one row being Submitted leaves nothing open,
+    so the whole-week description locks too."""
+    emp, headers = employee_with_user
+    ts = make_test_timesheet()
+    project, task = open_task
+    client.post(f"/api/timesheets/{ts['id']}/entries", headers=headers, json={
+        "project_id": project["id"], "task_id": task["id"], "date": ENTRY_DATE, "hours": 4,
+    })
+    assert client.patch(f"/api/timesheets/{ts['id']}/status", headers=headers, json={"status": "Submitted"}).status_code == 200
+
+    res = client.put(f"/api/timesheets/{ts['id']}/description", headers=headers, json={"description": "Too late"})
+    assert res.status_code == 400
+
+
+# ---------------------------------------------------------------------------
 # Status transitions
 # ---------------------------------------------------------------------------
 def test_submit_empty_timesheet_returns_400(client, employee_with_user, make_test_timesheet):

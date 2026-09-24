@@ -1838,38 +1838,27 @@
           <div id="timesheetStatusBadgeWrap"></div>
         </div>
         <div class="bg-white border border-slate-200 rounded-xl overflow-hidden mb-4">
-          <table class="w-full text-sm">
-            <thead class="bg-slate-50 text-slate-500 text-xs uppercase">
-              <tr><th class="px-4 py-2 text-left">Date</th><th class="px-4 py-2 text-left">Project</th><th class="px-4 py-2 text-left">Task</th><th class="px-4 py-2 text-left">Hours</th><th class="px-4 py-2 text-left">Description</th><th class="px-4 py-2"></th></tr>
-            </thead>
-            <tbody id="timesheetEntryBody"></tbody>
-            <tfoot>
-              <tr class="border-t border-slate-200 bg-slate-50">
-                <td class="px-4 py-2 font-medium" colspan="3">Total</td>
-                <td id="timesheetTotalHours" class="px-4 py-2 font-medium">0</td>
-                <td colspan="2"></td>
-              </tr>
-              <tr id="timesheetMissingRow" class="hidden border-t border-slate-100">
-                <td class="px-4 py-2 text-amber-700" colspan="3">Missing / short hours</td>
-                <td id="timesheetMissingHours" class="px-4 py-2 text-amber-700 font-medium">0</td>
-                <td colspan="2"></td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-        <p id="timesheetEntryEmpty" class="hidden text-center text-slate-400 text-sm py-8">No entries logged for this week yet.</p>
-        <div id="timesheetAddForm" class="bg-white border border-slate-200 rounded-xl p-4 mb-4">
-          <p class="text-xs font-medium text-slate-500 mb-2">Log Time</p>
-          <div class="grid grid-cols-2 md:grid-cols-5 gap-2">
-            <select id="tsEntryProject" class="inp text-sm" onchange="loadTsEntryTasks()"></select>
-            <select id="tsEntryTask" class="inp text-sm"></select>
-            <input id="tsEntryDate" type="date" class="inp text-sm"/>
-            <input id="tsEntryHours" type="number" step="0.5" min="0.5" max="24" class="inp text-sm" placeholder="Hours"/>
-            <input id="tsEntryDesc" class="inp text-sm" placeholder="Description…"/>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead id="tsGridHead" class="bg-slate-50 text-slate-500 text-xs uppercase"></thead>
+              <tbody id="tsGridBody"></tbody>
+              <tfoot id="tsGridFoot"></tfoot>
+            </table>
           </div>
-          <button onclick="addTimesheetEntry()" class="btn-primary text-xs px-3 py-1.5 mt-2">Add Entry</button>
         </div>
-        <button id="timesheetSubmitBtn" onclick="submitTimesheet()" class="btn-primary text-sm">Submit for Approval</button>
+        <button id="tsGridAddRowBtn" onclick="addTimesheetGridRow()" class="btn-ghost text-xs mb-4 flex items-center gap-1.5">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+          Add Row
+        </button>
+        <div id="tsWeekDescWrap" class="bg-white border border-slate-200 rounded-xl p-4 mb-4">
+          <label class="lbl">Description <span class="text-slate-400 font-normal">— optional, for the whole week</span></label>
+          <textarea id="tsWeekDescription" class="inp text-sm" rows="2"></textarea>
+        </div>
+        <div class="flex items-center gap-3 flex-wrap">
+          <button id="tsGridSaveBtn" onclick="saveTimesheetGrid()" class="btn-primary text-sm">Save Week</button>
+          <button id="timesheetSubmitBtn" onclick="submitTimesheet()" class="btn-primary text-sm">Submit for Approval</button>
+          <span id="tsGridSaveMsg" class="text-xs"></span>
+        </div>
       </div>
 
       <!-- TIMESHEET APPROVALS -->

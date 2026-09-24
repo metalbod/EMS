@@ -25,6 +25,14 @@ class TimesheetEntryIn(BaseModel):
     task_id: int
     date: str  # YYYY-MM-DD
     hours: float
+    description: Optional[str] = None  # legacy per-entry field — the weekly grid no longer sets this, see TimesheetDescriptionIn
+
+
+class TimesheetEntryHoursIn(BaseModel):
+    hours: float  # a cell's identity (project/task/date) doesn't change on edit — move it by deleting and re-creating in a different row/column instead
+
+
+class TimesheetDescriptionIn(BaseModel):
     description: Optional[str] = None
 
 
@@ -483,6 +491,31 @@ def add_timesheet_entry(conn, ts_id: int, body: TimesheetEntryIn, user: dict = D
     return dict(row)
 
 
+@router.put("/api/timesheets/{ts_id}/entries/{entry_id}")
+@db_session
+def update_timesheet_entry_hours(conn, ts_id: int, entry_id: int, body: TimesheetEntryHoursIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    """Edits an already-saved cell's hours in place — the weekly grid's
+    "Save Week" batch calls this for any cell whose value changed from
+    what was loaded, POST /entries for a newly-filled cell, and DELETE
+    for one cleared back to empty (see static/js/timesheet.js)."""
+    inst_id = need_inst(user)
+    ts = conn.execute("SELECT * FROM timesheets WHERE id=? AND institution_id=?", (ts_id, inst_id)).fetchone()
+    if not ts:
+        raise HTTPException(404, "Timesheet not found")
+    if user["role"] == "employee" and user.get("employee_id") != ts["employee_id"]:
+        raise HTTPException(403, "Access denied")
+    entry = conn.execute("SELECT * FROM timesheet_entries WHERE id=? AND timesheet_id=?", (entry_id, ts_id)).fetchone()
+    if not entry:
+        raise HTTPException(404, "Entry not found")
+    _check_timesheet_entry_editable(conn, ts, entry["project_id"])
+    if body.hours <= 0 or body.hours > 24:
+        raise HTTPException(400, "Hours must be between 0 and 24")
+    conn.execute("UPDATE timesheet_entries SET hours=? WHERE id=? AND timesheet_id=?", (body.hours, entry_id, ts_id))
+    conn.commit()
+    row = conn.execute("SELECT * FROM timesheet_entries WHERE id=?", (entry_id,)).fetchone()
+    return dict(row)
+
+
 @router.delete("/api/timesheets/{ts_id}/entries/{entry_id}", status_code=204)
 @db_session
 def delete_timesheet_entry(conn, ts_id: int, entry_id: int, user: dict = Depends(get_current_user)) -> None:
@@ -498,6 +531,51 @@ def delete_timesheet_entry(conn, ts_id: int, entry_id: int, user: dict = Depends
     _check_timesheet_entry_editable(conn, ts, entry["project_id"])
     conn.execute("DELETE FROM timesheet_entries WHERE id=? AND timesheet_id=?", (entry_id, ts_id))
     conn.commit()
+
+
+@router.put("/api/timesheets/{ts_id}/description")
+@db_session
+def update_timesheet_description(conn, ts_id: int, body: TimesheetDescriptionIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    """One free-text description for the whole week (not per entry — see
+    migrations/versions/20260924_0001_add_timesheet_weekly_description.py).
+    Self-service only, same ownership rule as every other timesheet
+    action; editable whenever at least one project on this timesheet
+    still is (has_split-aware, same as _check_timesheet_entry_editable,
+    but not tied to any one project since this field isn't either)."""
+    inst_id = need_inst(user)
+    ts = conn.execute("SELECT * FROM timesheets WHERE id=? AND institution_id=?", (ts_id, inst_id)).fetchone()
+    if not ts:
+        raise HTTPException(404, "Timesheet not found")
+    if user["role"] == "employee" and user.get("employee_id") != ts["employee_id"]:
+        raise HTTPException(403, "Access denied")
+    project_ids_on_ts = [r["project_id"] for r in conn.execute(
+        "SELECT DISTINCT project_id FROM timesheet_entries WHERE timesheet_id=?", (ts_id,)
+    ).fetchall()]
+    if not project_ids_on_ts:
+        # A fresh, empty timesheet — nothing to be locked by yet.
+        if ts["status"] != "Draft":
+            raise HTTPException(400, f"Cannot edit a {ts['status']} timesheet")
+    else:
+        # Reuses _check_timesheet_entry_editable's own per-project rule
+        # (rather than re-deriving it here) — scoped to the projects
+        # actually logged on THIS timesheet, not every project the
+        # employee happens to be eligible for institution-wide (an
+        # open-to-all project untouched by this week's timesheet says
+        # nothing about whether this week is still open to edit).
+        still_open = False
+        for pid in project_ids_on_ts:
+            try:
+                _check_timesheet_entry_editable(conn, ts, pid)
+                still_open = True
+                break
+            except HTTPException:
+                continue
+        if not still_open:
+            raise HTTPException(400, "This timesheet has no open projects left to edit")
+    conn.execute("UPDATE timesheets SET description=? WHERE id=?", (body.description, ts_id))
+    conn.commit()
+    row = conn.execute("SELECT * FROM timesheets WHERE id=?", (ts_id,)).fetchone()
+    return dict(row)
 
 
 @router.patch("/api/timesheets/{ts_id}/status")
