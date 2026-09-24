@@ -162,6 +162,29 @@ def test_approve_requisition_success(client, hr_manager_auth):
                         json={"action": "approve", "comments": "ZZ looks good"})
     assert res.status_code == 200, res.text
     assert res.json()["status"] == "Approved"
+    assert res.json()["approved_by"], "an actually-approved requisition must record who approved it"
+
+
+def test_reject_requisition_leaves_approved_by_null(client, hr_manager_auth):
+    """Regression test: approve_requisition used to set approved_by=
+    user['username'] unconditionally on the terminal-outcome branch, even
+    when the outcome was a rejection — misleadingly showing 'Approved By'
+    for a rejected requisition in the detail popup (static/js/
+    recruitment.js's openReqDetail only renders that block when
+    r.approved_by is truthy). Who rejected it is still fully recoverable
+    via the History section's audit log."""
+    req = client.post("/api/recruitment/requisitions", headers=hr_manager_auth,
+                       json={"title": _unique_title(), "department": "Sales"}).json()
+    client.patch(f"/api/recruitment/requisitions/{req['id']}/submit", headers=hr_manager_auth)
+    res = client.patch(f"/api/recruitment/requisitions/{req['id']}/approve", headers=hr_manager_auth,
+                        json={"action": "reject", "comments": "ZZ not needed"})
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["status"] == "Rejected"
+    assert body["approved_by"] is None
+
+    fetched = client.get(f"/api/recruitment/requisitions/{req['id']}", headers=hr_manager_auth).json()
+    assert fetched["approved_by"] is None
 
 
 def test_close_requisition_success(client, hr_manager_auth):

@@ -600,10 +600,15 @@ def approve_requisition(conn, req_id: int, body: RequisitionApprovalIn,
         return dict(conn.execute("SELECT * FROM job_requisitions WHERE id=?", (req_id,)).fetchone())
 
     new_status = "Approved" if outcome == "approved" else "Rejected"
+    # approved_by must only ever name the person who actually approved —
+    # leave it NULL on rejection so the "Approved By" block doesn't render
+    # for a rejected requisition (who rejected it, and why, is still fully
+    # captured in requisition_audit_log via the History section).
+    approved_by = user["username"] if outcome == "approved" else None
     conn.execute("""
         UPDATE job_requisitions SET status=?, approved_by=?, approval_comments=?, approval_step=NULL
         WHERE id=?
-    """, (new_status, user["username"], body.comments, req_id))
+    """, (new_status, approved_by, body.comments, req_id))
     _log_requisition(conn, inst_id, req_id, new_status,
                      f"{'Approved' if outcome == 'approved' else 'Rejected'} at {step_label}{comment_suffix}", user)
     conn.commit()
