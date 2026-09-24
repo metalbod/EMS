@@ -1450,9 +1450,9 @@ function renderTotalRewardsStatement(s) {
     </div>
 
     <h3 class="text-sm font-semibold text-slate-700 mb-3">Compensation History</h3>
-    <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+    <div class="bg-white rounded-xl border border-slate-200 table-scroll">
       <table class="w-full text-sm">
-        <thead class="bg-slate-50 border-b border-slate-200">
+        <thead class="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
           <tr>
             <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Date</th>
             <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Type</th>

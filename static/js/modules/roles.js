@@ -32,8 +32,8 @@ async function loadRolesPage(){await loadRolesCache(),renderRolesTable()}functio
           <span class="text-sm font-semibold text-slate-700">${esc(i.module)}</span>
           <span class="text-xs text-slate-400">${c.length} action${c.length!==1?"s":""}</span>
         </button>
-        ${x?`<div class="overflow-x-auto"><table class="w-full text-sm">
-          <thead><tr class="bg-white text-[10px] uppercase text-slate-400">
+        ${x?`<div class="table-scroll" style="max-height:40vh"><table class="w-full text-sm">
+          <thead class="bg-white sticky top-0 z-10"><tr class="bg-white text-[10px] uppercase text-slate-400">
             <th class="px-4 py-2 text-left font-medium">Action</th>
             ${l.map(o=>`<th class="px-2 py-2 text-center font-medium whitespace-nowrap">${esc(s[o]||o)}</th>`).join("")}
           </tr></thead>

@@ -169,8 +169,8 @@ function renderPermissionMatrix() {
           <span class="text-sm font-semibold text-slate-700">${esc(mod.module)}</span>
           <span class="text-xs text-slate-400">${actions.length} action${actions.length !== 1 ? 's' : ''}</span>
         </button>
-        ${expanded ? `<div class="overflow-x-auto"><table class="w-full text-sm">
-          <thead><tr class="bg-white text-[10px] uppercase text-slate-400">
+        ${expanded ? `<div class="table-scroll" style="max-height:40vh"><table class="w-full text-sm">
+          <thead class="bg-white sticky top-0 z-10"><tr class="bg-white text-[10px] uppercase text-slate-400">
             <th class="px-4 py-2 text-left font-medium">Action</th>
             ${roles.map(r => `<th class="px-2 py-2 text-center font-medium whitespace-nowrap">${esc(labels[r] || r)}</th>`).join('')}
           </tr></thead>

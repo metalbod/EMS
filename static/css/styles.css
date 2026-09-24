@@ -181,6 +181,22 @@ main.content-shell{
 .status-special{background:var(--status-special-soft);color:var(--status-special)}
 
 /* ---------------------------------------------------------------------
+   Shared table wrapper — every real <table> in the app (list pages,
+   dashboard mini-tables, modal tables) uses this single class instead of
+   an ad-hoc overflow-hidden/overflow-x-auto wrapper, so the header row
+   stays pinned while only the body rows scroll underneath it. Reused,
+   not reinvented: this is exactly the pattern the Employees list table
+   proved out first (max-height:68vh + overflow:auto + a sticky thead) —
+   centralizing it here means a future tweak (height, border) is a
+   one-place fix instead of 60+ individual table edits. Tables inside a
+   modal that already has its own bounded/scrollable body (e.g. the
+   Compensation detail modals) skip this class entirely and just add
+   `sticky top-0 z-10` straight to their <thead>, since that modal body
+   is already the scroll container.
+--------------------------------------------------------------------- */
+.table-scroll{overflow:auto;max-height:68vh}
+
+/* ---------------------------------------------------------------------
    Sidebar nav — Sep 2026 redesign. No per-module colour (see the old
    "Segment Color Study" block this replaced, removed along with the
    nav-icon-chip/nav-icon-* classes and the #nav-*-group.active rules —
