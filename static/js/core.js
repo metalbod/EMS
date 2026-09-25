@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 let currentUser = null, meta = {}, employees = [], orgData = [], users = [], institutions = [], rolesCache = [];
 let currentInstitution = null;
-let currentEmpId = null, viewingId = null, editingUserId = null;
+let currentEmpId = null, viewingId = null, editingUserId = null, personalEditMode = false;
 let currentTab = 'personal';
 let openGroups = new Set(['empMgmt']);
 const TABS = ['personal','employment','statutory','dependents'];

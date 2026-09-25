@@ -265,6 +265,37 @@ class ConsentUpdate(BaseModel):
     consent_dob: Optional[bool] = None
 
 
+class EmployeePersonalDetailsUpdate(BaseModel):
+    """Self-service edit for the Employee List pop-up's "Edit My Info"
+    (see update_own_personal_details below) — deliberately a narrow,
+    separate model from EmployeeIn/the general PUT: whoever is viewing
+    their own record may change only these six low-risk fields, never
+    department/designation/pay/reports_to/etc., which stay
+    employees.edit_employee (HR-only). Optional + exclude_unset, same
+    partial-update shape as ConsentUpdate above, so re-saving doesn't
+    require resending every field's current value."""
+    preferred_name: Optional[str] = None
+    personal_email: Optional[str] = None
+    religion: Optional[str] = None
+    marital_status: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+
+    @field_validator("religion")
+    @classmethod
+    def validate_religion(cls, v):
+        if v is not None and v not in RELIGIONS:
+            raise ValueError(f"Religion must be one of: {', '.join(RELIGIONS)}")
+        return v
+
+    @field_validator("marital_status")
+    @classmethod
+    def validate_marital(cls, v):
+        if v is not None and v not in MARITAL_STATUSES:
+            raise ValueError(f"Marital status must be one of: {', '.join(MARITAL_STATUSES)}")
+        return v
+
+
 def gen_employee_id(conn, inst_id: int) -> str:
     cnt = conn.execute(
         "SELECT COUNT(*) FROM employees WHERE institution_id=?", (inst_id,)
@@ -945,6 +976,52 @@ def update_consent(conn, employee_id: str, body: ConsentUpdate, request: Request
         "SELECT * FROM employees WHERE institution_id=? AND employee_id=?", (inst_id, employee_id)
     ).fetchone()
     return dict(result)
+
+
+@router.patch("/api/employees/{employee_id}/personal-details", response_model=EmployeeOut)
+@db_session
+def update_own_personal_details(conn, employee_id: str, body: EmployeePersonalDetailsUpdate, request: Request,
+                                user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    """Employee List pop-up's "Edit My Info" — whoever is viewing their own
+    record (any role, not just "employee") may update this fixed
+    whitelist of low-risk personal fields on themselves, without needing
+    employees.edit_employee. Self-only, like performance.py's self-review
+    or the consent PATCH above, so it's never routed through the
+    permission-matrix override system — an institution granting broader
+    access there is a different, HR-facing decision (edit_employee),
+    not this one."""
+    if user.get("employee_id") != employee_id:
+        raise HTTPException(403, "You can only edit your own personal details")
+    inst_id = need_inst(user)
+    row = conn.execute(
+        "SELECT * FROM employees WHERE institution_id=? AND employee_id=?", (inst_id, employee_id)
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "Employee not found")
+    old = dict(row)
+
+    fields = body.model_dump(exclude_unset=True)
+    if not fields:
+        return old
+    set_clause = ", ".join(f"{k}=?" for k in fields)
+    conn.execute(
+        f"UPDATE employees SET {set_clause} WHERE institution_id=? AND employee_id=?",
+        (*fields.values(), inst_id, employee_id),
+    )
+    new_row = conn.execute(
+        "SELECT * FROM employees WHERE institution_id=? AND employee_id=?", (inst_id, employee_id)
+    ).fetchone()
+    changes = diff_employee(old, dict(new_row))
+    write_audit(conn, user, inst_id, employee_id, row["full_name"], "SELF_UPDATE", changes,
+                request.client.host if request.client else None)
+    write_employee_change_note(conn, inst_id, employee_id, user, changes)
+    conn.commit()
+    result = dict(new_row)
+    loc = get_primary_locations(conn, inst_id, [employee_id]).get(employee_id)
+    result["default_location_id"] = loc["location_id"] if loc else None
+    result["location_name"] = loc["location_name"] if loc else None
+    result.update(_resolve_manager_name(conn, inst_id, result.get("reports_to")))
+    return result
 
 
 # ---------------------------------------------------------------------------

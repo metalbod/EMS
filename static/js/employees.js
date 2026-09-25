@@ -344,14 +344,8 @@ function viewEmployee(id) {
   const reportsToEmp = e.reports_to ? (employees||[]).find(x=>x.employee_id===e.reports_to) : null;
   const rt = e.reports_to===e.employee_id ? '⭐ CEO / Top of Org'
     : (e.reports_to ? `${reportsToEmp?displayName(reportsToEmp.full_name,reportsToEmp.preferred_name):e.reports_to} (${e.reports_to})` : '—');
-  document.getElementById('vt-personal').innerHTML = vgrid([
-    ['Full Name',e.full_name,false,true],['Preferred Name',e.preferred_name||'—'],
-    ['IC Number',e.ic_number,true],['Passport No.',e.passport_number||'—'],
-    ['Nationality',e.nationality],['Race',e.race],['Religion',e.religion],['Gender',e.gender],
-    ['Date of Birth',fmtDate(e.date_of_birth)],['Marital Status',e.marital_status],
-    ['Personal Email',e.personal_email||'—'],['Phone',e.phone],
-    ['Address',e.address||'—',false,true],
-  ]);
+  personalEditMode = false;
+  document.getElementById('vt-personal').innerHTML = renderPersonalTab(e, isSelf);
   document.getElementById('vt-employment').innerHTML = vgrid([
     ['Department',e.department],['Designation',e.designation],
     ['Employment Type',e.employment_type],['Start Date',fmtDate(e.start_date)],
@@ -380,6 +374,92 @@ function vgrid(fields) {
         <p class="text-sm text-slate-800 ${mono?'font-mono':''}">${esc(String(value??'—'))}</p>
       </div>`).join('')
   }</div>`;
+}
+
+// Personal tab of the Employee View Modal — like vgrid() above, but six
+// fields (preferred_name/religion/marital_status/personal_email/phone/
+// address) switch to an editable input while personalEditMode is on, via
+// "Edit My Info". Only shown to whoever is viewing their own record (see
+// isSelf in viewEmployee) — every other field here, and everything on
+// every other tab, stays read-only regardless of role; matches the
+// backend's PATCH .../personal-details whitelist exactly.
+function vgridItem(label, valueHtml, {wide}={}) {
+  return `<div class="${wide?'col-span-2 md:col-span-3':''}">
+    <p class="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1">${label}</p>
+    ${valueHtml}
+  </div>`;
+}
+function renderPersonalTab(e, isSelf) {
+  const editing = isSelf && personalEditMode;
+  const text = (v, mono) => `<p class="text-sm text-slate-800 ${mono?'font-mono':''}">${esc(String(v??'—'))}</p>`;
+  const editField = (key, value, {type='text', select}={}) => {
+    if (!editing) return text(value);
+    const id = `selfEdit_${key}`;
+    if (select) return `<select id="${id}" class="inp text-sm">${select.map(o=>`<option value="${esc(o)}" ${value===o?'selected':''}>${esc(o)}</option>`).join('')}</select>`;
+    if (type==='textarea') return `<textarea id="${id}" class="inp text-sm" rows="2">${esc(value||'')}</textarea>`;
+    return `<input id="${id}" type="${type}" class="inp text-sm" value="${esc(value||'')}"/>`;
+  };
+  const items = [
+    vgridItem('Full Name', text(e.full_name)),
+    vgridItem('Preferred Name', editField('preferred_name', e.preferred_name)),
+    vgridItem('IC Number', text(e.ic_number, true)),
+    vgridItem('Passport No.', text(e.passport_number||'—')),
+    vgridItem('Nationality', text(e.nationality)),
+    vgridItem('Race', text(e.race)),
+    vgridItem('Religion', editField('religion', e.religion, {select: meta.religions||[]})),
+    vgridItem('Gender', text(e.gender)),
+    vgridItem('Date of Birth', text(fmtDate(e.date_of_birth))),
+    vgridItem('Marital Status', editField('marital_status', e.marital_status, {select: meta.marital_statuses||[]})),
+    vgridItem('Personal Email', editField('personal_email', e.personal_email, {type:'email'})),
+    vgridItem('Phone', editField('phone', e.phone, {type:'tel'})),
+    vgridItem('Address', editField('address', e.address, {type:'textarea'}), {wide:true}),
+  ].join('');
+  const actions = !isSelf ? '' : editing
+    ? `<div class="col-span-2 md:col-span-3 flex items-center gap-2 pt-2 border-t border-slate-100">
+        <button onclick="savePersonalDetails()" class="btn-primary text-sm">Save</button>
+        <button onclick="cancelEditMyInfo()" class="btn-ghost text-sm">Cancel</button>
+        <span id="personalSaveStatus" class="text-xs"></span>
+      </div>`
+    : `<div class="col-span-2 md:col-span-3 pt-2 border-t border-slate-100">
+        <button onclick="toggleEditMyInfo()" class="btn-ghost text-xs px-3 py-1.5 border border-slate-200 rounded-lg">Edit My Info</button>
+      </div>`;
+  return `<div class="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-4">${items}${actions}</div>`;
+}
+function toggleEditMyInfo() {
+  const e = employees.find(em=>em.employee_id===viewingId); if(!e) return;
+  personalEditMode = true;
+  document.getElementById('vt-personal').innerHTML = renderPersonalTab(e, true);
+}
+function cancelEditMyInfo() {
+  const e = employees.find(em=>em.employee_id===viewingId); if(!e) return;
+  personalEditMode = false;
+  document.getElementById('vt-personal').innerHTML = renderPersonalTab(e, true);
+}
+async function savePersonalDetails() {
+  const g = id => document.getElementById(id)?.value ?? '';
+  const body = {
+    preferred_name: g('selfEdit_preferred_name') || null,
+    personal_email: g('selfEdit_personal_email') || null,
+    religion: g('selfEdit_religion'),
+    marital_status: g('selfEdit_marital_status'),
+    phone: g('selfEdit_phone'),
+    address: g('selfEdit_address') || null,
+  };
+  const statusEl = document.getElementById('personalSaveStatus');
+  if (statusEl) { statusEl.textContent='Saving…'; statusEl.className='text-xs text-slate-400'; }
+  const res = await api(`/api/employees/${viewingId}/personal-details`, {method:'PATCH', body:JSON.stringify(body)});
+  if (!res?.ok) {
+    const d = await res?.json().catch(()=>null);
+    if (statusEl) { statusEl.textContent = d?.detail || 'Failed to save'; statusEl.className='text-xs text-red-600'; }
+    return;
+  }
+  const updated = await res.json();
+  const idx = employees.findIndex(em=>em.employee_id===viewingId);
+  if (idx>=0) employees[idx] = {...employees[idx], ...updated};
+  personalEditMode = false;
+  document.getElementById('vt-personal').innerHTML = renderPersonalTab(employees[idx], true);
+  document.getElementById('viewName').textContent = combinedName(employees[idx].full_name, employees[idx].preferred_name) || employees[idx].employee_id;
+  filterEmployees();
 }
 
 async function switchViewTab(name) {

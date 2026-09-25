@@ -376,6 +376,113 @@ def test_update_employee_not_found_returns_404(client, hr_manager_auth):
 
 
 # ---------------------------------------------------------------------------
+# Self-service personal details edit (Employee List pop-up's "Edit My Info")
+# ---------------------------------------------------------------------------
+def test_update_own_personal_details_success(client, hr_manager_auth, employee_with_login):
+    emp, headers = employee_with_login()
+    res = client.patch(f"/api/employees/{emp['employee_id']}/personal-details", headers=headers, json={
+        "preferred_name": "ZZ Preferred", "personal_email": "zz.preferred@example.com",
+        "religion": "Buddhism", "marital_status": "Married", "phone": "+60129998888",
+        "address": "123 ZZ Test Street",
+    })
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["preferred_name"] == "ZZ Preferred"
+    assert body["personal_email"] == "zz.preferred@example.com"
+    assert body["religion"] == "Buddhism"
+    assert body["marital_status"] == "Married"
+    assert body["phone"] == "+60129998888"
+    assert body["address"] == "123 ZZ Test Street"
+
+
+def test_update_own_personal_details_leaves_other_fields_untouched(client, hr_manager_auth, employee_with_login):
+    """The whitelist model has no department/designation/basic_salary/etc.
+    fields at all, so sending them must have no effect — proves this
+    endpoint can't be used as a backdoor around employees.edit_employee."""
+    emp, headers = employee_with_login(department="ZZ Original Dept")
+    res = client.patch(f"/api/employees/{emp['employee_id']}/personal-details", headers=headers, json={
+        "preferred_name": "ZZ New Preferred", "department": "ZZ Hacked Dept", "basic_salary": 999999,
+    })
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["preferred_name"] == "ZZ New Preferred"
+    assert body["department"] == "ZZ Original Dept"
+    assert body["basic_salary"] in (0, 0.0)
+
+
+def test_update_own_personal_details_rejects_other_employees_record(client, hr_manager_auth, employee_with_login, make_test_employee):
+    emp, headers = employee_with_login()
+    other = make_test_employee(full_name="ZZ Other Employee")
+    res = client.patch(f"/api/employees/{other['employee_id']}/personal-details", headers=headers, json={
+        "preferred_name": "ZZ Should Not Apply",
+    })
+    assert res.status_code == 403
+
+
+def test_update_own_personal_details_invalid_religion_returns_422(client, hr_manager_auth, employee_with_login):
+    emp, headers = employee_with_login()
+    res = client.patch(f"/api/employees/{emp['employee_id']}/personal-details", headers=headers, json={
+        "religion": "ZZ Not A Real Religion",
+    })
+    assert res.status_code == 422
+
+
+def test_update_own_personal_details_invalid_marital_status_returns_422(client, hr_manager_auth, employee_with_login):
+    emp, headers = employee_with_login()
+    res = client.patch(f"/api/employees/{emp['employee_id']}/personal-details", headers=headers, json={
+        "marital_status": "ZZ Not A Real Status",
+    })
+    assert res.status_code == 422
+
+
+def test_update_own_personal_details_partial_update_keeps_other_fields(client, hr_manager_auth, employee_with_login):
+    """exclude_unset semantics — sending only one field must not blank the
+    other five, matching ConsentUpdate's own partial-update behavior."""
+    emp, headers = employee_with_login(phone="+60111112222")
+    res = client.patch(f"/api/employees/{emp['employee_id']}/personal-details", headers=headers, json={
+        "preferred_name": "ZZ Only This Changed",
+    })
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["preferred_name"] == "ZZ Only This Changed"
+    assert body["phone"] == "+60111112222"
+
+
+def test_update_own_personal_details_allowed_for_manager_role_too(client, hr_manager_auth, make_test_employee, test_institution):
+    """Per design, this is scoped by "is this your own record", not by
+    role — a manager (or any role) viewing their own record gets the same
+    self-service edit as an "employee"-role user."""
+    mgr_emp = make_test_employee(full_name="ZZ Self-Edit Manager")
+    username = f"zzselfeditmgr_{mgr_emp['employee_id'].lower()}"
+    user_res = client.post("/api/users", headers=hr_manager_auth, json={
+        "username": username, "full_name": "ZZ Self-Edit Manager User", "password": "ZzPytest@123",
+        "role": "manager", "employee_id": mgr_emp["employee_id"],
+    })
+    assert user_res.status_code == 201, user_res.text
+    user_id = user_res.json()["id"]
+    try:
+        login = client.post("/api/auth/login", json={
+            "username": username, "password": "ZzPytest@123", "institution_code": test_institution["code"],
+        })
+        assert login.status_code == 200, login.text
+        mgr_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+        res = client.patch(f"/api/employees/{mgr_emp['employee_id']}/personal-details", headers=mgr_headers, json={
+            "preferred_name": "ZZ Manager Self Edit",
+        })
+        assert res.status_code == 200, res.text
+        assert res.json()["preferred_name"] == "ZZ Manager Self Edit"
+    finally:
+        client.delete(f"/api/users/{user_id}", headers=hr_manager_auth)
+
+
+def test_update_own_personal_details_requires_auth(client, make_test_employee):
+    emp = make_test_employee()
+    res = client.patch(f"/api/employees/{emp['employee_id']}/personal-details", json={"preferred_name": "x"})
+    assert res.status_code in (401, 403)
+
+
+# ---------------------------------------------------------------------------
 # Status toggle
 # ---------------------------------------------------------------------------
 def test_status_toggle_to_inactive_and_back(client, hr_manager_auth, make_test_employee):
