@@ -660,7 +660,7 @@ async function loadCurrentTimesheet() {
     document.getElementById('timesheetSubmitBtn').classList.add('hidden');
     return;
   }
-  const res=await api('/api/timesheets',{method:'POST',body:JSON.stringify({employee_id:empId,period_start:start,period_end:endStr})});
+  const res=await api('/api/timesheets',{method:'POST',noBusy:true,body:JSON.stringify({employee_id:empId,period_start:start,period_end:endStr})});
   const ts=await res.json();
   const detailRes=await api(`/api/timesheets/${ts.id}`);
   tsCurrentTimesheet=await detailRes.json();

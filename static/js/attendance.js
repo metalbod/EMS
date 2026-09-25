@@ -86,23 +86,23 @@ function renderAttHistory() {
     </tr>`).join('');
 }
 
-async function attendanceClockIn() {
+const attendanceClockIn = guardAsync(async function attendanceClockIn() {
   const res = await api('/api/attendance/clock-in', {
     method: 'POST',
     body: JSON.stringify({ lat: attCurrentGeo?.lat ?? null, lng: attCurrentGeo?.lng ?? null }),
   });
   if (!res || !res.ok) { alert('Error: ' + (await res.json()).detail); return; }
   loadAttendanceClockPage();
-}
+});
 
-async function attendanceClockOut() {
+const attendanceClockOut = guardAsync(async function attendanceClockOut() {
   const res = await api('/api/attendance/clock-out', {
     method: 'POST',
     body: JSON.stringify({ lat: attCurrentGeo?.lat ?? null, lng: attCurrentGeo?.lng ?? null }),
   });
   if (!res || !res.ok) { alert('Error: ' + (await res.json()).detail); return; }
   loadAttendanceClockPage();
-}
+});
 
 // ---------------------------------------------------------------------------
 // HR Review

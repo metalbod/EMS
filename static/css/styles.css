@@ -197,6 +197,19 @@ main.content-shell{
 .table-scroll{overflow:auto;max-height:68vh}
 
 /* ---------------------------------------------------------------------
+   Busy / disabled buttons — core.js's busyAcquire() adds .is-busy (and
+   disabled) to the clicked button while a write request is in flight, so
+   a second click can't re-submit. Unlayered like every other rule here, so
+   it beats .btn-primary's own cursor:pointer/hover background and any
+   Tailwind text/hover utilities on other buttons.
+--------------------------------------------------------------------- */
+.btn-primary:disabled,.btn-ghost:disabled,.pill-btn:disabled,button.is-busy{opacity:.5;cursor:not-allowed}
+.btn-primary:disabled:hover{background:var(--accent)}
+.btn-ghost:disabled:hover{background:transparent}
+.pill-btn-outline:disabled:hover{background:transparent}
+.pill-btn-primary:disabled:hover{background:var(--accent);border-color:var(--accent)}
+
+/* ---------------------------------------------------------------------
    Sidebar nav — Sep 2026 redesign. No per-module colour (see the old
    "Segment Color Study" block this replaced, removed along with the
    nav-icon-chip/nav-icon-* classes and the #nav-*-group.active rules —

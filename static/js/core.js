@@ -226,62 +226,86 @@ function fmtCurrency(v, decimals = 2) {
 // ---------------------------------------------------------------------------
 // Double-submit guard
 // ---------------------------------------------------------------------------
-// Every `<form onsubmit="submitXForm(event)">` in this app calls a bespoke
-// per-form async handler with no protection against a rapid double-click or
-// double-Enter re-invoking it before the first request finishes — each
-// re-invocation is a real second POST, not a no-op, so it silently creates
-// a duplicate row (reported for Add Candidate / Add Dependent, but the same
-// shape everywhere a form posts to the API). Runs once at boot: rewrites
-// every `onsubmit="fn(event)"` form to disable its own submit button for
-// the duration of the async call, so a second click while one is in flight
-// is a no-op instead of a second network request. New forms get this for
-// free, matching the existing `onsubmit="fn(event)"` convention — no
-// per-form wiring needed.
-function installSubmitGuards() {
-  document.querySelectorAll('form[onsubmit]').forEach(form => {
-    const attr = form.getAttribute('onsubmit');
-    const m = attr && attr.match(/^(\w+)\(event\)$/);
-    if (!m) return;
-    const fn = window[m[1]];
-    if (typeof fn !== 'function') return;
-    form.removeAttribute('onsubmit');
-    form.addEventListener('submit', async (e) => {
-      const btn = form.querySelector('button[type="submit"]');
-      if (btn?.disabled) return;
-      if (btn) btn.disabled = true;
-      try {
-        await fn(e);
-      } finally {
-        if (btn) btn.disabled = false;
-      }
-    });
-  });
+// Central "busy button" mechanism: while a request that WRITES to the backend
+// (any non-GET api() call) is in flight, the button the user just clicked is
+// disabled and greyed out (.is-busy, see styles.css), so a second click or a
+// double-Enter can't fire a second request — which for most creates would
+// silently insert a duplicate row (reported for Add Candidate / Add
+// Dependent; the same shape applies almost everywhere a button posts).
+//
+// How it finds the button without touching ~180 inline onclick handlers:
+// a capture-phase click/submit listener (below) remembers the last clicked
+// button; api() acquires it for the duration of any non-GET request, and
+// guardAsync() acquires it for a wrapped handler's whole run (covering
+// handlers that await something — geolocation, a confirm follow-up — before
+// their first api() call). Acquisition is ref-counted per button, and release
+// waits a short grace period, so a handler that makes several sequential
+// requests keeps its button disabled throughout instead of flickering.
+//
+// Opt-outs: `data-no-busy` on a button, buttons inside the nav sidebar, and
+// `api(path, {noBusy:true})` for get-or-create style POSTs that fire on page
+// load rather than from a click.
+const _BUSY_RELEASE_GRACE_MS = 150;
+const _busyState = new Map();
+let _lastClickBtn = null, _lastClickAt = 0;
+
+function _isGuardableButton(el) {
+  return !!el && el.isConnected && !el.hasAttribute('data-no-busy') && !el.closest('nav, .app-sidebar');
+}
+function _rememberClick(btn) { _lastClickBtn = btn || null; _lastClickAt = Date.now(); }
+function _recentClickButton(maxAgeMs) {
+  return (_lastClickBtn && Date.now() - _lastClickAt <= maxAgeMs && _isGuardableButton(_lastClickBtn))
+    ? _lastClickBtn : null;
 }
 
-// The onclick-wired counterpart to installSubmitGuards above: a Save/Add/
-// Create button wired via onclick="fn()" instead of a form submit doesn't
-// go through a <form>, so the boot-time DOM rewrite above can't reach it.
-// Wrap the handler at its definition instead — replaces 31 hand-written
-// `let _savingX = false; if (_savingX) return; ... try {...} finally {
-// _savingX = false; }` copies (one per such button) with one shared
-// wrapper. Same re-entrancy semantics as those copies: a call while one is
-// already in flight is a silent no-op, keyed per wrapped function (not per
-// argument), matching how e.g. saveObTemplateSet('onboarding') and
-// saveObTemplateSet('offboarding') already shared one guard.
-//
-// Also disables the triggering submit button for the call's duration —
-// installSubmitGuards() above is meant to provide that for onsubmit="..."
-// forms, but its window[name] lookup can never find a handler declared
-// `const fn = guardAsync(...)` (only `var`/plain function declarations
-// become window properties; a top-level const/let never does), so every
-// guardAsync-wrapped onsubmit handler — most of them, in practice — was
-// silently skipped by it and got no disable/re-enable at all. Without
-// that, a slow request gives zero visual feedback: the button stays
-// clickable, so a user assumes the first click didn't register and
-// clicks again — a second click while inFlight is a no-op (see below),
-// so what they perceive as "it took the second click" is really just
-// the first request finishing on its own. Doing it here instead fixes
-// every affected form/button at once, whichever way it's wired.
+// Disables `btn` (ref-counted) and returns an idempotent release function.
+function busyAcquire(btn) {
+  if (!btn) return () => {};
+  let st = _busyState.get(btn);
+  if (!st) { st = { n: 0, wasDisabled: btn.disabled, timer: null }; _busyState.set(btn, st); }
+  clearTimeout(st.timer); st.timer = null;
+  st.n++;
+  btn.disabled = true;
+  btn.classList.add('is-busy');
+  btn.setAttribute('aria-busy', 'true');
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    st.n--;
+    if (st.n > 0) return;
+    st.timer = setTimeout(() => {
+      if (st.n > 0) return;
+      _busyState.delete(btn);
+      btn.classList.remove('is-busy');
+      btn.removeAttribute('aria-busy');
+      if (!st.wasDisabled) btn.disabled = false;
+    }, _BUSY_RELEASE_GRACE_MS);
+  };
+}
+
+document.addEventListener('click', (e) => {
+  const btn = e.target?.closest?.('button, input[type="submit"], input[type="button"]');
+  if (!btn) return;
+  if (btn.classList.contains('is-busy')) { e.preventDefault(); e.stopImmediatePropagation(); return; }
+  _rememberClick(btn);
+}, true);
+
+// Delegated (not per-form) so it also covers forms whose handler lives in a
+// lazily-loaded module — the old boot-time installSubmitGuards() looked handlers
+// up by name on window at startup, found nothing for those, and silently
+// skipped them (including Add Candidate, the form it was written for).
+document.addEventListener('submit', (e) => {
+  const form = e.target;
+  const btn = e.submitter || form?.querySelector?.('button[type="submit"]');
+  if (btn?.classList?.contains('is-busy')) { e.preventDefault(); e.stopImmediatePropagation(); return; }
+  if (btn) _rememberClick(btn);
+}, true);
+
+// Wraps a Save/Add/Create handler: a call while one is already in flight is a
+// silent no-op (keyed per wrapped function, not per argument — e.g.
+// saveObTemplateSet('onboarding') and ('offboarding') share one guard), and
+// the clicked button stays disabled for the handler's whole run.
 function _guardAsyncButton(evt) {
   if (!evt || typeof evt.preventDefault !== 'function' || !evt.target) return null;
   if (evt.target.tagName === 'BUTTON') return evt.target;
@@ -293,13 +317,12 @@ function guardAsync(fn) {
   return async function guarded(...args) {
     if (inFlight) return;
     inFlight = true;
-    const btn = _guardAsyncButton(args[0]);
-    if (btn) btn.disabled = true;
+    const release = busyAcquire(_guardAsyncButton(args[0]) || _recentClickButton(1000));
     try {
       return await fn.apply(this, args);
     } finally {
       inFlight = false;
-      if (btn) btn.disabled = false;
+      release();
     }
   };
 }
@@ -367,13 +390,17 @@ async function api(path, opts = {}) {
   if (opts.body && typeof opts.body === 'string' && !headers['Content-Type']) {
     headers['Content-Type'] = 'application/json';
   }
+  const { noBusy, ...fetchOpts } = opts;
+  const isWrite = !!fetchOpts.method && fetchOpts.method.toUpperCase() !== 'GET';
+  const releaseBusy = (isWrite && !noBusy) ? busyAcquire(_recentClickButton(2000)) : () => {};
   showGlobalLoading();
   try {
-    const res = await fetch(path, {...opts, headers});
+    const res = await fetch(path, {...fetchOpts, headers});
     if (res.status === 401) { doLogout(); return null; }
     return res;
   } finally {
     hideGlobalLoading();
+    releaseBusy();
   }
 }
 

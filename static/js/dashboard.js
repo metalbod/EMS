@@ -607,7 +607,7 @@ async function refreshDashClockState() {
   btn.setAttribute('onclick', open ? 'dashShortcutClockOut()' : 'dashShortcutClockIn()');
 }
 
-async function dashShortcutClockIn() {
+const dashShortcutClockIn = guardAsync(async function dashShortcutClockIn() {
   const geo = await attCaptureGeo();
   const res = await api('/api/attendance/clock-in', {
     method: 'POST',
@@ -615,9 +615,9 @@ async function dashShortcutClockIn() {
   });
   if (!res || !res.ok) { const d = await res?.json().catch(() => ({})); alert(d?.detail || 'Failed to clock in'); return; }
   await refreshDashClockState();
-}
+});
 
-async function dashShortcutClockOut() {
+const dashShortcutClockOut = guardAsync(async function dashShortcutClockOut() {
   const geo = await attCaptureGeo();
   const res = await api('/api/attendance/clock-out', {
     method: 'POST',
@@ -625,7 +625,7 @@ async function dashShortcutClockOut() {
   });
   if (!res || !res.ok) { const d = await res?.json().catch(() => ({})); alert(d?.detail || 'Failed to clock out'); return; }
   await refreshDashClockState();
-}
+});
 
 // ---------------------------------------------------------------------------
 

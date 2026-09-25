@@ -660,3 +660,154 @@ describe('combinedName', () => {
     expect(combinedName('', '')).toBe('');
   });
 });
+
+// Matches core.js's busyAcquire / click+submit capture listeners / api()'s
+// write-request hook / guardAsync's use of the remembered button — the
+// central "grey out the clicked button while a write request is in flight"
+// mechanism. Mirrored (not imported), like every other describe in this file.
+describe('busy-button guard', () => {
+  const GRACE = 20; // shortened from core.js's 150ms to keep the suite fast
+  let busyState, lastBtn, lastAt;
+
+  const isGuardable = el => !!el && el.isConnected && !el.hasAttribute('data-no-busy') && !el.closest('nav, .app-sidebar');
+  const recent = maxAge => (lastBtn && Date.now() - lastAt <= maxAge && isGuardable(lastBtn)) ? lastBtn : null;
+  function busyAcquire(btn) {
+    if (!btn) return () => {};
+    let st = busyState.get(btn);
+    if (!st) { st = { n: 0, wasDisabled: btn.disabled, timer: null }; busyState.set(btn, st); }
+    clearTimeout(st.timer); st.timer = null;
+    st.n++;
+    btn.disabled = true; btn.classList.add('is-busy'); btn.setAttribute('aria-busy', 'true');
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      st.n--;
+      if (st.n > 0) return;
+      st.timer = setTimeout(() => {
+        if (st.n > 0) return;
+        busyState.delete(btn);
+        btn.classList.remove('is-busy'); btn.removeAttribute('aria-busy');
+        if (!st.wasDisabled) btn.disabled = false;
+      }, GRACE);
+    };
+  }
+  // api()'s hook: only non-GET requests, unless noBusy, acquire the recent button.
+  async function fakeApi(method, work, { noBusy } = {}) {
+    const isWrite = !!method && method.toUpperCase() !== 'GET';
+    const release = (isWrite && !noBusy) ? busyAcquire(recent(2000)) : () => {};
+    try { return await work(); } finally { release(); }
+  }
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  const click = btn => { lastBtn = btn; lastAt = Date.now(); };
+
+  beforeEach(() => {
+    busyState = new Map(); lastBtn = null; lastAt = 0;
+    document.body.innerHTML = '<nav><button id="nav">Go</button></nav><button id="save">Save</button><button id="other" disabled>Other</button>';
+  });
+
+  it('disables and greys the clicked button while a write request is in flight, then re-enables it', async () => {
+    const btn = document.getElementById('save');
+    click(btn);
+    const p = fakeApi('POST', () => wait(10));
+    expect(btn.disabled).toBe(true);
+    expect(btn.classList.contains('is-busy')).toBe(true);
+    await p; await wait(GRACE + 15);
+    expect(btn.disabled).toBe(false);
+    expect(btn.classList.contains('is-busy')).toBe(false);
+  });
+
+  it('does not touch the button for GET requests', async () => {
+    const btn = document.getElementById('save');
+    click(btn);
+    const p = fakeApi('GET', () => wait(5));
+    expect(btn.disabled).toBe(false);
+    await p;
+  });
+
+  it('honours noBusy for get-or-create style writes fired outside a click', async () => {
+    const btn = document.getElementById('save');
+    click(btn);
+    const p = fakeApi('POST', () => wait(5), { noBusy: true });
+    expect(btn.disabled).toBe(false);
+    await p;
+  });
+
+  it('keeps the button disabled across several sequential requests from one click (grace period)', async () => {
+    const btn = document.getElementById('save');
+    click(btn);
+    await fakeApi('POST', () => wait(3));
+    const second = fakeApi('PATCH', () => wait(10)); // starts inside the grace window
+    await wait(GRACE - 5);
+    expect(btn.disabled).toBe(true);
+    await second; await wait(GRACE + 15);
+    expect(btn.disabled).toBe(false);
+  });
+
+  it('is ref-counted: overlapping requests re-enable only after the last finishes', async () => {
+    const btn = document.getElementById('save');
+    click(btn);
+    const a = fakeApi('POST', () => wait(5));
+    const b = fakeApi('POST', () => wait(40));
+    await a; await wait(GRACE + 5);
+    expect(btn.disabled).toBe(true);
+    await b; await wait(GRACE + 15);
+    expect(btn.disabled).toBe(false);
+  });
+
+  it('never re-enables a button the app itself had disabled', async () => {
+    const btn = document.getElementById('other');
+    click(btn);
+    await fakeApi('POST', () => wait(3)); await wait(GRACE + 15);
+    expect(btn.disabled).toBe(true);
+  });
+
+  it('ignores nav buttons, data-no-busy buttons, stale clicks and detached buttons', async () => {
+    const nav = document.getElementById('nav');
+    click(nav);
+    let p = fakeApi('POST', () => wait(3)); expect(nav.disabled).toBe(false); await p;
+
+    const save = document.getElementById('save');
+    save.setAttribute('data-no-busy', '');
+    click(save);
+    p = fakeApi('POST', () => wait(3)); expect(save.disabled).toBe(false); await p;
+
+    save.removeAttribute('data-no-busy');
+    click(save); lastAt = Date.now() - 5000; // stale
+    p = fakeApi('POST', () => wait(3)); expect(save.disabled).toBe(false); await p;
+
+    click(save); save.remove();
+    p = fakeApi('POST', () => wait(3)); await p; // detached: no throw, nothing acquired
+    expect(busyState.size).toBe(0);
+  });
+
+  it('releases the button even when the request throws', async () => {
+    const btn = document.getElementById('save');
+    click(btn);
+    await expect(fakeApi('POST', () => { throw new Error('boom'); })).rejects.toThrow('boom');
+    await wait(GRACE + 15);
+    expect(btn.disabled).toBe(false);
+  });
+
+  it('guardAsync uses the remembered button for onclick="fn()" handlers that receive no event', async () => {
+    function guardAsync(fn) {
+      let inFlight = false;
+      return async function guarded(...args) {
+        if (inFlight) return;
+        inFlight = true;
+        const release = busyAcquire(recent(1000));
+        try { return await fn.apply(this, args); } finally { inFlight = false; release(); }
+      };
+    }
+    const btn = document.getElementById('save');
+    let calls = 0;
+    const handler = guardAsync(async () => { calls++; await wait(15); });
+    click(btn);
+    const first = handler();            // no event argument, like onclick="save()"
+    expect(btn.disabled).toBe(true);    // disabled even before any api() call
+    await handler();                    // a second call while in flight is a no-op
+    await first; await wait(GRACE + 15);
+    expect(calls).toBe(1);
+    expect(btn.disabled).toBe(false);
+  });
+});
