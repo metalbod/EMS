@@ -246,18 +246,9 @@ main.content-shell{
 .kpi-tile-delta.overdue{color:var(--overdue)}
 .kpi-tile-delta.positive{color:var(--accent-ink)}
 
-.todo-row{display:flex;align-items:center;gap:14px;background:var(--surface-2);border-radius:var(--radius);padding:15px 18px}
-.todo-row.todo-row-urgent{background:var(--accent-tint)}
-.todo-row-title{font-family:var(--font-sans);font-size:14.5px;font-weight:700;color:var(--ink)}
-.todo-row-meta{font-family:var(--font-sans);font-size:12.5px;color:var(--muted)}
-.todo-row-urgent .todo-row-meta{color:var(--accent-ink)}
-.todo-row-meta.overdue{color:var(--overdue)}
-.todo-avatar{width:34px;height:34px;border-radius:var(--radius-pill);display:flex;align-items:center;justify-content:center;font-family:var(--font-sans);font-size:12px;font-weight:700;color:var(--muted);background:var(--avatar-bg);flex-shrink:0}
-.todo-row-urgent .todo-avatar{background:var(--accent);color:#fff}
-.todo-row-open{font-family:var(--font-sans);font-size:12.5px;color:var(--muted)}
 
 /* Must win, always, over every plain `display:` rule above (.nav-sub-item,
-   .inp, .lbl, .badge, .pill-btn, .todo-row, .todo-avatar, .nav-count-badge
+   .inp, .lbl, .badge, .pill-btn, .nav-count-badge
    included) whenever both classes land on the same element — e.g. every
    role-gated nav-sub-item across the sidebar (Approvals/Projects/
    Attendance Review under Timesheet, Leave/Resignation Approvals, Payroll

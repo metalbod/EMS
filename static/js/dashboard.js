@@ -531,12 +531,15 @@ async function loadDashboardTodos() {
     approvalsEl.textContent = pending;
   }
 
+  const wrapEl=document.getElementById('dashboardTodoTableWrap');
   if(!items.length){
     listEl.innerHTML='';
+    wrapEl.classList.add('hidden');
     emptyEl.classList.remove('hidden');
     return;
   }
   emptyEl.classList.add('hidden');
+  wrapEl.classList.remove('hidden');
   const today = new Date().toISOString().slice(0, 10);
   const urgent = _pickUrgentTodo(items);
   listEl.innerHTML=items.map(t=>{
@@ -550,25 +553,20 @@ async function loadDashboardTodos() {
       : `showPage('${t.page}')`;
     const isUrgent = t === urgent;
     const overdue = t.due_date && t.due_date < today;
-    const initials = t.employee_name
-      ? t.employee_name.split(' ').slice(0,2).map(w=>w[0]||'').join('').toUpperCase()
-      : String(t.count || '');
-    const metaParts = t.employee_name
-      ? [t.employee_name, t.stage_type, t.due_date ? fmtDate(t.due_date) : null].filter(Boolean)
-      : [];
-    const metaLine = metaParts.length ? metaParts.join(' · ') : '';
     const action = isUrgent
       ? `<button onclick="event.stopPropagation();${onclick}" class="pill-btn pill-btn-primary" style="padding:6px 16px;font-size:12.5px">Review</button>`
-      : `<span class="todo-row-open">Open</span>`;
+      : `<span class="text-xs text-slate-400">Open</span>`;
+    const dueCell = t.due_date
+      ? `<span${overdue ? ' style="color:var(--overdue);font-weight:600"' : ''}>${esc(fmtDate(t.due_date))}</span>`
+      : '—';
     return `
-    <div class="todo-row${isUrgent ? ' todo-row-urgent' : ''} cursor-pointer" onclick="${onclick}">
-      <div class="todo-avatar">${esc(initials)}</div>
-      <div class="flex-1 min-w-0">
-        <p class="todo-row-title truncate">${esc(t.label)}</p>
-        ${metaLine ? `<p class="todo-row-meta truncate${overdue ? ' overdue' : ''}">${esc(metaLine)}</p>` : ''}
-      </div>
-      ${action}
-    </div>`;
+    <tr class="hover:bg-slate-50 cursor-pointer" ${isUrgent ? 'style="background:var(--accent-tint)"' : ''} onclick="${onclick}">
+      <td class="px-4 py-3 font-medium text-slate-800">${esc(t.label)}</td>
+      <td class="px-4 py-3 text-slate-600 whitespace-nowrap">${t.employee_name ? esc(t.employee_name) : '—'}</td>
+      <td class="px-4 py-3 text-slate-600 whitespace-nowrap">${t.stage_type ? esc(t.stage_type) : '—'}</td>
+      <td class="px-4 py-3 text-slate-600 whitespace-nowrap">${dueCell}</td>
+      <td class="px-4 py-3 text-right whitespace-nowrap">${action}</td>
+    </tr>`;
   }).join('');
 }
 
