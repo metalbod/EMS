@@ -58,10 +58,12 @@ function renderDashboard() {
   // management-facing figures — the plain "employee" role doesn't get the
   // row at all (hidden explicitly, not just left unrevealed, since
   // renderDashboard also re-runs on a role switch).
-  const showKpiRow = currentUser?.role !== 'employee';
-  document.getElementById('dashKpiRow')?.classList.toggle('hidden', !showKpiRow);
-  if (showKpiRow) loadDashboardKpis();
-  loadWorkforceStats();
+  const showMgmtHome = currentUser?.role !== 'employee';
+  document.getElementById('dashKpiRow')?.classList.toggle('hidden', !showMgmtHome);
+  if (showMgmtHome) loadDashboardKpis();
+  // The Workforce tab (institution-wide headcount/composition stats) is hidden
+  // for the plain employee role, so skip its fetch too.
+  if (showMgmtHome) loadWorkforceStats();
 
   // Locations overview (Workforce tab, HR Manager / HR Admin only) — the one
   // section besides base stats that still fetches immediately, since it's
@@ -81,6 +83,7 @@ function renderDashboard() {
   const canViewBenefitsDash = BENEFITS_DASHBOARD_ROLES.includes(currentUser?.role);
   const hasEmployeeRecord = !!currentUser?.employee_id;
   const canViewLeaveDash = HR_STAFF_ROLES.includes(currentUser?.role);
+  document.getElementById('dash-tab-workforce-btn').classList.toggle('hidden', !showMgmtHome);
   document.getElementById('dash-tab-recruitment-btn').classList.toggle('hidden', !canRecruit);
   document.getElementById('dash-tab-timesheet-btn').classList.toggle('hidden', !canViewUtil);
   document.getElementById('dash-tab-compensation-btn').classList.toggle('hidden', !(canViewBenefitsDash || hasEmployeeRecord));
