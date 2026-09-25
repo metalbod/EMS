@@ -557,23 +557,21 @@
                in static/js/notifications.js. -->
           <div id="dashboardNotifList"></div>
 
-          <!-- Greeting header: date + serif greeting, quick-action pills (employee
-               role only, reusing the same shortcuts the old dashboardQuickActions
-               block used) -->
-          <div class="flex items-start justify-between gap-4 flex-wrap mb-6">
-            <div>
-              <p id="dashGreetingDate" class="text-xs" style="color:var(--faint)"></p>
-              <h1 id="dashGreeting" class="page-greeting mt-1">Welcome back</h1>
-            </div>
-            <div id="dashboardQuickActions" class="hidden flex items-center gap-2 shrink-0">
-              <button onclick="dashShortcutSubmitClaim()" class="pill-btn pill-btn-outline">Submit Claim</button>
-              <button id="dashClockBtn" onclick="dashShortcutClockIn()" class="pill-btn pill-btn-outline">Clock In</button>
-              <button onclick="dashShortcutApplyLeave()" class="pill-btn pill-btn-primary">Apply Leave</button>
-            </div>
+          <!-- Greeting header: date + serif greeting -->
+          <div class="mb-6">
+            <p id="dashGreetingDate" class="text-xs" style="color:var(--faint)"></p>
+            <h1 id="dashGreeting" class="page-greeting mt-1">Welcome back</h1>
           </div>
-          <div id="dashboardResignRow" class="hidden mb-6 -mt-3">
+          <!-- Employee-role quick actions: one row below the greeting. The three
+               shortcuts share one style; Resign stays red. While a resignation is
+               pending, refreshResignButtonState() (resignation.js) swaps the Resign
+               button for the inline status line. -->
+          <div id="dashboardQuickActions" class="hidden flex items-center gap-2 flex-wrap mb-6 -mt-2">
+            <button onclick="dashShortcutApplyLeave()" class="pill-btn pill-btn-primary">Apply Leave</button>
+            <button onclick="dashShortcutSubmitClaim()" class="pill-btn pill-btn-primary">Submit Claim</button>
+            <button id="dashClockBtn" onclick="dashShortcutClockIn()" class="pill-btn pill-btn-primary">Clock In</button>
             <button id="dashboardResignBtn" onclick="openResignModal()" class="pill-btn pill-btn-outline" style="color:var(--overdue);border-color:var(--overdue)">Resign</button>
-            <p id="dashboardResignStatus" class="hidden text-xs mt-1" style="color:var(--muted)"></p>
+            <p id="dashboardResignStatus" class="hidden text-xs" style="color:var(--muted)"></p>
           </div>
 
           <!-- KPI tiles: headcount, pending approvals (accent), payroll cut-off, open roles -->

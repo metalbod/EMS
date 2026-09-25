@@ -30,7 +30,6 @@ function renderDashboard() {
   loadDashboardTodos();
   const isEmployee = currentUser?.role === 'employee';
   document.getElementById('dashboardQuickActions')?.classList.toggle('hidden', !isEmployee);
-  document.getElementById('dashboardResignRow')?.classList.toggle('hidden', !isEmployee);
   if (isEmployee) { refreshResignButtonState(); refreshDashClockState(); }
   renderDashGreeting();
   if (currentUser.role === 'superadmin' && !currentInstitution) {
@@ -55,8 +54,13 @@ function renderDashboard() {
   }
   document.getElementById('superadminGlobalDash').classList.add('hidden');
   document.getElementById('instDash').classList.remove('hidden');
-  document.getElementById('dashKpiRow')?.classList.remove('hidden');
-  loadDashboardKpis();
+  // Headcount / pending approvals / payroll cut-off / open roles are
+  // management-facing figures — the plain "employee" role doesn't get the
+  // row at all (hidden explicitly, not just left unrevealed, since
+  // renderDashboard also re-runs on a role switch).
+  const showKpiRow = currentUser?.role !== 'employee';
+  document.getElementById('dashKpiRow')?.classList.toggle('hidden', !showKpiRow);
+  if (showKpiRow) loadDashboardKpis();
   loadWorkforceStats();
 
   // Locations overview (Workforce tab, HR Manager / HR Admin only) — the one
