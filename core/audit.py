@@ -54,3 +54,29 @@ def write_entity_audit(conn, actor, inst_id, module, entity_type, entity_id, act
     """, (inst_id, module, entity_type, None if entity_id is None else str(entity_id),
           entity_label, action, detail, json.dumps(changes) if changes else None,
           actor.get("id"), actor.get("username"), actor.get("role"), ip))
+
+
+_AUTO_SKIP = {"id", "institution_id", "created_at", "updated_at", "password_hash"}
+
+
+def diff_rows(old, new, exclude=(), sensitive=()):
+    """diff_fields() over every column the two rows share (minus ids and
+    bookkeeping timestamps), labelling each field from its column name —
+    for the many simple CRUD endpoints where hand-writing a label map per
+    entity isn't worth it."""
+    o, n = dict(old), dict(new)
+    keys = [k for k in n if k in o and k not in _AUTO_SKIP and k not in exclude]
+    return diff_fields(o, n, {k: k.replace("_", " ").capitalize() for k in keys}, sensitive)
+
+
+def summarize(values, exclude=(), sensitive=(), max_len=400):
+    """One-line "field: value, …" summary of a dict/Pydantic-dumped payload
+    for a Created row's `detail` (skips None/empty values, masks
+    `sensitive` keys, truncates)."""
+    parts = []
+    for k, v in dict(values).items():
+        if k in exclude or k in _AUTO_SKIP or v is None or v == "":
+            continue
+        parts.append(f"{k.replace('_', ' ')}: {'***' if k in sensitive else v}")
+    out = ", ".join(parts)
+    return out if len(out) <= max_len else out[:max_len - 1] + "…"

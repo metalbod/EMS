@@ -19,6 +19,8 @@ from core.approval_workflow import advance_or_finalize, project_ids_for_row, ann
 
 from core.overtime import apply_overtime_outcome, apply_overtime_project_outcome
 
+from core.audit import diff_fields, write_entity_audit
+
 from core.db_session import db_session
 
 from db import get_db
@@ -78,16 +80,26 @@ def update_overtime_settings(conn, body: OvertimeSettingsIn,
         ).fetchone()
         if not lt:
             raise HTTPException(404, "Leave type not found")
+    before = conn.execute(
+        "SELECT overtime_conversion_mode, overtime_leave_type_id, overtime_pay_multiplier FROM institutions WHERE id=?",
+        (inst_id,)
+    ).fetchone()
     conn.execute(
         "UPDATE institutions SET overtime_conversion_mode=?,overtime_leave_type_id=?,overtime_pay_multiplier=? WHERE id=?",
         (body.overtime_conversion_mode, body.overtime_leave_type_id if body.overtime_conversion_mode == "leave" else None,
          body.overtime_pay_multiplier, inst_id)
     )
-    conn.commit()
     row = conn.execute(
         "SELECT overtime_conversion_mode, overtime_leave_type_id, overtime_pay_multiplier FROM institutions WHERE id=?",
         (inst_id,)
     ).fetchone()
+    changes = diff_fields(dict(before), dict(row), {
+        "overtime_conversion_mode": "Conversion mode", "overtime_leave_type_id": "Overtime leave type",
+        "overtime_pay_multiplier": "Pay multiplier"})
+    if changes:
+        write_entity_audit(conn, user, inst_id, "Overtime", "overtime_settings", inst_id, "Settings updated",
+                           changes=changes, entity_label="Overtime settings")
+    conn.commit()
     return dict(row)
 
 

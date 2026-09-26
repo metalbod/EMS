@@ -13,7 +13,8 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from core.db_session import db_session
 from core.deps import get_current_user
-from core.compensation_helpers import add_hr_note as _add_hr_note
+from core.compensation_helpers import add_hr_note as _add_hr_note, audit_comp
+from core.audit import diff_fields
 from core.permission_matrix import require_permission
 from core.compensation_records import get_current as get_current_compensation, retire_and_replace as retire_and_replace_compensation
 from core.compensation_schemas import (
@@ -59,8 +60,12 @@ def create_pay_grade(
          payload.min_salary, payload.midpoint_salary, payload.max_salary,
          payload.description, now, now),
     )
-    conn.commit()
     grade_id = conn._last_id
+    audit_comp(conn, current_user, inst_id, "pay_grade", grade_id, "Created",
+               detail=f"Pay grade {payload.grade_code} '{payload.grade_name}' created: RM {payload.min_salary:,.2f} / "
+                      f"{payload.midpoint_salary:,.2f} / {payload.max_salary:,.2f} (min/mid/max)",
+               label=f"{payload.grade_code} {payload.grade_name}")
+    conn.commit()
 
     grade = conn.execute("SELECT * FROM pay_grades WHERE id = ?", (grade_id,)).fetchone()
     return PayGradeResponse(**dict(grade))
@@ -143,9 +148,15 @@ def update_pay_grade(
         f"UPDATE pay_grades SET {set_clause} WHERE id = ?",
         (*updates.values(), grade_id),
     )
+    updated = conn.execute("SELECT * FROM pay_grades WHERE id = ?", (grade_id,)).fetchone()
+    changes = diff_fields(dict(grade), dict(updated), {
+        "grade_name": "Name", "grade_level": "Level", "min_salary": "Min salary", "midpoint_salary": "Midpoint salary",
+        "max_salary": "Max salary", "description": "Description", "is_active": "Active"})
+    if changes:
+        audit_comp(conn, current_user, inst_id, "pay_grade", grade_id, "Updated", changes=changes,
+                   label=f"{grade['grade_code']} {grade['grade_name']}")
     conn.commit()
 
-    updated = conn.execute("SELECT * FROM pay_grades WHERE id = ?", (grade_id,)).fetchone()
     return PayGradeResponse(**dict(updated))
 
 
@@ -175,8 +186,11 @@ def create_job_level(
         (inst_id, payload.level_code, payload.level_name, payload.level_order,
          payload.description, now, now),
     )
-    conn.commit()
     level_id = conn._last_id
+    audit_comp(conn, current_user, inst_id, "job_level", level_id, "Created",
+               detail=f"Job level {payload.level_code} '{payload.level_name}' (order {payload.level_order}) created",
+               label=f"{payload.level_code} {payload.level_name}")
+    conn.commit()
 
     level = conn.execute("SELECT * FROM job_levels WHERE id = ?", (level_id,)).fetchone()
     return JobLevelResponse(**dict(level))
@@ -252,6 +266,12 @@ def update_job_level(
             f"UPDATE job_levels SET {set_clause} WHERE id = ?",
             (*updates.values(), level_id),
         )
+        updated = conn.execute("SELECT * FROM job_levels WHERE id = ?", (level_id,)).fetchone()
+        changes = diff_fields(dict(level), dict(updated), {
+            "level_name": "Name", "level_order": "Order", "description": "Description", "is_active": "Active"})
+        if changes:
+            audit_comp(conn, current_user, inst_id, "job_level", level_id, "Updated", changes=changes,
+                       label=f"{level['level_code']} {level['level_name']}")
         conn.commit()
 
     updated = conn.execute("SELECT * FROM job_levels WHERE id = ?", (level_id,)).fetchone()
@@ -294,8 +314,11 @@ def create_job_role(
          payload.description, payload.department, payload.required_experience_years,
          now, now),
     )
-    conn.commit()
     role_id = conn._last_id
+    audit_comp(conn, current_user, inst_id, "job_role", role_id, "Created",
+               detail=f"Job role {payload.role_code} '{payload.role_name}' created under level {level['level_code']}",
+               label=f"{payload.role_code} {payload.role_name}")
+    conn.commit()
 
     role = conn.execute("SELECT * FROM job_roles WHERE id = ?", (role_id,)).fetchone()
     return JobRoleResponse(**dict(role))
@@ -426,6 +449,10 @@ def map_role_to_grade(
             "INSERT INTO job_role_pay_grades (job_role_id, pay_grade_id, is_primary, created_at) VALUES (?, ?, ?, ?)",
             (role_id, grade_id, 1 if is_primary else 0, datetime.utcnow().isoformat()),
         )
+        audit_comp(conn, current_user, inst_id, "job_role", role_id, "Mapped to pay grade",
+                   detail=f"Role {role['role_code']} mapped to pay grade {grade['grade_code']}"
+                          + (" (primary)" if is_primary else ""),
+                   label=f"{role['role_code']} {role['role_name']}")
         conn.commit()
 
         return {"status": "mapped", "role_id": role_id, "grade_id": grade_id, "is_primary": is_primary}
@@ -489,6 +516,8 @@ def set_employee_compensation(
     else:
         note_body = f"Compensation record updated (role/level/grade), effective {payload.effective_date}."
     _add_hr_note(conn, inst_id, employee_id, note_body, current_user["username"])
+    audit_comp(conn, current_user, inst_id, "employee_compensation", employee_id, "Compensation record set",
+               detail=note_body, label=f"{employee['full_name']} ({employee_id})")
 
     conn.commit()
 
@@ -587,8 +616,12 @@ def record_salary_change(
          payload.from_pay_grade_id, payload.to_pay_grade_id, payload.from_job_level_id,
          payload.to_job_level_id, payload.effective_date, payload.reason, now),
     )
-    conn.commit()
     change_id = conn._last_id
+    audit_comp(conn, current_user, inst_id, "employee_compensation", employee_id, "Salary change recorded",
+               detail=f"{payload.change_type}: RM {payload.from_salary or 0:,.2f} → RM {payload.to_salary or 0:,.2f}, "
+                      f"effective {payload.effective_date}" + (f" — {payload.reason}" if payload.reason else ""),
+               label=f"{employee['full_name']} ({employee_id})")
+    conn.commit()
 
     change = conn.execute("SELECT * FROM salary_changes WHERE id = ?", (change_id,)).fetchone()
     return SalaryChangeResponse(**dict(change))

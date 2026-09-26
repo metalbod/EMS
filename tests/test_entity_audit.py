@@ -217,3 +217,123 @@ def test_activity_log_filters_and_pagination(client, hr_manager_auth):
     assert int(res.headers["X-Total-Count"]) >= len(res.json())
     assert _log(client, hr_manager_auth, actor="zz-no-such-actor-xyz") == []
     assert _log(client, hr_manager_auth, date_from="2999-01-01") == []
+
+
+# ===========================================================================
+# Phase 2 — compensation & pay config, leave, overtime/timesheet settings
+# ===========================================================================
+def _uniq(prefix):
+    return f"{prefix}{os.urandom(3).hex()}".upper()
+
+
+def test_pay_structure_changes_are_audited(client, hr_manager_auth):
+    grade = client.post("/api/compensation/pay-grades", headers=hr_manager_auth, json={
+        "grade_code": _uniq("ZG"), "grade_name": "ZZ Audit Grade", "grade_level": 1,
+        "min_salary": 2500, "midpoint_salary": 3000, "max_salary": 3500,
+    }).json()
+    upd = client.put(f"/api/compensation/pay-grades/{grade['id']}", headers=hr_manager_auth,
+                     json={"max_salary": 4000})
+    assert upd.status_code == 200, upd.text
+    level = client.post("/api/compensation/job-levels", headers=hr_manager_auth, json={
+        "level_code": _uniq("ZL"), "level_name": "ZZ Audit Level", "level_order": 1}).json()
+    client.put(f"/api/compensation/job-levels/{level['id']}", headers=hr_manager_auth,
+               json={"level_name": "ZZ Audit Level Renamed"})
+    role = client.post("/api/compensation/job-roles", headers=hr_manager_auth, json={
+        "job_level_id": level["id"], "role_name": "ZZ Audit Role", "role_code": _uniq("ZR")})
+    assert role.status_code == 201, role.text
+    role_id = role.json()["id"]
+    client.post(f"/api/compensation/job-roles/{role_id}/pay-grades/{grade['id']}", headers=hr_manager_auth)
+
+    g = _log(client, hr_manager_auth, entity_type="pay_grade", entity_id=str(grade["id"]))
+    assert set(_actions(g)) >= {"Created", "Updated"}
+    ms = next(c for c in next(r for r in g if r["action"] == "Updated")["changes"] if c["field"] == "max_salary")
+    assert ms["old"] == "3500.0" and ms["new"] == "4000.0"
+    assert set(_actions(_log(client, hr_manager_auth, entity_type="job_level", entity_id=str(level["id"])))) >= {"Created", "Updated"}
+    assert set(_actions(_log(client, hr_manager_auth, entity_type="job_role", entity_id=str(role_id)))) >= {"Created", "Mapped to pay grade"}
+
+
+def test_salary_change_and_compensation_are_audited(client, hr_manager_auth, make_test_employee):
+    emp = make_test_employee(full_name="ZZ Audit Salary Employee", basic_salary=5000.0)
+    res = client.post(f"/api/compensation/salary-changes/{emp['employee_id']}", headers=hr_manager_auth, json={
+        "change_type": "merit_increase", "from_salary": 5000.00, "to_salary": 5500.00,
+        "effective_date": "2026-07-26", "reason": "ZZ audit merit"})
+    assert res.status_code == 201, res.text
+    rows = _log(client, hr_manager_auth, entity_type="employee_compensation", entity_id=emp["employee_id"])
+    assert "Salary change recorded" in _actions(rows)
+    row = next(r for r in rows if r["action"] == "Salary change recorded")
+    assert "5,500.00" in row["detail"] and "ZZ audit merit" in row["detail"]
+
+
+def test_bonus_commission_merit_plans_and_payouts_are_audited(client, hr_manager_auth, make_test_employee):
+    bonus = client.post("/api/compensation/bonus-plans", headers=hr_manager_auth, json={
+        "plan_name": f"ZZ Audit Bonus {os.urandom(3).hex()}", "plan_type": "Annual", "plan_year": 2027,
+        "budget_pool_amount": 1000}).json()
+    client.put(f"/api/compensation/bonus-plans/{bonus['id']}", headers=hr_manager_auth,
+               json={"status": "Active", "budget_pool_amount": 9000})
+    emp = make_test_employee(full_name="ZZ Audit Payout Employee")
+    payout = client.post(f"/api/compensation/bonus-payouts?bonus_plan_id={bonus['id']}", headers=hr_manager_auth,
+                         json={"employee_id": emp["employee_id"], "target_amount": 1000, "awarded_amount": 800}).json()
+    client.put(f"/api/compensation/bonus-payouts/{payout['id']}", headers=hr_manager_auth, json={"status": "Approved"})
+    client.put(f"/api/compensation/bonus-payouts/{payout['id']}/pay", headers=hr_manager_auth)
+
+    comm = client.post("/api/compensation/commission-plans", headers=hr_manager_auth, json={
+        "plan_name": f"ZZ Audit Comm {os.urandom(3).hex()}", "plan_type": "Flat Rate",
+        "default_rate_percent": 5, "plan_year": 2027}).json()
+    client.put(f"/api/compensation/commission-plans/{comm['id']}", headers=hr_manager_auth,
+               json={"default_rate_percent": 7})
+    cycle = client.post("/api/compensation/merit-cycles", headers=hr_manager_auth, json={
+        "cycle_name": f"ZZ Audit Cycle {os.urandom(3).hex()}", "review_year": 2027, "cycle_start_date": "2027-07-01",
+        "cycle_end_date": "2027-08-31", "submission_deadline": "2027-08-15"})
+    assert cycle.status_code == 201, cycle.text
+
+    b = _log(client, hr_manager_auth, entity_type="bonus_plan", entity_id=str(bonus["id"]))
+    assert set(_actions(b)) >= {"Created", "Updated"}
+    assert any(c["field"] == "status" and c["new"] == "Active" for c in next(r for r in b if r["action"] == "Updated")["changes"])
+    p = _log(client, hr_manager_auth, entity_type="bonus_payout", entity_id=str(payout["id"]))
+    assert set(_actions(p)) >= {"Payout proposed", "Payout decided", "Payout marked paid"}
+    c = _log(client, hr_manager_auth, entity_type="commission_plan", entity_id=str(comm["id"]))
+    assert any(x["field"] == "default_rate_percent" and x["new"] == "7.0" for x in next(r for r in c if r["action"] == "Updated")["changes"])
+    assert "Created" in _actions(_log(client, hr_manager_auth, entity_type="merit_cycle", entity_id=str(cycle.json()["id"])))
+
+
+def test_leave_type_and_balance_changes_are_audited(client, hr_manager_auth, make_test_employee):
+    lt = client.post("/api/leave/types", headers=hr_manager_auth,
+                     json={"name": f"ZZ Audit Leave {os.urandom(3).hex()}", "annual_entitlement": 10.0}).json()
+    client.put(f"/api/leave/types/{lt['id']}", headers=hr_manager_auth,
+               json={"name": lt["name"], "annual_entitlement": 12.0})
+    emp = make_test_employee(full_name="ZZ Audit Leave Employee")
+    # Balance rows are created lazily — applying for leave (on the
+    # employee's behalf, as HR) is what creates this type's row.
+    app = client.post("/api/leave/applications", headers=hr_manager_auth, json={
+        "employee_id": emp["employee_id"], "leave_type_id": lt["id"],
+        "start_date": "2027-04-05", "end_date": "2027-04-05"})
+    assert app.status_code == 201, app.text
+    bals = client.get("/api/leave/balances", headers=hr_manager_auth,
+                      params={"employee_id": emp["employee_id"], "year": 2027}).json()
+    bal = next(b for b in bals if b["leave_type_id"] == lt["id"])
+    adj = client.patch(f"/api/leave/balances/{bal['id']}", headers=hr_manager_auth, json={"entitled_days": 20})
+    assert adj.status_code == 200, adj.text
+    assert client.delete(f"/api/leave/types/{lt['id']}", headers=hr_manager_auth).status_code == 204
+
+    t = _log(client, hr_manager_auth, entity_type="leave_type", entity_id=str(lt["id"]))
+    assert set(_actions(t)) >= {"Created", "Updated", "Deactivated"}
+    ent = next(c for c in next(r for r in t if r["action"] == "Updated")["changes"] if c["field"] == "annual_entitlement")
+    assert ent["old"] == "10.0" and ent["new"] == "12.0"
+    b = _log(client, hr_manager_auth, entity_type="leave_balance", entity_id=str(bal["id"]))
+    assert "Balance adjusted" in _actions(b)
+    assert any(c["field"] == "entitled_days" and c["new"] == "20.0" for c in b[0]["changes"])
+
+
+def test_overtime_and_timesheet_settings_changes_are_audited(client, hr_manager_auth):
+    client.put("/api/overtime/settings", headers=hr_manager_auth,
+               json={"overtime_conversion_mode": "pay", "overtime_pay_multiplier": 1.5})
+    client.put("/api/overtime/settings", headers=hr_manager_auth,
+               json={"overtime_conversion_mode": "pay", "overtime_pay_multiplier": 2.25})
+    client.put("/api/timesheets/settings", headers=hr_manager_auth, json={"standard_weekly_hours": 40})
+    client.put("/api/timesheets/settings", headers=hr_manager_auth, json={"standard_weekly_hours": 44})
+    client.put("/api/timesheets/settings", headers=hr_manager_auth, json={"standard_weekly_hours": 40})
+
+    ot = _log(client, hr_manager_auth, entity_type="overtime_settings")
+    assert any(c["field"] == "overtime_pay_multiplier" and c["new"] == "2.25" for r in ot for c in r["changes"])
+    ts = _log(client, hr_manager_auth, entity_type="timesheet_settings")
+    assert any(c["field"] == "standard_weekly_hours" and c["new"] == "44.0" for r in ts for c in r["changes"])

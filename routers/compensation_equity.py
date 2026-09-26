@@ -7,7 +7,7 @@ from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from core.db_session import db_session
 from core.deps import get_current_user
-from core.compensation_helpers import add_hr_note as _add_hr_note
+from core.compensation_helpers import add_hr_note as _add_hr_note, audit_comp
 from core.permission_matrix import require_permission
 from core.compensation_schemas import (
     EquityGrantCreate, EquityGrantDecide, EquityGrantResponse, EquityGrantWithEmployee,
@@ -110,6 +110,7 @@ def create_equity_grant(
         f"with a {payload.cliff_months}-month cliff."
     )
     _add_hr_note(conn, inst_id, payload.employee_id, note_body, current_user["username"])
+    audit_comp(conn, current_user, inst_id, "equity_grant", grant_id, "Grant created", detail=note_body, label=payload.employee_id)
 
     conn.commit()
 
@@ -237,6 +238,7 @@ def decide_equity_grant(
         f"was {payload.status.lower()} by {current_user['username']}."
     )
     _add_hr_note(conn, inst_id, grant["employee_id"], note_body, current_user["username"])
+    audit_comp(conn, current_user, inst_id, "equity_grant", grant_id, "Grant decided", detail=note_body, label=grant["employee_id"])
 
     conn.commit()
 
@@ -280,6 +282,7 @@ def cancel_equity_grant(
 
     note_body = f"Equity grant ({grant['quantity']:,} {grant['grant_type']} units, granted {grant['grant_date']}) was cancelled by {current_user['username']}. Unvested tranches forfeited."
     _add_hr_note(conn, inst_id, grant["employee_id"], note_body, current_user["username"])
+    audit_comp(conn, current_user, inst_id, "equity_grant", grant_id, "Grant cancelled", detail=note_body, label=grant["employee_id"])
 
     conn.commit()
 
@@ -318,6 +321,7 @@ def mark_vesting_event_vested(
     grant = conn.execute("SELECT grant_type FROM equity_grants WHERE id = ?", (event["equity_grant_id"],)).fetchone()
     note_body = f"{event['quantity_vested']:,} {grant['grant_type'] if grant else ''} units vested on {event['vest_date']}."
     _add_hr_note(conn, inst_id, event["employee_id"], note_body, current_user["username"])
+    audit_comp(conn, current_user, inst_id, "vesting_event", event_id, "Vesting event vested", detail=note_body, label=event["employee_id"])
 
     conn.commit()
 
@@ -381,6 +385,7 @@ def settle_vesting_event(
         f"settled at RM {payload.settlement_price:,.4f}/unit — RM {cash_payout:,.2f} paid out on {today}."
     )
     _add_hr_note(conn, inst_id, event["employee_id"], note_body, current_user["username"])
+    audit_comp(conn, current_user, inst_id, "vesting_event", event_id, "Vesting event settled", detail=note_body, label=event["employee_id"])
 
     conn.commit()
 

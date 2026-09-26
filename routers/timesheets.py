@@ -15,6 +15,8 @@ from core.overtime import generate_overtime_records
 
 from db import get_db
 
+from core.audit import write_entity_audit
+
 from core.db_session import db_session
 
 router = APIRouter()
@@ -328,7 +330,13 @@ def update_timesheet_settings(conn, body: TimesheetSettingsIn, user: dict = Depe
     if user["role"] not in TIMESHEET_SETTINGS_MANAGE_ROLES:
         raise HTTPException(403, "Not authorized")
     inst_id = need_inst(user)
+    prev = conn.execute("SELECT standard_weekly_hours FROM institutions WHERE id=?", (inst_id,)).fetchone()
     conn.execute("UPDATE institutions SET standard_weekly_hours=? WHERE id=?", (body.standard_weekly_hours, inst_id))
+    if prev and float(prev["standard_weekly_hours"] or 0) != float(body.standard_weekly_hours):
+        write_entity_audit(conn, user, inst_id, "Timesheet", "timesheet_settings", inst_id, "Settings updated",
+                           changes=[{"field": "standard_weekly_hours", "label": "Standard weekly hours",
+                                     "old": str(prev["standard_weekly_hours"]), "new": str(body.standard_weekly_hours)}],
+                           entity_label="Timesheet settings")
     conn.commit()
     return TimesheetSettingsOut(standard_weekly_hours=body.standard_weekly_hours)
 

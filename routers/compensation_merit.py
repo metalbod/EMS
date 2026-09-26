@@ -9,7 +9,8 @@ from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from core.db_session import db_session
 from core.deps import get_current_user
-from core.compensation_helpers import add_hr_note as _add_hr_note
+from core.compensation_helpers import add_hr_note as _add_hr_note, audit_comp
+from core.audit import diff_fields
 from core.permission_matrix import require_permission
 from core.compensation_records import get_current as get_current_compensation, retire_and_replace as retire_and_replace_compensation
 from core.compensation_schemas import (
@@ -49,8 +50,11 @@ def create_merit_cycle(
          payload.cycle_end_date, payload.submission_deadline, payload.budget_pool_amount,
          payload.description, now, now),
     )
-    conn.commit()
     cycle_id = conn._last_id
+    audit_comp(conn, current_user, inst_id, "merit_cycle", cycle_id, "Created",
+               detail=f"Merit review cycle '{payload.cycle_name}' ({payload.review_year}) created, "
+                      f"budget pool RM {payload.budget_pool_amount or 0:,.2f}", label=payload.cycle_name)
+    conn.commit()
 
     cycle = conn.execute("SELECT * FROM merit_review_cycles WHERE id = ?", (cycle_id,)).fetchone()
     return MeritReviewCycleResponse(**dict(cycle))
@@ -161,6 +165,7 @@ def create_merit_recommendation(
     if payload.reason:
         note_body += f" Reason: {payload.reason}"
     _add_hr_note(conn, inst_id, payload.employee_id, note_body, current_user["username"])
+    audit_comp(conn, current_user, inst_id, "merit_recommendation", rec_id, "Recommendation created", detail=note_body, label=payload.employee_id)
 
     conn.commit()
 
@@ -260,6 +265,7 @@ def approve_merit_recommendation(
         _apply_merit_salary_increase(conn, inst_id, rec, cycle_name, user_id, now)
 
     _add_hr_note(conn, inst_id, rec["employee_id"], note_body, current_user["username"])
+    audit_comp(conn, current_user, inst_id, "merit_recommendation", recommendation_id, "Recommendation decided", detail=note_body, label=rec["employee_id"])
 
     conn.commit()
 

@@ -11,3 +11,13 @@ def add_hr_note(conn, inst_id: int, employee_id: str, body: str, username: str):
         "INSERT INTO hr_notes (institution_id, employee_id, note_type, body, created_by) VALUES (?, ?, ?, ?, ?)",
         (inst_id, employee_id, "performance", body, username),
     )
+
+
+def audit_comp(conn, user, inst_id, entity_type, entity_id, action, detail=None, changes=None, label=None):
+    """Structured entry in the generic entity_audit_log (module "Compensation")
+    — alongside, not instead of, add_hr_note above: the HR note is the
+    human-readable line on the employee's own profile, this is the
+    queryable per-record history (System Activity tab / History popups)."""
+    from core.audit import write_entity_audit
+    write_entity_audit(conn, user, inst_id, "Compensation", entity_type, entity_id, action,
+                       detail=detail, changes=changes, entity_label=label)

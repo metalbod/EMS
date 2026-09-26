@@ -6,7 +6,8 @@ from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from core.db_session import db_session
 from core.deps import get_current_user
-from core.compensation_helpers import add_hr_note as _add_hr_note
+from core.compensation_helpers import add_hr_note as _add_hr_note, audit_comp
+from core.audit import diff_fields
 from core.permission_matrix import require_permission
 from core.compensation_schemas import (
     CommissionPlanCreate, CommissionPlanUpdate, CommissionPlanResponse,
@@ -43,8 +44,11 @@ def create_commission_plan(
          payload.plan_year, payload.period_start, payload.period_end,
          payload.description, now, now),
     )
-    conn.commit()
     plan_id = conn._last_id
+    audit_comp(conn, current_user, inst_id, "commission_plan", plan_id, "Created",
+               detail=f"Commission plan '{payload.plan_name}' ({payload.plan_type}, {payload.plan_year}) created, "
+                      f"default rate {payload.default_rate_percent}%", label=payload.plan_name)
+    conn.commit()
 
     plan = conn.execute("SELECT * FROM commission_plans WHERE id = ?", (plan_id,)).fetchone()
     return CommissionPlanResponse(**dict(plan))
@@ -94,6 +98,10 @@ def update_commission_plan(
     }
     set_clause = ", ".join(f"{k} = ?" for k in updates.keys())
     conn.execute(f"UPDATE commission_plans SET {set_clause} WHERE id = ?", (*updates.values(), plan_id))
+    changes = diff_fields(dict(plan), updates, {"plan_name": "Name", "status": "Status",
+                                                "default_rate_percent": "Default rate %", "description": "Description"})
+    if changes:
+        audit_comp(conn, current_user, inst_id, "commission_plan", plan_id, "Updated", changes=changes, label=plan["plan_name"])
     conn.commit()
 
     updated = conn.execute("SELECT * FROM commission_plans WHERE id = ?", (plan_id,)).fetchone()
@@ -192,6 +200,7 @@ def create_commission_entry(
     if payload.notes:
         note_body += f" Notes: {payload.notes}"
     _add_hr_note(conn, inst_id, payload.employee_id, note_body, current_user["username"])
+    audit_comp(conn, current_user, inst_id, "commission_entry", entry_id, "Entry recorded", detail=note_body, label=payload.employee_id)
 
     conn.commit()
 
@@ -238,6 +247,7 @@ def decide_commission_entry(
         f"was {payload.status.lower()} by {current_user['username']}."
     )
     _add_hr_note(conn, inst_id, entry["employee_id"], note_body, current_user["username"])
+    audit_comp(conn, current_user, inst_id, "commission_entry", entry_id, "Entry decided", detail=note_body, label=entry["employee_id"])
 
     conn.commit()
 
@@ -275,6 +285,7 @@ def mark_commission_entry_paid(
 
     note_body = f"Commission payout of RM {float(entry['calculated_commission']):,.2f} paid out on {today}."
     _add_hr_note(conn, inst_id, entry["employee_id"], note_body, current_user["username"])
+    audit_comp(conn, current_user, inst_id, "commission_entry", entry_id, "Entry marked paid", detail=note_body, label=entry["employee_id"])
 
     conn.commit()
 

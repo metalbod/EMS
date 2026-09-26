@@ -6,7 +6,8 @@ from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from core.db_session import db_session
 from core.deps import get_current_user
-from core.compensation_helpers import add_hr_note as _add_hr_note
+from core.compensation_helpers import add_hr_note as _add_hr_note, audit_comp
+from core.audit import diff_fields
 from core.permission_matrix import require_permission
 from core.compensation_schemas import (
     BonusPlanCreate, BonusPlanUpdate, BonusPlanResponse,
@@ -43,8 +44,11 @@ def create_bonus_plan(
          payload.period_start, payload.period_end, payload.budget_pool_amount,
          payload.description, now, now),
     )
-    conn.commit()
     plan_id = conn._last_id
+    audit_comp(conn, current_user, inst_id, "bonus_plan", plan_id, "Created",
+               detail=f"Bonus plan '{payload.plan_name}' ({payload.plan_type}, {payload.plan_year}) created, "
+                      f"budget pool RM {payload.budget_pool_amount or 0:,.2f}", label=payload.plan_name)
+    conn.commit()
 
     plan = conn.execute("SELECT * FROM bonus_plans WHERE id = ?", (plan_id,)).fetchone()
     return BonusPlanResponse(**dict(plan))
@@ -94,6 +98,10 @@ def update_bonus_plan(
     }
     set_clause = ", ".join(f"{k} = ?" for k in updates.keys())
     conn.execute(f"UPDATE bonus_plans SET {set_clause} WHERE id = ?", (*updates.values(), plan_id))
+    changes = diff_fields(dict(plan), updates, {"plan_name": "Name", "status": "Status",
+                                                "budget_pool_amount": "Budget pool", "description": "Description"})
+    if changes:
+        audit_comp(conn, current_user, inst_id, "bonus_plan", plan_id, "Updated", changes=changes, label=plan["plan_name"])
     conn.commit()
 
     updated = conn.execute("SELECT * FROM bonus_plans WHERE id = ?", (plan_id,)).fetchone()
@@ -181,6 +189,7 @@ def create_bonus_payout(
     if payload.reason:
         note_body += f" Reason: {payload.reason}"
     _add_hr_note(conn, inst_id, payload.employee_id, note_body, current_user["username"])
+    audit_comp(conn, current_user, inst_id, "bonus_payout", payout_id, "Payout proposed", detail=note_body, label=payload.employee_id)
 
     conn.commit()
 
@@ -227,6 +236,7 @@ def decide_bonus_payout(
         f"was {payload.status.lower()} by {current_user['username']}."
     )
     _add_hr_note(conn, inst_id, payout["employee_id"], note_body, current_user["username"])
+    audit_comp(conn, current_user, inst_id, "bonus_payout", payout_id, "Payout decided", detail=note_body, label=payout["employee_id"])
 
     conn.commit()
 
@@ -264,6 +274,7 @@ def mark_bonus_payout_paid(
 
     note_body = f"Bonus payout of RM {float(payout['awarded_amount']):,.2f} paid out on {today}."
     _add_hr_note(conn, inst_id, payout["employee_id"], note_body, current_user["username"])
+    audit_comp(conn, current_user, inst_id, "bonus_payout", payout_id, "Payout marked paid", detail=note_body, label=payout["employee_id"])
 
     conn.commit()
 

@@ -21,6 +21,8 @@ from core.leave_balance_ops import (
 
 from core.approval_workflow import start_workflow, advance_or_finalize, annotate_actionability
 
+from core.audit import diff_fields, write_entity_audit
+
 from db import get_db
 
 from core.db_session import db_session
@@ -413,6 +415,17 @@ def list_leave_types(conn, user: dict = Depends(get_current_user)) -> List[Dict[
     return [dict(r) for r in rows]
 
 
+_LEAVE_TYPE_AUDIT_LABELS = {
+    "name": "Name", "annual_entitlement": "Annual entitlement", "requires_approval": "Requires approval",
+    "requires_attachment": "Requires attachment", "is_paid": "Paid", "is_active": "Active",
+    "shares_entitlement_with_id": "Shares entitlement with", "count_calendar_days": "Counts calendar days",
+    "allow_half_day": "Allows half day", "accrual_mode": "Accrual mode",
+    "max_days_per_application": "Max days per application", "max_days_per_month": "Max days per month",
+    "carry_forward_enabled": "Carry forward", "carry_forward_max_days": "Carry-forward max days",
+    "carry_forward_max_percent": "Carry-forward max %", "carry_forward_expiry_days": "Carry-forward expiry days",
+}
+
+
 @router.post("/api/leave/types", status_code=201)
 @db_session
 def create_leave_type(conn, body: LeaveTypeIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
@@ -428,8 +441,10 @@ def create_leave_type(conn, body: LeaveTypeIn, user: dict = Depends(get_current_
          1 if body.carry_forward_enabled else 0, body.carry_forward_max_days,
          body.carry_forward_max_percent, body.carry_forward_expiry_days)
     )
-    conn.commit()
     row = conn.execute("SELECT * FROM leave_types WHERE id=last_insert_rowid()").fetchone()
+    write_entity_audit(conn, user, inst_id, "Leave", "leave_type", row["id"], "Created",
+                       detail=f"Leave type '{body.name}' created ({body.annual_entitlement} days/yr)", entity_label=body.name)
+    conn.commit()
     return dict(row)
 
 
@@ -438,7 +453,8 @@ def create_leave_type(conn, body: LeaveTypeIn, user: dict = Depends(get_current_
 def update_leave_type(conn, type_id: int, body: LeaveTypeIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     require_permission(conn, user, "leave.manage_leave_types")
     inst_id = need_inst(user)
-    if not conn.execute("SELECT id FROM leave_types WHERE id=? AND institution_id=?", (type_id, inst_id)).fetchone():
+    old_row = conn.execute("SELECT * FROM leave_types WHERE id=? AND institution_id=?", (type_id, inst_id)).fetchone()
+    if not old_row:
         raise HTTPException(404, "Leave type not found")
     _validate_shares_entitlement(conn, inst_id, type_id, body.shares_entitlement_with_id, body.name)
     conn.execute(
@@ -450,8 +466,12 @@ def update_leave_type(conn, type_id: int, body: LeaveTypeIn, user: dict = Depend
          1 if body.carry_forward_enabled else 0, body.carry_forward_max_days,
          body.carry_forward_max_percent, body.carry_forward_expiry_days, type_id)
     )
-    conn.commit()
     row = conn.execute("SELECT * FROM leave_types WHERE id=?", (type_id,)).fetchone()
+    changes = diff_fields(dict(old_row), dict(row), _LEAVE_TYPE_AUDIT_LABELS)
+    if changes:
+        write_entity_audit(conn, user, inst_id, "Leave", "leave_type", type_id, "Updated", changes=changes,
+                           entity_label=row["name"])
+    conn.commit()
     return dict(row)
 
 
@@ -460,7 +480,11 @@ def update_leave_type(conn, type_id: int, body: LeaveTypeIn, user: dict = Depend
 def delete_leave_type(conn, type_id: int, user: dict = Depends(get_current_user)) -> None:
     require_permission(conn, user, "leave.manage_leave_types")
     inst_id = need_inst(user)
+    lt = conn.execute("SELECT name, is_active FROM leave_types WHERE id=? AND institution_id=?", (type_id, inst_id)).fetchone()
     conn.execute("UPDATE leave_types SET is_active=0 WHERE id=? AND institution_id=?", (type_id, inst_id))
+    if lt:
+        write_entity_audit(conn, user, inst_id, "Leave", "leave_type", type_id, "Deactivated",
+                           detail=f"Leave type '{lt['name']}' deactivated (soft delete)", entity_label=lt["name"])
     conn.commit()
 
 
@@ -564,8 +588,15 @@ def adjust_leave_balance(conn, balance_id: int, body: LeaveBalanceAdjustIn, user
         "UPDATE leave_balances SET entitled_days=?,carried_forward_days=?,carried_forward_used_days=? WHERE id=?",
         (entitled, carried, carried_used, balance_id)
     )
-    conn.commit()
     row = conn.execute("SELECT * FROM leave_balances WHERE id=?", (balance_id,)).fetchone()
+    changes = diff_fields(dict(bal), dict(row), {"entitled_days": "Entitled days",
+                                                 "carried_forward_days": "Carried-forward days",
+                                                 "carried_forward_used_days": "Carried-forward used"})
+    if changes:
+        write_entity_audit(conn, user, inst_id, "Leave", "leave_balance", balance_id, "Balance adjusted",
+                           detail=f"Manual adjustment to {bal['employee_id']}'s leave balance ({bal['year']})",
+                           changes=changes, entity_label=bal["employee_id"])
+    conn.commit()
     return dict(row)
 
 

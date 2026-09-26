@@ -1175,7 +1175,7 @@
               <option value="">All Modules</option>
               <option>Users</option><option>Roles &amp; Permissions</option><option>Approval Workflows</option>
               <option>Payroll</option><option>Institution</option><option>Recruitment</option><option>Onboarding</option>
-              <option>L&amp;D</option><option>Leave</option><option>Timesheet</option><option>Performance</option>
+              <option>L&amp;D</option><option>Leave</option><option>Timesheet</option><option>Overtime</option><option>Compensation</option><option>Performance</option><option>Attendance</option><option>Benefits</option><option>Locations</option><option>Projects</option><option>Notifications</option><option>Employees</option><option>Resignation</option>
             </select>
             <input id="sysAuditActor" class="inp w-44" placeholder="Actor username…" onchange="sysAuditPage=1;loadSystemActivity()"/>
             <label class="text-xs text-slate-500 flex items-center gap-1">From <input id="sysAuditFrom" type="date" class="inp w-40" onchange="sysAuditPage=1;loadSystemActivity()"/></label>
@@ -1828,6 +1828,7 @@
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
                 Populate Next Year
               </button>
+              <button onclick="openEntityHistory({title:'Holiday history',module:'Leave',entity_type:'holiday'})" class="hist-btn hidden btn-ghost text-sm mr-2">History</button>
               <button onclick="openHolidayModal()" class="btn-primary text-sm flex items-center gap-2">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
                 Add Holiday
@@ -1848,7 +1849,10 @@
         <div id="hmSubPanel_leavetypes" class="hidden">
           <div class="flex items-center justify-between mb-4">
             <h3 class="text-sm font-semibold text-slate-700">Leave Types</h3>
-            <button onclick="openLeaveTypeModal()" class="btn-primary text-xs">+ Add Leave Type</button>
+            <div class="flex items-center gap-2">
+              <button onclick="openEntityHistory({title:'Leave type history',module:'Leave',entity_type:'leave_type'})" class="hist-btn hidden btn-ghost text-xs">History</button>
+              <button onclick="openLeaveTypeModal()" class="btn-primary text-xs">+ Add Leave Type</button>
+            </div>
           </div>
           <div id="leaveTypeList" class="space-y-2"></div>
         </div>
@@ -1865,6 +1869,7 @@
           </div>
           <div class="flex items-center gap-3">
             <input id="projectSearch" type="text" placeholder="Search projects…" class="inp" style="width:220px" oninput="filterProjectsBySearch(this.value)"/>
+            <button onclick="openEntityHistory({title:'Project history',module:'Projects',entity_type:'project'})" class="hist-btn hidden btn-ghost text-sm mr-2">History</button>
             <button onclick="openProjectModal()" class="btn-primary text-sm flex items-center gap-2 shrink-0">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
               Add Project
@@ -2308,6 +2313,7 @@
       <!-- SETTINGS: Locations (HR Manager / HR Admin) -->
       <div id="page-settings-locations" class="hidden">
         <div class="flex justify-end mb-4">
+          <button onclick="openEntityHistory({title:'Location history',module:'Locations',entity_type:'location'})" class="hist-btn hidden btn-ghost text-sm mr-2">History</button>
           <button id="addLocationBtn" onclick="openLocationModal()" class="btn-primary flex items-center gap-2">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
             Add Location
@@ -2375,6 +2381,7 @@
 
         <div id="attTab-shifts" class="att-tab-panel hidden">
           <div class="flex justify-end mb-4">
+            <button onclick="openEntityHistory({title:'Shift history',module:'Attendance',entity_type:'shift'})" class="hist-btn hidden btn-ghost text-sm mr-2">History</button>
             <button onclick="openShiftModal()" class="btn-primary text-sm flex items-center gap-2">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
               Add Shift
@@ -2668,7 +2675,7 @@
       <!-- COMPENSATION: Pay Grades (HR Manager / Payroll Manager) -->
       <div id="page-comp-paygrades" class="hidden">
         <div class="flex justify-between items-center mb-4">
-          <h3 class="text-lg font-semibold">Pay Grades & Salary Bands</h3>
+          <div class="flex items-center gap-3"><h3 class="text-lg font-semibold">Pay Grades & Salary Bands</h3><button onclick="openEntityHistory({title:'Pay grade history',module:'Compensation',entity_type:'pay_grade'})" class="hist-btn hidden btn-ghost text-xs px-2">History</button></div>
           <button onclick="openPayGradeForm()" class="btn-primary text-sm flex items-center gap-2">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
             New Pay Grade
@@ -2710,7 +2717,7 @@
       <!-- COMPENSATION: Job Levels -->
       <div id="page-comp-joblevels" class="hidden">
         <div class="flex justify-between items-center mb-4">
-          <h3 class="text-lg font-semibold">Job Levels & Hierarchy</h3>
+          <div class="flex items-center gap-3"><h3 class="text-lg font-semibold">Job Levels & Hierarchy</h3><button onclick="openEntityHistory({title:'Job level history',module:'Compensation',entity_type:'job_level'})" class="hist-btn hidden btn-ghost text-xs px-2">History</button></div>
           <button onclick="openJobLevelForm()" class="btn-primary text-sm flex items-center gap-2">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
             New Job Level
@@ -2750,7 +2757,7 @@
       <!-- COMPENSATION: Job Roles -->
       <div id="page-comp-jobroles" class="hidden">
         <div class="flex justify-between items-center mb-4">
-          <h3 class="text-lg font-semibold">Job Roles</h3>
+          <div class="flex items-center gap-3"><h3 class="text-lg font-semibold">Job Roles</h3><button onclick="openEntityHistory({title:'Job role history',module:'Compensation',entity_type:'job_role'})" class="hist-btn hidden btn-ghost text-xs px-2">History</button></div>
           <button onclick="openJobRoleForm()" class="btn-primary text-sm flex items-center gap-2">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
             New Job Role
@@ -2792,7 +2799,7 @@
       <!-- COMPENSATION: Merit Cycles -->
       <div id="page-comp-meritcycles" class="hidden">
         <div class="flex justify-between items-center mb-4">
-          <h3 class="text-lg font-semibold">Merit Review Cycles</h3>
+          <div class="flex items-center gap-3"><h3 class="text-lg font-semibold">Merit Review Cycles</h3><button onclick="openEntityHistory({title:'Merit cycle history',module:'Compensation',entity_type:'merit_cycle'})" class="hist-btn hidden btn-ghost text-xs px-2">History</button></div>
           <button onclick="openMeritCycleForm()" class="btn-primary text-sm flex items-center gap-2">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
             New Cycle
@@ -2832,7 +2839,7 @@
       <!-- COMPENSATION: Bonus / Incentive Plans (Variable Pay) -->
       <div id="page-comp-bonusplans" class="hidden">
         <div class="flex justify-between items-center mb-4">
-          <h3 class="text-lg font-semibold">Bonus & Incentive Plans</h3>
+          <div class="flex items-center gap-3"><h3 class="text-lg font-semibold">Bonus & Incentive Plans</h3><button onclick="openEntityHistory({title:'Bonus plan history',module:'Compensation',entity_type:'bonus_plan'})" class="hist-btn hidden btn-ghost text-xs px-2">History</button></div>
           <button onclick="openBonusPlanForm()" class="btn-primary text-sm flex items-center gap-2">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
             New Plan
@@ -2871,7 +2878,7 @@
       <!-- COMPENSATION: Commission Structures (Variable Pay) -->
       <div id="page-comp-commissions" class="hidden">
         <div class="flex justify-between items-center mb-4">
-          <h3 class="text-lg font-semibold">Commission Plans</h3>
+          <div class="flex items-center gap-3"><h3 class="text-lg font-semibold">Commission Plans</h3><button onclick="openEntityHistory({title:'Commission plan history',module:'Compensation',entity_type:'commission_plan'})" class="hist-btn hidden btn-ghost text-xs px-2">History</button></div>
           <button onclick="openCommissionPlanForm()" class="btn-primary text-sm flex items-center gap-2">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
             New Plan
@@ -2910,7 +2917,7 @@
       <!-- COMPENSATION: Equity Grants (Stock Options / RSU) -->
       <div id="page-comp-equity" class="hidden">
         <div class="flex justify-between items-center mb-4">
-          <h3 class="text-lg font-semibold">Equity Grants</h3>
+          <div class="flex items-center gap-3"><h3 class="text-lg font-semibold">Equity Grants</h3><button onclick="openEntityHistory({title:'Equity grant history',module:'Compensation',entity_type:'equity_grant'})" class="hist-btn hidden btn-ghost text-xs px-2">History</button></div>
           <button onclick="openEquityGrantForm()" class="btn-primary text-sm flex items-center gap-2">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
             New Grant
@@ -2964,7 +2971,7 @@
       <!-- BENEFITS: Plan Types (benefit plan catalog) -->
       <div id="page-ben-plans" class="hidden">
         <div class="flex justify-between items-center mb-4">
-          <h3 class="text-lg font-semibold">Benefit Plans</h3>
+          <div class="flex items-center gap-3"><h3 class="text-lg font-semibold">Benefit Plans</h3><button onclick="openEntityHistory({title:'Benefit plan history',module:'Benefits',entity_type:'benefit_plan'})" class="hist-btn hidden btn-ghost text-xs px-2">History</button></div>
           <button onclick="openBenefitPlanForm()" class="btn-primary text-sm flex items-center gap-2">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
             New Plan
@@ -3075,7 +3082,7 @@
 
       <!-- BENEFITS: Claims (HR review) -->
       <div id="page-ben-claims" class="hidden">
-        <h3 class="text-lg font-semibold mb-4">Benefit Claims</h3>
+        <div class="flex items-center gap-3 mb-4"><h3 class="text-lg font-semibold">Benefit Claims</h3><button onclick="openEntityHistory({title:'Benefit claim history',module:'Benefits',entity_type:'claim'})" class="hist-btn hidden btn-ghost text-xs px-2">History</button></div>
         <div class="bg-white rounded-xl border border-slate-200 table-scroll">
           <table class="w-full text-sm">
             <thead class="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
