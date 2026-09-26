@@ -25,6 +25,8 @@ from typing import Any, Dict, List, Optional
 
 from core.approval_workflow import start_workflow
 
+from core.audit import write_entity_audit
+
 from core.compensation_helpers import add_hr_note
 
 _SYSTEM_ACTOR = {"id": None, "username": "system", "role": "system"}
@@ -84,6 +86,11 @@ def _apply_pip_decision(conn, inst_id: int, cycle_row, outcome: str, actor: Dict
         )
     else:
         conn.execute("UPDATE performance_cycles SET status='Rejected',approval_step=NULL WHERE id=?", (cycle_row["id"],))
+    decision = "Approved" if outcome == "approved" else "Rejected"
+    write_entity_audit(conn, actor, inst_id, "Performance", "pip", cycle_row["id"], f"PIP {decision.lower()}",
+                       detail=f"PIP {decision.lower()} ({cycle_row['period_start']} to {cycle_row['period_end']})"
+                              + (" — auto-approved, no approval step configured" if actor.get("username") == "system" else ""),
+                       entity_label=cycle_row["employee_id"])
     conn.commit()
 
 
@@ -121,4 +128,8 @@ def record_pip_outcome(conn, inst_id: int, cycle_row, outcome: str, notes: Optio
         f"Performance Improvement Plan outcome recorded: {outcome}. {notes or ''}".strip(),
         actor["username"],
     )
+    detail = f"Outcome: {outcome}" + (f" (period extended to {new_end_date})" if outcome == "Extended" else "")
+    write_entity_audit(conn, actor, inst_id, "Performance", "pip", cycle_row["id"], "PIP outcome recorded",
+                       detail=detail, entity_label=cycle_row["employee_id"],
+                       changes=[{"field": "outcome", "label": "Outcome", "old": cycle_row["outcome"] or "", "new": outcome}])
     conn.commit()

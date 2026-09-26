@@ -109,13 +109,22 @@ wrapper everywhere.
   modules that have no dedicated `*_audit_log` of their own — call
   `write_entity_audit(...)` right before the endpoint's `conn.commit()`,
   never with secret values (mask via `diff_fields(..., sensitive=...)`).
-  Rolled out in phases by risk: Phase 1 = payroll, users/roles/permission
-  overrides, approval workflows, institution/email/AI-key settings. The
-  read endpoint also unions the older per-module trails (candidate,
-  requisition, onboarding, L&D, leave, timesheet, appraisal) read-only.
-  Anything not yet covered is listed by the gap analysis in that
-  session's plan — add new modules by logging in their endpoints, no new
-  table needed.
+  Rolled out in four phases (all shipped): payroll, users/roles/permission
+  overrides, approval workflows, institution/email/AI-key settings;
+  compensation/leave/overtime/timesheet settings; attendance, benefits,
+  holidays, locations, projects, onboarding, L&D, recruitment, performance,
+  documents, notifications; then the remaining approval decisions (overtime,
+  PIP, resignation, location transfers), system-wide notifications and role
+  switching. The read endpoint also unions the older per-module trails
+  (candidate, requisition, onboarding, L&D, leave, timesheet, appraisal)
+  read-only. Platform-level events (no tenant: superadmin accounts,
+  system-wide notifications) are stored with `institution_id` NULL and only a
+  superadmin's view returns them. Deliberately NOT logged: draft timesheet
+  entry edits (submit/approve already are), clock in/out and device events
+  (the attendance record is the trail), and the read-only assistant chat. A
+  new module needs no new table — just log in its endpoints (and, if the
+  endpoint reads `conn._last_id`/`last_insert_rowid()` afterwards, capture it
+  *before* the audit insert, which overwrites both).
 
 ## Recurring gotchas (hit more than once this project's history)
 

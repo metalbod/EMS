@@ -724,3 +724,38 @@ class TestPhase2RoleGating:
             headers=headers,
         )
         assert response.status_code == 200
+
+
+def test_location_transfer_lifecycle_is_audited(setup_phase2_data):
+    """Request -> approve (effective today, so it completes and moves the
+    assignment) and request -> reject each leave a trail on the transfer."""
+    data = setup_phase2_data
+    client, headers = data["client"], data["auth_headers"]
+    employee, location, institution = data["employee"], data["location"], data["institution"]
+    eid = employee["employee_id"]
+
+    client.post(f"/api/employees/{eid}/locations", headers=headers, json={
+        "employee_id": eid, "location_id": location["id"], "assignment_type": "primary", "start_date": "2024-01-01",
+    })
+    target = client.post("/api/locations", headers=headers, json=_valid_location_payload(institution["id"])).json()
+    today = datetime.utcnow().date().isoformat()
+
+    def trail(transfer_id):
+        res = client.get("/api/entity-audit-log", headers=headers, params={
+            "entity_type": "location_transfer", "entity_id": str(transfer_id), "include_legacy": "false"})
+        assert res.status_code == 200, res.text
+        return res.json()
+
+    approved_id = client.post(f"/api/employees/{eid}/transfer-request", headers=headers,
+                              params={"to_location_id": target["id"], "transfer_date": today}).json()["id"]
+    assert client.put(f"/api/transfer-requests/{approved_id}/approve", headers=headers).status_code == 200
+    rows = trail(approved_id)
+    assert sorted(r["action"] for r in rows) == ["Transfer completed", "Transfer requested"]
+    assert all(r["entity_label"] == eid for r in rows)
+
+    rejected_id = client.post(f"/api/employees/{eid}/transfer-request", headers=headers,
+                              params={"to_location_id": location["id"], "transfer_date": today}).json()["id"]
+    assert client.put(f"/api/transfer-requests/{rejected_id}/reject", headers=headers,
+                      params={"reason": "ZZ audit reject reason"}).status_code == 200
+    rejected = next(r for r in trail(rejected_id) if r["action"] == "Transfer rejected")
+    assert "ZZ audit reject reason" in rejected["detail"]

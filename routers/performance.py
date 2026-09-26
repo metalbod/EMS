@@ -728,6 +728,9 @@ def decide_pip(conn, cycle_id: int, body: PipDecisionIn, user: dict = Depends(ge
         raise HTTPException(403, str(e))
     if outcome == "advanced":
         conn.execute("UPDATE performance_cycles SET approval_step=? WHERE id=?", (next_step, cycle_id))
+        write_entity_audit(conn, user, inst_id, "Performance", "pip", cycle_id, "PIP approval advanced",
+                           detail=f"Step {cycle['approval_step']} approved, moved to step {next_step}",
+                           entity_label=cycle["employee_id"])
         conn.commit()
         return dict(conn.execute("SELECT * FROM performance_cycles WHERE id=?", (cycle_id,)).fetchone())
     apply_pip_decision(conn, inst_id, cycle, outcome, user)

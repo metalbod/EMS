@@ -16,7 +16,7 @@ from typing import Any, Dict, Optional
 
 from core.approval_workflow import start_workflow
 
-from core.audit import write_audit
+from core.audit import write_audit, write_entity_audit
 
 from routers.onboarding import _create_ob_checklist
 
@@ -106,6 +106,11 @@ def _finalize_resignation(conn, inst_id: int, request_row, outcome: str, actor: 
         "UPDATE resignation_requests SET status=?,approval_step=NULL,decided_by=?,decided_at=?,ob_checklist_id=? WHERE id=?",
         (final_status, actor["username"], decided_at, ob_checklist_id, request_row["id"])
     )
+    write_entity_audit(conn, actor, inst_id, "Resignation", "resignation", request_row["id"], final_status,
+                       detail=(f"Resignation {final_status.lower()}"
+                               + (f"; offboarding checklist #{ob_checklist_id} started" if ob_checklist_id else "")),
+                       entity_label=request_row["employee_id"],
+                       changes=[{"field": "status", "label": "Status", "old": request_row["status"], "new": final_status}])
     conn.commit()
 
 

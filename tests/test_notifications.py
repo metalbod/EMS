@@ -627,3 +627,25 @@ def test_holiday_eve_absent_when_no_holiday_tomorrow(
     res = client.get("/api/notifications/active", headers=headers)
     assert res.status_code == 200
     assert not any(str(n.get("id", "")).startswith("holiday-eve-") for n in res.json())
+
+
+def test_system_notification_changes_are_audited_for_superadmin_only(
+        client, superadmin_headers, hr_manager_auth, make_test_system_notification):
+    """System-wide notifications are platform-level (no institution), so the
+    audit rows are stored with institution_id NULL: a superadmin sees them,
+    an institution's own HR manager never does."""
+    notif = make_test_system_notification(message="ZZ audited system notice")
+    nid = notif["id"]
+    start, end = notif["start_time"], notif["end_time"]
+    upd = client.put(f"/api/system-notifications/{nid}", headers=superadmin_headers,
+                     json={"message": "ZZ audited system notice v2", "start_time": start, "end_time": end})
+    assert upd.status_code == 200, upd.text
+    assert client.delete(f"/api/system-notifications/{nid}", headers=superadmin_headers).status_code == 204
+
+    params = {"entity_type": "system_notification", "entity_id": str(nid), "include_legacy": "false"}
+    rows = client.get("/api/entity-audit-log", headers=superadmin_headers, params=params).json()
+    assert sorted(r["action"] for r in rows) == ["Created", "Deleted", "Updated"]
+    updated = next(r for r in rows if r["action"] == "Updated")
+    assert any(c["field"] == "message" and c["new"] == "ZZ audited system notice v2" for c in updated["changes"])
+
+    assert client.get("/api/entity-audit-log", headers=hr_manager_auth, params=params).json() == []

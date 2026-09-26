@@ -160,6 +160,9 @@ def update_resignation_status(conn, request_id: int, body: ResignationDecisionIn
         if outcome == "advanced":
             conn.execute("UPDATE resignation_requests SET approval_step=?,notes=? WHERE id=?",
                          (next_step, body.notes, request_id))
+            write_entity_audit(conn, user, inst_id, "Resignation", "resignation", request_id, "Approval advanced",
+                               detail=f"Step {request_row['approval_step']} approved, moved to step {next_step}",
+                               entity_label=request_row["employee_id"])
             conn.commit()
             return dict(conn.execute("SELECT * FROM resignation_requests WHERE id=?", (request_id,)).fetchone())
 
@@ -175,6 +178,9 @@ def update_resignation_status(conn, request_id: int, body: ResignationDecisionIn
             "UPDATE resignation_requests SET status='Withdrawn',approval_step=NULL,decided_by=?,decided_at=?,notes=? WHERE id=?",
             (user["username"], datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"), body.notes, request_id)
         )
+        write_entity_audit(conn, user, inst_id, "Resignation", "resignation", request_id, "Withdrawn",
+                           detail="Resignation request withdrawn", entity_label=request_row["employee_id"],
+                           changes=[{"field": "status", "label": "Status", "old": request_row["status"], "new": "Withdrawn"}])
         conn.commit()
 
     return dict(conn.execute("SELECT * FROM resignation_requests WHERE id=?", (request_id,)).fetchone())

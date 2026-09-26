@@ -706,15 +706,20 @@ def create_system_notification(conn, body: NotificationIn, user: dict = Depends(
         "INSERT INTO system_notifications (message,start_time,end_time,created_by) VALUES (?,?,?,?)",
         (body.message, body.start_time, body.end_time, user["username"])
     )
-    conn.commit()
+    # Read the new row before the audit insert below moves last_insert_rowid().
     row = conn.execute("SELECT * FROM system_notifications WHERE id=last_insert_rowid()").fetchone()
+    write_entity_audit(conn, user, None, "Notifications", "system_notification", row["id"], "Created",
+                       detail=f"{body.start_time} to {body.end_time}: {body.message}"[:400],
+                       entity_label="System notification")
+    conn.commit()
     return dict(row)
 
 
 @router.put("/api/system-notifications/{notification_id}")
 @db_session
 def update_system_notification(conn, notification_id: int, body: NotificationIn, user: dict = Depends(require_roles("superadmin"))) -> Dict[str, Any]:
-    if not conn.execute("SELECT id FROM system_notifications WHERE id=?", (notification_id,)).fetchone():
+    before = conn.execute("SELECT * FROM system_notifications WHERE id=?", (notification_id,)).fetchone()
+    if not before:
         raise HTTPException(404, "Notification not found")
     if body.end_time <= body.start_time:
         raise HTTPException(400, "End time must be after start time")
@@ -724,14 +729,23 @@ def update_system_notification(conn, notification_id: int, body: NotificationIn,
         "UPDATE system_notifications SET message=?,start_time=?,end_time=? WHERE id=?",
         (body.message, body.start_time, body.end_time, notification_id)
     )
-    conn.commit()
     row = conn.execute("SELECT * FROM system_notifications WHERE id=?", (notification_id,)).fetchone()
+    changes = diff_fields(dict(before), dict(row), {"message": "Message", "start_time": "Start", "end_time": "End"})
+    if changes:
+        write_entity_audit(conn, user, None, "Notifications", "system_notification", notification_id, "Updated",
+                           changes=changes, entity_label="System notification")
+    conn.commit()
     return dict(row)
 
 
 @router.delete("/api/system-notifications/{notification_id}", status_code=204)
 @db_session
 def delete_system_notification(conn, notification_id: int, user: dict = Depends(require_roles("superadmin"))) -> None:
+    before = conn.execute("SELECT * FROM system_notifications WHERE id=?", (notification_id,)).fetchone()
     conn.execute("DELETE FROM system_notifications WHERE id=?", (notification_id,))
+    if before:
+        write_entity_audit(conn, user, None, "Notifications", "system_notification", notification_id, "Deleted",
+                           detail=f"{before['start_time']} to {before['end_time']}: {before['message']}"[:400],
+                           entity_label="System notification")
     conn.commit()
 

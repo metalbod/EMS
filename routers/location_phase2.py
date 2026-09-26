@@ -3,6 +3,7 @@ import logging
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
+from core.audit import write_entity_audit
 from core.db_session import db_session
 from core.deps import get_current_user, require_roles
 from core.permission_matrix import require_permission
@@ -76,9 +77,16 @@ def request_location_transfer(
         (inst_id, employee_id, from_location_id, to_location_id, transfer_date, user_id,
          datetime.utcnow().isoformat(), datetime.utcnow().isoformat()),
     )
-    conn.commit()
-
+    # Capture before the audit insert below overwrites conn._last_id.
     transfer_id = conn._last_id
+    from_name = None
+    if from_location_id:
+        from_row = conn.execute("SELECT name FROM locations WHERE id = ?", (from_location_id,)).fetchone()
+        from_name = from_row["name"] if from_row else None
+    write_entity_audit(conn, current_user, inst_id, "Locations", "location_transfer", transfer_id, "Transfer requested",
+                       detail=f"{from_name or 'No location'} -> {location['name']} effective {transfer_date}",
+                       entity_label=employee_id)
+    conn.commit()
 
     return LocationTransferResponse(
         id=transfer_id,
@@ -205,7 +213,16 @@ def approve_transfer_request(
             "UPDATE location_transfers SET status = 'Completed' WHERE id = ?",
             (transfer_id,),
         )
+        final_status = "Completed"
+    else:
+        final_status = "Approved"
 
+    write_entity_audit(conn, current_user, inst_id, "Locations", "location_transfer", transfer_id,
+                       f"Transfer {final_status.lower()}",
+                       detail=("Assignment moved now" if final_status == "Completed"
+                               else f"Approved; assignment moves on {transfer_date_str}"),
+                       entity_label=transfer["employee_id"],
+                       changes=[{"field": "status", "label": "Status", "old": transfer["status"], "new": final_status}])
     conn.commit()
 
     # Fetch updated transfer
@@ -263,6 +280,9 @@ def reject_transfer_request(
         """,
         (user_id, reason, datetime.utcnow().isoformat(), transfer_id),
     )
+    write_entity_audit(conn, current_user, inst_id, "Locations", "location_transfer", transfer_id, "Transfer rejected",
+                       detail=f"Reason: {reason}"[:400], entity_label=transfer["employee_id"],
+                       changes=[{"field": "status", "label": "Status", "old": transfer["status"], "new": "Rejected"}])
     conn.commit()
 
     # Fetch updated transfer

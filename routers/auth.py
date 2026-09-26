@@ -163,6 +163,12 @@ def switch_role(conn, body: SwitchRoleIn, user: dict = Depends(get_current_user)
     user_dict = dict(row)
     user_dict["role"] = body.role
     token = make_token(user_dict)
+    if body.role != user["role"]:
+        write_entity_audit(conn, user, user.get("institution_id"), "Users", "user", user["id"], "Role switched",
+                           detail=f"Active role changed from {user['role']} to {body.role}",
+                           entity_label=user.get("username"),
+                           changes=[{"field": "active_role", "label": "Active role", "old": user["role"], "new": body.role}])
+        conn.commit()
     return {
         "access_token": token,
         "token_type": "bearer",

@@ -1013,3 +1013,29 @@ def test_reorder_probation_goal_template_rejects_mismatched_ids(client, hr_manag
         "ids": [a["id"], 999999999],
     })
     assert res.status_code == 400
+
+
+def _pip_trail(client, headers, cycle_id):
+    res = client.get("/api/entity-audit-log", headers=headers,
+                     params={"entity_type": "pip", "entity_id": str(cycle_id), "include_legacy": "false"})
+    assert res.status_code == 200, res.text
+    return [r["action"] for r in res.json()]
+
+
+def test_pip_decision_and_outcome_are_audited(client, hr_manager_auth, manager_with_subordinate):
+    _, mgr_headers, sub_emp = manager_with_subordinate
+    cycle = _propose_pip(client, mgr_headers, sub_emp["employee_id"]).json()
+    assert client.patch(f"/api/performance/pip/{cycle['id']}/decide", headers=hr_manager_auth,
+                        json={"status": "Approved"}).status_code == 200
+    outcome = client.patch(f"/api/performance/pip/{cycle['id']}/outcome", headers=hr_manager_auth,
+                           json={"outcome": "Successful", "notes": "ZZ audit outcome"})
+    assert outcome.status_code == 200, outcome.text
+    assert sorted(_pip_trail(client, hr_manager_auth, cycle["id"])) == ["PIP approved", "PIP outcome recorded", "PIP proposed"]
+
+
+def test_pip_rejection_is_audited(client, hr_manager_auth, manager_with_subordinate):
+    _, mgr_headers, sub_emp = manager_with_subordinate
+    cycle = _propose_pip(client, mgr_headers, sub_emp["employee_id"]).json()
+    assert client.patch(f"/api/performance/pip/{cycle['id']}/decide", headers=hr_manager_auth,
+                        json={"status": "Rejected"}).status_code == 200
+    assert sorted(_pip_trail(client, hr_manager_auth, cycle["id"])) == ["PIP proposed", "PIP rejected"]

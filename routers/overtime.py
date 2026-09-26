@@ -103,6 +103,26 @@ def update_overtime_settings(conn, body: OvertimeSettingsIn,
     return dict(row)
 
 
+_OVERTIME_AUDIT_LABELS = {"status": "Status", "conversion_mode": "Conversion", "leave_days_credited": "Leave days credited",
+                          "pay_amount": "Pay amount"}
+
+
+def _audit_overtime_decision(conn, user, inst_id, entity_type, before, after, next_step=None):
+    """One trail row per approve/reject click: an 'advanced' click (multi-step
+    workflow, not yet final) notes the step it moved to; a final one records
+    the status plus whatever the conversion credited (leave days / pay)."""
+    label = f"{before['employee_id']} · {before['work_date']}"
+    if next_step is not None:
+        write_entity_audit(conn, user, inst_id, "Overtime", entity_type, before["id"], "Approval advanced",
+                           detail=f"Step {before['approval_step']} approved, moved to step {next_step}",
+                           entity_label=label)
+        return
+    changes = diff_fields(dict(before), dict(after), _OVERTIME_AUDIT_LABELS)
+    write_entity_audit(conn, user, inst_id, "Overtime", entity_type, before["id"], after["status"],
+                       detail=f"{before['overtime_hours']}h overtime {after['status'].lower()}",
+                       changes=changes, entity_label=label)
+
+
 def _visible_overtime_where(user: dict):
     """Employees see only their own records; everyone else (managers, HR,
     superadmin) sees all — the approve/reject action itself is still
@@ -232,12 +252,15 @@ def update_overtime_status(conn, record_id: int, body: OvertimeStatusIn, user: d
 
     if outcome == "advanced":
         conn.execute("UPDATE overtime_records SET approval_step=? WHERE id=?", (next_step, record_id))
+        _audit_overtime_decision(conn, user, inst_id, "overtime_record", record, None, next_step=next_step)
         conn.commit()
         return dict(conn.execute("SELECT * FROM overtime_records WHERE id=?", (record_id,)).fetchone())
 
     apply_overtime_outcome(conn, inst_id, record, outcome, user["username"])
+    after = conn.execute("SELECT * FROM overtime_records WHERE id=?", (record_id,)).fetchone()
+    _audit_overtime_decision(conn, user, inst_id, "overtime_record", record, after)
     conn.commit()
-    return dict(conn.execute("SELECT * FROM overtime_records WHERE id=?", (record_id,)).fetchone())
+    return dict(after)
 
 
 @router.patch("/api/overtime/projects/{approval_id}/status")
@@ -275,9 +298,12 @@ def update_overtime_project_status(conn, approval_id: int, body: OvertimeStatusI
 
     if outcome == "advanced":
         conn.execute("UPDATE overtime_project_approvals SET approval_step=? WHERE id=?", (next_step, approval_id))
+        _audit_overtime_decision(conn, user, inst_id, "overtime_project_approval", row, None, next_step=next_step)
         conn.commit()
         return dict(conn.execute("SELECT * FROM overtime_project_approvals WHERE id=?", (approval_id,)).fetchone())
 
     apply_overtime_project_outcome(conn, inst_id, row, outcome, user["username"])
+    after = conn.execute("SELECT * FROM overtime_project_approvals WHERE id=?", (approval_id,)).fetchone()
+    _audit_overtime_decision(conn, user, inst_id, "overtime_project_approval", row, after)
     conn.commit()
-    return dict(conn.execute("SELECT * FROM overtime_project_approvals WHERE id=?", (approval_id,)).fetchone())
+    return dict(after)

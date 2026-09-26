@@ -221,3 +221,29 @@ def test_dashboard_todo_surfaces_pending_resignation_for_hr(client, employee_wit
     assert match["employee_name"] == emp["full_name"]
 
     client.patch(f"/api/resignations/{req_id}", headers=hr_manager_auth, json={"status": "Rejected"})
+
+
+def _resignation_trail(client, headers, request_id):
+    res = client.get("/api/entity-audit-log", headers=headers,
+                     params={"entity_type": "resignation", "entity_id": str(request_id), "include_legacy": "false"})
+    assert res.status_code == 200, res.text
+    return res.json()
+
+
+def test_resignation_rejection_and_withdrawal_are_audited(client, employee_with_login, hr_manager_auth):
+    emp, headers = employee_with_login(full_name="ZZ Resign Audit")
+    rejected_req = client.post("/api/resignations", headers=headers, json={
+        "reason": "Audit rejection path", "effective_date": "2027-08-01", "last_working_day": "2027-08-15",
+    }).json()["id"]
+    assert client.patch(f"/api/resignations/{rejected_req}", headers=hr_manager_auth, json={"status": "Rejected"}).status_code == 200
+
+    rows = _resignation_trail(client, hr_manager_auth, rejected_req)
+    assert sorted(r["action"] for r in rows) == ["Filed", "Rejected"]
+    rejected = next(r for r in rows if r["action"] == "Rejected")
+    assert any(c["field"] == "status" and c["old"] == "Pending" and c["new"] == "Rejected" for c in rejected["changes"])
+
+    withdrawn_req = client.post("/api/resignations", headers=headers, json={
+        "reason": "Audit withdrawal path", "effective_date": "2027-09-01", "last_working_day": "2027-09-15",
+    }).json()["id"]
+    assert client.patch(f"/api/resignations/{withdrawn_req}", headers=headers, json={"status": "Withdrawn"}).status_code == 200
+    assert sorted(r["action"] for r in _resignation_trail(client, hr_manager_auth, withdrawn_req)) == ["Filed", "Withdrawn"]

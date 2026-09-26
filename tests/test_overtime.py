@@ -178,3 +178,45 @@ def test_overtime_settings_requires_manage_role(client, make_test_user, test_ins
     headers = {"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}
     res = client.put("/api/overtime/settings", headers=headers, json={"overtime_conversion_mode": "pay"})
     assert res.status_code == 403
+
+
+def _overtime_trail(client, headers, entity_type, entity_id):
+    res = client.get("/api/entity-audit-log", headers=headers,
+                     params={"entity_type": entity_type, "entity_id": str(entity_id), "include_legacy": "false"})
+    assert res.status_code == 200, res.text
+    return res.json()
+
+
+def test_overtime_rejection_is_audited(client, hr_manager_auth, emp_with_shift, open_task):
+    emp, headers, shift = emp_with_shift
+    project, task = open_task
+    ts = _submit_timesheet_with_hours(client, hr_manager_auth, emp, headers, project, task, 10)
+    record = client.get(f"/api/timesheets/{ts['id']}/overtime", headers=headers).json()[0]
+    pa_id = record["project_approval_id"]
+
+    res = client.patch(f"/api/overtime/projects/{pa_id}/status", headers=hr_manager_auth, json={"status": "Rejected"})
+    assert res.status_code == 200, res.text
+
+    rows = _overtime_trail(client, hr_manager_auth, "overtime_project_approval", pa_id)
+    assert [r["action"] for r in rows] == ["Rejected"]
+    assert rows[0]["module"] == "Overtime"
+    assert rows[0]["entity_label"].startswith(emp["employee_id"])
+    assert any(c["field"] == "status" and c["old"] == "Pending" and c["new"] == "Rejected" for c in rows[0]["changes"])
+
+
+def test_overtime_approval_in_pay_mode_audits_the_pay_amount(client, hr_manager_auth, emp_with_shift, open_task):
+    emp, headers, shift = emp_with_shift
+    project, task = open_task
+    client.put("/api/overtime/settings", headers=hr_manager_auth, json={"overtime_conversion_mode": "pay", "overtime_pay_multiplier": 2.0})
+    ts = _submit_timesheet_with_hours(client, hr_manager_auth, emp, headers, project, task, 9)
+    record = client.get(f"/api/timesheets/{ts['id']}/overtime", headers=headers).json()[0]
+    pa_id = record["project_approval_id"]
+
+    res = client.patch(f"/api/overtime/projects/{pa_id}/status", headers=hr_manager_auth, json={"status": "Approved"})
+    assert res.status_code == 200, res.text
+
+    rows = _overtime_trail(client, hr_manager_auth, "overtime_project_approval", pa_id)
+    assert [r["action"] for r in rows] == ["Approved"]
+    fields = {c["field"]: c for c in rows[0]["changes"]}
+    assert fields["status"]["new"] == "Approved"
+    assert fields["pay_amount"]["old"] == "" and fields["pay_amount"]["new"] != ""

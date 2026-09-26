@@ -112,3 +112,20 @@ class TestTokenEpochRevocation:
         # session working instead of logging them out of their own request.
         new_headers = {"Authorization": f"Bearer {change_res.json()['access_token']}"}
         assert client.get("/api/auth/me", headers=new_headers).status_code == 200
+
+
+def test_switching_active_role_is_audited(client, make_test_user, hr_manager_auth):
+    token, user_id = make_test_user(role="employee", roles=["employee", "hr_manager"])
+    headers = {"Authorization": f"Bearer {token}"}
+
+    same = client.post("/api/auth/switch-role", headers=headers, json={"role": "employee"})
+    assert same.status_code == 200, same.text
+    switched = client.post("/api/auth/switch-role", headers=headers, json={"role": "hr_manager"})
+    assert switched.status_code == 200, switched.text
+
+    res = client.get("/api/entity-audit-log", headers=hr_manager_auth, params={
+        "entity_type": "user", "entity_id": str(user_id), "include_legacy": "false"})
+    assert res.status_code == 200, res.text
+    rows = [r for r in res.json() if r["action"] == "Role switched"]
+    assert len(rows) == 1, "only a switch that actually changes the role is recorded"
+    assert rows[0]["changes"][0]["old"] == "employee" and rows[0]["changes"][0]["new"] == "hr_manager"

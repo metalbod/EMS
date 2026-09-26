@@ -133,8 +133,11 @@ def list_entity_audit_log(
 
     parts = ["""SELECT created_at, module, entity_type, entity_id, entity_label, action, detail, changes,
                         actor_username, actor_role, 'entity' AS source
-                 FROM entity_audit_log WHERE institution_id=?"""]
-    params: list = [inst_id]
+                 FROM entity_audit_log WHERE (institution_id=? OR (institution_id IS NULL AND 1=?))"""]
+    # Platform-level events (no tenant: superadmin accounts, system-wide
+    # notifications) are stored with institution_id NULL — only a superadmin
+    # gets them alongside the selected institution's own rows.
+    params: list = [inst_id, 1 if user["role"] == "superadmin" else 0]
     if include_legacy:
         for mod, etype, id_col, label, role, table in _LEGACY_TRAILS:
             parts.append(f"""SELECT created_at, '{mod}' AS module, '{etype}' AS entity_type,
