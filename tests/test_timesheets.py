@@ -798,3 +798,75 @@ def test_missing_hours_holiday_and_leave_on_same_day_credited_once_as_holiday(
         assert detail["missing_hours"] == 32.0
     finally:
         client.delete(f"/api/holidays/{holiday.json()['id']}", headers=hr_manager_auth)
+
+
+# ---------------------------------------------------------------------------
+# Tenant-scoped unique keys (migration 20260927_0001)
+# ---------------------------------------------------------------------------
+def _throwaway_institution_headers(client, superadmin_headers, tag):
+    """A brand-new institution + its admin login, so its first employee is
+    EMP0001 exactly like every other fresh tenant. (There is no delete
+    endpoint for institutions, so these are left behind — they're isolated
+    and harmless now that unique keys are scoped per institution.)"""
+    import os
+    payload = {
+        "name": f"ZZ Unique Key Institution {tag}", "code": f"ZZUK{os.urandom(4).hex()}".upper(),
+        "contact_email": f"zzuniquekey{tag.lower()}@example.com",
+        "admin_username": f"zzuk_admin_{tag.lower()}_{os.urandom(4).hex()}",
+        "admin_full_name": f"ZZ Unique Key Admin {tag}", "admin_password": "ZzPytest@123",
+    }
+    create = client.post("/api/institutions", headers=superadmin_headers, json=payload)
+    assert create.status_code == 201, create.text
+    login = client.post("/api/auth/login", json={
+        "username": payload["admin_username"], "password": payload["admin_password"],
+        "institution_code": create.json()["code"],
+    })
+    assert login.status_code == 200, login.text
+    return create.json(), {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+
+def test_two_institutions_can_start_a_timesheet_for_the_same_employee_id_and_week(client, superadmin_headers):
+    """employee_id is a per-institution sequence, so two tenants both have an
+    EMP0001. Tenant B's timesheet for that ID + week must not collide with
+    tenant A's (it used to hit a global UNIQUE (employee_id, period_start,
+    period_end) and 500)."""
+    from conftest import _valid_employee_payload
+
+    inst_a, headers_a = _throwaway_institution_headers(client, superadmin_headers, "A")
+    inst_b, headers_b = _throwaway_institution_headers(client, superadmin_headers, "B")
+    emp_a = client.post("/api/employees", headers=headers_a, json=_valid_employee_payload(full_name="ZZ Tenant A Employee"))
+    emp_b = client.post("/api/employees", headers=headers_b, json=_valid_employee_payload(full_name="ZZ Tenant B Employee"))
+    assert emp_a.status_code == 201 and emp_b.status_code == 201, (emp_a.text, emp_b.text)
+    assert emp_a.json()["employee_id"] == emp_b.json()["employee_id"], \
+        "precondition: both fresh tenants must have handed out the same employee_id"
+    employee_id = emp_a.json()["employee_id"]
+
+    period = {"period_start": "2027-05-03", "period_end": "2027-05-09"}
+    ts_a = client.post("/api/timesheets", headers=headers_a, json={"employee_id": employee_id, **period})
+    ts_b = client.post("/api/timesheets", headers=headers_b, json={"employee_id": employee_id, **period})
+    assert ts_a.status_code == 201, ts_a.text
+    assert ts_b.status_code == 201, ts_b.text
+    assert ts_a.json()["id"] != ts_b.json()["id"]
+    assert ts_a.json()["institution_id"] == inst_a["id"]
+    assert ts_b.json()["institution_id"] == inst_b["id"]
+
+    # Still idempotent *within* one institution.
+    again = client.post("/api/timesheets", headers=headers_a, json={"employee_id": employee_id, **period})
+    assert again.status_code == 201 and again.json()["id"] == ts_a.json()["id"]
+
+
+def test_employee_period_unique_keys_include_institution_id():
+    """Schema guard for the same bug on attendance_records: both keys must
+    lead with institution_id, or one tenant's EMP0001 blocks another's."""
+    from db import get_db
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            "SELECT conrelid::regclass::text AS tbl, pg_get_constraintdef(oid) AS def "
+            "FROM pg_constraint WHERE contype='u' AND conrelid IN ('timesheets'::regclass, 'attendance_records'::regclass)"
+        ).fetchall()
+    finally:
+        conn.close()
+    defs = {r["tbl"]: r["def"] for r in rows}
+    assert "institution_id" in defs["timesheets"] and "employee_id" in defs["timesheets"], defs
+    assert "institution_id" in defs["attendance_records"] and "employee_id" in defs["attendance_records"], defs
