@@ -337,3 +337,166 @@ def test_overtime_and_timesheet_settings_changes_are_audited(client, hr_manager_
     assert any(c["field"] == "overtime_pay_multiplier" and c["new"] == "2.25" for r in ot for c in r["changes"])
     ts = _log(client, hr_manager_auth, entity_type="timesheet_settings")
     assert any(c["field"] == "standard_weekly_hours" and c["new"] == "44.0" for r in ts for c in r["changes"])
+
+
+# ===========================================================================
+# Phase 3 — everything else: holidays, projects, locations, attendance,
+# benefits, onboarding templates, L&D, recruitment, performance, docs, notes
+# ===========================================================================
+def test_holiday_create_and_delete_are_audited(client, hr_manager_auth):
+    h = client.post("/api/holidays", headers=hr_manager_auth,
+                    json={"name": "ZZ Audit Holiday", "date": f"{2200 + int(os.urandom(1)[0]) % 90}-03-0{1 + os.urandom(1)[0] % 8}", "year": 2200})
+    if h.status_code != 201:  # date collision in the shared institution — pick another
+        h = client.post("/api/holidays", headers=hr_manager_auth,
+                        json={"name": "ZZ Audit Holiday", "date": f"{2300 + int(os.urandom(1)[0]) % 90}-04-1{os.urandom(1)[0] % 9}", "year": 2300})
+    assert h.status_code == 201, h.text
+    hid = h.json()["id"]
+    assert client.delete(f"/api/holidays/{hid}", headers=hr_manager_auth).status_code == 204
+    assert set(_actions(_log(client, hr_manager_auth, entity_type="holiday", entity_id=str(hid)))) >= {"Created", "Deleted"}
+
+
+def test_project_and_task_changes_are_audited(client, hr_manager_auth):
+    p = client.post("/api/projects", headers=hr_manager_auth,
+                    json={"name": f"ZZ Audit Project {os.urandom(3).hex()}", "status": "Active"}).json()
+    pid = p["id"]
+    client.put(f"/api/projects/{pid}", headers=hr_manager_auth,
+               json={"name": p["name"], "status": "On Hold", "is_billable": True})
+    t = client.post(f"/api/projects/{pid}/tasks", headers=hr_manager_auth, json={"name": "ZZ Audit Task", "status": "Not Started"}).json()
+    client.put(f"/api/projects/{pid}/tasks/{t['id']}", headers=hr_manager_auth, json={"name": "ZZ Audit Task", "status": "In Progress"})
+    client.delete(f"/api/projects/{pid}/tasks/{t['id']}", headers=hr_manager_auth)
+    assert client.delete(f"/api/projects/{pid}", headers=hr_manager_auth).status_code == 204
+    rows = _log(client, hr_manager_auth, entity_type="project", entity_id=str(pid))
+    assert set(_actions(rows)) >= {"Created", "Updated", "Task added", "Task updated", "Task deleted", "Deleted"}
+    upd = next(r for r in rows if r["action"] == "Updated")
+    assert any(c["field"] == "status" and c["new"] == "On Hold" for c in upd["changes"])
+
+
+def test_location_lifecycle_is_audited(client, hr_manager_auth, make_test_location):
+    loc = make_test_location()
+    assert client.put(f"/api/locations/{loc['id']}", headers=hr_manager_auth, json={"name": "ZZ Audit Loc Renamed"}).status_code == 200
+    client.delete(f"/api/locations/{loc['id']}", headers=hr_manager_auth)
+    rows = _log(client, hr_manager_auth, entity_type="location", entity_id=str(loc["id"]))
+    assert set(_actions(rows)) >= {"Created", "Updated", "Deactivated"}
+
+
+def test_attendance_shift_and_rule_changes_are_audited(client, hr_manager_auth):
+    shift = client.post("/api/attendance/shifts", headers=hr_manager_auth, json={
+        "name": f"ZZ Audit Shift {os.urandom(3).hex()}", "start_time": "09:00", "end_time": "17:00", "grace_period_minutes": 10}).json()
+    client.put(f"/api/attendance/shifts/{shift['id']}", headers=hr_manager_auth, json={"grace_period_minutes": 20})
+    rule = client.post("/api/attendance/settings", headers=hr_manager_auth,
+                       json={"department": f"ZZ Audit Dept {os.urandom(2).hex()}", "required": True, "default_shift_id": shift["id"]})
+    assert rule.status_code == 201, rule.text
+    client.put(f"/api/attendance/settings/{rule.json()['id']}", headers=hr_manager_auth, json={"required": False})
+    client.delete(f"/api/attendance/settings/{rule.json()['id']}", headers=hr_manager_auth)
+    client.delete(f"/api/attendance/shifts/{shift['id']}", headers=hr_manager_auth)
+    s = _log(client, hr_manager_auth, entity_type="shift", entity_id=str(shift["id"]))
+    assert set(_actions(s)) >= {"Created", "Updated", "Deactivated"}
+    assert any(c["field"] == "grace_period_minutes" and c["new"] == "20" for c in next(r for r in s if r["action"] == "Updated")["changes"])
+    r = _log(client, hr_manager_auth, entity_type="attendance_rule", entity_id=str(rule.json()["id"]))
+    assert set(_actions(r)) >= {"Created", "Updated", "Deactivated"}
+
+
+def test_benefit_plan_period_claim_and_dependent_are_audited(client, hr_manager_auth, make_test_employee):
+    plan = client.post("/api/benefits/plans", headers=hr_manager_auth, json={
+        "plan_name": f"ZZ Audit Plan {os.urandom(3).hex()}", "plan_category": "Medical",
+        "contribution_type": "Fixed Premium", "employee_cost": 50, "employer_cost": 150}).json()
+    client.put(f"/api/benefits/plans/{plan['id']}", headers=hr_manager_auth, json={"status": "Active", "employee_cost": 60})
+    period = client.post("/api/benefits/enrollment-periods", headers=hr_manager_auth, json={
+        "period_name": f"ZZ Audit Period {os.urandom(3).hex()}", "plan_year": 2027, "start_date": "2027-01-01", "end_date": "2027-01-31"})
+    assert period.status_code == 201, period.text
+    client.put(f"/api/benefits/enrollment-periods/{period.json()['id']}", headers=hr_manager_auth, json={"status": "Open"})
+    emp = make_test_employee(full_name="ZZ Audit Benefits Employee")
+    claim = client.post(f"/api/benefits/employees/{emp['employee_id']}/claims", headers=hr_manager_auth, json={
+        "benefit_plan_id": plan["id"], "claim_date": "2026-08-07", "amount_claimed": 100})
+    assert claim.status_code == 201, claim.text
+    dep = client.post(f"/api/benefits/employees/{emp['employee_id']}/dependents", headers=hr_manager_auth, json={
+        "full_name": "ZZ Audit Dependent", "relationship": "Child", "national_id": "ZZ-SECRET-ID-123"})
+    assert dep.status_code == 201, dep.text
+    client.put(f"/api/benefits/dependents/{dep.json()['id']}", headers=hr_manager_auth,
+               json={"national_id": "ZZ-OTHER-SECRET-456", "notes": "ZZ note"})
+
+    p = _log(client, hr_manager_auth, entity_type="benefit_plan", entity_id=str(plan["id"]))
+    assert set(_actions(p)) >= {"Created", "Updated"}
+    assert set(_actions(_log(client, hr_manager_auth, entity_type="enrollment_period", entity_id=str(period.json()["id"])))) >= {"Created", "Status changed"}
+    assert "Claim submitted" in _actions(_log(client, hr_manager_auth, entity_type="claim", entity_id=str(claim.json()["id"])))
+    d = _log(client, hr_manager_auth, entity_type="dependent", entity_id=str(dep.json()["id"]))
+    assert set(_actions(d)) >= {"Dependent added", "Dependent updated"}
+    assert "ZZ-SECRET-ID-123" not in repr(d) and "ZZ-OTHER-SECRET-456" not in repr(d)
+
+
+def test_onboarding_template_ld_offer_template_and_doc_type_changes_are_audited(client, hr_manager_auth):
+    ts = client.post("/api/ob/template-sets", headers=hr_manager_auth,
+                     json={"type": "onboarding", "name": f"ZZ Audit OB Set {os.urandom(3).hex()}"}).json()
+    tm = client.post("/api/ob/templates", headers=hr_manager_auth, json={
+        "type": "onboarding", "template_set_id": ts["id"], "title": "ZZ Audit Item", "assigned_role": "hr_manager"})
+    assert tm.status_code == 201, tm.text
+    client.delete(f"/api/ob/templates/{tm.json()['id']}", headers=hr_manager_auth)
+    client.put(f"/api/ob/template-sets/{ts['id']}", headers=hr_manager_auth, json={"name": ts["name"] + " v2", "is_default": False})
+    client.delete(f"/api/ob/template-sets/{ts['id']}", headers=hr_manager_auth)
+    assert set(_actions(_log(client, hr_manager_auth, entity_type="template_set", entity_id=str(ts["id"])))) >= {"Created", "Item added", "Item removed", "Updated", "Deleted"}
+
+    course = client.post("/api/ld/courses", headers=hr_manager_auth, json={
+        "title": f"ZZ Audit Course {os.urandom(3).hex()}", "category": "mandatory", "cost": 10}).json()
+    client.put(f"/api/ld/courses/{course['id']}", headers=hr_manager_auth,
+               json={"title": course["title"], "category": "certification", "cost": 25})
+    client.delete(f"/api/ld/courses/{course['id']}", headers=hr_manager_auth)
+    assert set(_actions(_log(client, hr_manager_auth, entity_type="course", entity_id=str(course["id"])))) >= {"Created", "Updated", "Deactivated"}
+
+    ot = client.post("/api/recruitment/offer-letter-templates", headers=hr_manager_auth, json={
+        "offer_type": "Offer", "name": f"ZZ Audit Offer Tmpl {os.urandom(3).hex()}", "body": "Hello ${candidate_name}"}).json()
+    client.put(f"/api/recruitment/offer-letter-templates/{ot['id']}", headers=hr_manager_auth,
+               json={"offer_type": "Offer", "name": ot["name"], "body": "Hello again ${candidate_name}"})
+    client.delete(f"/api/recruitment/offer-letter-templates/{ot['id']}", headers=hr_manager_auth)
+    assert set(_actions(_log(client, hr_manager_auth, entity_type="offer_template", entity_id=str(ot["id"])))) >= {"Created", "Updated", "Deleted"}
+
+    dt = client.post("/api/employee-document-types", headers=hr_manager_auth, json={"name": f"ZZ Audit Doc {os.urandom(3).hex()}"}).json()
+    client.put(f"/api/employee-document-types/{dt['id']}", headers=hr_manager_auth, json={"name": dt["name"] + "b", "reminder_window_days": 45})
+    client.delete(f"/api/employee-document-types/{dt['id']}", headers=hr_manager_auth)
+    assert set(_actions(_log(client, hr_manager_auth, entity_type="document_type", entity_id=str(dt["id"])))) >= {"Created", "Updated", "Deactivated"}
+
+
+def test_performance_probation_template_and_cycle_creation_are_audited(client, hr_manager_auth):
+    cyc = client.post("/api/performance/cycles", headers=hr_manager_auth, json={
+        "name": f"ZZ Audit Cycle {os.urandom(3).hex()}", "period_start": "2031-01-01", "period_end": "2031-12-31"})
+    assert cyc.status_code == 201, cyc.text
+    crit = client.post("/api/performance/probation-goal-template", headers=hr_manager_auth,
+                       json={"name": f"ZZ Audit Criterion {os.urandom(3).hex()}", "description": "d", "weight": 2})
+    assert crit.status_code == 201, crit.text
+    cid = crit.json()["id"]
+    client.put(f"/api/performance/probation-goal-template/{cid}", headers=hr_manager_auth,
+               json={"name": crit.json()["name"], "description": "d2", "weight": 3})
+    client.delete(f"/api/performance/probation-goal-template/{cid}", headers=hr_manager_auth)
+    assert "Created" in _actions(_log(client, hr_manager_auth, entity_type="performance_cycle", entity_id=str(cyc.json()["id"])))
+    assert set(_actions(_log(client, hr_manager_auth, entity_type="probation_goal_template", entity_id=str(cid)))) >= {"Criterion added", "Criterion updated", "Criterion deleted"}
+
+
+def test_hr_note_delete_and_resignation_filing_are_audited(client, hr_manager_auth, make_test_employee):
+    emp = make_test_employee(full_name="ZZ Audit Notes Employee")
+    note = client.post(f"/api/employees/{emp['employee_id']}/notes", headers=hr_manager_auth,
+                       json={"note_type": "general", "body": "ZZ audit note"})
+    assert note.status_code == 201, note.text
+    listed = client.get(f"/api/employees/{emp['employee_id']}/notes", headers=hr_manager_auth).json()
+    nid = next(n["id"] for n in listed if n["body"] == "ZZ audit note")
+    assert client.delete(f"/api/employees/{emp['employee_id']}/notes/{nid}", headers=hr_manager_auth).status_code in (200, 204)
+    assert "Deleted" in _actions(_log(client, hr_manager_auth, entity_type="hr_note", entity_id=str(nid)))
+
+    res = client.post("/api/resignations", headers=hr_manager_auth, json={
+        "employee_id": emp["employee_id"], "reason": "ZZ audit reason",
+        "effective_date": "2027-06-30", "last_working_day": "2027-06-30"})
+    assert res.status_code == 201, res.text
+    rows = _log(client, hr_manager_auth, entity_type="resignation", entity_id=str(res.json()["id"]))
+    assert "Filed" in _actions(rows) and "on their behalf" in rows[0]["detail"]
+
+
+def test_notification_settings_and_announcements_are_audited(client, hr_manager_auth):
+    client.put("/api/notifications/general-settings", headers=hr_manager_auth,
+               json={"timezone": "Asia/Kuala_Lumpur", "holiday_eve_announcements_enabled": False})
+    client.put("/api/notifications/general-settings", headers=hr_manager_auth,
+               json={"timezone": "Asia/Kuala_Lumpur", "holiday_eve_announcements_enabled": True})
+    n = client.post("/api/notifications", headers=hr_manager_auth, json={
+        "message": "ZZ audit announcement", "start_time": "2099-01-01T00:00", "end_time": "2099-01-02T00:00"})
+    assert n.status_code == 201, n.text
+    client.delete(f"/api/notifications/{n.json()['id']}", headers=hr_manager_auth)
+    gs = _log(client, hr_manager_auth, entity_type="notification_settings")
+    assert any(c["field"] == "holiday_eve_announcements_enabled" and c["new"] == "True" for r in gs for c in r["changes"])
+    assert set(_actions(_log(client, hr_manager_auth, entity_type="notification", entity_id=str(n.json()["id"])))) >= {"Created", "Deleted"}

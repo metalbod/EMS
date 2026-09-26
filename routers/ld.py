@@ -19,6 +19,7 @@ from core.permission_matrix import require_permission
 from db import get_db, IntegrityError
 
 from core.db_session import db_session
+from core.audit import diff_rows, write_entity_audit
 
 router = APIRouter()
 
@@ -106,8 +107,10 @@ def create_ld_course(conn, body: LDCourseIn, user: dict = Depends(get_current_us
         "INSERT INTO ld_courses (institution_id,title,category,description,cost,is_active,created_by) VALUES (?,?,?,?,?,?,?)",
         (inst_id, body.title, body.category, body.description, body.cost, 1 if body.is_active else 0, user["username"])
     )
-    conn.commit()
     row = conn.execute("SELECT * FROM ld_courses WHERE id=last_insert_rowid()").fetchone()
+    write_entity_audit(conn, user, inst_id, "L&D", "course", row["id"], "Created", detail=f"Course '{body.title}' ({body.category}), cost RM {body.cost or 0}",
+                       entity_label=body.title)
+    conn.commit()
     return dict(row)
 
 
@@ -118,14 +121,18 @@ def update_ld_course(conn, course_id: int, body: LDCourseIn, user: dict = Depend
     inst_id = need_inst(user)
     if body.category not in LD_CATEGORIES:
         raise HTTPException(400, f"category must be one of: {', '.join(LD_CATEGORIES)}")
-    if not conn.execute("SELECT id FROM ld_courses WHERE id=? AND institution_id=?", (course_id, inst_id)).fetchone():
+    old_course = conn.execute("SELECT * FROM ld_courses WHERE id=? AND institution_id=?", (course_id, inst_id)).fetchone()
+    if not old_course:
         raise HTTPException(404, "Course not found")
     conn.execute(
         "UPDATE ld_courses SET title=?,category=?,description=?,cost=?,is_active=? WHERE id=?",
         (body.title, body.category, body.description, body.cost, 1 if body.is_active else 0, course_id)
     )
-    conn.commit()
     row = conn.execute("SELECT * FROM ld_courses WHERE id=?", (course_id,)).fetchone()
+    changes = diff_rows(old_course, row, exclude=("description",))
+    if changes:
+        write_entity_audit(conn, user, inst_id, "L&D", "course", course_id, "Updated", changes=changes, entity_label=row["title"])
+    conn.commit()
     return dict(row)
 
 
@@ -134,7 +141,11 @@ def update_ld_course(conn, course_id: int, body: LDCourseIn, user: dict = Depend
 def delete_ld_course(conn, course_id: int, user: dict = Depends(get_current_user)) -> None:
     require_permission(conn, user, "learning_development.manage_courses_quizzes")
     inst_id = need_inst(user)
+    course = conn.execute("SELECT title FROM ld_courses WHERE id=? AND institution_id=?", (course_id, inst_id)).fetchone()
     conn.execute("UPDATE ld_courses SET is_active=0 WHERE id=? AND institution_id=?", (course_id, inst_id))
+    if course:
+        write_entity_audit(conn, user, inst_id, "L&D", "course", course_id, "Deactivated", detail=f"Course '{course['title']}' deactivated (soft delete)",
+                           entity_label=course["title"])
     conn.commit()
 
 
@@ -371,6 +382,9 @@ def upsert_course_quiz(conn, course_id: int, body: LDQuizIn, user: dict = Depend
             "INSERT INTO ld_quiz_questions (quiz_id,institution_id,question_text,question_type,options,order_index) VALUES (?,?,?,?,?,?)",
             (quiz_id, inst_id, q.question_text, q.question_type, psycopg2.extras.Json(options_json), idx)
         )
+    write_entity_audit(conn, user, inst_id, "L&D", "course", course_id, "Quiz saved",
+                       detail=f"Quiz '{body.title}': {len(body.questions)} question(s), pass {body.pass_threshold}%, "
+                              f"max attempts {body.max_attempts}")
     conn.commit()
     quiz = _quiz_for_course(conn, inst_id, course_id)
     return quiz
@@ -385,6 +399,7 @@ def delete_course_quiz(conn, course_id: int, user: dict = Depends(get_current_us
     if quiz:
         conn.execute("DELETE FROM ld_quiz_questions WHERE quiz_id=?", (quiz["id"],))
         conn.execute("DELETE FROM ld_quizzes WHERE id=?", (quiz["id"],))
+        write_entity_audit(conn, user, inst_id, "L&D", "course", course_id, "Quiz deleted", detail="Course quiz removed")
         conn.commit()
 
 
@@ -515,6 +530,8 @@ def replace_course_modules(conn, course_id: int, body: LDModulesIn,
             "INSERT INTO ld_course_modules (institution_id,course_id,title,content_type,content,order_index) VALUES (?,?,?,?,?,?)",
             (inst_id, course_id, m.title, m.content_type, m.content, idx)
         )
+    write_entity_audit(conn, user, inst_id, "L&D", "course", course_id, "Modules replaced",
+                       detail=f"{len(body.modules)} module(s): " + ", ".join(m.title for m in body.modules)[:300])
     conn.commit()
     rows = conn.execute(
         "SELECT * FROM ld_course_modules WHERE course_id=? AND institution_id=? ORDER BY order_index",

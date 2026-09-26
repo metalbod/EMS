@@ -5,6 +5,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from db import IntegrityError
 from core.db_session import db_session
+from core.audit import diff_rows, summarize, write_entity_audit
 from core.deps import get_current_user
 from core.permission_matrix import require_permission
 from core.location_assignments import has_primary_location
@@ -83,6 +84,8 @@ def create_location(
         ),
     )
     location_id = conn._last_id
+    write_entity_audit(conn, current_user, inst_id, "Locations", "location", location_id, "Created",
+                       detail=summarize(location_data.model_dump()), entity_label=f"{location_data.code} {location_data.name}")
     conn.commit()
 
     # Fetch and return created location
@@ -205,6 +208,11 @@ def update_location(
     query = f"UPDATE locations SET {set_clause} WHERE id = ?"
 
     conn.execute(query, (*updates.values(), location_id))
+    updated_row = conn.execute("SELECT * FROM locations WHERE id = ?", (location_id,)).fetchone()
+    changes = diff_rows(location, updated_row)
+    if changes:
+        write_entity_audit(conn, current_user, location["institution_id"], "Locations", "location", location_id, "Updated",
+                           changes=changes, entity_label=f"{location['code']} {location['name']}")
     conn.commit()
 
     # Return updated location
@@ -242,6 +250,9 @@ def delete_location(
         raise HTTPException(403, detail="Access denied")
 
     conn.execute("UPDATE locations SET is_active = 0 WHERE id = ?", (location_id,))
+    write_entity_audit(conn, current_user, location["institution_id"], "Locations", "location", location_id, "Deactivated",
+                       detail=f"Location '{location['name']}' deactivated (soft delete)",
+                       entity_label=f"{location['code']} {location['name']}")
     conn.commit()
 
     return {"detail": "Location deleted successfully"}
@@ -431,6 +442,10 @@ def assign_employee_to_location(
             ),
         )
         assignment_id = conn._last_id
+        write_entity_audit(conn, current_user, inst_id, "Locations", "location_assignment", assignment_id, "Employee assigned",
+                           detail=f"{employee_id} assigned to location #{assignment.location_id} "
+                                  f"({assignment.assignment_type}) from {assignment.start_date}",
+                           entity_label=employee_id)
         conn.commit()
 
         # Return created assignment
@@ -535,6 +550,10 @@ def update_employee_location_assignment(
     query = f"UPDATE employee_location_assignments SET {set_clause} WHERE id = ?"
 
     conn.execute(query, (*update_fields.values(), assignment["id"]))
+    changes = diff_rows(assignment, {**dict(assignment), **update_fields})
+    if changes:
+        write_entity_audit(conn, current_user, inst_id, "Locations", "location_assignment", assignment["id"], "Assignment updated",
+                           changes=changes, entity_label=employee_id)
     conn.commit()
 
     # Return updated assignment
@@ -578,6 +597,8 @@ def remove_employee_from_location(
         """,
         (assignment["id"],),
     )
+    write_entity_audit(conn, current_user, inst_id, "Locations", "location_assignment", assignment["id"], "Employee removed",
+                       detail=f"{employee_id} removed from location #{location_id}", entity_label=employee_id)
     conn.commit()
 
     return {"detail": "Employee removed from location"}
@@ -654,5 +675,8 @@ def bulk_assign_locations(
                     "reason": str(e),
                 })
 
+    if created:
+        write_entity_audit(conn, current_user, inst_id, "Locations", "location_assignment", None, "Bulk assignment",
+                           detail=f"{created} employee(s) assigned to locations in bulk ({len(errors)} error(s))")
     conn.commit()
     return BulkLocationAssignmentResponse(created=created, errors=errors)

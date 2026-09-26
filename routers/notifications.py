@@ -80,7 +80,7 @@ from core.email_engine import send_email, verify_smtp_connection
 
 from db import get_db
 
-from core.audit import write_entity_audit
+from core.audit import diff_fields, diff_rows, write_entity_audit
 from core.db_session import db_session
 
 logger = logging.getLogger("ems")
@@ -352,10 +352,19 @@ def update_notification_general_settings(
     conn, body: NotificationGeneralSettingsIn, user: dict = Depends(require_roles(*NOTIFICATION_MANAGE_ROLES))
 ) -> NotificationGeneralSettingsOut:
     inst_id = need_inst(user)
+    before = conn.execute(
+        "SELECT timezone, holiday_eve_announcements_enabled FROM institutions WHERE id=?", (inst_id,)
+    ).fetchone()
     conn.execute(
         "UPDATE institutions SET timezone=?, holiday_eve_announcements_enabled=? WHERE id=?",
         (body.timezone, body.holiday_eve_announcements_enabled, inst_id)
     )
+    changes = diff_fields(dict(before), {"timezone": body.timezone,
+                                         "holiday_eve_announcements_enabled": body.holiday_eve_announcements_enabled},
+                          {"timezone": "Time zone", "holiday_eve_announcements_enabled": "Holiday-eve announcements"})
+    if changes:
+        write_entity_audit(conn, user, inst_id, "Notifications", "notification_settings", inst_id, "General settings updated", changes=changes,
+                           entity_label="Notification general settings")
     conn.commit()
     row = conn.execute(
         "SELECT timezone, holiday_eve_announcements_enabled FROM institutions WHERE id=?", (inst_id,)
@@ -453,7 +462,15 @@ def update_reminder_settings(
     inst_id = need_inst(user)
     assignments = ", ".join(f"{c}=?" for c in _ALL_REMINDER_SETTINGS_COLUMNS)
     values = [getattr(body, c) for c in _ALL_REMINDER_SETTINGS_COLUMNS]
+    before = conn.execute(
+        f"SELECT {', '.join(_ALL_REMINDER_SETTINGS_COLUMNS)} FROM institutions WHERE id=?", (inst_id,)
+    ).fetchone()
     conn.execute(f"UPDATE institutions SET {assignments} WHERE id=?", (*values, inst_id))
+    changes = diff_fields(dict(before), dict(zip(_ALL_REMINDER_SETTINGS_COLUMNS, values)),
+                          {c: c.replace("_", " ").capitalize() for c in _ALL_REMINDER_SETTINGS_COLUMNS})
+    if changes:
+        write_entity_audit(conn, user, inst_id, "Notifications", "notification_settings", inst_id, "Reminder settings updated", changes=changes,
+                           entity_label="Reminder settings")
     conn.commit()
     row = conn.execute(
         f"SELECT {', '.join(_ALL_REMINDER_SETTINGS_COLUMNS)} FROM institutions WHERE id=?", (inst_id,)
@@ -607,6 +624,9 @@ def create_notification(conn, body: InstitutionNotificationIn, user: dict = Depe
     conn.commit()
     row = conn.execute("SELECT * FROM institution_notifications WHERE id=last_insert_rowid()").fetchone()
     _save_notification_targets(conn, row["id"], body.target_employee_ids)
+    write_entity_audit(conn, user, inst_id, "Notifications", "notification", row["id"], "Created",
+                       detail=f"Announcement ({body.target_type}) {body.start_time} to {body.end_time}: {body.message}"[:400],
+                       entity_label=body.message[:60])
     conn.commit()
     return _attach_targets(conn, [dict(row)])[0]
 
@@ -615,7 +635,8 @@ def create_notification(conn, body: InstitutionNotificationIn, user: dict = Depe
 @db_session
 def update_notification(conn, notification_id: int, body: InstitutionNotificationIn, user: dict = Depends(require_roles(*NOTIFICATION_MANAGE_ROLES))) -> Dict[str, Any]:
     inst_id = need_inst(user)
-    if not conn.execute("SELECT id FROM institution_notifications WHERE id=? AND institution_id=?", (notification_id, inst_id)).fetchone():
+    old_notif = conn.execute("SELECT * FROM institution_notifications WHERE id=? AND institution_id=?", (notification_id, inst_id)).fetchone()
+    if not old_notif:
         raise HTTPException(404, "Notification not found")
     if body.end_time <= body.start_time:
         raise HTTPException(400, "End time must be after start time")
@@ -625,8 +646,11 @@ def update_notification(conn, notification_id: int, body: InstitutionNotificatio
         (body.message, body.start_time, body.end_time, body.target_type, notification_id)
     )
     _save_notification_targets(conn, notification_id, body.target_employee_ids)
-    conn.commit()
     row = conn.execute("SELECT * FROM institution_notifications WHERE id=?", (notification_id,)).fetchone()
+    changes = diff_rows(old_notif, row)
+    if changes:
+        write_entity_audit(conn, user, inst_id, "Notifications", "notification", notification_id, "Updated", changes=changes, entity_label=row["message"][:60])
+    conn.commit()
     return _attach_targets(conn, [dict(row)])[0]
 
 
@@ -634,7 +658,11 @@ def update_notification(conn, notification_id: int, body: InstitutionNotificatio
 @db_session
 def delete_notification(conn, notification_id: int, user: dict = Depends(require_roles(*NOTIFICATION_MANAGE_ROLES))) -> None:
     inst_id = need_inst(user)
+    notif = conn.execute("SELECT message FROM institution_notifications WHERE id=? AND institution_id=?", (notification_id, inst_id)).fetchone()
     conn.execute("DELETE FROM institution_notifications WHERE id=? AND institution_id=?", (notification_id, inst_id))
+    if notif:
+        write_entity_audit(conn, user, inst_id, "Notifications", "notification", notification_id, "Deleted", detail=f"Announcement deleted: {notif['message']}"[:400],
+                           entity_label=notif["message"][:60])
     conn.commit()
 
 

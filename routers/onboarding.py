@@ -23,6 +23,7 @@ from core.permission_matrix import require_permission
 from db import get_db
 
 from core.db_session import db_session
+from core.audit import diff_rows, write_entity_audit
 
 router = APIRouter()
 
@@ -240,8 +241,10 @@ def create_ob_template_set(conn, body: OBTemplateSetIn, user: dict = Depends(get
         "INSERT INTO ob_template_sets (institution_id,type,name,is_default) VALUES (?,?,?,?)",
         (inst_id, body.type, body.name.strip(), 0 if existing_default else 1)
     )
-    conn.commit()
     row = conn.execute("SELECT * FROM ob_template_sets WHERE id=last_insert_rowid()").fetchone()
+    write_entity_audit(conn, user, inst_id, "Onboarding", "template_set", row["id"], "Created", detail=f"{body.type} template '{body.name.strip()}' created",
+                       entity_label=body.name.strip())
+    conn.commit()
     return dict(row)
 
 
@@ -264,8 +267,11 @@ def update_ob_template_set(conn, set_id: int, body: OBTemplateSetUpdateIn, user:
         "UPDATE ob_template_sets SET name=?,is_default=? WHERE id=?",
         (body.name.strip(), 1 if body.is_default else 0, set_id)
     )
-    conn.commit()
     row = conn.execute("SELECT * FROM ob_template_sets WHERE id=?", (set_id,)).fetchone()
+    changes = diff_rows(tset, row)
+    if changes:
+        write_entity_audit(conn, user, inst_id, "Onboarding", "template_set", set_id, "Updated", changes=changes, entity_label=row["name"])
+    conn.commit()
     return dict(row)
 
 
@@ -290,6 +296,8 @@ def delete_ob_template_set(conn, set_id: int, user: dict = Depends(get_current_u
         ).fetchone()
         if other:
             conn.execute("UPDATE ob_template_sets SET is_default=1 WHERE id=?", (other["id"],))
+    write_entity_audit(conn, user, inst_id, "Onboarding", "template_set", set_id, "Deleted", detail=f"{tset['type']} template '{tset['name']}' deleted",
+                       entity_label=tset["name"])
     conn.commit()
 
 
@@ -378,8 +386,10 @@ def create_ob_template(conn, body: OBTemplateIn, user: dict = Depends(get_curren
         "INSERT INTO ob_templates (institution_id,type,template_set_id,title,description,assigned_role,order_index,linked_ld_course_id,due_date_rule) VALUES (?,?,?,?,?,?,?,?,?)",
         (inst_id, body.type, body.template_set_id, body.title, body.description, body.assigned_role, order_index, body.linked_ld_course_id, body.due_date_rule)
     )
-    conn.commit()
     row = conn.execute("SELECT * FROM ob_templates WHERE id=last_insert_rowid()").fetchone()
+    write_entity_audit(conn, user, inst_id, "Onboarding", "template_set", body.template_set_id, "Item added",
+                       detail=f"'{body.title}' assigned to {body.assigned_role}", entity_label=f"Template #{body.template_set_id}")
+    conn.commit()
     return dict(row)
 
 
@@ -391,15 +401,19 @@ def update_ob_template(conn, tmpl_id: int, body: OBTemplateIn, user: dict = Depe
     valid_roles = get_valid_roles(conn, inst_id)
     if body.assigned_role not in valid_roles:
         raise HTTPException(400, f"assigned_role must be one of: {', '.join(valid_roles)}")
-    tmpl = conn.execute("SELECT id FROM ob_templates WHERE id=? AND institution_id=?", (tmpl_id, inst_id)).fetchone()
+    tmpl = conn.execute("SELECT * FROM ob_templates WHERE id=? AND institution_id=?", (tmpl_id, inst_id)).fetchone()
     if not tmpl:
         raise HTTPException(404, "Template not found")
     conn.execute(
         "UPDATE ob_templates SET title=?,description=?,assigned_role=?,linked_ld_course_id=?,due_date_rule=? WHERE id=?",
         (body.title, body.description, body.assigned_role, body.linked_ld_course_id, body.due_date_rule, tmpl_id)
     )
-    conn.commit()
     row = conn.execute("SELECT * FROM ob_templates WHERE id=?", (tmpl_id,)).fetchone()
+    changes = diff_rows(tmpl, row)
+    if changes:
+        write_entity_audit(conn, user, inst_id, "Onboarding", "template_set", tmpl["template_set_id"], "Item updated", changes=changes,
+                           detail=f"'{tmpl['title']}'", entity_label=f"Template #{tmpl['template_set_id']}")
+    conn.commit()
     return dict(row)
 
 
@@ -408,7 +422,11 @@ def update_ob_template(conn, tmpl_id: int, body: OBTemplateIn, user: dict = Depe
 def delete_ob_template(conn, tmpl_id: int, user: dict = Depends(get_current_user)) -> None:
     require_permission(conn, user, "onboarding_offboarding.manage_template_sets_templates")
     inst_id = need_inst(user)
+    tmpl = conn.execute("SELECT title, template_set_id FROM ob_templates WHERE id=? AND institution_id=?", (tmpl_id, inst_id)).fetchone()
     conn.execute("UPDATE ob_templates SET is_active=0 WHERE id=? AND institution_id=?", (tmpl_id, inst_id))
+    if tmpl:
+        write_entity_audit(conn, user, inst_id, "Onboarding", "template_set", tmpl["template_set_id"], "Item removed", detail=f"'{tmpl['title']}' removed",
+                           entity_label=f"Template #{tmpl['template_set_id']}")
     conn.commit()
 
 
@@ -446,6 +464,8 @@ def move_ob_template(conn, tmpl_id: int, body: OBTemplateMoveIn, user: dict = De
     a, b = siblings[idx], siblings[swap_idx]
     conn.execute("UPDATE ob_templates SET order_index=? WHERE id=?", (b["order_index"], a["id"]))
     conn.execute("UPDATE ob_templates SET order_index=? WHERE id=?", (a["order_index"], b["id"]))
+    write_entity_audit(conn, user, inst_id, "Onboarding", "template_set", tmpl["template_set_id"], "Item moved",
+                       detail=f"'{a['title']}' moved {body.direction}", entity_label=f"Template #{tmpl['template_set_id']}")
     conn.commit()
     return {"ok": True}
 
@@ -626,6 +646,8 @@ def enable_probation_review(conn, cl_id: int, user: dict = Depends(get_current_u
     if not emp:
         raise HTTPException(404, "Employee not found")
     conn.execute("UPDATE ob_checklists SET probation_enabled=1 WHERE id=?", (cl_id,))
+    write_entity_audit(conn, user, inst_id, "Onboarding", "checklist", cl_id, "Probation review enabled",
+                       detail=f"Probation review enabled on {cl['employee_id']}'s onboarding checklist", entity_label=cl["employee_id"])
     conn.commit()
     create_probation_reviews(conn, inst_id, dict(emp), cl_id, _probation_month_windows(date.today()), user)
     row = conn.execute("SELECT * FROM ob_checklists WHERE id=?", (cl_id,)).fetchone()

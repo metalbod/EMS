@@ -11,6 +11,8 @@ from db import get_db
 
 from core.db_session import db_session
 
+from core.audit import diff_rows, summarize, write_entity_audit
+
 from core.permission_matrix import require_permission
 
 from routers.timesheets import _weekly_hours_breakdown
@@ -306,6 +308,10 @@ def create_project(conn, body: ProjectIn, user: dict = Depends(get_current_user)
     project_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     _set_project_managers(conn, inst_id, project_id, body.manager_ids)
     _set_project_members(conn, inst_id, project_id, body.member_ids)
+    write_entity_audit(conn, user, inst_id, "Projects", "project", project_id, "Created",
+                       detail=summarize(body.model_dump(exclude={"manager_ids", "member_ids"}))
+                              + f", {len(body.manager_ids)} manager(s), {len(body.member_ids)} member(s)",
+                       entity_label=body.name)
     conn.commit()
     row = conn.execute("SELECT * FROM projects WHERE id=?", (project_id,)).fetchone()
     d = dict(row)
@@ -319,10 +325,12 @@ def create_project(conn, body: ProjectIn, user: dict = Depends(get_current_user)
 def update_project(conn, project_id: int, body: ProjectIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     require_permission(conn, user, "projects_tasks.manage_projects_tasks_assignments")
     inst_id = need_inst(user)
-    if not conn.execute("SELECT id FROM projects WHERE id=? AND institution_id=?", (project_id, inst_id)).fetchone():
+    old_project = conn.execute("SELECT * FROM projects WHERE id=? AND institution_id=?", (project_id, inst_id)).fetchone()
+    if not old_project:
         raise HTTPException(404, "Project not found")
     if body.start_date and body.end_date and body.end_date < body.start_date:
         raise HTTPException(400, "End date must be on or after start date")
+    old_managers, old_members = set(_manager_ids_for(conn, project_id)), set(_member_ids_for(conn, project_id))
     conn.execute(
         "UPDATE projects SET name=?,description=?,customer=?,status=?,start_date=?,end_date=?,is_open_to_all=?,is_billable=? WHERE id=?",
         (body.name, body.description, body.customer, body.status, body.start_date, body.end_date,
@@ -330,11 +338,18 @@ def update_project(conn, project_id: int, body: ProjectIn, user: dict = Depends(
     )
     _set_project_managers(conn, inst_id, project_id, body.manager_ids)
     _set_project_members(conn, inst_id, project_id, body.member_ids)
-    conn.commit()
     row = conn.execute("SELECT * FROM projects WHERE id=?", (project_id,)).fetchone()
     d = dict(row)
     d["manager_ids"] = _manager_ids_for(conn, project_id)
     d["member_ids"] = _member_ids_for(conn, project_id)
+    changes = diff_rows(old_project, row)
+    for label, old_set, new_set in (("Managers", old_managers, set(d["manager_ids"])), ("Members", old_members, set(d["member_ids"]))):
+        if old_set != new_set:
+            changes.append({"field": label.lower(), "label": label,
+                            "old": ", ".join(sorted(old_set)) or "—", "new": ", ".join(sorted(new_set)) or "—"})
+    if changes:
+        write_entity_audit(conn, user, inst_id, "Projects", "project", project_id, "Updated", changes=changes, entity_label=row["name"])
+    conn.commit()
     return d
 
 
@@ -347,9 +362,12 @@ def delete_project(conn, project_id: int, user: dict = Depends(get_current_user)
         raise HTTPException(400, "Cannot delete a project that already has logged timesheet hours — set it to Completed instead")
     # project_managers/project_members have a foreign key to projects, so
     # they must be deleted first.
+    proj = conn.execute("SELECT name FROM projects WHERE id=? AND institution_id=?", (project_id, inst_id)).fetchone()
     conn.execute("DELETE FROM project_managers WHERE project_id=?", (project_id,))
     conn.execute("DELETE FROM project_members WHERE project_id=?", (project_id,))
     conn.execute("DELETE FROM projects WHERE id=? AND institution_id=?", (project_id, inst_id))
+    if proj:
+        write_entity_audit(conn, user, inst_id, "Projects", "project", project_id, "Deleted", detail=f"Project '{proj['name']}' deleted", entity_label=proj["name"])
     conn.commit()
 
 
@@ -397,6 +415,8 @@ def duplicate_project(conn, project_id: int, body: ProjectDuplicateIn, user: dic
                 (inst_id, new_id, t["name"], t["description"], t["estimated_hours"], None, None, "Not Started", user["username"])
             )
 
+    write_entity_audit(conn, user, inst_id, "Projects", "project", new_id, "Created",
+                       detail=f"Duplicated from project #{project_id}", entity_label=name)
     conn.commit()
     row = conn.execute("SELECT * FROM projects WHERE id=?", (new_id,)).fetchone()
     d = dict(row)
@@ -465,8 +485,10 @@ def create_project_task(conn, project_id: int, body: ProjectTaskIn, user: dict =
         (inst_id, project_id, body.name, body.description, body.estimated_hours,
          body.start_date, body.end_date, body.status, user["username"])
     )
-    conn.commit()
     row = conn.execute("SELECT * FROM project_tasks WHERE id=last_insert_rowid()").fetchone()
+    write_entity_audit(conn, user, inst_id, "Projects", "project", project_id, "Task added", detail=f"Task '{body.name}' added ({body.status})",
+                       entity_label=project["name"])
+    conn.commit()
     return dict(row)
 
 
@@ -475,7 +497,8 @@ def create_project_task(conn, project_id: int, body: ProjectTaskIn, user: dict =
 def update_project_task(conn, project_id: int, task_id: int, body: ProjectTaskIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     require_permission(conn, user, "projects_tasks.manage_projects_tasks_assignments")
     inst_id = need_inst(user)
-    if not conn.execute("SELECT id FROM project_tasks WHERE id=? AND project_id=? AND institution_id=?", (task_id, project_id, inst_id)).fetchone():
+    old_task = conn.execute("SELECT * FROM project_tasks WHERE id=? AND project_id=? AND institution_id=?", (task_id, project_id, inst_id)).fetchone()
+    if not old_task:
         raise HTTPException(404, "Task not found")
     project = conn.execute("SELECT * FROM projects WHERE id=? AND institution_id=?", (project_id, inst_id)).fetchone()
     if body.start_date and body.end_date and body.end_date < body.start_date:
@@ -485,8 +508,12 @@ def update_project_task(conn, project_id: int, task_id: int, body: ProjectTaskIn
         "UPDATE project_tasks SET name=?,description=?,estimated_hours=?,start_date=?,end_date=?,status=? WHERE id=?",
         (body.name, body.description, body.estimated_hours, body.start_date, body.end_date, body.status, task_id)
     )
-    conn.commit()
     row = conn.execute("SELECT * FROM project_tasks WHERE id=?", (task_id,)).fetchone()
+    changes = diff_rows(old_task, row)
+    if changes:
+        write_entity_audit(conn, user, inst_id, "Projects", "project", project_id, "Task updated", changes=changes,
+                           detail=f"Task '{old_task['name']}'", entity_label=project["name"])
+    conn.commit()
     return dict(row)
 
 
@@ -497,5 +524,8 @@ def delete_project_task(conn, project_id: int, task_id: int, user: dict = Depend
     inst_id = need_inst(user)
     if conn.execute("SELECT id FROM timesheet_entries WHERE task_id=? AND institution_id=?", (task_id, inst_id)).fetchone():
         raise HTTPException(400, "Cannot delete a task that already has logged timesheet hours — mark it Completed instead")
+    task = conn.execute("SELECT name FROM project_tasks WHERE id=? AND project_id=? AND institution_id=?", (task_id, project_id, inst_id)).fetchone()
     conn.execute("DELETE FROM project_tasks WHERE id=? AND project_id=? AND institution_id=?", (task_id, project_id, inst_id))
+    if task:
+        write_entity_audit(conn, user, inst_id, "Projects", "project", project_id, "Task deleted", detail=f"Task '{task['name']}' deleted")
     conn.commit()

@@ -4,6 +4,7 @@ from typing import List, Optional, Dict
 from datetime import datetime, date, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from core.db_session import db_session
+from core.audit import diff_rows, summarize, write_entity_audit
 from core.deps import get_current_user
 from core.approval_workflow import start_workflow, advance_or_finalize, annotate_actionability
 from core.org_queries import subordinates_in_clause
@@ -85,8 +86,10 @@ def create_benefit_plan(
          payload.carrier_name, payload.carrier_group_policy_number,
          1 if payload.payroll_sync_enabled else 0, now, now),
     )
-    conn.commit()
     plan_id = conn._last_id
+    write_entity_audit(conn, current_user, inst_id, "Benefits", "benefit_plan", plan_id, "Created",
+                       detail=summarize(payload.model_dump(), exclude=("description",)), entity_label=payload.plan_name)
+    conn.commit()
 
     plan = conn.execute("SELECT * FROM benefit_plans WHERE id = ?", (plan_id,)).fetchone()
     return _plan_response(plan)
@@ -166,9 +169,12 @@ def update_benefit_plan(
     }
     set_clause = ", ".join(f"{k} = ?" for k in updates.keys())
     conn.execute(f"UPDATE benefit_plans SET {set_clause} WHERE id = ?", (*updates.values(), plan_id))
+    updated = conn.execute("SELECT * FROM benefit_plans WHERE id = ?", (plan_id,)).fetchone()
+    changes = diff_rows(plan, updated)
+    if changes:
+        write_entity_audit(conn, current_user, inst_id, "Benefits", "benefit_plan", plan_id, "Updated", changes=changes, entity_label=updated["plan_name"])
     conn.commit()
 
-    updated = conn.execute("SELECT * FROM benefit_plans WHERE id = ?", (plan_id,)).fetchone()
     return _plan_response(updated)
 
 
@@ -223,8 +229,10 @@ def create_eligibility_rule(
         """,
         (inst_id, plan_id, payload.job_level_id, payload.pay_grade_id, now),
     )
-    conn.commit()
     rule_id = conn._last_id
+    write_entity_audit(conn, current_user, inst_id, "Benefits", "benefit_plan", plan_id, "Eligibility rule added",
+                       detail=f"Rule #{rule_id}: job level {payload.job_level_id}, pay grade {payload.pay_grade_id}")
+    conn.commit()
 
     rule = conn.execute(
         """
@@ -283,6 +291,8 @@ def delete_eligibility_rule(
     if not rule:
         raise HTTPException(404, detail="Eligibility rule not found")
     conn.execute("DELETE FROM benefit_plan_eligibility WHERE id = ?", (rule_id,))
+    write_entity_audit(conn, current_user, inst_id, "Benefits", "benefit_plan", plan_id, "Eligibility rule removed",
+                       detail=f"Rule #{rule_id} (job level {rule['job_level_id']}, pay grade {rule['pay_grade_id']}) removed")
     conn.commit()
 
 
@@ -381,8 +391,10 @@ def create_enrollment_period(
         """,
         (inst_id, payload.period_name, payload.plan_year, payload.start_date, payload.end_date, now, now),
     )
-    conn.commit()
     period_id = conn._last_id
+    write_entity_audit(conn, current_user, inst_id, "Benefits", "enrollment_period", period_id, "Created",
+                       detail=f"'{payload.period_name}' {payload.start_date} to {payload.end_date}", entity_label=payload.period_name)
+    conn.commit()
     period = conn.execute("SELECT * FROM benefit_enrollment_periods WHERE id = ?", (period_id,)).fetchone()
     return EnrollmentPeriodResponse(**dict(period))
 
@@ -448,6 +460,10 @@ def update_enrollment_period(
         "UPDATE benefit_enrollment_periods SET status = ?, updated_at = ? WHERE id = ?",
         (status, now, period_id),
     )
+    if status != period["status"]:
+        write_entity_audit(conn, current_user, inst_id, "Benefits", "enrollment_period", period_id, "Status changed",
+                           changes=[{"field": "status", "label": "Status", "old": period["status"], "new": status}],
+                           entity_label=period["period_name"])
     conn.commit()
     updated = conn.execute("SELECT * FROM benefit_enrollment_periods WHERE id = ?", (period_id,)).fetchone()
     return EnrollmentPeriodResponse(**dict(updated))
@@ -478,8 +494,10 @@ def submit_my_life_event(
         """,
         (inst_id, emp_id, payload.event_type, payload.event_date, payload.notes, now, now),
     )
-    conn.commit()
     event_id = conn._last_id
+    write_entity_audit(conn, current_user, inst_id, "Benefits", "life_event", event_id, "Submitted",
+                       detail=f"{payload.event_type} on {payload.event_date}", entity_label=emp_id)
+    conn.commit()
     event = conn.execute("SELECT * FROM benefit_life_events WHERE id = ?", (event_id,)).fetchone()
     return LifeEventResponse(**dict(event))
 
@@ -569,6 +587,8 @@ def decide_life_event(
 
     note_body = f"Life event ({event['event_type']}, {event['event_date']}) was {payload.status.lower()} by {current_user['username']}."
     _add_benefits_note(conn, inst_id, event["employee_id"], note_body, current_user["username"])
+    write_entity_audit(conn, current_user, inst_id, "Benefits", "life_event", event_id, "Life event " + payload.status.lower(),
+                       detail=note_body, entity_label=event["employee_id"])
 
     conn.commit()
     updated = conn.execute("SELECT * FROM benefit_life_events WHERE id = ?", (event_id,)).fetchone()
@@ -589,7 +609,7 @@ def _add_benefits_note(conn, inst_id: int, employee_id: str, body: str, username
 
 
 def _elect_enrollment(conn, inst_id: int, employee_id: str, plan_id: int, status: str,
-                       enrollment_period_id: Optional[int], life_event_id: Optional[int]) -> dict:
+                       enrollment_period_id: Optional[int], life_event_id: Optional[int], actor: Optional[dict] = None) -> dict:
     """Shared upsert logic for both self-service and HR-administered
     elections. Snapshots the plan's current cost onto the enrollment row
     so later plan cost changes don't retroactively rewrite what the
@@ -626,12 +646,14 @@ def _elect_enrollment(conn, inst_id: int, employee_id: str, plan_id: int, status
 
     note_body = f"{status} in '{plan['plan_name']}' ({plan['plan_category']})."
     _add_benefits_note(conn, inst_id, employee_id, note_body, "benefits-enrollment")
-    conn.commit()
-
     row = conn.execute(
         "SELECT * FROM benefit_enrollments WHERE employee_id = ? AND benefit_plan_id = ?",
         (employee_id, plan_id),
     ).fetchone()
+    if actor:
+        write_entity_audit(conn, actor, inst_id, "Benefits", "enrollment", row["id"], "Enrollment " + status.lower(),
+                           detail=f"{employee_id}: {note_body}", entity_label=employee_id)
+    conn.commit()
     return dict(row)
 
 
@@ -700,6 +722,9 @@ def auto_enroll_all_active_employees(
             (inst_id, note_body, inst_id),
         )
 
+    write_entity_audit(conn, current_user, inst_id, "Benefits", "benefit_plan", plan_id, "Auto-enrolled all active employees",
+                       detail=f"{len(enrolled_ids)} active employee(s) enrolled in '{plan['plan_name']}'",
+                       entity_label=plan["plan_name"])
     conn.commit()
     return {"enrolled_count": len(enrolled_ids)}
 
@@ -749,7 +774,7 @@ def elect_my_enrollment(
         enrollment_period_id = period["id"]
 
     row = _elect_enrollment(conn, inst_id, emp_id, payload.benefit_plan_id, payload.status,
-                             enrollment_period_id, payload.life_event_id)
+                             enrollment_period_id, payload.life_event_id, actor=current_user)
     return EnrollmentResponse(**row)
 
 
@@ -827,7 +852,7 @@ def elect_employee_enrollment(
         raise HTTPException(403, detail="Employee is not eligible for this plan")
 
     row = _elect_enrollment(conn, inst_id, employee_id, payload.benefit_plan_id, payload.status,
-                             None, payload.life_event_id)
+                             None, payload.life_event_id, actor=current_user)
     return EnrollmentResponse(**row)
 
 
@@ -852,10 +877,10 @@ def create_dependent(
     ).fetchone()
     if not employee:
         raise HTTPException(404, detail="Employee not found")
-    return _insert_dependent(conn, inst_id, employee_id, payload)
+    return _insert_dependent(conn, inst_id, employee_id, payload, actor=current_user)
 
 
-def _insert_dependent(conn, inst_id: int, employee_id: str, payload: DependentCreate) -> DependentResponse:
+def _insert_dependent(conn, inst_id: int, employee_id: str, payload: DependentCreate, actor: Optional[dict] = None) -> DependentResponse:
     now = datetime.utcnow().isoformat()
     conn.execute(
         """
@@ -868,8 +893,13 @@ def _insert_dependent(conn, inst_id: int, employee_id: str, payload: DependentCr
          payload.national_id, 1 if payload.is_beneficiary else 0, payload.beneficiary_percentage,
          payload.notes, now, now),
     )
-    conn.commit()
     dep_id = conn._last_id
+    if actor:
+        write_entity_audit(conn, actor, inst_id, "Benefits", "dependent", dep_id, "Dependent added",
+                           detail=f"{employee_id}: {payload.full_name} ({payload.relationship})"
+                                  + (", beneficiary" if payload.is_beneficiary else ""),
+                           entity_label=employee_id)
+    conn.commit()
     row = conn.execute("SELECT * FROM benefit_dependents WHERE id = ?", (dep_id,)).fetchone()
     d = dict(row)
     d["is_beneficiary"] = bool(d["is_beneficiary"])
@@ -934,9 +964,12 @@ def update_dependent(
     }
     set_clause = ", ".join(f"{k} = ?" for k in updates.keys())
     conn.execute(f"UPDATE benefit_dependents SET {set_clause} WHERE id = ?", (*updates.values(), dependent_id))
+    row = conn.execute("SELECT * FROM benefit_dependents WHERE id = ?", (dependent_id,)).fetchone()
+    changes = diff_rows(dep, row, sensitive=("national_id",))
+    if changes:
+        write_entity_audit(conn, current_user, inst_id, "Benefits", "dependent", dependent_id, "Dependent updated", changes=changes, entity_label=dep["employee_id"])
     conn.commit()
 
-    row = conn.execute("SELECT * FROM benefit_dependents WHERE id = ?", (dependent_id,)).fetchone()
     d = dict(row)
     d["is_beneficiary"] = bool(d["is_beneficiary"])
     return DependentResponse(**d)
@@ -977,7 +1010,7 @@ def create_my_dependent(
     if not emp_id:
         raise HTTPException(404, detail="No employee record linked to this account")
     inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
-    return _insert_dependent(conn, inst_id, emp_id, payload)
+    return _insert_dependent(conn, inst_id, emp_id, payload, actor=current_user)
 
 
 @router.post("/enrollments/{enrollment_id}/dependents", status_code=201)
@@ -1023,6 +1056,8 @@ def attach_dependent_to_enrollment(
         """,
         (inst_id, enrollment_id, payload.dependent_id, now),
     )
+    write_entity_audit(conn, current_user, inst_id, "Benefits", "enrollment", enrollment_id, "Dependent attached",
+                       detail=f"Dependent #{payload.dependent_id} attached", entity_label=enrollment["employee_id"])
     conn.commit()
     return {"enrollment_id": enrollment_id, "dependent_id": payload.dependent_id, "attached": True}
 
@@ -1091,6 +1126,8 @@ def detach_dependent_from_enrollment(
         "DELETE FROM benefit_enrollment_dependents WHERE enrollment_id = ? AND dependent_id = ? AND institution_id = ?",
         (enrollment_id, dependent_id, inst_id),
     )
+    write_entity_audit(conn, current_user, inst_id, "Benefits", "enrollment", enrollment_id, "Dependent detached",
+                       detail=f"Dependent #{dependent_id} detached", entity_label=enrollment["employee_id"])
     conn.commit()
 
 
@@ -1098,7 +1135,7 @@ def detach_dependent_from_enrollment(
 # CLAIMS TRACKING (internal-only — no real carrier integration)
 # ============================================================================
 
-def _submit_claim(conn, inst_id: int, employee_id: str, payload: ClaimCreate) -> ClaimResponse:
+def _submit_claim(conn, inst_id: int, employee_id: str, payload: ClaimCreate, actor: Optional[dict] = None) -> ClaimResponse:
     plan = conn.execute(
         "SELECT * FROM benefit_plans WHERE id = ? AND institution_id = ?",
         (payload.benefit_plan_id, inst_id),
@@ -1129,6 +1166,9 @@ def _submit_claim(conn, inst_id: int, employee_id: str, payload: ClaimCreate) ->
 
     note_body = f"Benefit claim submitted: RM {payload.amount_claimed:,.2f} under '{plan['plan_name']}' ({plan['plan_category']})."
     _add_benefits_note(conn, inst_id, employee_id, note_body, "benefits-claims")
+    if actor:
+        write_entity_audit(conn, actor, inst_id, "Benefits", "claim", claim_id, "Claim submitted",
+                           detail=f"{employee_id}: {note_body}", entity_label=employee_id)
     conn.commit()
 
     row = conn.execute("SELECT * FROM benefit_claims WHERE id = ?", (claim_id,)).fetchone()
@@ -1147,7 +1187,7 @@ def submit_my_claim(
     if not emp_id:
         raise HTTPException(404, detail="No employee record linked to this account")
     inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
-    return _submit_claim(conn, inst_id, emp_id, payload)
+    return _submit_claim(conn, inst_id, emp_id, payload, actor=current_user)
 
 
 @router.get("/claims/mine")
@@ -1191,7 +1231,7 @@ def submit_employee_claim(
     ).fetchone()
     if not employee:
         raise HTTPException(404, detail="Employee not found")
-    return _submit_claim(conn, inst_id, employee_id, payload)
+    return _submit_claim(conn, inst_id, employee_id, payload, actor=current_user)
 
 
 @router.get("/claims")
@@ -1343,6 +1383,7 @@ def decide_claim(
         + (f" — RM {amount_approved:,.2f} approved." if amount_approved is not None else ".")
     )
     _add_benefits_note(conn, inst_id, claim["employee_id"], note_body, current_user["username"])
+    write_entity_audit(conn, current_user, inst_id, "Benefits", "claim", claim_id, "Claim " + payload.status.lower(), detail=note_body, entity_label=claim["employee_id"])
 
     conn.commit()
     updated = conn.execute("SELECT * FROM benefit_claims WHERE id = ?", (claim_id,)).fetchone()
@@ -1378,6 +1419,7 @@ def mark_claim_paid(
 
     note_body = f"Benefit claim payout of RM {float(claim['amount_approved'] or 0):,.2f} paid out on {today}."
     _add_benefits_note(conn, inst_id, claim["employee_id"], note_body, current_user["username"])
+    write_entity_audit(conn, current_user, inst_id, "Benefits", "claim", claim_id, "Claim paid", detail=note_body, entity_label=claim["employee_id"])
 
     conn.commit()
     updated = conn.execute("SELECT * FROM benefit_claims WHERE id = ?", (claim_id,)).fetchone()

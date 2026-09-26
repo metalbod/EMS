@@ -19,7 +19,7 @@ from pydantic import BaseModel, field_validator
 
 from core.deps import get_current_user, need_inst, require_roles
 
-from core.audit import write_audit
+from core.audit import diff_rows, write_audit, write_entity_audit
 
 from core.validators import validate_document_data_url
 
@@ -100,8 +100,10 @@ def create_document_type(conn, body: EmployeeDocumentTypeIn, user: dict = Depend
         "INSERT INTO employee_document_types (institution_id,name,reminder_window_days,is_active) VALUES (?,?,?,?)",
         (inst_id, body.name, body.reminder_window_days, 1 if body.is_active else 0)
     )
-    conn.commit()
     row = conn.execute("SELECT * FROM employee_document_types WHERE id=last_insert_rowid()").fetchone()
+    write_entity_audit(conn, user, inst_id, "Employees", "document_type", row["id"], "Created",
+                       detail=f"Document type '{body.name}' (reminder {body.reminder_window_days} days)", entity_label=body.name)
+    conn.commit()
     return dict(row)
 
 
@@ -109,14 +111,18 @@ def create_document_type(conn, body: EmployeeDocumentTypeIn, user: dict = Depend
 @db_session
 def update_document_type(conn, type_id: int, body: EmployeeDocumentTypeIn, user: dict = Depends(require_roles(*_HR_ROLES))) -> Dict[str, Any]:
     inst_id = need_inst(user)
-    if not conn.execute("SELECT id FROM employee_document_types WHERE id=? AND institution_id=?", (type_id, inst_id)).fetchone():
+    old_type = conn.execute("SELECT * FROM employee_document_types WHERE id=? AND institution_id=?", (type_id, inst_id)).fetchone()
+    if not old_type:
         raise HTTPException(404, "Document type not found")
     conn.execute(
         "UPDATE employee_document_types SET name=?,reminder_window_days=?,is_active=? WHERE id=?",
         (body.name, body.reminder_window_days, 1 if body.is_active else 0, type_id)
     )
-    conn.commit()
     row = conn.execute("SELECT * FROM employee_document_types WHERE id=?", (type_id,)).fetchone()
+    changes = diff_rows(old_type, row)
+    if changes:
+        write_entity_audit(conn, user, inst_id, "Employees", "document_type", type_id, "Updated", changes=changes, entity_label=row["name"])
+    conn.commit()
     return dict(row)
 
 
@@ -124,7 +130,11 @@ def update_document_type(conn, type_id: int, body: EmployeeDocumentTypeIn, user:
 @db_session
 def delete_document_type(conn, type_id: int, user: dict = Depends(require_roles(*_HR_ROLES))) -> None:
     inst_id = need_inst(user)
+    dtype = conn.execute("SELECT name FROM employee_document_types WHERE id=? AND institution_id=?", (type_id, inst_id)).fetchone()
     conn.execute("UPDATE employee_document_types SET is_active=0 WHERE id=? AND institution_id=?", (type_id, inst_id))
+    if dtype:
+        write_entity_audit(conn, user, inst_id, "Employees", "document_type", type_id, "Deactivated", detail=f"Document type '{dtype['name']}' deactivated",
+                           entity_label=dtype["name"])
     conn.commit()
 
 

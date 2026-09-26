@@ -9,6 +9,8 @@ from core.deps import get_current_user, need_inst
 from core.permission_matrix import require_permission
 
 from db import get_db
+from core.audit import write_entity_audit
+
 from core.db_session import db_session
 
 router = APIRouter()
@@ -57,8 +59,15 @@ def delete_note(conn, employee_id: str, note_id: int,
                 user: dict = Depends(get_current_user)) -> None:
     require_permission(conn, user, "hr_notes.delete_hr_note")
     inst_id = need_inst(user)
+    note = conn.execute(
+        "SELECT note_type, created_by FROM hr_notes WHERE id=? AND institution_id=? AND employee_id=? AND deleted=0",
+        (note_id, inst_id, employee_id)
+    ).fetchone()
     conn.execute(
         "UPDATE hr_notes SET deleted=1 WHERE id=? AND institution_id=? AND employee_id=?",
         (note_id, inst_id, employee_id)
     )
+    if note:
+        write_entity_audit(conn, user, inst_id, "Employees", "hr_note", note_id, "Deleted",
+                           detail=f"{note['note_type']} HR note (by {note['created_by']}) deleted", entity_label=employee_id)
     conn.commit()

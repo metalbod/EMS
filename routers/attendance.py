@@ -10,6 +10,8 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from db import get_db, set_rls_context
+from core.audit import diff_rows, summarize, write_entity_audit
+
 from core.db_session import db_session
 from core.deps import get_current_user, hash_password, verify_password
 from core.permission_matrix import require_permission
@@ -90,8 +92,11 @@ def create_shift(
         (inst_id, payload.name, payload.start_time, payload.end_time,
          1 if crosses else 0, payload.grace_period_minutes, now, now),
     )
-    conn.commit()
     shift_id = conn._last_id
+    write_entity_audit(conn, current_user, inst_id, "Attendance", "shift", shift_id, "Created",
+                       detail=f"Shift '{payload.name}' {payload.start_time}–{payload.end_time}, grace {payload.grace_period_minutes} min",
+                       entity_label=payload.name)
+    conn.commit()
     shift = conn.execute("SELECT * FROM shifts WHERE id = ?", (shift_id,)).fetchone()
     return _shift_response(shift)
 
@@ -136,8 +141,11 @@ def update_shift(
         "UPDATE shifts SET name=?, start_time=?, end_time=?, crosses_midnight=?, grace_period_minutes=?, is_active=? WHERE id=?",
         (name, start_time, end_time, 1 if crosses else 0, grace, 1 if is_active else 0, shift_id),
     )
-    conn.commit()
     updated = conn.execute("SELECT * FROM shifts WHERE id = ?", (shift_id,)).fetchone()
+    changes = diff_rows(shift, updated)
+    if changes:
+        write_entity_audit(conn, current_user, inst_id, "Attendance", "shift", shift_id, "Updated", changes=changes, entity_label=updated["name"])
+    conn.commit()
     return _shift_response(updated)
 
 
@@ -154,6 +162,8 @@ def delete_shift(
     if not shift:
         raise HTTPException(404, detail="Shift not found")
     conn.execute("UPDATE shifts SET is_active = 0 WHERE id = ?", (shift_id,))
+    write_entity_audit(conn, current_user, inst_id, "Attendance", "shift", shift_id, "Deactivated", detail=f"Shift '{shift['name']}' deactivated (soft delete)",
+                       entity_label=shift["name"])
     conn.commit()
 
 
@@ -193,8 +203,12 @@ def create_shift_assignment(
         """,
         (inst_id, payload.employee_id, payload.shift_id, payload.effective_from, payload.effective_to, now, now),
     )
-    conn.commit()
     assignment_id = conn._last_id
+    write_entity_audit(conn, current_user, inst_id, "Attendance", "shift_assignment", assignment_id, "Created",
+                       detail=f"Employee {payload.employee_id} assigned to shift #{payload.shift_id} from {payload.effective_from}"
+                              + (f" to {payload.effective_to}" if payload.effective_to else ""),
+                       entity_label=payload.employee_id)
+    conn.commit()
     row = conn.execute(
         "SELECT esa.*, s.name AS shift_name FROM employee_shift_assignments esa JOIN shifts s ON esa.shift_id = s.id WHERE esa.id = ?",
         (assignment_id,),
@@ -250,10 +264,13 @@ def delete_shift_assignment(
 ):
     require_permission(conn, current_user, "attendance.manage_shifts_assignments_settings")
     inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
-    row = conn.execute("SELECT 1 FROM employee_shift_assignments WHERE id=? AND institution_id=?", (assignment_id, inst_id)).fetchone()
+    row = conn.execute("SELECT * FROM employee_shift_assignments WHERE id=? AND institution_id=?", (assignment_id, inst_id)).fetchone()
     if not row:
         raise HTTPException(404, detail="Assignment not found")
     conn.execute("UPDATE employee_shift_assignments SET is_active = 0 WHERE id = ?", (assignment_id,))
+    write_entity_audit(conn, current_user, inst_id, "Attendance", "shift_assignment", assignment_id, "Removed",
+                       detail=f"Shift assignment for {row['employee_id']} (shift #{row['shift_id']}) removed",
+                       entity_label=row["employee_id"])
     conn.commit()
 
 
@@ -298,8 +315,12 @@ def create_attendance_setting(
         (inst_id, payload.department, payload.employee_id,
          1 if payload.required else 0, payload.default_shift_id, now, now),
     )
-    conn.commit()
     setting_id = conn._last_id
+    write_entity_audit(conn, current_user, inst_id, "Attendance", "attendance_rule", setting_id, "Created",
+                       detail=f"Attendance rule for {payload.department or payload.employee_id}: "
+                              f"{'required' if payload.required else 'not required'}, default shift #{payload.default_shift_id}",
+                       entity_label=payload.department or payload.employee_id)
+    conn.commit()
     row = conn.execute(
         """
         SELECT ast.*, s.name AS default_shift_name FROM attendance_settings ast
@@ -353,6 +374,11 @@ def update_attendance_setting(
         "UPDATE attendance_settings SET required=?, default_shift_id=?, is_active=? WHERE id=?",
         (1 if required else 0, default_shift_id, 1 if is_active else 0, setting_id),
     )
+    new_vals = {"required": 1 if required else 0, "default_shift_id": default_shift_id, "is_active": 1 if is_active else 0}
+    changes = diff_rows({k: (int(setting[k]) if k != "default_shift_id" else setting[k]) for k in new_vals}, new_vals)
+    if changes:
+        write_entity_audit(conn, current_user, inst_id, "Attendance", "attendance_rule", setting_id, "Updated", changes=changes,
+                           entity_label=setting["department"] or setting["employee_id"])
     conn.commit()
     row = conn.execute(
         """
@@ -374,10 +400,13 @@ def delete_attendance_setting(
 ):
     require_permission(conn, current_user, "attendance.manage_shifts_assignments_settings")
     inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
-    row = conn.execute("SELECT 1 FROM attendance_settings WHERE id=? AND institution_id=?", (setting_id, inst_id)).fetchone()
+    row = conn.execute("SELECT * FROM attendance_settings WHERE id=? AND institution_id=?", (setting_id, inst_id)).fetchone()
     if not row:
         raise HTTPException(404, detail="Setting not found")
     conn.execute("UPDATE attendance_settings SET is_active = 0 WHERE id = ?", (setting_id,))
+    write_entity_audit(conn, current_user, inst_id, "Attendance", "attendance_rule", setting_id, "Deactivated",
+                       detail=f"Attendance rule for {row['department'] or row['employee_id']} deactivated",
+                       entity_label=row["department"] or row["employee_id"])
     conn.commit()
 
 
@@ -542,7 +571,7 @@ def _sweep_absences(conn, inst_id: int):
                             INSERT INTO attendance_records
                             (institution_id, employee_id, work_date, shift_id, status, suggested_action, created_at, updated_at)
                             VALUES (?, ?, ?, ?, 'Absent (Pending Review)', 'Full-Day Absence', ?, ?)
-                            ON CONFLICT (employee_id, work_date) DO NOTHING
+                            ON CONFLICT DO NOTHING
                             """,
                             (inst_id, emp["employee_id"], work_date, shift["id"], now_iso, now_iso),
                         )
@@ -813,6 +842,10 @@ def resolve_attendance_record(
         """,
         (new_status, current_user.get("id"), payload.notes, now, leave_application_id, now, record_id),
     )
+    write_entity_audit(conn, current_user, inst_id, "Attendance", "attendance_record", record_id, "Resolved",
+                       detail=f"{rec['employee_id']} on {rec['work_date']}: {rec['status']} → {new_status}"
+                              + (f" — {payload.notes}" if payload.notes else ""),
+                       entity_label=f"{rec['employee_id']} {rec['work_date']}")
     conn.commit()
     updated = conn.execute("SELECT * FROM attendance_records WHERE id = ?", (record_id,)).fetchone()
     return _record_response(updated)
@@ -874,8 +907,10 @@ def create_device(
         """,
         (inst_id, payload.name, payload.location_id, prefix, key_hash, now, now),
     )
-    conn.commit()
     device_id = conn._last_id
+    write_entity_audit(conn, current_user, inst_id, "Attendance", "attendance_device", device_id, "Created",
+                       detail=f"Device '{payload.name}' registered (API key not recorded)", entity_label=payload.name)
+    conn.commit()
     row = conn.execute(
         "SELECT ad.*, l.name AS location_name FROM attendance_devices ad LEFT JOIN locations l ON ad.location_id = l.id WHERE ad.id = ?",
         (device_id,),
@@ -914,9 +949,12 @@ def delete_device(
 ):
     require_permission(conn, current_user, "attendance.manage_attendance_devices")
     inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
-    if not conn.execute("SELECT 1 FROM attendance_devices WHERE id=? AND institution_id=?", (device_id, inst_id)).fetchone():
+    dev = conn.execute("SELECT name FROM attendance_devices WHERE id=? AND institution_id=?", (device_id, inst_id)).fetchone()
+    if not dev:
         raise HTTPException(404, detail="Device not found")
     conn.execute("UPDATE attendance_devices SET is_active = 0 WHERE id = ?", (device_id,))
+    write_entity_audit(conn, current_user, inst_id, "Attendance", "attendance_device", device_id, "Deactivated", detail=f"Device '{dev['name']}' deactivated",
+                       entity_label=dev["name"])
     conn.commit()
 
 

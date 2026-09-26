@@ -15,6 +15,7 @@ from core.approval_workflow import start_workflow, advance_or_finalize
 from db import get_db, IntegrityError
 
 from core.db_session import db_session
+from core.audit import diff_rows, write_entity_audit
 
 from core.permission_matrix import require_permission
 
@@ -943,7 +944,8 @@ def schedule_interview(conn, body: InterviewIn, user: dict = Depends(get_current
 def update_interview(conn, int_id: int, body: InterviewIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     require_permission(conn, user, "recruitment.create_edit_requisition_candidate_interview_offer")
     inst_id = need_inst(user)
-    if not conn.execute("SELECT id FROM interviews WHERE id=? AND institution_id=?", (int_id, inst_id)).fetchone():
+    old_int = conn.execute("SELECT * FROM interviews WHERE id=? AND institution_id=?", (int_id, inst_id)).fetchone()
+    if not old_int:
         raise HTTPException(404, "Interview not found")
     conn.execute("""
         UPDATE interviews SET interview_type=?,scheduled_date=?,scheduled_time=?,
@@ -951,8 +953,13 @@ def update_interview(conn, int_id: int, body: InterviewIn, user: dict = Depends(
         WHERE id=? AND institution_id=?
     """, (body.interview_type, body.scheduled_date, body.scheduled_time,
           body.duration_mins, body.location, body.interviewers, body.notes, int_id, inst_id))
-    conn.commit()
     row = conn.execute("SELECT * FROM interviews WHERE id=?", (int_id,)).fetchone()
+    changes = diff_rows(old_int, row)
+    if changes:
+        _log_candidate(conn, inst_id, old_int["candidate_id"], "Interview Updated",
+                       "; ".join(f"{c['label']}: {c['old'] or '—'} → {c['new'] or '—'}" for c in changes)[:400],
+                       user["username"])
+    conn.commit()
     return dict(row)
 
 
@@ -1002,6 +1009,9 @@ def submit_score(conn, int_id: int, body: ScoreIn, user: dict = Depends(get_curr
         """, (int_id, cand_row["candidate_id"], inst_id, user["username"],
               body.technical_score, body.communication_score, body.attitude_score,
               body.culture_fit_score, body.overall_score, body.recommendation, body.comments))
+        _log_candidate(conn, inst_id, cand_row["candidate_id"], "Interview Scored",
+                       f"Score by {user['username']}: overall {body.overall_score}, recommendation {body.recommendation}",
+                       user["username"])
         conn.commit()
     except IntegrityError as e:
         raise HTTPException(400, str(e))
@@ -1250,6 +1260,9 @@ def create_offer_letter_template(conn, body: OfferLetterTemplateIn,
         (inst_id, body.offer_type, body.name.strip(), body.body, 1 if body.is_default else 0)
     )
     tid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    write_entity_audit(conn, user, inst_id, "Recruitment", "offer_template", tid, "Created",
+                       detail=f"{body.offer_type} offer letter template '{body.name.strip()}' created"
+                              + (" (default)" if body.is_default else ""), entity_label=body.name.strip())
     conn.commit()
     return dict(conn.execute("SELECT * FROM offer_letter_templates WHERE id=?", (tid,)).fetchone())
 
@@ -1273,8 +1286,14 @@ def update_offer_letter_template(conn, tmpl_id: int, body: OfferLetterTemplateIn
         "updated_at=to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS') WHERE id=?",
         (body.offer_type, body.name.strip(), body.body, 1 if body.is_default else 0, tmpl_id)
     )
+    new_tmpl = conn.execute("SELECT * FROM offer_letter_templates WHERE id=?", (tmpl_id,)).fetchone()
+    changes = diff_rows(tmpl, new_tmpl, exclude=("body",))
+    if tmpl["body"] != new_tmpl["body"]:
+        changes.append({"field": "body", "label": "Letter body", "old": "(previous text)", "new": "(edited)"})
+    if changes:
+        write_entity_audit(conn, user, inst_id, "Recruitment", "offer_template", tmpl_id, "Updated", changes=changes, entity_label=new_tmpl["name"])
     conn.commit()
-    return dict(conn.execute("SELECT * FROM offer_letter_templates WHERE id=?", (tmpl_id,)).fetchone())
+    return dict(new_tmpl)
 
 
 @router.delete("/api/recruitment/offer-letter-templates/{tmpl_id}", status_code=204)
@@ -1297,6 +1316,8 @@ def delete_offer_letter_template(conn, tmpl_id: int, user: dict = Depends(get_cu
         ).fetchone()
         if other:
             conn.execute("UPDATE offer_letter_templates SET is_default=1 WHERE id=?", (other["id"],))
+    write_entity_audit(conn, user, inst_id, "Recruitment", "offer_template", tmpl_id, "Deleted",
+                       detail=f"{tmpl['offer_type']} offer letter template '{tmpl['name']}' deleted", entity_label=tmpl["name"])
     conn.commit()
 
 

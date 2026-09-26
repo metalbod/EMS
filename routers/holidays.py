@@ -8,6 +8,8 @@ from core.deps import get_current_user, need_inst
 
 from core.permission_matrix import require_permission
 
+from core.audit import write_entity_audit
+
 from db import get_db, IntegrityError
 from core.db_session import db_session
 from routers.leave import sweep_holiday_leave_adjustments
@@ -49,6 +51,10 @@ def create_holiday(conn, body: HolidayIn, user: dict = Depends(get_current_user)
         raise HTTPException(400, "A holiday already exists on this date")
     row = conn.execute("SELECT * FROM holidays WHERE id=last_insert_rowid()").fetchone()
     adjusted = sweep_holiday_leave_adjustments(conn, inst_id, body.date, body.name, user)
+    write_entity_audit(conn, user, inst_id, "Leave", "holiday", row["id"], "Created",
+                       detail=f"Public holiday '{body.name}' on {body.date} added"
+                              + (f" ({adjusted} leave application(s) auto-adjusted)" if adjusted else ""),
+                       entity_label=f"{body.name} {body.date}")
     conn.commit()
     result = dict(row)
     result["adjusted_applications_count"] = adjusted
@@ -60,5 +66,10 @@ def create_holiday(conn, body: HolidayIn, user: dict = Depends(get_current_user)
 def delete_holiday(conn, holiday_id: int, user: dict = Depends(get_current_user)) -> None:
     require_permission(conn, user, "leave.manage_public_holidays")
     inst_id = need_inst(user)
+    hol = conn.execute("SELECT name, date FROM holidays WHERE id=? AND institution_id=?", (holiday_id, inst_id)).fetchone()
     conn.execute("DELETE FROM holidays WHERE id=? AND institution_id=?", (holiday_id, inst_id))
+    if hol:
+        write_entity_audit(conn, user, inst_id, "Leave", "holiday", holiday_id, "Deleted",
+                           detail=f"Public holiday '{hol['name']}' on {hol['date']} deleted",
+                           entity_label=f"{hol['name']} {hol['date']}")
     conn.commit()

@@ -23,6 +23,8 @@ from core.resignation import file_resignation, apply_resignation_outcome
 
 from db import get_db
 
+from core.audit import write_entity_audit
+
 from core.db_session import db_session
 
 router = APIRouter()
@@ -94,6 +96,11 @@ def create_resignation(conn, body: ResignationIn, user: dict = Depends(get_curre
     attachment = body.attachment.model_dump() if body.attachment else None
     request_id = file_resignation(conn, inst_id, emp, body.reason, body.effective_date, body.last_working_day,
                                   attachment, user["username"])
+    write_entity_audit(conn, user, inst_id, "Resignation", "resignation", request_id, "Filed",
+                       detail=f"Resignation filed for {employee_id}: effective {body.effective_date}, last working day "
+                              f"{body.last_working_day}" + (" (on their behalf)" if body.employee_id else ""),
+                       entity_label=f"{emp['full_name']} ({employee_id})")
+    conn.commit()
     row = conn.execute("SELECT * FROM resignation_requests WHERE id=?", (request_id,)).fetchone()
     return dict(row)
 

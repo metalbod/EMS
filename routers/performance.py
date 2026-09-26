@@ -23,7 +23,7 @@ from core.org_queries import subordinates_in_clause, is_self_or_subordinate
 
 from core.roles import PAYROLL_VIEW_ROLES
 
-from core.audit import write_audit
+from core.audit import diff_rows, write_audit, write_entity_audit
 
 from core.compensation_helpers import add_hr_note
 
@@ -298,8 +298,10 @@ def create_performance_cycle(conn, body: PerformanceCycleIn, user: dict = Depend
         "INSERT INTO performance_cycles (institution_id,name,period_start,period_end,created_by) VALUES (?,?,?,?,?)",
         (inst_id, body.name, body.period_start, body.period_end, user["username"])
     )
-    conn.commit()
     row = conn.execute("SELECT * FROM performance_cycles WHERE id=last_insert_rowid()").fetchone()
+    write_entity_audit(conn, user, inst_id, "Performance", "performance_cycle", row["id"], "Created",
+                       detail=f"Cycle '{body.name}' {body.period_start} to {body.period_end}", entity_label=body.name)
+    conn.commit()
     return dict(row)
 
 
@@ -318,6 +320,9 @@ def activate_performance_cycle(conn, cycle_id: int, user: dict = Depends(require
             (inst_id, cycle_id, e["employee_id"])
         )
     conn.execute("UPDATE performance_cycles SET status='Active' WHERE id=?", (cycle_id,))
+    write_entity_audit(conn, user, inst_id, "Performance", "performance_cycle", cycle_id, "Activated",
+                       detail=f"Cycle '{cycle['name']}' activated; appraisals opened for {len(employees)} active employee(s)",
+                       entity_label=cycle["name"])
     conn.commit()
     row = conn.execute("SELECT * FROM performance_cycles WHERE id=?", (cycle_id,)).fetchone()
     return dict(row)
@@ -332,6 +337,8 @@ def open_calibration(conn, cycle_id: int, user: dict = Depends(require_roles(*PE
     if cycle["status"] != "Active":
         raise HTTPException(400, f"Cycle must be Active to open calibration (currently {cycle['status']})")
     conn.execute("UPDATE performance_cycles SET status='Calibration' WHERE id=?", (cycle_id,))
+    write_entity_audit(conn, user, inst_id, "Performance", "performance_cycle", cycle_id, "Calibration opened", detail=f"Cycle '{cycle['name']}' moved to Calibration",
+                       entity_label=cycle["name"])
     conn.commit()
     row = conn.execute("SELECT * FROM performance_cycles WHERE id=?", (cycle_id,)).fetchone()
     return dict(row)
@@ -358,6 +365,8 @@ def close_performance_cycle(conn, cycle_id: int, user: dict = Depends(require_ro
         WHERE cycle_id=? AND status='Calibration'
     """, (user["username"], now, cycle_id))
     conn.execute("UPDATE performance_cycles SET status='Closed' WHERE id=?", (cycle_id,))
+    write_entity_audit(conn, user, inst_id, "Performance", "performance_cycle", cycle_id, "Closed",
+                       detail=f"Cycle '{cycle['name']}' closed; appraisals finalized", entity_label=cycle["name"])
     conn.commit()
     row = conn.execute("SELECT * FROM performance_cycles WHERE id=?", (cycle_id,)).fetchone()
     return dict(row)
@@ -419,8 +428,11 @@ def create_goal(conn, body: GoalIn, user: dict = Depends(get_current_user)) -> D
         VALUES (?,?,?,?,?,?,?,?,?,?,?)
     """, (inst_id, body.cycle_id, body.employee_id, body.goal_type, body.title, body.description,
           body.weight, body.target_value, body.actual_value, body.unit, user["username"]))
-    conn.commit()
     row = conn.execute("SELECT * FROM goals WHERE id=last_insert_rowid()").fetchone()
+    write_entity_audit(conn, user, inst_id, "Performance", "goal", row["id"], "Created",
+                       detail=f"{body.goal_type} goal '{body.title}' for {body.employee_id} (weight {body.weight})",
+                       entity_label=body.employee_id)
+    conn.commit()
     return dict(row)
 
 
@@ -445,8 +457,12 @@ def update_goal(conn, goal_id: int, body: GoalUpdateIn, user: dict = Depends(get
         "UPDATE goals SET title=?,description=?,weight=?,target_value=?,actual_value=?,unit=? WHERE id=?",
         (title, description, weight, target_value, actual_value, unit, goal_id)
     )
-    conn.commit()
     row = conn.execute("SELECT * FROM goals WHERE id=?", (goal_id,)).fetchone()
+    changes = diff_rows(goal, row)
+    if changes:
+        write_entity_audit(conn, user, inst_id, "Performance", "goal", goal_id, "Updated", changes=changes, detail=f"Goal '{goal['title']}'",
+                           entity_label=goal["employee_id"])
+    conn.commit()
     return dict(row)
 
 
@@ -463,6 +479,7 @@ def delete_goal(conn, goal_id: int, user: dict = Depends(get_current_user)) -> N
         raise HTTPException(400, "Goals can only be deleted while the cycle is Active")
     conn.execute("DELETE FROM okr_key_results WHERE goal_id=?", (goal_id,))
     conn.execute("DELETE FROM goals WHERE id=?", (goal_id,))
+    write_entity_audit(conn, user, inst_id, "Performance", "goal", goal_id, "Deleted", detail=f"Goal '{goal['title']}' deleted", entity_label=goal["employee_id"])
     conn.commit()
 
 
@@ -480,8 +497,9 @@ def add_key_result(conn, goal_id: int, body: KeyResultIn, user: dict = Depends(g
         "INSERT INTO okr_key_results (goal_id,description,target_value,actual_value) VALUES (?,?,?,?)",
         (goal_id, body.description, body.target_value, body.actual_value)
     )
-    conn.commit()
     row = conn.execute("SELECT * FROM okr_key_results WHERE id=last_insert_rowid()").fetchone()
+    write_entity_audit(conn, user, inst_id, "Performance", "goal", goal_id, "Key result added", detail=body.description, entity_label=goal["employee_id"])
+    conn.commit()
     return dict(row)
 
 
@@ -498,8 +516,12 @@ def update_key_result(conn, kr_id: int, body: KeyResultIn, user: dict = Depends(
         "UPDATE okr_key_results SET description=?,target_value=?,actual_value=? WHERE id=?",
         (body.description, body.target_value, body.actual_value, kr_id)
     )
-    conn.commit()
     row = conn.execute("SELECT * FROM okr_key_results WHERE id=?", (kr_id,)).fetchone()
+    changes = diff_rows(kr, row)
+    if changes:
+        write_entity_audit(conn, user, inst_id, "Performance", "goal", kr["goal_id"], "Key result updated", changes=changes, detail=kr["description"],
+                           entity_label=goal["employee_id"])
+    conn.commit()
     return dict(row)
 
 
@@ -513,6 +535,7 @@ def delete_key_result(conn, kr_id: int, user: dict = Depends(get_current_user)) 
     if goal["institution_id"] != inst_id or not _can_access_employee_performance(conn, inst_id, user, goal["employee_id"]):
         raise HTTPException(403, "Access denied")
     conn.execute("DELETE FROM okr_key_results WHERE id=?", (kr_id,))
+    write_entity_audit(conn, user, inst_id, "Performance", "goal", kr["goal_id"], "Key result deleted", detail=kr["description"], entity_label=goal["employee_id"])
     conn.commit()
 
 
@@ -673,6 +696,10 @@ def propose_pip_endpoint(conn, body: PipProposeIn, user: dict = Depends(get_curr
         raise HTTPException(400, "This employee already has a pending or active PIP")
     cycle_id = propose_pip(conn, inst_id, emp, user, body.reason, body.start_date, body.end_date,
                            [g.model_dump() for g in body.goals])
+    write_entity_audit(conn, user, inst_id, "Performance", "pip", cycle_id, "PIP proposed",
+                       detail=f"PIP for {body.employee_id}, {body.start_date} to {body.end_date}: {body.reason}"[:400],
+                       entity_label=body.employee_id)
+    conn.commit()
     row = conn.execute("SELECT * FROM performance_cycles WHERE id=?", (cycle_id,)).fetchone()
     return dict(row)
 
@@ -739,8 +766,10 @@ def add_pip_checkin(conn, cycle_id: int, body: PipCheckinIn, user: dict = Depend
         "INSERT INTO pip_checkins (institution_id,cycle_id,checkin_date,notes,created_by) VALUES (?,?,?,?,?)",
         (inst_id, cycle_id, body.checkin_date, body.notes, user["username"])
     )
-    conn.commit()
     row = conn.execute("SELECT * FROM pip_checkins WHERE id=last_insert_rowid()").fetchone()
+    write_entity_audit(conn, user, inst_id, "Performance", "pip", cycle_id, "Check-in added", detail=f"{body.checkin_date}: {body.notes}"[:400],
+                       entity_label=cycle["employee_id"])
+    conn.commit()
     return dict(row)
 
 
@@ -919,6 +948,8 @@ def create_probation_goal_template_criterion(
     row = conn.execute(
         "SELECT * FROM probation_goal_templates WHERE id=last_insert_rowid()"
     ).fetchone()
+    write_entity_audit(conn, user, inst_id, "Performance", "probation_goal_template", row["id"], "Criterion added",
+                       detail=f"'{body.name}' (weight {body.weight})", entity_label=body.name)
     conn.commit()
     return dict(row)
 
@@ -943,6 +974,8 @@ def load_default_probation_goal_template(conn, user: dict = Depends(require_role
             "INSERT INTO probation_goal_templates (institution_id,name,description,weight,sort_order) VALUES (?,?,?,1,?)",
             (inst_id, name, description, i)
         )
+    write_entity_audit(conn, user, inst_id, "Performance", "probation_goal_template", None, "Defaults loaded",
+                       detail=f"{len(PROBATION_RUBRIC)} default probation criteria loaded")
     conn.commit()
     rows = conn.execute(
         "SELECT * FROM probation_goal_templates WHERE institution_id=? ORDER BY sort_order, id", (inst_id,)
@@ -963,6 +996,7 @@ def reorder_probation_goal_template(
         raise HTTPException(400, "ids must be exactly the institution's current set of criteria, in the new order")
     for i, cid in enumerate(body.ids):
         conn.execute("UPDATE probation_goal_templates SET sort_order=? WHERE id=? AND institution_id=?", (i, cid, inst_id))
+    write_entity_audit(conn, user, inst_id, "Performance", "probation_goal_template", None, "Criteria reordered", detail=f"New order (ids): {body.ids}")
     conn.commit()
     rows = conn.execute(
         "SELECT * FROM probation_goal_templates WHERE institution_id=? ORDER BY sort_order, id", (inst_id,)
@@ -977,7 +1011,7 @@ def update_probation_goal_template_criterion(
 ) -> Dict[str, Any]:
     inst_id = need_inst(user)
     existing = conn.execute(
-        "SELECT id FROM probation_goal_templates WHERE id=? AND institution_id=?", (template_id, inst_id)
+        "SELECT * FROM probation_goal_templates WHERE id=? AND institution_id=?", (template_id, inst_id)
     ).fetchone()
     if not existing:
         raise HTTPException(404, "Criterion not found")
@@ -985,8 +1019,11 @@ def update_probation_goal_template_criterion(
         "UPDATE probation_goal_templates SET name=?,description=?,weight=?,updated_at=to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS') WHERE id=?",
         (body.name, body.description, body.weight, template_id)
     )
-    conn.commit()
     row = conn.execute("SELECT * FROM probation_goal_templates WHERE id=?", (template_id,)).fetchone()
+    changes = diff_rows(existing, row, exclude=("sort_order",))
+    if changes:
+        write_entity_audit(conn, user, inst_id, "Performance", "probation_goal_template", template_id, "Criterion updated", changes=changes, entity_label=existing["name"])
+    conn.commit()
     return dict(row)
 
 
@@ -997,9 +1034,11 @@ def delete_probation_goal_template_criterion(
 ) -> None:
     inst_id = need_inst(user)
     existing = conn.execute(
-        "SELECT id FROM probation_goal_templates WHERE id=? AND institution_id=?", (template_id, inst_id)
+        "SELECT * FROM probation_goal_templates WHERE id=? AND institution_id=?", (template_id, inst_id)
     ).fetchone()
     if not existing:
         raise HTTPException(404, "Criterion not found")
     conn.execute("DELETE FROM probation_goal_templates WHERE id=?", (template_id,))
+    write_entity_audit(conn, user, inst_id, "Performance", "probation_goal_template", template_id, "Criterion deleted", detail=f"'{existing['name']}' deleted",
+                       entity_label=existing["name"])
     conn.commit()
