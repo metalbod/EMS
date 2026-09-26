@@ -1497,7 +1497,7 @@
           <div class="flex items-center gap-2 mb-4 flex-wrap">
             <select id="obTmplSetSelect_onboarding" onchange="switchObTemplateSet('onboarding')" class="inp flex-1 min-w-[220px] max-w-xs"></select>
             <button onclick="showObSetForm('onboarding')" class="btn-ghost text-xs px-2 whitespace-nowrap">+ New Template</button>
-            <button onclick="setObTemplateSetDefault('onboarding')" class="btn-ghost text-xs px-2 whitespace-nowrap" title="Make this the default template used when starting a checklist">Set Default</button>
+            <button onclick="setObTemplateSetDefault('onboarding')" class="btn-ghost text-xs px-2 whitespace-nowrap" title="Make this the default template used when starting a checklist">Set Default</button><button onclick="openEntityHistory({title:'Template history',module:'Onboarding',entity_type:'template_set'})" class="hist-btn hidden btn-ghost text-xs px-2 whitespace-nowrap">History</button>
             <button onclick="renameObTemplateSet('onboarding')" class="text-slate-400 hover:text-blue-500" title="Rename"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
             <button onclick="deleteObTemplateSet('onboarding')" class="text-slate-400 hover:text-red-500" title="Delete template"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>
           </div>
@@ -1602,7 +1602,7 @@
           <div class="flex items-center gap-2 mb-4 flex-wrap">
             <select id="obTmplSetSelect_offboarding" onchange="switchObTemplateSet('offboarding')" class="inp flex-1 min-w-[220px] max-w-xs"></select>
             <button onclick="showObSetForm('offboarding')" class="btn-ghost text-xs px-2 whitespace-nowrap">+ New Template</button>
-            <button onclick="setObTemplateSetDefault('offboarding')" class="btn-ghost text-xs px-2 whitespace-nowrap" title="Make this the default template used when starting a checklist">Set Default</button>
+            <button onclick="setObTemplateSetDefault('offboarding')" class="btn-ghost text-xs px-2 whitespace-nowrap" title="Make this the default template used when starting a checklist">Set Default</button><button onclick="openEntityHistory({title:'Template history',module:'Onboarding',entity_type:'template_set'})" class="hist-btn hidden btn-ghost text-xs px-2 whitespace-nowrap">History</button>
             <button onclick="renameObTemplateSet('offboarding')" class="text-slate-400 hover:text-blue-500" title="Rename"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
             <button onclick="deleteObTemplateSet('offboarding')" class="text-slate-400 hover:text-red-500" title="Delete template"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>
           </div>
@@ -1657,10 +1657,10 @@
             <button onclick="setLdCatFilter('professional_development')" class="btn-ghost text-xs ld-cat-filter-btn">Professional Dev</button>
             <button onclick="setLdCatFilter('certification')" class="btn-ghost text-xs ld-cat-filter-btn">Certification</button>
           </div>
-          <button id="ldAddCourseBtn" onclick="openLdCourseModal()" class="btn-primary hidden text-sm flex items-center gap-2">
+          <div class="flex items-center gap-2 shrink-0"><button onclick="openEntityHistory({title:'Course history',module:'L&D',entity_type:'course'})" class="hist-btn hidden btn-ghost text-sm">History</button><button id="ldAddCourseBtn" onclick="openLdCourseModal()" class="btn-primary hidden text-sm flex items-center gap-2">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
             Add Course
-          </button>
+          </button></div>
         </div>
         <div class="bg-white rounded-xl border border-slate-200 table-scroll">
           <table class="w-full text-sm">
@@ -1777,7 +1777,7 @@
       <div id="page-resignation-approvals" class="hidden">
         <div class="flex items-center gap-2 mb-5">
           <button onclick="setResignationApprovalFilter('Pending')" class="btn-ghost text-xs resign-appr-filter-btn resign-appr-filter-active">Pending</button>
-          <button onclick="setResignationApprovalFilter('')" class="btn-ghost text-xs resign-appr-filter-btn">All</button>
+          <button onclick="setResignationApprovalFilter('')" class="btn-ghost text-xs resign-appr-filter-btn">All</button><button onclick="openEntityHistory({title:'Resignation history',module:'Resignation'})" class="hist-btn hidden btn-ghost text-sm ml-auto">History</button>
         </div>
         <div class="bg-white rounded-xl border border-slate-200 table-scroll">
             <table class="w-full text-sm">
@@ -2040,7 +2040,7 @@
         <div class="flex items-center gap-1 flex-wrap mb-1">
           <button class="pill-tab pill-tab-active" data-notiftab="notif-announcements" onclick="switchNotifTab('notif-announcements')">Announcements</button>
           <button id="notif-tab-smtp-btn" class="pill-tab hidden" data-notiftab="notif-smtp" onclick="switchNotifTab('notif-smtp')">SMTP Settings</button>
-          <button class="pill-tab" data-notiftab="notif-reminders" onclick="switchNotifTab('notif-reminders')">Reminders</button>
+          <button class="pill-tab" data-notiftab="notif-reminders" onclick="switchNotifTab('notif-reminders')">Reminders</button><button onclick="openEntityHistory({title:'Notification settings history',module:'Notifications'})" class="hist-btn hidden btn-ghost text-sm ml-auto">History</button>
         </div>
         <div class="mb-6" style="border-bottom:1px solid var(--line-2)"></div>
 
@@ -2381,7 +2381,7 @@
 
         <div id="attTab-shifts" class="att-tab-panel hidden">
           <div class="flex justify-end mb-4">
-            <button onclick="openEntityHistory({title:'Shift history',module:'Attendance',entity_type:'shift'})" class="hist-btn hidden btn-ghost text-sm mr-2">History</button>
+            <button onclick="openEntityHistory({title:'Attendance settings history',module:'Attendance'})" class="hist-btn hidden btn-ghost text-sm mr-2">History</button>
             <button onclick="openShiftModal()" class="btn-primary text-sm flex items-center gap-2">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
               Add Shift
@@ -2584,10 +2584,10 @@
             <h3 class="text-lg font-semibold">Document Types</h3>
             <p class="text-xs text-slate-400 mt-1">Define the document types HR tracks per employee — e.g. Work Permit, Passport — each with its own reminder window before it's flagged as expiring soon.</p>
           </div>
-          <button onclick="openEmployeeDocTypeModal()" class="btn-primary text-sm flex items-center gap-2">
+          <div class="flex items-center gap-2 shrink-0"><button onclick="openEntityHistory({title:'Document type history',module:'Employees',entity_type:'document_type'})" class="hist-btn hidden btn-ghost text-sm">History</button><button onclick="openEmployeeDocTypeModal()" class="btn-primary text-sm flex items-center gap-2">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
             Add Document Type
-          </button>
+          </button></div>
         </div>
         <div id="employeeDocTypeList" class="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100 px-4"></div>
         <p id="employeeDocTypeEmpty" class="hidden text-sm text-slate-400 text-center py-8">No document types yet.</p>
@@ -2597,10 +2597,10 @@
       <div id="page-settings-offer-letter-templates" class="hidden">
         <div class="flex justify-between items-center mb-4">
           <p class="text-xs text-slate-400 max-w-2xl">Wording used when HR generates an Offer, Decline, or Confirmation letter — see Recruitment &gt; Stationery, and the Employee detail page's "Confirm Probation" action. One default template per letter type; letters use a built-in default until you add one.</p>
-          <button onclick="openOfferTemplateModal()" class="btn-primary shrink-0 flex items-center gap-2">
+          <div class="flex items-center gap-2 shrink-0"><button onclick="openEntityHistory({title:'Offer template history',module:'Recruitment',entity_type:'offer_template'})" class="hist-btn hidden btn-ghost text-sm">History</button><button onclick="openOfferTemplateModal()" class="btn-primary shrink-0 flex items-center gap-2">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
             Add Template
-          </button>
+          </button></div>
         </div>
         <div class="bg-white rounded-xl border border-slate-200 table-scroll">
           <table class="w-full text-sm">
@@ -2621,7 +2621,7 @@
       <!-- SETTINGS: Performance (hr_manager only — Probation Goal Template) -->
       <div id="page-settings-performance" class="hidden">
         <div class="mb-4">
-          <h3 class="text-lg font-semibold">Probation Goal Template</h3>
+          <div class="flex items-center gap-3"><h3 class="text-lg font-semibold">Probation Goal Template</h3><button onclick="openEntityHistory({title:'Probation goal template history',module:'Performance',entity_type:'probation_goal_template'})" class="hist-btn hidden btn-ghost text-sm">History</button></div>
           <p class="text-xs text-slate-400 mt-1 max-w-2xl">These criteria are seeded as goals on every Probation Review (Month 1/2/3) cycle when HR enables it for a new employee during onboarding. Weight is relative, not a percentage — it doesn't need to add up to 100; it's automatically scaled across whichever criteria are active when a cycle is actually created, so a criterion "twice as important" as another just needs double the weight.</p>
         </div>
         <div id="probGoalTemplateEmpty" class="hidden bg-white rounded-xl border border-slate-200 p-8 text-center">
@@ -2651,7 +2651,7 @@
       <!-- SETTINGS: AI Assistant (hr_manager only — BYOK Anthropic key) -->
       <div id="page-settings-ai-assistant" class="hidden">
         <div class="mb-4">
-          <h3 class="text-lg font-semibold">AI Assistant</h3>
+          <div class="flex items-center gap-3"><h3 class="text-lg font-semibold">AI Assistant</h3><button onclick="openEntityHistory({title:'AI assistant key history',module:'Institution',entity_type:'ai_assistant_key'})" class="hist-btn hidden btn-ghost text-sm">History</button></div>
           <p class="text-xs text-slate-400 mt-1">Bring your own Anthropic API key so your organization's AI assistant usage is billed to your own Anthropic account instead of the shared platform key. Leave this unset to keep using the platform's key (if one is configured).</p>
         </div>
         <div class="bg-white rounded-xl border border-slate-200 p-6 max-w-xl">
@@ -3012,10 +3012,10 @@
       <div id="page-ben-periods" class="hidden">
         <div class="flex justify-between items-center mb-4">
           <h3 class="text-lg font-semibold">Enrollment Periods</h3>
-          <button onclick="openEnrollmentPeriodForm()" class="btn-primary text-sm flex items-center gap-2">
+          <div class="flex items-center gap-2 shrink-0"><button onclick="openEntityHistory({title:'Enrollment period history',module:'Benefits',entity_type:'enrollment_period'})" class="hist-btn hidden btn-ghost text-sm">History</button><button onclick="openEnrollmentPeriodForm()" class="btn-primary text-sm flex items-center gap-2">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
             New Period
-          </button>
+          </button></div>
         </div>
         <div class="bg-white rounded-xl border border-slate-200 table-scroll">
           <table class="w-full text-sm">
@@ -3049,7 +3049,7 @@
 
       <!-- BENEFITS: Life Events (HR review) -->
       <div id="page-ben-lifeevents" class="hidden">
-        <h3 class="text-lg font-semibold mb-4">Life Events</h3>
+        <div class="flex items-center gap-3 mb-4"><h3 class="text-lg font-semibold">Life Events</h3><button onclick="openEntityHistory({title:'Life event history',module:'Benefits',entity_type:'life_event'})" class="hist-btn hidden btn-ghost text-sm">History</button></div>
         <div class="bg-white rounded-xl border border-slate-200 table-scroll">
           <table class="w-full text-sm">
             <thead class="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
@@ -3344,10 +3344,10 @@
       <div id="page-perf-cycles" class="hidden">
         <div class="flex items-center justify-between mb-5">
           <p class="text-sm text-slate-500">Performance review cycles: Self-Review → Manager Review → HR Calibration → Finalized.</p>
-          <button onclick="openCycleModal()" class="btn-primary text-sm flex items-center gap-2 shrink-0 ml-4">
+          <div class="flex items-center gap-2 shrink-0"><button onclick="openEntityHistory({title:'Performance history',module:'Performance'})" class="hist-btn hidden btn-ghost text-sm">History</button><button onclick="openCycleModal()" class="btn-primary text-sm flex items-center gap-2 shrink-0 ml-4">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
             New Cycle
-          </button>
+          </button></div>
         </div>
         <div class="bg-white rounded-xl border border-slate-200 table-scroll">
           <table class="w-full text-sm">
