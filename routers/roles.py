@@ -18,6 +18,8 @@ from core.constants import ROLE_LABELS
 
 from core.permission_matrix import ALL_ROLES, MATRIX, LOCKED_ROLES, ENFORCED_ACTION_KEYS, ACTION_BY_KEY, is_override_eligible, require_permission
 
+from core.audit import write_entity_audit
+
 from core.db_session import db_session
 
 from db import get_db
@@ -165,6 +167,10 @@ def _validate_overridable(conn, inst_id: int, action_key: str, role: str) -> Dic
 def set_permission_override(conn, body: PermissionOverrideIn, user: dict = Depends(require_roles(*ROLE_MANAGE_ROLES))) -> Dict[str, Any]:
     inst_id = need_inst(user)
     _validate_overridable(conn, inst_id, body.action_key, body.role)
+    prev = conn.execute(
+        "SELECT access_value FROM role_permission_overrides WHERE institution_id=? AND action_key=? AND role=?",
+        (inst_id, body.action_key, body.role)
+    ).fetchone()
     conn.execute(
         """INSERT INTO role_permission_overrides (institution_id, action_key, role, access_value, updated_by)
            VALUES (?,?,?,?,?)
@@ -173,6 +179,11 @@ def set_permission_override(conn, body: PermissionOverrideIn, user: dict = Depen
                          updated_at=to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS')""",
         (inst_id, body.action_key, body.role, body.access_value, user["username"])
     )
+    write_entity_audit(
+        conn, user, inst_id, "Roles & Permissions", "permission_override", f"{body.action_key}:{body.role}",
+        "Override set", entity_label=f"{body.action_key} → {body.role}",
+        changes=[{"field": "access_value", "label": f"Access for {body.role} on {body.action_key}",
+                  "old": prev["access_value"] if prev else "(default)", "new": body.access_value}])
     conn.commit()
     return {"ok": True}
 
@@ -184,10 +195,20 @@ def reset_permission_override(conn, action_key: str, role: str, user: dict = Dep
     hardcoded default — not a way to explicitly set a cell to Deny (use
     the PUT endpoint with access_value='deny' for that)."""
     inst_id = need_inst(user)
+    prev = conn.execute(
+        "SELECT access_value FROM role_permission_overrides WHERE institution_id=? AND action_key=? AND role=?",
+        (inst_id, action_key, role)
+    ).fetchone()
     conn.execute(
         "DELETE FROM role_permission_overrides WHERE institution_id=? AND action_key=? AND role=?",
         (inst_id, action_key, role)
     )
+    if prev:
+        write_entity_audit(
+            conn, user, inst_id, "Roles & Permissions", "permission_override", f"{action_key}:{role}",
+            "Override reset", entity_label=f"{action_key} → {role}",
+            changes=[{"field": "access_value", "label": f"Access for {role} on {action_key}",
+                      "old": prev["access_value"], "new": "(default)"}])
     conn.commit()
 
 
@@ -219,6 +240,9 @@ def create_role(conn, body: RoleIn, user: dict = Depends(get_current_user)) -> D
         (inst_id, role_key, body.display_name)
     )
     role_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    write_entity_audit(conn, user, inst_id, "Roles & Permissions", "role", role_id, "Created",
+                       detail=f"Custom role '{body.display_name}' ({role_key}) created",
+                       entity_label=body.display_name)
     conn.commit()
     row = conn.execute("SELECT * FROM custom_roles WHERE id=?", (role_id,)).fetchone()
     return {"id": row["id"], "role_key": row["role_key"], "display_name": row["display_name"], "is_builtin": False}
@@ -254,4 +278,7 @@ def delete_role(conn, role_id: int, user: dict = Depends(get_current_user)) -> N
         raise HTTPException(400, f"Can't delete '{row['display_name']}' — still assigned to {', '.join(parts)}. Reassign them first.")
 
     conn.execute("DELETE FROM custom_roles WHERE id=?", (role_id,))
+    write_entity_audit(conn, user, inst_id, "Roles & Permissions", "role", role_id, "Deleted",
+                       detail=f"Custom role '{row['display_name']}' ({role_key}) deleted",
+                       entity_label=row["display_name"])
     conn.commit()

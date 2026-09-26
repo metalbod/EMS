@@ -27,6 +27,8 @@ from core.anthropic_client import get_client_for_institution
 
 from core.secrets_encryption import encrypt_secret
 
+from core.audit import write_entity_audit
+
 from core.db_session import db_session
 
 from db import get_db
@@ -355,6 +357,9 @@ def update_assistant_settings(
         "UPDATE institutions SET anthropic_api_key_encrypted=?, anthropic_api_key_last4=?, anthropic_api_key_added_at=? WHERE id=?",
         (encrypt_secret(api_key), api_key[-4:], now, inst_id),
     )
+    write_entity_audit(conn, user, inst_id, "Institution", "ai_assistant_key", inst_id, "API key saved",
+                       detail=f"Institution AI assistant API key set (ending {api_key[-4:]}). Key itself not recorded.",
+                       entity_label="AI assistant API key")
     conn.commit()
     row = conn.execute(
         "SELECT anthropic_api_key_encrypted, anthropic_api_key_last4, anthropic_api_key_added_at FROM institutions WHERE id=?",
@@ -374,5 +379,7 @@ def delete_assistant_settings(conn, user: dict = Depends(require_roles(*ASSISTAN
         "UPDATE institutions SET anthropic_api_key_encrypted=NULL, anthropic_api_key_last4=NULL, anthropic_api_key_added_at=NULL WHERE id=?",
         (inst_id,),
     )
+    write_entity_audit(conn, user, inst_id, "Institution", "ai_assistant_key", inst_id, "API key removed",
+                       detail="Institution AI assistant API key removed", entity_label="AI assistant API key")
     conn.commit()
     return AssistantSettingsOut(configured=False)

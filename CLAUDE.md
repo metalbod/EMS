@@ -102,6 +102,21 @@ wrapper everywhere.
   not a one-shot rewrite of the app's access control. See
   `permission_matrix.py`'s module docstring before touching either file.
 
+- **Generic audit trail (`entity_audit_log`)** (`core/audit.py`'s
+  `write_entity_audit` + `diff_fields`, `GET /api/entity-audit-log` in
+  `routers/audit.py`, Settings → Audit → System Activity tab, shared
+  `openEntityHistory()` modal in `core.js`): one tenant-scoped table for
+  modules that have no dedicated `*_audit_log` of their own — call
+  `write_entity_audit(...)` right before the endpoint's `conn.commit()`,
+  never with secret values (mask via `diff_fields(..., sensitive=...)`).
+  Rolled out in phases by risk: Phase 1 = payroll, users/roles/permission
+  overrides, approval workflows, institution/email/AI-key settings. The
+  read endpoint also unions the older per-module trails (candidate,
+  requisition, onboarding, L&D, leave, timesheet, appraisal) read-only.
+  Anything not yet covered is listed by the gap analysis in that
+  session's plan — add new modules by logging in their endpoints, no new
+  table needed.
+
 ## Recurring gotchas (hit more than once this project's history)
 
 - **RLS fails closed, not open.** A table gets RLS auto-enabled by an

@@ -327,6 +327,46 @@ function guardAsync(fn) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Record history (generic entity_audit_log — routers/audit.py's
+// GET /api/entity-audit-log). One shared modal any page can open:
+//   openEntityHistory({title, entity_type, entity_id, module})
+// Only superadmin/hr_manager may read it (audit_log.view_system_activity_log),
+// so callers gate their History buttons with canViewActivityLog() — the
+// static ones use the .hist-btn class, toggled in applyRoleUI().
+// ---------------------------------------------------------------------------
+function canViewActivityLog() { return HR_MANAGER_ONLY_ROLES.includes(currentUser?.role); }
+
+function auditChangesHtml(changes) {
+  if (!changes?.length) return '';
+  return `<div class="mt-1 space-y-0.5">${changes.map(c => `<span class="block text-xs text-slate-600"><b>${esc(c.label)}:</b> <s class="text-red-400">${esc(c.old || '—')}</s> → <span class="text-emerald-600">${esc(c.new || '—')}</span></span>`).join('')}</div>`;
+}
+
+async function openEntityHistory({title = 'History', entity_type, entity_id, module} = {}) {
+  document.getElementById('entityHistoryTitle').textContent = title;
+  const body = document.getElementById('entityHistoryBody');
+  body.innerHTML = '<p class="text-slate-400 text-sm">Loading…</p>';
+  document.getElementById('entityHistoryModal').classList.remove('hidden');
+  const params = new URLSearchParams({ limit: '200', include_legacy: 'false' });
+  if (entity_type) params.set('entity_type', entity_type);
+  if (entity_id != null) params.set('entity_id', String(entity_id));
+  if (module) params.set('module', module);
+  const res = await api(`/api/entity-audit-log?${params}`);
+  if (res && res.status === 403) { body.innerHTML = '<p class="text-slate-500 text-sm">Only an HR Manager can view change history.</p>'; return; }
+  if (!res || !res.ok) { body.innerHTML = '<p class="text-red-500 text-sm">Failed to load history.</p>'; return; }
+  const rows = await res.json();
+  if (!rows.length) { body.innerHTML = '<p class="text-slate-400 text-sm">No changes recorded yet.</p>'; return; }
+  body.innerHTML = `<div class="relative pl-6 border-l-2 border-slate-200 space-y-5">${rows.map(r => `
+    <div class="relative">
+      <span class="absolute left-[-1.65rem] top-1 w-2.5 h-2.5 rounded-full bg-slate-300 ring-4 ring-white"></span>
+      <p class="text-sm font-medium text-slate-800">${esc(r.action)}${!entity_id && r.entity_label ? ` <span class="font-normal text-slate-500">· ${esc(r.entity_label)}</span>` : ''}</p>
+      ${r.detail ? `<p class="text-xs text-slate-500 mt-0.5">${esc(r.detail)}</p>` : ''}
+      ${auditChangesHtml(r.changes)}
+      <p class="text-xs text-slate-400 mt-1">${esc(r.actor_username || 'system')}${r.actor_role ? ` (${esc(r.actor_role)})` : ''} · ${fmtDateTime(r.created_at)}</p>
+    </div>`).join('')}</div>`;
+}
+function closeEntityHistory() { document.getElementById('entityHistoryModal').classList.add('hidden'); }
+
 // Replaces 31 hand-written `function closeXModal() { document.getElementById
 // ('xModal').classList.add('hidden'); [someTrackingVar = null;] }` copies —
 // unlike the matching openXModal() functions (which genuinely vary per
@@ -605,6 +645,7 @@ function updateBrandHeader() {
 }
 
 function applyRoleUI() {
+  document.querySelectorAll('.hist-btn').forEach(b => b.classList.toggle('hidden', !canViewActivityLog()));
   const role = currentUser?.role;
   const isSA = role === 'superadmin';
   const canManage = HR_MANAGE_ROLES.includes(role);

@@ -80,6 +80,7 @@ from core.email_engine import send_email, verify_smtp_connection
 
 from db import get_db
 
+from core.audit import write_entity_audit
 from core.db_session import db_session
 
 logger = logging.getLogger("ems")
@@ -245,6 +246,12 @@ def update_email_settings(
         (body.smtp_host, body.smtp_port, body.smtp_use_tls, body.smtp_from_address, body.smtp_from_name,
          credentials, now, body.notifications_email_enabled, inst_id)
     )
+    write_entity_audit(
+        conn, user, inst_id, "Institution", "email_settings", inst_id, "SMTP settings saved",
+        detail=(f"SMTP host {body.smtp_host}:{body.smtp_port} (TLS: {bool(body.smtp_use_tls)}), from "
+                f"{body.smtp_from_address}; email notifications {'enabled' if body.notifications_email_enabled else 'disabled'}. "
+                "Credentials not recorded."),
+        entity_label="Email (SMTP) settings")
     conn.commit()
     row = conn.execute(f"SELECT {_EMAIL_SETTINGS_COLS} FROM institutions WHERE id=?", (inst_id,)).fetchone()
     return _email_settings_response(row)
@@ -263,6 +270,9 @@ def delete_email_settings(conn, user: dict = Depends(require_roles(*EMAIL_SETTIN
         "smtp_credentials_encrypted=NULL, smtp_configured_at=NULL, notifications_email_enabled=false WHERE id=?",
         (inst_id,)
     )
+    write_entity_audit(conn, user, inst_id, "Institution", "email_settings", inst_id, "SMTP settings cleared",
+                       detail="SMTP configuration removed; email notifications stopped",
+                       entity_label="Email (SMTP) settings")
     conn.commit()
     return EmailSettingsOut(configured=False)
 

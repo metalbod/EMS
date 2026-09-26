@@ -366,6 +366,8 @@ MATRIX: List[Dict[str, Any]] = [
         "actions": [
             _action("View institution audit log", "GET /api/audit-logs", _flat("superadmin", "hr_manager")),
             _action("View login audit log", "GET /api/login-audit-log", _flat("superadmin", "hr_manager")),
+            _action("View system activity log", "GET /api/entity-audit-log", _flat("superadmin", "hr_manager"),
+                     note="Generic per-record change history (payroll, users/roles, approval workflows, institution/secret settings, and later phases' modules), plus a read-only union of the older per-module trails (recruitment, onboarding, L&D, leave, timesheet, appraisal)."),
         ],
     },
     {
@@ -491,6 +493,7 @@ ENFORCED_ACTION_KEYS = frozenset({
     # granting a role "manage custom roles" would also hand it the power
     # to grant itself anything else in the app — a real escalation chain.
     "audit_log.view_institution_audit_log",
+    "audit_log.view_system_activity_log",
     "users.list_create_update_user",
     "users.delete_user",
     # Retrofitting these required first fixing a real bug in

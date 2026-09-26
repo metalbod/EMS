@@ -10,6 +10,8 @@ from core.permission_matrix import require_permission
 
 from core.roles import ROLES, get_valid_roles
 
+from core.audit import diff_fields, write_entity_audit
+
 from db import get_db, IntegrityError
 
 from core.db_session import db_session
@@ -17,6 +19,11 @@ from core.db_session import db_session
 router = APIRouter()
 
 CAN_MANAGE_USERS = ("superadmin", "hr_manager")
+
+_USER_AUDIT_LABELS = {
+    "full_name": "Full name", "email": "Email", "role": "Role", "roles": "Roles",
+    "employee_id": "Linked employee", "is_active": "Active",
+}
 
 
 class UserIn(BaseModel):
@@ -136,11 +143,14 @@ def create_user(conn, body: UserIn, user: dict = Depends(get_current_user)) -> D
             VALUES (?,?,?,?,?,?,?,?,?)
         """, (inst_id, body.username, body.full_name, body.email,
               hash_password(body.password), body.role, roles_str, body.employee_id, must_change_password))
-        conn.commit()
         row = conn.execute(
             "SELECT id,institution_id,username,full_name,email,role,roles,employee_id,is_active,created_at "
             "FROM users WHERE id=last_insert_rowid()"
         ).fetchone()
+        write_entity_audit(conn, user, inst_id, "Users", "user", row["id"], "Created",
+                           detail=f"User '{body.username}' created with role {body.role}",
+                           entity_label=body.username)
+        conn.commit()
         return dict(row)
     except IntegrityError:
         conn.rollback()
@@ -187,11 +197,16 @@ def update_user(conn, user_id: int, body: UserUpdate, user: dict = Depends(get_c
         WHERE id=?
     """, (body.full_name, body.email, new_hash, body.role, roles_str,
           body.employee_id, 1 if body.is_active else 0, must_change_password, user_id))
-    conn.commit()
     row = conn.execute(
         "SELECT id,institution_id,username,full_name,email,role,roles,employee_id,is_active,created_at "
         "FROM users WHERE id=?", (user_id,)
     ).fetchone()
+    changes = diff_fields(dict(target), dict(row), _USER_AUDIT_LABELS)
+    detail = "Password changed by admin" if body.password else None
+    if changes or detail:
+        write_entity_audit(conn, user, target["institution_id"], "Users", "user", user_id, "Updated",
+                           detail=detail, changes=changes, entity_label=target["username"])
+    conn.commit()
     return dict(row)
 
 
@@ -212,4 +227,7 @@ def delete_user(conn, user_id: int, user: dict = Depends(get_current_user)) -> N
     if user["role"] != "superadmin" and target["institution_id"] != user["institution_id"]:
         raise HTTPException(403, "Access denied")
     conn.execute("DELETE FROM users WHERE id=?", (user_id,))
+    write_entity_audit(conn, user, target["institution_id"], "Users", "user", user_id, "Deleted",
+                       detail=f"User '{target['username']}' ({target['role']}) deleted",
+                       entity_label=target["username"])
     conn.commit()

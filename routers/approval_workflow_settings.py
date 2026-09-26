@@ -18,6 +18,8 @@ from core.permission_matrix import require_permission
 
 from core.approval_workflow import APPROVER_TYPES, MAX_STEPS, MODULE_TABLE, PROJECT_MANAGER_MODULES, WORKFLOW_MODES, get_steps
 
+from core.audit import diff_fields, write_entity_audit
+
 from db import get_db
 
 from core.db_session import db_session
@@ -90,6 +92,22 @@ class StepMoveIn(BaseModel):
     direction: str  # up | down
 
 
+_AW_MODULE = "Approval Workflows"
+
+
+def _audit_wf(conn, user, inst_id, wf, action, detail=None, changes=None):
+    """Log against the workflow itself — step changes are part of its history."""
+    write_entity_audit(conn, user, inst_id, _AW_MODULE, "approval_workflow", wf["id"], action,
+                       detail=detail, changes=changes, entity_label=f"{wf['name']} ({wf['module']})")
+
+
+def _step_desc(approver_type, specific=None, alt=None, alt_specific=None):
+    d = approver_type + (f" [{specific}]" if specific else "")
+    if alt:
+        d += f" OR {alt}" + (f" [{alt_specific}]" if alt_specific else "")
+    return d
+
+
 def _with_steps(conn, workflow_row) -> Dict[str, Any]:
     d = dict(workflow_row)
     d["steps"] = get_steps(conn, d["id"])
@@ -145,6 +163,8 @@ def create_workflow(conn, body: WorkflowIn, user: dict = Depends(get_current_use
         (inst_id, body.module, body.name.strip(), 0 if existing_default else 1, body.mode)
     )
     workflow_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    _audit_wf(conn, user, inst_id, {"id": workflow_id, "name": body.name.strip(), "module": body.module}, "Created",
+              detail=f"Workflow created for {body.module} (mode: {body.mode})")
     conn.commit()
     return _with_steps(conn, conn.execute("SELECT * FROM approval_workflows WHERE id=?", (workflow_id,)).fetchone())
 
@@ -175,6 +195,10 @@ def update_workflow(conn, workflow_id: int, body: WorkflowUpdateIn, user: dict =
         "UPDATE approval_workflows SET name=?,is_default=?,mode=? WHERE id=?",
         (body.name.strip(), 1 if body.is_default else 0, body.mode, workflow_id)
     )
+    changes = diff_fields(dict(wf), {"name": body.name.strip(), "is_default": 1 if body.is_default else 0, "mode": body.mode},
+                          {"name": "Name", "is_default": "Default", "mode": "Mode"})
+    if changes:
+        _audit_wf(conn, user, inst_id, wf, "Updated", changes=changes)
     conn.commit()
     return _with_steps(conn, conn.execute("SELECT * FROM approval_workflows WHERE id=?", (workflow_id,)).fetchone())
 
@@ -196,6 +220,7 @@ def delete_workflow(conn, workflow_id: int, user: dict = Depends(get_current_use
         # If no other workflow exists, the next start_workflow() call for
         # this module lazily recreates a fresh 2-step default — see
         # core/approval_workflow.py's get_or_create_default_workflow.
+    _audit_wf(conn, user, inst_id, wf, "Deleted", detail=f"Workflow deactivated (was default: {bool(wf['is_default'])})")
     conn.commit()
 
 
@@ -217,6 +242,9 @@ def add_step(conn, workflow_id: int, body: StepIn, user: dict = Depends(get_curr
         (workflow_id, next_order, body.approver_type, body.specific_employee_id,
          body.alt_approver_type, body.alt_specific_employee_id if body.alt_approver_type == "specific_employee" else None)
     )
+    _audit_wf(conn, user, inst_id, wf, "Step added",
+              detail=f"Step {next_order}: " + _step_desc(body.approver_type, body.specific_employee_id,
+                                                        body.alt_approver_type, body.alt_specific_employee_id))
     conn.commit()
     return _with_steps(conn, conn.execute("SELECT * FROM approval_workflows WHERE id=?", (workflow_id,)).fetchone())
 
@@ -236,15 +264,20 @@ def _get_owned_step(conn, inst_id: int, workflow_id: int, step_id: int):
 def update_step(conn, workflow_id: int, step_id: int, body: StepIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     require_permission(conn, user, "approval_workflows.manage_approval_workflows_steps")
     inst_id = need_inst(user)
-    _get_owned_step(conn, inst_id, workflow_id, step_id)
+    old_step = _get_owned_step(conn, inst_id, workflow_id, step_id)
     wf = _get_owned_workflow(conn, inst_id, workflow_id)
     _validate_step_body(conn, inst_id, wf["module"], body)
+    new_specific = body.specific_employee_id if body.approver_type == "specific_employee" else None
+    new_alt_specific = body.alt_specific_employee_id if body.alt_approver_type == "specific_employee" else None
     conn.execute(
         "UPDATE approval_workflow_steps SET approver_type=?,specific_employee_id=?,alt_approver_type=?,alt_specific_employee_id=? WHERE id=?",
-        (body.approver_type, body.specific_employee_id if body.approver_type == "specific_employee" else None,
-         body.alt_approver_type, body.alt_specific_employee_id if body.alt_approver_type == "specific_employee" else None,
-         step_id)
+        (body.approver_type, new_specific, body.alt_approver_type, new_alt_specific, step_id)
     )
+    _audit_wf(conn, user, inst_id, wf, "Step updated",
+              detail=f"Step {old_step['step_order']}: "
+                     + _step_desc(old_step["approver_type"], old_step["specific_employee_id"],
+                                  old_step["alt_approver_type"], old_step["alt_specific_employee_id"])
+                     + " → " + _step_desc(body.approver_type, new_specific, body.alt_approver_type, new_alt_specific))
     conn.commit()
     return _with_steps(conn, conn.execute("SELECT * FROM approval_workflows WHERE id=?", (workflow_id,)).fetchone())
 
@@ -254,7 +287,8 @@ def update_step(conn, workflow_id: int, step_id: int, body: StepIn, user: dict =
 def delete_step(conn, workflow_id: int, step_id: int, user: dict = Depends(get_current_user)) -> None:
     require_permission(conn, user, "approval_workflows.manage_approval_workflows_steps")
     inst_id = need_inst(user)
-    _get_owned_step(conn, inst_id, workflow_id, step_id)
+    old_step = _get_owned_step(conn, inst_id, workflow_id, step_id)
+    wf = _get_owned_workflow(conn, inst_id, workflow_id)
     conn.execute("DELETE FROM approval_workflow_steps WHERE id=?", (step_id,))
     # Re-number remaining steps to stay contiguous (1..N) so step_order
     # comparisons elsewhere (advance_or_finalize's "remaining steps after
@@ -264,6 +298,10 @@ def delete_step(conn, workflow_id: int, step_id: int, user: dict = Depends(get_c
     ).fetchall()
     for idx, r in enumerate(remaining, start=1):
         conn.execute("UPDATE approval_workflow_steps SET step_order=? WHERE id=?", (idx, r["id"]))
+    _audit_wf(conn, user, inst_id, wf, "Step deleted",
+              detail=f"Step {old_step['step_order']}: "
+                     + _step_desc(old_step["approver_type"], old_step["specific_employee_id"],
+                                  old_step["alt_approver_type"], old_step["alt_specific_employee_id"]))
     conn.commit()
 
 
@@ -283,5 +321,7 @@ def move_step(conn, workflow_id: int, step_id: int, body: StepMoveIn, user: dict
     a, b = steps[idx], steps[swap_idx]
     conn.execute("UPDATE approval_workflow_steps SET step_order=? WHERE id=?", (b["step_order"], a["id"]))
     conn.execute("UPDATE approval_workflow_steps SET step_order=? WHERE id=?", (a["step_order"], b["id"]))
+    _audit_wf(conn, user, inst_id, _get_owned_workflow(conn, inst_id, workflow_id), "Step moved",
+              detail=f"{a['approver_type']} moved {body.direction} (step {a['step_order']} → {b['step_order']})")
     conn.commit()
     return _with_steps(conn, conn.execute("SELECT * FROM approval_workflows WHERE id=?", (workflow_id,)).fetchone())

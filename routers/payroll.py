@@ -23,6 +23,8 @@ from core.tasks import generate_payroll_run
 
 from core.overtime import MONTHLY_NORMAL_HOURS
 
+from core.audit import diff_fields, write_entity_audit
+
 from core.db_session import db_session
 
 from db import get_db, IntegrityError
@@ -40,6 +42,20 @@ class PayrollRunIn(BaseModel):
 class PayslipAdjustIn(BaseModel):
     basic_salary: Optional[float] = None
     unpaid_leave_days: Optional[float] = None
+
+
+_PAYSLIP_AUDIT_LABELS = {
+    "basic_salary": "Basic salary", "unpaid_leave_days": "Unpaid leave days",
+    "unpaid_leave_deduction": "Unpaid leave deduction", "regular_hours": "Regular hours",
+    "overtime_hours": "Overtime hours", "overtime_pay": "Overtime pay", "gross_pay": "Gross pay",
+    "epf_employee": "EPF (employee)", "socso_employee": "SOCSO (employee)", "eis_employee": "EIS (employee)",
+    "pcb": "PCB", "net_pay": "Net pay",
+}
+
+
+def _audit_run(conn, user, inst_id, run, action, detail=None, changes=None):
+    write_entity_audit(conn, user, inst_id, "Payroll", "payroll_run", run["id"], action, detail=detail,
+                       changes=changes, entity_label=f"{run['period_start']} to {run['period_end']}")
 
 
 def _employee_age(dob_str):
@@ -180,8 +196,10 @@ def create_payroll_run(conn, body: PayrollRunIn, user: dict = Depends(require_ro
             "INSERT INTO payroll_runs (institution_id, period_start, period_end, created_by) VALUES (?,?,?,?)",
             (inst_id, body.period_start, body.period_end, user["username"])
         )
-        conn.commit()
         run = conn.execute("SELECT * FROM payroll_runs WHERE id=last_insert_rowid()").fetchone()
+        _audit_run(conn, user, inst_id, run, "Created",
+                   detail=f"Payroll run created for {body.period_start} to {body.period_end}")
+        conn.commit()
 
         # Queue async task to generate payslips
         task = generate_payroll_run.apply_async(
@@ -261,8 +279,11 @@ def adjust_payslip(conn, payslip_id: int, body: PayslipAdjustIn, user: dict = De
     """, (basic_salary, unpaid_days, unpaid_deduction, gross_pay,
           epf["employee"], epf["employer"], socso["employee"], socso["employer"],
           eis["employee"], eis["employer"], pcb, net_pay, payslip_id))
-    conn.commit()
     row = conn.execute("SELECT * FROM payslips WHERE id=?", (payslip_id,)).fetchone()
+    _audit_run(conn, user, inst_id, run, "Payslip adjusted",
+               detail=f"Payslip for {slip['employee_id']} adjusted manually",
+               changes=diff_fields(dict(slip), dict(row), _PAYSLIP_AUDIT_LABELS))
+    conn.commit()
     return dict(row)
 
 
@@ -298,8 +319,11 @@ def recompute_payslip(conn, payslip_id: int, user: dict = Depends(require_roles(
     """, (basic_salary, unpaid_days, unpaid_deduction, regular_hours, overtime_hours, overtime_pay, gross_pay,
           epf["employee"], epf["employer"], socso["employee"], socso["employer"],
           eis["employee"], eis["employer"], pcb, net_pay, payslip_id))
-    conn.commit()
     row = conn.execute("SELECT * FROM payslips WHERE id=?", (payslip_id,)).fetchone()
+    _audit_run(conn, user, inst_id, run, "Payslip recomputed",
+               detail=f"Hourly payslip for {slip['employee_id']} recomputed from approved timesheets",
+               changes=diff_fields(dict(slip), dict(row), _PAYSLIP_AUDIT_LABELS))
+    conn.commit()
     return dict(row)
 
 
@@ -316,8 +340,9 @@ def finalize_payroll_run(conn, run_id: int, user: dict = Depends(require_roles(*
         "UPDATE payroll_runs SET status='Finalized', finalized_by=?, finalized_at=to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS') WHERE id=?",
         (user["username"], run_id)
     )
-    conn.commit()
     row = conn.execute("SELECT * FROM payroll_runs WHERE id=?", (run_id,)).fetchone()
+    _audit_run(conn, user, inst_id, run, "Finalized", detail="Payroll run finalized (payslips locked)")
+    conn.commit()
     return dict(row)
 
 
@@ -330,8 +355,10 @@ def delete_payroll_run(conn, run_id: int, user: dict = Depends(require_roles(*PA
         raise HTTPException(404, "Payroll run not found")
     if run["status"] != "Draft":
         raise HTTPException(400, "Cannot delete a Finalized run")
+    slip_count = conn.execute("SELECT COUNT(*) FROM payslips WHERE payroll_run_id=?", (run_id,)).fetchone()[0]
     conn.execute("DELETE FROM payslips WHERE payroll_run_id=?", (run_id,))
     conn.execute("DELETE FROM payroll_runs WHERE id=?", (run_id,))
+    _audit_run(conn, user, inst_id, run, "Deleted", detail=f"Draft payroll run deleted along with {slip_count} payslip(s)")
     conn.commit()
 
 

@@ -69,8 +69,62 @@ function switchAuditTab(tab) {
     b.classList.toggle('text-slate-500', b.dataset.atab!==tab);
   });
   document.getElementById('at-activity').classList.toggle('hidden', tab!=='at-activity');
+  document.getElementById('at-system').classList.toggle('hidden', tab!=='at-system');
   document.getElementById('at-logins').classList.toggle('hidden', tab!=='at-logins');
+  if(tab==='at-system') loadSystemActivity();
   if(tab==='at-logins') loadLoginAuditLog();
+}
+
+// System Activity tab — GET /api/entity-audit-log (routers/audit.py): the
+// generic entity_audit_log (users, roles & permissions, approval workflows,
+// payroll, institution/secret settings, …) plus a read-only union of the
+// older per-module trails (recruitment, onboarding, L&D, leave, timesheet,
+// appraisal). Same server-paginated shape as the tabs above.
+let sysAuditPage = 1, sysAuditPageSize = 50, sysAuditTotal = 0;
+
+async function loadSystemActivity() {
+  if(currentUser.role==='superadmin'&&!currentInstitution) return;
+  const offset=(sysAuditPage-1)*sysAuditPageSize;
+  const params=new URLSearchParams({limit:String(sysAuditPageSize), offset:String(offset)});
+  const val=id=>document.getElementById(id)?.value||'';
+  if(val('sysAuditModule')) params.set('module', val('sysAuditModule'));
+  if(val('sysAuditActor').trim()) params.set('actor', val('sysAuditActor').trim());
+  if(val('sysAuditFrom')) params.set('date_from', val('sysAuditFrom'));
+  if(val('sysAuditTo')) params.set('date_to', val('sysAuditTo'));
+  const res=await api(`/api/entity-audit-log?${params}`);
+  if(!res||!res.ok) return;
+  const rows=await res.json();
+  sysAuditTotal=parseInt(res.headers.get('X-Total-Count')||'0',10);
+  const tbody=document.getElementById('sysAuditTableBody');
+  const empty=document.getElementById('sysAuditEmpty');
+  const pagination=document.getElementById('sysAuditPagination');
+  if(!rows.length){
+    tbody.innerHTML='';
+    empty.classList.remove('hidden');
+    pagination?.classList.add('hidden');
+    return;
+  }
+  empty.classList.add('hidden');
+  pagination?.classList.remove('hidden');
+  document.getElementById('sysAuditPageSize').value=String(sysAuditPageSize);
+  document.getElementById('sysAuditPageInfo').textContent=
+    `${offset+1}-${Math.min(offset+sysAuditPageSize, sysAuditTotal)} of ${sysAuditTotal}`;
+  tbody.innerHTML=rows.map(r=>`
+    <tr class="hover:bg-slate-50 transition">
+      <td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">${fmtDateTime(r.created_at, true)}</td>
+      <td class="px-4 py-3 text-sm whitespace-nowrap">${esc(r.module)}</td>
+      <td class="px-4 py-3"><p class="text-sm">${esc(r.entity_label||r.entity_id||'—')}</p><p class="text-xs text-slate-400">${esc(r.entity_type)}${r.entity_id?` #${esc(r.entity_id)}`:''}</p></td>
+      <td class="px-4 py-3"><span class="badge status-neutral">${esc(r.action)}</span></td>
+      <td class="px-4 py-3 text-xs text-slate-600 max-w-md">${r.detail?`<p>${esc(r.detail)}</p>`:''}${auditChangesHtml(r.changes)}${!r.detail&&!(r.changes||[]).length?'<span class="text-slate-300">—</span>':''}</td>
+      <td class="px-4 py-3"><p class="text-sm font-medium">${esc(r.actor_username||'system')}</p><p class="text-xs text-slate-400">${esc(r.actor_role||'')}</p></td>
+    </tr>`).join('');
+}
+
+function setSysAuditPageSize(size) { sysAuditPageSize=parseInt(size)||50; sysAuditPage=1; loadSystemActivity(); }
+function sysAuditPagePrev() { if(sysAuditPage>1){ sysAuditPage--; loadSystemActivity(); } }
+function sysAuditPageNext() {
+  const totalPages=Math.max(1, Math.ceil(sysAuditTotal/sysAuditPageSize));
+  if(sysAuditPage<totalPages){ sysAuditPage++; loadSystemActivity(); }
 }
 
 async function loadLoginAuditLog() {

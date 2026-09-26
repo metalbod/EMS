@@ -101,6 +101,7 @@ async function openPayrollRunDetail(runId) {
   if(isPayrollManager() && run.status==='Finalized'){
     btns.push(`<button onclick="exportBankCsv(${run.id})" class="btn-primary">Export Bank CSV</button>`);
   }
+  if(canViewActivityLog()) btns.push(`<button onclick="openEntityHistory({title:'Payroll run history',entity_type:'payroll_run',entity_id:${run.id}})" class="btn-ghost">History</button>`);
   btns.push(`<button onclick="closePayrollRunDetailModal()" class="btn-ghost">Close</button>`);
   actions.innerHTML=btns.join('');
 

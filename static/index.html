@@ -1122,7 +1122,8 @@
       <!-- AUDIT LOG -->
       <div id="page-audit" class="hidden">
         <div class="flex border-b border-slate-200 mb-4">
-          <button class="view-tab-btn view-tab-active px-4 py-3 text-sm" data-atab="at-activity" onclick="switchAuditTab('at-activity')">Activity Log</button>
+          <button class="view-tab-btn view-tab-active px-4 py-3 text-sm" data-atab="at-activity" onclick="switchAuditTab('at-activity')">Employee Changes</button>
+          <button class="view-tab-btn px-4 py-3 text-sm text-slate-500" data-atab="at-system" onclick="switchAuditTab('at-system')">System Activity</button>
           <button class="view-tab-btn px-4 py-3 text-sm text-slate-500" data-atab="at-logins" onclick="switchAuditTab('at-logins')">Login Attempts</button>
         </div>
 
@@ -1163,6 +1164,51 @@
                 <span id="auditPageInfo"></span>
                 <button onclick="auditPagePrev()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Prev</button>
                 <button onclick="auditPageNext()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Next</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="at-system" class="hidden">
+          <div class="flex gap-3 mb-4 flex-wrap items-center">
+            <select id="sysAuditModule" class="inp w-48" onchange="sysAuditPage=1;loadSystemActivity()">
+              <option value="">All Modules</option>
+              <option>Users</option><option>Roles &amp; Permissions</option><option>Approval Workflows</option>
+              <option>Payroll</option><option>Institution</option><option>Recruitment</option><option>Onboarding</option>
+              <option>L&amp;D</option><option>Leave</option><option>Timesheet</option><option>Performance</option>
+            </select>
+            <input id="sysAuditActor" class="inp w-44" placeholder="Actor username…" onchange="sysAuditPage=1;loadSystemActivity()"/>
+            <label class="text-xs text-slate-500 flex items-center gap-1">From <input id="sysAuditFrom" type="date" class="inp w-40" onchange="sysAuditPage=1;loadSystemActivity()"/></label>
+            <label class="text-xs text-slate-500 flex items-center gap-1">To <input id="sysAuditTo" type="date" class="inp w-40" onchange="sysAuditPage=1;loadSystemActivity()"/></label>
+          </div>
+          <div class="bg-white rounded-xl border border-slate-200 table-scroll">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
+                <tr>
+                  <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">When</th>
+                  <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Module</th>
+                  <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Record</th>
+                  <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Action</th>
+                  <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Details</th>
+                  <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Actor</th>
+                </tr>
+              </thead>
+              <tbody id="sysAuditTableBody" class="divide-y divide-slate-100"></tbody>
+            </table>
+            <p id="sysAuditEmpty" class="hidden text-center text-slate-400 text-sm py-12">No records.</p>
+            <div id="sysAuditPagination" class="hidden flex items-center justify-between px-4 py-3 border-t border-slate-200 text-sm text-slate-500">
+              <div class="flex items-center gap-2">
+                <span>Rows per page:</span>
+                <select id="sysAuditPageSize" onchange="setSysAuditPageSize(this.value)" class="border border-slate-200 rounded-lg text-sm px-2 py-1">
+                  <option value="25">25</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                </select>
+              </div>
+              <div class="flex items-center gap-3">
+                <span id="sysAuditPageInfo"></span>
+                <button onclick="sysAuditPagePrev()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Prev</button>
+                <button onclick="sysAuditPageNext()" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Next</button>
               </div>
             </div>
           </div>
@@ -2440,6 +2486,7 @@
           <button onclick="setAwWorkflowDefault()" class="btn-ghost text-xs px-2 whitespace-nowrap" title="Make this the default workflow used for new requests">Set Default</button>
           <button onclick="renameAwWorkflow()" class="text-slate-400 hover:text-blue-500" title="Rename"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
           <button onclick="deleteAwWorkflow()" class="text-slate-400 hover:text-red-500" title="Delete workflow"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>
+          <button onclick="openAwHistory()" class="hist-btn hidden btn-ghost text-xs px-2 whitespace-nowrap">History</button>
         </div>
         <div id="awWorkflowForm" class="hidden flex items-center gap-2 mb-4 bg-slate-50 border border-slate-200 rounded-lg p-3">
           <input id="awWorkflowName" class="inp flex-1" placeholder="Workflow name…"/>
@@ -2493,6 +2540,7 @@
           <div class="flex items-center gap-2 mb-4 flex-wrap">
             <input id="roleNewName" class="inp flex-1 min-w-[220px] max-w-xs" placeholder="New role name, e.g. IT Infra"/>
             <button onclick="createRole()" class="btn-primary text-sm px-3">+ Add Role</button>
+            <button onclick="openEntityHistory({title:'Roles & permissions history', module:'Roles & Permissions'})" class="hist-btn hidden btn-ghost text-sm px-3">History</button>
           </div>
           <p id="roleFormErr" class="hidden text-xs text-red-600 mb-3"></p>
           <div class="bg-white border border-slate-200 rounded-xl table-scroll">
@@ -4889,6 +4937,18 @@
         <button type="submit" id="reqSubmitBtn" class="btn-primary">Save Draft</button>
       </div>
     </form>
+  </div>
+</div>
+
+<!-- Shared record-history modal (generic entity_audit_log) — opened via core.js's
+     openEntityHistory({title, entity_type, entity_id, module}) from any page. -->
+<div id="entityHistoryModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-xl">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 id="entityHistoryTitle" class="text-base font-semibold">History</h2>
+      <button onclick="closeEntityHistory()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <div id="entityHistoryBody" class="p-6 max-h-[70vh] overflow-y-auto"></div>
   </div>
 </div>
 

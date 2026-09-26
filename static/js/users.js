@@ -29,6 +29,7 @@ function renderUserTable() {
       <td class="px-4 py-3">
         <div class="flex justify-end gap-1">
           <button onclick="openUserModal(this.dataset.u)" data-u='${JSON.stringify(u).replace(/'/g,"&apos;")}' class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Edit</button>
+          ${canViewActivityLog()?`<button onclick="openEntityHistory({title:'User history — '+this.dataset.name,entity_type:'user',entity_id:${u.id}})" data-name="${esc(u.username)}" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">History</button>`:''}
           ${u.id!==currentUser.id?`<button onclick="deleteUser(${u.id})" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem;color:#dc2626">Delete</button>`:''}
         </div>
       </td>

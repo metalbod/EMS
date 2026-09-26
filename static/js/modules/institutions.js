@@ -36,6 +36,7 @@ let instLogoDataUrl=null;function setInstLogoPreview(e){instLogoDataUrl=e||null;
         <div class="flex justify-end gap-1 flex-wrap">
           <button onclick="enterInstitutionContext(this.dataset.inst)" data-inst='${JSON.stringify(s).replace(/'/g,"&apos;")}' class="btn-primary" style="font-size:.75rem;padding:.25rem .75rem">Manage</button>
           <button onclick="openInstModal(this.dataset.inst)" data-inst='${JSON.stringify(s).replace(/'/g,"&apos;")}' class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Edit</button>
+          <button onclick="openEntityHistory({title:'Institution history',entity_type:'institution',entity_id:${s.id}})" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">History</button>
           <button onclick="toggleInstStatus(${s.id},'${s.status==="Active"?"Suspended":"Active"}')" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem;color:${s.status==="Active"?"#dc2626":"#059669"}">${s.status==="Active"?"Suspend":"Activate"}</button>
         </div>
       </td>

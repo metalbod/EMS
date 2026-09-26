@@ -21,6 +21,7 @@ from core.deps import (
     MIN_PASSWORD_LENGTH, build_current_user_out, get_current_user, hash_password, make_token,
     verify_password, verify_password_or_dummy,
 )
+from core.audit import write_entity_audit
 from core.schemas import CurrentUserOut, TokenResponse
 
 from db import get_db
@@ -199,6 +200,8 @@ def change_password(conn, body: ChangePasswordIn, user: dict = Depends(get_curre
         "UPDATE users SET password_hash=?, must_change_password=0, token_epoch=token_epoch+1 WHERE id=?",
         (hash_password(body.new_password), user["id"])
     )
+    write_entity_audit(conn, user, user.get("institution_id"), "Users", "user", user["id"], "Password changed",
+                       detail="User changed their own password", entity_label=user.get("username"))
     conn.commit()
     updated = conn.execute("SELECT * FROM users WHERE id=?", (user["id"],)).fetchone()
     return {

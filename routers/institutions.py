@@ -8,6 +8,8 @@ from core.deps import hash_password, require_roles
 
 from db import get_db, IntegrityError
 
+from core.audit import diff_fields, write_entity_audit
+
 from core.db_session import db_session
 
 from core.onboarding_seed import seed_ob_templates
@@ -15,6 +17,12 @@ from core.validators import validate_logo_url
 from core.anthropic_client import ANTHROPIC_API_KEY
 
 router = APIRouter()
+
+
+_INST_AUDIT_LABELS = {
+    "name": "Name", "contact_name": "Contact name", "contact_email": "Contact email", "phone": "Phone",
+    "address": "Address", "plan": "Plan", "max_employees": "Max employees", "logo_url": "Logo", "status": "Status",
+}
 
 
 def _with_ai_key_status(row: dict) -> dict:
@@ -143,6 +151,9 @@ def create_institution(conn, body: InstitutionIn, user: dict = Depends(require_r
         """, (inst_id, body.admin_username, body.admin_full_name,
               body.admin_email, hash_password(body.admin_password)))
         seed_ob_templates(conn, inst_id)
+        write_entity_audit(conn, user, inst_id, "Institution", "institution", inst_id, "Created",
+                           detail=f"Institution '{body.name}' ({code}) created with HR Manager account '{body.admin_username}'",
+                           entity_label=body.name)
         conn.commit()
         row = conn.execute("""
             SELECT i.*, 0 AS employee_count, 1 AS user_count
@@ -174,15 +185,20 @@ def get_institution(conn, inst_id: int, user: dict = Depends(require_roles("supe
 @router.put("/api/institutions/{inst_id}")
 @db_session
 def update_institution(conn, inst_id: int, body: InstitutionUpdate, user: dict = Depends(require_roles("superadmin"))) -> Dict[str, Any]:
-    if not conn.execute("SELECT id FROM institutions WHERE id=?", (inst_id,)).fetchone():
+    old_row = conn.execute("SELECT * FROM institutions WHERE id=?", (inst_id,)).fetchone()
+    if not old_row:
         raise HTTPException(404, "Institution not found")
     conn.execute("""
         UPDATE institutions SET name=?,contact_name=?,contact_email=?,phone=?,address=?,plan=?,max_employees=?,logo_url=?
         WHERE id=?
     """, (body.name, body.contact_name, body.contact_email, body.phone,
           body.address, body.plan, body.max_employees, body.logo_url, inst_id))
-    conn.commit()
     row = conn.execute("SELECT * FROM institutions WHERE id=?", (inst_id,)).fetchone()
+    changes = diff_fields(dict(old_row), dict(row), _INST_AUDIT_LABELS)
+    if changes:
+        write_entity_audit(conn, user, inst_id, "Institution", "institution", inst_id, "Updated",
+                           changes=changes, entity_label=row["name"])
+    conn.commit()
     return dict(row)
 
 
@@ -191,7 +207,13 @@ def update_institution(conn, inst_id: int, body: InstitutionUpdate, user: dict =
 def toggle_inst_status(conn, inst_id: int, body: InstStatusIn, user: dict = Depends(require_roles("superadmin"))) -> Dict[str, Any]:
     if body.status not in ("Active", "Suspended"):
         raise HTTPException(400, "Status must be Active or Suspended")
+    prev = conn.execute("SELECT status FROM institutions WHERE id=?", (inst_id,)).fetchone()
     conn.execute("UPDATE institutions SET status=? WHERE id=?", (body.status, inst_id))
-    conn.commit()
     row = conn.execute("SELECT * FROM institutions WHERE id=?", (inst_id,)).fetchone()
+    if row and prev and prev["status"] != body.status:
+        write_entity_audit(conn, user, inst_id, "Institution", "institution", inst_id,
+                           "Suspended" if body.status == "Suspended" else "Activated",
+                           changes=[{"field": "status", "label": "Status", "old": prev["status"], "new": body.status}],
+                           entity_label=row["name"])
+    conn.commit()
     return dict(row)

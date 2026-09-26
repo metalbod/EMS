@@ -811,3 +811,42 @@ describe('busy-button guard', () => {
     expect(btn.disabled).toBe(false);
   });
 });
+
+// Matches core.js's auditChangesHtml + openEntityHistory's query building —
+// the shared record-history modal fed by GET /api/entity-audit-log.
+describe('entity history helpers', () => {
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  function auditChangesHtml(changes) {
+    if (!changes?.length) return '';
+    return `<div>${changes.map(c => `<span><b>${esc(c.label)}:</b> <s>${esc(c.old || '—')}</s> → <span>${esc(c.new || '—')}</span></span>`).join('')}</div>`;
+  }
+  function historyParams({ entity_type, entity_id, module } = {}) {
+    const params = new URLSearchParams({ limit: '200', include_legacy: 'false' });
+    if (entity_type) params.set('entity_type', entity_type);
+    if (entity_id != null) params.set('entity_id', String(entity_id));
+    if (module) params.set('module', module);
+    return params.toString();
+  }
+  const canView = role => ['superadmin', 'hr_manager'].includes(role);
+
+  it('renders nothing when there are no field changes', () => {
+    expect(auditChangesHtml([])).toBe('');
+    expect(auditChangesHtml(undefined)).toBe('');
+  });
+  it('shows old → new and dashes for empty values, escaping HTML', () => {
+    const html = auditChangesHtml([{ label: 'Name', old: '', new: '<b>x</b>' }]);
+    expect(html).toContain('<s>—</s>');
+    expect(html).toContain('&lt;b&gt;x&lt;/b&gt;');
+  });
+  it('builds a per-record query (entity_id 0 still counts) and excludes the legacy union', () => {
+    expect(historyParams({ entity_type: 'payroll_run', entity_id: 0 })).toBe('limit=200&include_legacy=false&entity_type=payroll_run&entity_id=0');
+  });
+  it('builds a module-wide query when no record is given', () => {
+    expect(historyParams({ module: 'Roles & Permissions' })).toContain('module=Roles+%26+Permissions');
+  });
+  it('only superadmin/hr_manager get History buttons', () => {
+    expect(canView('hr_manager')).toBe(true);
+    expect(canView('hr_admin')).toBe(false);
+    expect(canView('payroll_manager')).toBe(false);
+  });
+});

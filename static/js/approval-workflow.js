@@ -270,3 +270,13 @@ async function deleteAwStep(stepId) {
   await api(`/api/approval-workflows/${awCurrentWorkflowId}/steps/${stepId}`, {method:'DELETE'});
   await loadAwWorkflows(awCurrentWorkflowId);
 }
+
+// History for the currently selected workflow (step changes are logged
+// against the workflow itself); with none selected, the whole module's.
+function openAwHistory() {
+  if (awCurrentWorkflowId) {
+    openEntityHistory({ title: 'Workflow history', entity_type: 'approval_workflow', entity_id: awCurrentWorkflowId });
+  } else {
+    openEntityHistory({ title: 'Approval workflow history', module: 'Approval Workflows' });
+  }
+}
