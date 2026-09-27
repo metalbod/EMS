@@ -4959,6 +4959,20 @@
   </div>
 </div>
 
+<!-- Home > Leave Calendar: day-detail popup (dashboard.js's openLeaveDayDetail) —
+     a day cell only shows its first 3 rows before collapsing to "N more", so
+     clicking the day opens everything scheduled on it: leave, public holiday,
+     onboarding/offboarding action items and document expiries. -->
+<div id="leaveDayDetailModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-md">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 id="leaveDayDetailTitle" class="text-base font-semibold">—</h2>
+      <button onclick="closeLeaveDayDetail()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <div id="leaveDayDetailBody" class="p-6 max-h-[70vh] overflow-y-auto space-y-4"></div>
+  </div>
+</div>
+
 <!-- Requisition Detail / Approval Modal -->
 <div id="reqDetailModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
   <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl">

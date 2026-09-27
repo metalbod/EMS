@@ -674,7 +674,14 @@ function loadLeaveCalendar() {
   });
 }
 
+// Full per-day breakdown for the click-to-expand day modal (openLeaveDayDetail)
+// — keyed by day-of-month for the currently rendered leaveCalYear/leaveCalMonth,
+// rebuilt on every renderLeaveCalendarGrid call. Holds the *un-capped* lists
+// (the grid itself only shows the first 3 chips + "N more").
+let leaveCalDayDetail = {};
+
 function renderLeaveCalendarGrid(entries, holidays, obItems, docExpiries) {
+  leaveCalDayDetail = {};
   const grid = document.getElementById('leaveCalGrid');
   const firstDay = new Date(leaveCalYear, leaveCalMonth - 1, 1);
   const daysInMonth = new Date(leaveCalYear, leaveCalMonth, 0).getDate();
@@ -770,21 +777,72 @@ function renderLeaveCalendarGrid(entries, holidays, obItems, docExpiries) {
       <div class="text-xs ${chipClass(item)} rounded-sm px-1 py-0.5 truncate" title="${chipTitle(item)}">
         ${chipInner(item)}
       </div>`).join('');
-    const extraLabel = rest.length > 0 ? `
-      <div class="relative group">
-        <div class="text-xs text-slate-400 cursor-default">+${rest.length} more</div>
-        <div class="hidden group-hover:block absolute z-10 left-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg p-2 min-w-[160px] max-w-[240px] space-y-0.5">
-          ${rest.map(item => `<div class="text-xs text-slate-700 truncate">${chipInner(item)}</div>`).join('')}
-        </div>
-      </div>` : '';
+    const extraLabel = rest.length > 0 ? `<div class="text-xs text-slate-400">+${rest.length} more</div>` : '';
+    const hasAnything = dayItems.length > 0 || dayHolidays.length > 0;
+    if (hasAnything) leaveCalDayDetail[day] = { dateStr, dayHolidays, dayItems };
     cells += `
-      <div class="min-h-[70px] border rounded-lg p-1 ${isToday ? 'ring-1 ring-blue-400' : ''} ${isHoliday ? 'bg-rose-50/50 border-rose-100' : 'border-slate-100'}">
+      <div class="min-h-[70px] border rounded-lg p-1 ${isToday ? 'ring-1 ring-blue-400' : ''} ${isHoliday ? 'bg-rose-50/50 border-rose-100' : 'border-slate-100'} ${hasAnything ? 'cursor-pointer hover:border-blue-300 hover:shadow-sm' : ''}"
+           ${hasAnything ? `onclick="openLeaveDayDetail(${day})"` : ''}>
         <div class="text-xs ${isToday ? 'font-bold text-blue-600' : (isHoliday ? 'font-semibold text-rose-500' : 'text-slate-400')} mb-0.5">${day}</div>
         <div class="space-y-0.5">${holidayChips}${chips}${extraLabel}</div>
       </div>`;
   }
   grid.innerHTML = cells;
 }
+
+// Day-detail modal — the grid cell only ever shows 3 chips before
+// collapsing into "+N more" (a hover tooltip doesn't work on touch
+// screens, and even on desktop a cramped tooltip isn't meaningful once a
+// day has many rows) — clicking the day instead opens every row: leave,
+// holiday, onboarding/offboarding action items and document expiries.
+function openLeaveDayDetail(day) {
+  const d = leaveCalDayDetail[day];
+  if (!d) return;
+  const dateObj = new Date(d.dateStr + 'T00:00:00');
+  document.getElementById('leaveDayDetailTitle').textContent =
+    dateObj.toLocaleDateString('en-MY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+  const section = (label, rowsHtml) => rowsHtml ? `
+    <div>
+      <h4 class="text-xs font-semibold text-slate-400 uppercase mb-1.5">${label}</h4>
+      <div class="space-y-1.5">${rowsHtml}</div>
+    </div>` : '';
+
+  const holidayRows = d.dayHolidays.map(h => `
+    <div class="text-sm bg-rose-50 text-rose-700 rounded-lg px-3 py-2 font-medium">${esc(h.name)}</div>`).join('');
+
+  const leaveItems = d.dayItems.filter(i => i.kind === 'leave');
+  const leaveRows = leaveItems.map(item => `
+    <div class="flex items-center justify-between bg-amber-50 rounded-lg px-3 py-2">
+      <span class="text-sm text-amber-800">${esc(displayName(item.e.full_name, item.e.preferred_name))}</span>
+      <span class="text-xs text-amber-700">${item.e.leave_type_name ? esc(item.e.leave_type_name) : 'On leave'}${item.e._dayPeriod ? ` · ${item.e._dayPeriod}` : ''}</span>
+    </div>`).join('');
+
+  const obRowItems = d.dayItems.filter(i => i.kind === 'ob');
+  const obRows = obRowItems.map(item => `
+    <div class="flex items-center justify-between bg-indigo-50 rounded-lg px-3 py-2">
+      <span class="text-sm text-indigo-800">📌 ${esc(item.o.title)}</span>
+      <span class="text-xs text-indigo-700">${esc(displayName(item.o.employee_name, item.o.employee_preferred_name))}</span>
+    </div>`).join('');
+
+  const docItems = d.dayItems.filter(i => i.kind === 'docexpiry');
+  const docRows = docItems.map(item => `
+    <div class="flex items-center justify-between ${item.de.status === 'overdue' ? 'bg-red-50' : 'bg-amber-50'} rounded-lg px-3 py-2">
+      <span class="text-sm ${item.de.status === 'overdue' ? 'text-red-800' : 'text-amber-800'}">⚠️ ${esc(displayName(item.de.full_name, item.de.preferred_name))}</span>
+      <span class="text-xs ${item.de.status === 'overdue' ? 'text-red-700' : 'text-amber-700'}">${esc(item.de.document_type_name)} expires ${fmtDate(item.de.expiry_date)}</span>
+    </div>`).join('');
+
+  document.getElementById('leaveDayDetailBody').innerHTML =
+    section('Public Holiday', holidayRows) +
+    section(`On Leave (${leaveItems.length})`, leaveRows) +
+    section('Onboarding / Offboarding', obRows) +
+    section('Document Expiring', docRows) ||
+    '<p class="text-slate-400 text-sm">Nothing scheduled.</p>';
+
+  document.getElementById('leaveDayDetailModal').classList.remove('hidden');
+}
+
+function closeLeaveDayDetail() { closeModal('leaveDayDetailModal'); }
 
 // Cache of the last-fetched by-type breakdown (always institution-wide,
 // unfiltered) so clicking a row can look its id/name back up without a
