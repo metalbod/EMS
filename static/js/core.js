@@ -462,23 +462,51 @@ function apiErrorText(detail, fallback = 'Failed') {
 // ---------------------------------------------------------------------------
 // Auth
 // ---------------------------------------------------------------------------
+// "Remember me" only ever remembers the company code + username, never the
+// password — those two are what make re-logging-in after a session expires
+// (or after a manual logout) tedious to retype, and there's no legitimate
+// reason to persist a password client-side. Written on a successful login
+// (or cleared, if the box is unchecked) so unchecking it actually forgets
+// what was remembered before, not just stops updating it.
+const REMEMBERED_LOGIN_KEY = 'rememberedLogin';
+
+function prefillRememberedLogin() {
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(REMEMBERED_LOGIN_KEY) || 'null'); } catch { /* ignore malformed value */ }
+  if (!saved) return;
+  document.getElementById('loginCode').value = saved.code || '';
+  document.getElementById('loginUser').value = saved.username || '';
+  document.getElementById('loginRemember').checked = true;
+}
+// Runs as soon as this script executes — the login form is already in the
+// DOM by then (this bundle loads at the end of <body>) — so it's ready
+// before the auto-login check further down (app-init.js) has even resolved,
+// covering both the "token expired, need the password again" case and a
+// fresh browser with no token at all.
+prefillRememberedLogin();
+
 async function doLogin(e) {
   e.preventDefault();
   const err = document.getElementById('loginErr');
   err.classList.add('hidden');
+  const code = document.getElementById('loginCode').value.trim();
+  const username = document.getElementById('loginUser').value.trim();
+  const remember = document.getElementById('loginRemember').checked;
   showGlobalLoading();
   try {
     const res = await fetch('/api/auth/login', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({
-        username: document.getElementById('loginUser').value.trim(),
+        username,
         password: document.getElementById('loginPass').value,
-        institution_code: document.getElementById('loginCode').value.trim() || null,
+        institution_code: code || null,
       })
     });
     const data = await res.json();
     if (!res.ok) { err.textContent = data.detail || 'Login failed'; err.classList.remove('hidden'); return; }
     localStorage.setItem('token', data.access_token);
+    if (remember) localStorage.setItem(REMEMBERED_LOGIN_KEY, JSON.stringify({ code, username }));
+    else localStorage.removeItem(REMEMBERED_LOGIN_KEY);
     currentUser = data.user;
     bootApp();
   } finally {

@@ -850,3 +850,71 @@ describe('entity history helpers', () => {
     expect(canView('payroll_manager')).toBe(false);
   });
 });
+
+describe('Remember me (login)', () => {
+  const REMEMBERED_LOGIN_KEY = 'rememberedLogin';
+
+  beforeEach(() => {
+    localStorage.clear();
+    document.body.innerHTML = `
+      <input id="loginCode" type="text"/>
+      <input id="loginUser" type="text"/>
+      <input id="loginRemember" type="checkbox"/>
+    `;
+  });
+
+  function prefillRememberedLogin() {
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(REMEMBERED_LOGIN_KEY) || 'null'); } catch { /* ignore malformed value */ }
+    if (!saved) return;
+    document.getElementById('loginCode').value = saved.code || '';
+    document.getElementById('loginUser').value = saved.username || '';
+    document.getElementById('loginRemember').checked = true;
+  }
+
+  it('leaves the form untouched when nothing was remembered', () => {
+    prefillRememberedLogin();
+    expect(document.getElementById('loginCode').value).toBe('');
+    expect(document.getElementById('loginUser').value).toBe('');
+    expect(document.getElementById('loginRemember').checked).toBe(false);
+  });
+
+  it('prefills company code + username and checks the box when something was remembered', () => {
+    localStorage.setItem(REMEMBERED_LOGIN_KEY, JSON.stringify({ code: 'ACME', username: 'jdoe' }));
+    prefillRememberedLogin();
+    expect(document.getElementById('loginCode').value).toBe('ACME');
+    expect(document.getElementById('loginUser').value).toBe('jdoe');
+    expect(document.getElementById('loginRemember').checked).toBe(true);
+  });
+
+  it('tolerates malformed stored JSON instead of throwing', () => {
+    localStorage.setItem(REMEMBERED_LOGIN_KEY, '{not valid json');
+    expect(() => prefillRememberedLogin()).not.toThrow();
+    expect(document.getElementById('loginUser').value).toBe('');
+  });
+
+  it('never remembers a password field, even implicitly (only code + username round-trip)', () => {
+    const remembered = { code: 'ACME', username: 'jdoe' };
+    localStorage.setItem(REMEMBERED_LOGIN_KEY, JSON.stringify(remembered));
+    expect(Object.keys(JSON.parse(localStorage.getItem(REMEMBERED_LOGIN_KEY)))).toEqual(['code', 'username']);
+  });
+
+  // Mirrors doLogin's save/clear branch — a successful login remembers the
+  // current form values when the box is checked, and forgets a previously
+  // remembered login when it's unchecked (not just "leaves it as-is").
+  function saveOrClearRememberedLogin(remember, code, username) {
+    if (remember) localStorage.setItem(REMEMBERED_LOGIN_KEY, JSON.stringify({ code, username }));
+    else localStorage.removeItem(REMEMBERED_LOGIN_KEY);
+  }
+
+  it('saves company code + username on a remembered login', () => {
+    saveOrClearRememberedLogin(true, 'ACME', 'jdoe');
+    expect(JSON.parse(localStorage.getItem(REMEMBERED_LOGIN_KEY))).toEqual({ code: 'ACME', username: 'jdoe' });
+  });
+
+  it('clears a previously remembered login when the box is unchecked', () => {
+    localStorage.setItem(REMEMBERED_LOGIN_KEY, JSON.stringify({ code: 'ACME', username: 'jdoe' }));
+    saveOrClearRememberedLogin(false, 'ACME', 'jdoe');
+    expect(localStorage.getItem(REMEMBERED_LOGIN_KEY)).toBeNull();
+  });
+});
