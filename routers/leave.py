@@ -620,6 +620,7 @@ _LEAVE_SORT_COLUMNS = {
 def list_leave_applications(
     conn, response: Response,
     status: Optional[str] = None, employee_id: Optional[str] = None,
+    id: Optional[int] = None,
     sort_by: str = "created_at", sort_dir: str = "desc",
     limit: Optional[int] = None, offset: int = 0,
     user: dict = Depends(get_current_user),
@@ -640,6 +641,10 @@ def list_leave_applications(
     p: list = [inst_id]
     if status: q += " AND a.status=?"; p.append(status)
     if employee_id: q += " AND a.employee_id=?"; p.append(employee_id)
+    # A single application — the Home to-do deep-links here. The role scoping
+    # below still applies, so this can never reveal a row the caller couldn't
+    # already list.
+    if id is not None: q += " AND a.id=?"; p.append(id)
     if user["role"] == "manager":
         frag, fp = subordinates_in_clause(inst_id, user.get("employee_id", ""))
         q += f" AND e.employee_id IN {frag}"; p.extend(fp)

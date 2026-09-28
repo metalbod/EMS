@@ -17,6 +17,12 @@ the schema has no timestamp for when a request reached *this* approver's
 step), and `event_date` is purely informational context (a last working
 day, a leave start). `days_waiting`/`days_overdue` are computed here
 against the institution's own timezone, not by the browser in UTC.
+
+`ref_id` is this row's own id (for a per-project timesheet/overtime split it
+is the child project-approval row); `focus_id` is the id the destination page
+actually opens — the parent timesheet for a split timesheet or overtime row,
+the checklist for a checklist task, otherwise the same as `ref_id`. The
+Home to-do links with `showPage(page, {focus: focus_id})`.
 """
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
@@ -154,6 +160,7 @@ def _approval_row_detail(row, module: str, lookups: Dict[str, Dict]) -> Dict[str
     if module == "leave":
         name = lookups["leave_types"].get(row["leave_type_id"], "Leave")
         return {
+            "focus_id": row["id"],
             "employee_id": row["employee_id"],
             "stage": f"{name}: {row['start_date']} to {row['end_date']}",
             "stage_type": "Leave", "due_date": row["start_date"],
@@ -162,6 +169,7 @@ def _approval_row_detail(row, module: str, lookups: Dict[str, Dict]) -> Dict[str
     if module == "claims":
         name = lookups["benefit_plans"].get(row["benefit_plan_id"], "Benefit")
         return {
+            "focus_id": row["id"],
             "employee_id": row["employee_id"],
             "stage": f"{name} claim — RM {row['amount_claimed']}",
             "stage_type": "Benefit Claim", "due_date": None,
@@ -169,6 +177,7 @@ def _approval_row_detail(row, module: str, lookups: Dict[str, Dict]) -> Dict[str
         }
     if module == "requisition":
         return {
+            "focus_id": row["id"],
             "employee_id": lookups["requisition_creator_emp"].get(row["created_by"]),
             "stage": f"{row['title']} ({row['department']})",
             "stage_type": "Job Requisition", "due_date": None,
@@ -176,6 +185,8 @@ def _approval_row_detail(row, module: str, lookups: Dict[str, Dict]) -> Dict[str
         }
     if module == "timesheet":
         return {
+            # a per-project split row carries its parent timesheet's id
+            "focus_id": row["timesheet_id"] if "timesheet_id" in row.keys() else row["id"],
             "employee_id": row["employee_id"],
             "stage": f"Week of {row['period_start']}",
             "stage_type": "Timesheet", "due_date": None,
@@ -184,13 +195,21 @@ def _approval_row_detail(row, module: str, lookups: Dict[str, Dict]) -> Dict[str
     if module == "ld_enrollment":
         title = lookups["ld_courses"].get(row["course_id"], "Training course")
         return {
+            "focus_id": row["id"],
             "employee_id": row["employee_id"],
             "stage": title,
             "stage_type": "Training Enrollment", "due_date": None,
             "waiting_since": row["created_at"], "event_date": None,
         }
     if module == "overtime":
+        # Overtime is decided from its timesheet's detail. A legacy record has
+        # timesheet_id itself; a per-project split row only has the record id.
+        if "timesheet_id" in row.keys():
+            focus_id = row["timesheet_id"]
+        else:
+            focus_id = lookups["overtime_timesheet"].get(row["overtime_record_id"])
         return {
+            "focus_id": focus_id,
             "employee_id": row["employee_id"],
             "stage": f"{row['overtime_hours']}h overtime on {row['work_date']}",
             "stage_type": "Overtime", "due_date": None,
@@ -198,6 +217,7 @@ def _approval_row_detail(row, module: str, lookups: Dict[str, Dict]) -> Dict[str
         }
     if module == "resignation":
         return {
+            "focus_id": row["id"],
             "employee_id": row["employee_id"],
             "stage": f"Resignation — last day {row['last_working_day']}",
             "stage_type": "Resignation", "due_date": None,
@@ -205,6 +225,7 @@ def _approval_row_detail(row, module: str, lookups: Dict[str, Dict]) -> Dict[str
         }
     # pip: performance_cycles row (cycle_type='pip'), see MODULE_TABLE.
     return {
+        "focus_id": row["id"],
         "employee_id": row["employee_id"],
         "stage": row["name"],
         "stage_type": "PIP", "due_date": None,
@@ -287,6 +308,9 @@ def get_todos(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, An
                                      {r["course_id"] for r in module_rows["ld_enrollment"]}),
         "requisition_creator_emp": _batch_lookup(conn, "users", "username", "employee_id",
                                                    {r["created_by"] for r in module_rows["requisition"]}, inst_id=inst_id),
+        "overtime_timesheet": _batch_lookup(conn, "overtime_records", "id", "timesheet_id",
+                                              {r["overtime_record_id"] for r in module_rows["overtime"]
+                                               if "overtime_record_id" in r.keys()}, inst_id=inst_id),
     }
     approval_details = [
         (module, page, noun, row, _approval_row_detail(row, module, lookups))
@@ -305,7 +329,8 @@ def get_todos(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, An
             # Home page To-Do queue's per-item rendering.
             "employee_name": employee_name, "stage": detail["stage"],
             "stage_type": detail["stage_type"], "due_date": detail["due_date"],
-            "kind": "approval", "ref_id": row["id"], "employee_id": detail["employee_id"],
+            "kind": "approval", "ref_id": row["id"], "focus_id": detail["focus_id"],
+            "employee_id": detail["employee_id"],
             "waiting_since": detail["waiting_since"], "event_date": detail["event_date"],
         })
 
@@ -389,7 +414,8 @@ def get_todos(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, An
             # any older client still reading just label/page/count.
             "employee_name": r["employee_name"], "stage": r["title"],
             "stage_type": type_label, "due_date": r["due_date"],
-            "kind": "task", "ref_id": r["id"], "employee_id": r["employee_id"],
+            # A task is opened by opening its checklist.
+            "kind": "task", "ref_id": r["id"], "focus_id": r["checklist_id"], "employee_id": r["employee_id"],
             "checklist_id": r["checklist_id"],
             "checklist_open": ob_progress.get(r["checklist_id"], (None, None))[0],
             "checklist_total": ob_progress.get(r["checklist_id"], (None, None))[1],
@@ -402,7 +428,7 @@ def get_todos(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, An
     # single employee/request/date, so their new fields are just None.
     for t in todos:
         t.setdefault("kind", "reminder")
-        for field in ("ref_id", "employee_id", "due_date", "waiting_since", "event_date",
+        for field in ("ref_id", "focus_id", "employee_id", "due_date", "waiting_since", "event_date",
                       "checklist_id", "checklist_open", "checklist_total", "action_label"):
             t.setdefault(field, None)
         _add_day_counts(t, today, tz)
