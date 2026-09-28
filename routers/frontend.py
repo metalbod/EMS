@@ -26,11 +26,15 @@ def _app_version() -> str:
     (this never changes during a running process's lifetime, same
     reasoning as _static_asset_version above).
 
-    In production, APP_VERSION is set as a build-arg-derived image ENV by
-    deploy.sh (the deployed image has no .git — see .dockerignore — so it
-    can't be computed at runtime there). Local dev has no such env var,
-    but does have .git, so it's read directly via `git`; if even that
-    fails (git not installed, not a repo), falls back to "dev" rather
+    In production, APP_VERSION is a plain incrementing deploy counter
+    (1, 2, 3, ...) set as a build-arg-derived image ENV by deploy.sh, which
+    also tags that same number as v<N> on GitHub (annotated tag, pushed to
+    origin) — so "what's live right now" is directly look-up-able under the
+    repo's Tags/Releases page instead of needing a git-sha lookup. The
+    deployed image has no .git (see .dockerignore), so it can't be computed
+    at runtime there. Local dev has no such env var, but does have .git, so
+    it falls back to the short commit sha read directly via `git`; if even
+    that fails (git not installed, not a repo), falls back to "dev" rather
     than raising — this must never break the login page over a cosmetic
     label."""
     if _app_version_cache["value"] is None:

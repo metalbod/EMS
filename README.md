@@ -989,6 +989,17 @@ details:
   the script's own warning output calls this out rather than implying the
   rollback is a complete fix.
 
+- **Deploy version tagging:** each successful deploy gets the next plain
+  integer (1, 2, 3, ...), baked into the image as `APP_VERSION` (shown on
+  the login screen — `routers/frontend.py`'s `_app_version`) and pushed as
+  an annotated git tag `v<N>` on GitHub, so "what's live" is directly
+  look-up-able under the repo's Tags/Releases page instead of needing a
+  `fly releases` trip or a git-sha lookup. The number is derived from the
+  highest existing `v<N>` tag on origin (via `git fetch --tags`), so it
+  keeps incrementing correctly regardless of which clone runs the deploy.
+  A deploy that fails its health check (and gets auto-rolled-back, above)
+  is not tagged, so the number is retried on the next successful deploy.
+
 ## Known limitations
 
 See commit history / project notes for the running tech-debt list. Notably:

@@ -4,6 +4,14 @@
 # migration never ships silently un-applied, then `fly deploy`. Run from the
 # repo root: ./deploy.sh
 #
+# Each successful deploy is tagged v1, v2, v3, ... on GitHub (annotated tag,
+# pushed to origin) — the same number is baked into the image as APP_VERSION
+# and shown on the login screen (routers/frontend.py's _app_version), so
+# "what's live right now" is a plain incrementing number you can look up
+# directly under the repo's Tags/Releases page, no `fly releases` trip needed.
+# The number is derived from the highest existing v<N> tag on origin, so it
+# keeps incrementing correctly even run from a different clone.
+#
 # If the post-deploy health check fails, this automatically redeploys the
 # previous release's exact image (fast — no rebuild) rather than leaving
 # prod on a broken release until someone notices and rolls back by hand.
@@ -25,8 +33,12 @@ if [ -z "$prev_image" ]; then
   echo "WARNING: could not determine the current live image — automatic rollback won't be available if this deploy fails its health check." >&2
 fi
 
-echo "==> Deploying to Fly.io..."
-app_version="$(git rev-parse --short HEAD)"
+echo "==> Computing next deploy version number..."
+git fetch origin --tags --quiet || echo "WARNING: could not fetch tags from origin — the version number below may collide with one already pushed from elsewhere." >&2
+last_version=$(git tag -l 'v[0-9]*' | sed 's/^v//' | sort -n | tail -1)
+app_version=$(( ${last_version:-0} + 1 ))
+
+echo "==> Deploying to Fly.io (v$app_version)..."
 fly deploy --app ems-app --build-arg "APP_VERSION=$app_version"
 
 echo "==> Verifying..."
@@ -58,3 +70,16 @@ if [ "$code" != "200" ]; then
   exit 1
 fi
 echo "==> Deploy verified: 200 OK"
+
+echo "==> Tagging v$app_version on GitHub..."
+if git tag -a "v$app_version" -m "Deploy v$app_version ($(git rev-parse --short HEAD))" && git push origin "v$app_version"; then
+  # Portable slug extraction (avoids sed regex-dialect differences between
+  # BSD/macOS and GNU sed) for both the SSH and HTTPS remote URL forms.
+  origin_url=$(git remote get-url origin)
+  repo_slug="${origin_url#git@github.com:}"
+  repo_slug="${repo_slug#https://github.com/}"
+  repo_slug="${repo_slug%.git}"
+  echo "==> https://github.com/$repo_slug/releases/tag/v$app_version"
+else
+  echo "WARNING: deploy succeeded, but tagging/pushing v$app_version failed — it won't show up on GitHub. The next deploy will retry this same version number." >&2
+fi
