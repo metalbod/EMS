@@ -44,7 +44,12 @@ git fetch origin --tags --quiet || echo "WARNING: could not fetch tags from orig
 # Highest existing v<major>.<minor> tag, numeric on both fields (so v0.9
 # correctly sorts before v0.10) — anything not matching that exact shape
 # (an old bare "v<N>" tag, say) is ignored rather than breaking the parse.
-last_version=$(git tag -l | grep -E '^v[0-9]+\.[0-9]+$' | sed 's/^v//' | sort -t. -k1,1n -k2,2n | tail -1)
+# `|| true` on the whole pipeline: with `pipefail`, grep matching zero tags
+# (the very first deploy under this scheme, or any repo with no tags yet)
+# exits 1, which would otherwise silently kill the script here under `set
+# -e` before `fly deploy` ever runs — an empty result is exactly the
+# legitimate "no tags yet" case the `-z` check below already handles.
+last_version=$( { git tag -l | grep -E '^v[0-9]+\.[0-9]+$' | sed 's/^v//' | sort -t. -k1,1n -k2,2n | tail -1; } || true)
 if [ -z "$last_version" ]; then
   major=0; minor=0
 else
