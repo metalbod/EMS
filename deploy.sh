@@ -4,13 +4,19 @@
 # migration never ships silently un-applied, then `fly deploy`. Run from the
 # repo root: ./deploy.sh
 #
-# Each successful deploy is tagged v1, v2, v3, ... on GitHub (annotated tag,
-# pushed to origin) — the same number is baked into the image as APP_VERSION
-# and shown on the login screen (routers/frontend.py's _app_version), so
-# "what's live right now" is a plain incrementing number you can look up
-# directly under the repo's Tags/Releases page, no `fly releases` trip needed.
-# The number is derived from the highest existing v<N> tag on origin, so it
-# keeps incrementing correctly even run from a different clone.
+# Each successful deploy is tagged v0.1, v0.2, v0.3, ... on GitHub (annotated
+# tag, pushed to origin) — the same "major.minor" is baked into the image as
+# APP_VERSION and shown on the login screen (routers/frontend.py's
+# _app_version), so "what's live right now" is a plain incrementing number
+# you can look up directly under the repo's Tags/Releases page, no `fly
+# releases` trip needed. The minor number is derived from the highest
+# existing v<major>.<minor> tag on origin, so it keeps incrementing correctly
+# regardless of which clone runs the deploy. The major number only ever
+# changes by hand — create/push a vN.0 tag yourself (e.g. `git tag -a v1.0
+# -m "..." && git push origin v1.0`) when ready to bump it; this script never
+# rolls the minor over into a new major on its own. major/minor are parsed
+# and incremented as plain integers (never floating-point arithmetic), so
+# there's no risk of 0.1 + 0.1 drifting to something like 0.1999999999.
 #
 # If the post-deploy health check fails, this automatically redeploys the
 # previous release's exact image (fast — no rebuild) rather than leaving
@@ -35,8 +41,17 @@ fi
 
 echo "==> Computing next deploy version number..."
 git fetch origin --tags --quiet || echo "WARNING: could not fetch tags from origin — the version number below may collide with one already pushed from elsewhere." >&2
-last_version=$(git tag -l 'v[0-9]*' | sed 's/^v//' | sort -n | tail -1)
-app_version=$(( ${last_version:-0} + 1 ))
+# Highest existing v<major>.<minor> tag, numeric on both fields (so v0.9
+# correctly sorts before v0.10) — anything not matching that exact shape
+# (an old bare "v<N>" tag, say) is ignored rather than breaking the parse.
+last_version=$(git tag -l | grep -E '^v[0-9]+\.[0-9]+$' | sed 's/^v//' | sort -t. -k1,1n -k2,2n | tail -1)
+if [ -z "$last_version" ]; then
+  major=0; minor=0
+else
+  major="${last_version%.*}"
+  minor="${last_version#*.}"
+fi
+app_version="$major.$((minor + 1))"
 
 echo "==> Deploying to Fly.io (v$app_version)..."
 fly deploy --app ems-app --build-arg "APP_VERSION=$app_version"
