@@ -725,7 +725,10 @@ async function loadClaims() {
   if (!res || !res.ok) return;
   currentClaims = await res.json();
   claimsList.resetPage();
+  const focusId = pendingFocusId('ben-claims');
+  if (focusId) claimsList.showItem(currentClaims, c => String(c.id) === focusId);
   renderClaimsTable();
+  applyFocus('ben-claims');
 }
 
 function setClaimsSort(key) { claimsList.setSort(key); renderClaimsTable(); }
@@ -750,7 +753,7 @@ function renderClaimsTable() {
   if (pageInfoEl) pageInfoEl.textContent = `${start + 1}-${Math.min(start + claimsList.pageSize, total)} of ${total}`;
 
   tbody.innerHTML = pageItems.map(c => `
-    <tr>
+    <tr data-focus-id="${c.id}">
       <td class="px-4 py-3">
         <p class="font-medium">${esc(c.employee_name ? displayName(c.employee_name, c.employee_preferred_name) : c.employee_id)}</p>
         <p class="text-xs text-slate-500">${esc(c.employee_id)}</p>

@@ -595,8 +595,13 @@ function _todoStageText(t) {
 // monthly calendar), not a top-level page — showPage() alone lands on the
 // Dashboard's default tab, so it needs switchDashTab() too. No top-level
 // ALL_PAGES entry starts with "dash-", so this prefix check is unambiguous.
-function _todoNav(page) {
-  return page.startsWith('dash-') ? `showPage('dashboard');switchDashTab('${page}')` : `showPage('${page}')`;
+//
+// `focus` (the item's focus_id from /api/todos) deep-links to that exact
+// record — the destination opens it or highlights its row (deep-link.js).
+function _todoNav(page, focus) {
+  if (page.startsWith('dash-')) return `showPage('dashboard');switchDashTab('${page}')`;
+  const id = focus == null || focus === '' ? NaN : Number(focus);
+  return Number.isInteger(id) ? `showPage('${page}',{focus:${id}})` : `showPage('${page}')`;
 }
 
 // The timing cell says what its date means in words, never by colour alone:
@@ -634,7 +639,7 @@ function _todoButtonHtml(verb, nav, isUrgent, ariaLabel) {
 function _todoApprovalsHtml(rows, urgent) {
   const body = rows.map(t => {
     const isUrgent = t === urgent;
-    const nav = _todoNav(t.page);
+    const nav = _todoNav(t.page, t.focus_id);
     return `
     <tr role="row" class="cursor-pointer ${isUrgent ? 'todo-row-urgent' : 'hover:bg-slate-50'}" onclick="${nav}">
       <td role="cell" class="px-4 py-3 font-medium text-slate-800 todo-cell-wrap">${esc(_todoStageText(t))}</td>
@@ -670,7 +675,7 @@ function _todoGroups(tasks) {
   for (const t of tasks) {
     const k = t.checklist_id != null ? `c${t.checklist_id}` : `k${t.key}`;
     if (!byKey.has(k)) {
-      byKey.set(k, { id: k, employee_id: t.employee_id, name: t.employee_name, type: t.stage_type, page: t.page,
+      byKey.set(k, { id: k, checklist_id: t.checklist_id, employee_id: t.employee_id, name: t.employee_name, type: t.stage_type, page: t.page,
         open: t.checklist_open, total: t.checklist_total, event_date: t.event_date, days_until_event: t.days_until_event,
         items: [], overdue: 0, maxOverdue: 0, minDue: null });
     }
@@ -728,7 +733,7 @@ function _todoGroupHtml(g, isUrgent) {
         ${when ? `<span class="todo-group-meta">${when}</span>` : ''}
         ${g.overdue ? `<span class="todo-overdue">${_OVERDUE_ICON}${g.overdue} overdue</span>` : ''}
       </button>
-      ${_todoButtonHtml('Open', _todoNav(g.page), isUrgent, `Open ${mine ? `your ${typeLower}` : `${g.name || ''}'s ${typeLower}`} checklist`)}
+      ${_todoButtonHtml('Open', _todoNav(g.page, g.checklist_id), isUrgent, `Open ${mine ? `your ${typeLower}` : `${g.name || ''}'s ${typeLower}`} checklist`)}
     </div>
     <ul class="todo-group-items" id="${panelId}" ${open ? '' : 'hidden'}>${items}</ul>
   </li>`;

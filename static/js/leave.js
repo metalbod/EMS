@@ -421,18 +421,24 @@ async function loadLeaveApprovals() {
   const seq=++leaveApprovalRequestSeq; // discards a response that's no longer the latest
   const tbody=document.getElementById('leaveApprovalTableBody');
   tbody.innerHTML='<tr><td colspan="7" class="text-slate-400 text-sm text-center py-8">Loading…</td></tr>';
+  // A Home to-do deep link narrows the list to that one application (any
+  // status), and offers "Show all" — see deep-link.js.
+  const focusId=pendingFocusId('leave-approvals');
+  if(focusId) leaveApprovalPage=1;
   const offset=(leaveApprovalPage-1)*leaveApprovalPageSize;
   const params=new URLSearchParams({
     limit:String(leaveApprovalPageSize), offset:String(offset),
     sort_by:leaveApprovalSortKey, sort_dir:leaveApprovalSortDir,
   });
-  if(leaveApprovalFilter) params.set('status', leaveApprovalFilter);
+  if(focusId) params.set('id', focusId);
+  else if(leaveApprovalFilter) params.set('status', leaveApprovalFilter);
   const res=await api(`/api/leave/applications?${params}`);
   if(seq!==leaveApprovalRequestSeq) return; // a newer request has since started
   if(!res?.ok){ tbody.innerHTML=''; return; }
   leaveApprovalRowsCache=await res.json();
   leaveApprovalTotal=parseInt(res.headers.get('X-Total-Count')||'0',10);
   renderLeaveApprovalTable();
+  applyFocus('leave-approvals', { showAll: loadLeaveApprovals });
 }
 
 function setLeaveApprovalSort(key) {
@@ -468,7 +474,7 @@ function renderLeaveApprovalTable() {
   if(pageInfoEl) pageInfoEl.textContent=`${offset+1}-${Math.min(offset+leaveApprovalPageSize, leaveApprovalTotal)} of ${leaveApprovalTotal}`;
 
   tbody.innerHTML=leaveApprovalRowsCache.map(a=>`
-    <tr>
+    <tr data-focus-id="${a.id}">
       <td class="px-4 py-3">
         <p class="font-medium">${esc(displayName(a.employee_name, a.employee_preferred_name))}</p>
         <p class="text-xs text-slate-500">${esc(a.department||'')}${a.designation?' · '+esc(a.designation):''}</p>

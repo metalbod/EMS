@@ -365,3 +365,11 @@ tr.todo-row-urgent:hover,.todo-group.todo-row-urgent .todo-group-head:hover{back
    Review under Timesheet, despite core.js correctly adding the .hidden
    class — this is why. */
 .hidden{display:none}
+
+/* Deep links (deep-link.js): the record a Home link landed on, and the status line
+   that says what happened when it could not (or that the list is narrowed). */
+.focus-target{background:var(--accent-tint) !important;outline:2px solid var(--accent-ink);outline-offset:-2px}
+.page-notice{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px;padding:10px 14px;border-radius:var(--radius);background:var(--surface-2);color:var(--ink-2);font-size:14px}
+.page-notice > span{flex:1 1 16rem}
+.page-notice-action{padding:6px 14px;font-size:12.5px}
+.page-notice-dismiss{flex:none;display:inline-flex;padding:8px;border-radius:6px;color:var(--muted);background:none;border:0;cursor:pointer}

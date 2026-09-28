@@ -21,6 +21,7 @@
 // then run `npm run build:js`.
 module.exports = [
   'list-state.js',
+  'deep-link.js',
   'core.js',
   'employee-picker.js',
   'dashboard.js',

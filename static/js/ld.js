@@ -192,7 +192,10 @@ async function loadLdEnrollments() {
   if(ldEnrollFilter) url+=`?status=${encodeURIComponent(ldEnrollFilter)}`;
   const res=await api(url);
   ldEnrollData=res&&res.ok?await res.json():[];
+  const focusId=pendingFocusId('ld-trainings');
+  if(focusId) ldEnrollList.showItem(ldEnrollData, en=>String(en.id)===focusId);
   renderLdEnrollTable();
+  applyFocus('ld-trainings');
 }
 
 function setLdSort(key) { ldEnrollList.setSort(key); renderLdEnrollTable(); }
@@ -217,7 +220,7 @@ function renderLdEnrollTable() {
     const isOwnEmployeeAccount = currentUser?.role==='employee' && currentUser?.employee_id===en.employee_id;
     const canAct = en.status==='In Progress' && isSelf;
     const hasQuiz = !!en.quiz_id;
-    return `<tr class="border-t border-slate-100">
+    return `<tr class="border-t border-slate-100" data-focus-id="${en.id}">
       <td class="px-4 py-3 font-medium text-slate-800 whitespace-nowrap">${esc(displayName(en.employee_name,en.employee_preferred_name))}</td>
       <td class="px-4 py-3 text-slate-600 whitespace-nowrap">${esc(en.department||'—')}</td>
       <td class="px-4 py-3">

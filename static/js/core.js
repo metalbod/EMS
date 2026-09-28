@@ -861,7 +861,11 @@ function clearInstitutionContext() {
 // ---------------------------------------------------------------------------
 // Pages
 // ---------------------------------------------------------------------------
-async function showPage(page) {
+// `opts.focus` deep-links to one record (see deep-link.js): the destination page
+// opens it or scrolls to and highlights its row.
+async function showPage(page, opts = {}) {
+  setPendingFocus(page, opts.focus);
+  clearPageNotice(page);
   ALL_PAGES.forEach(p => {
     const el = document.getElementById(`page-${p}`);
     if (el) el.classList.toggle('hidden', p !== page);
@@ -973,6 +977,7 @@ async function showPage(page) {
   if (page === 'settings-offer-letter-templates') loadOfferTemplates();
   if (page === 'settings-performance') loadProbationGoalTemplatePage();
   if (page === 'settings-ai-assistant') loadAiAssistantSettingsPage();
+  if (focusOpensModal(page)) openFocusedRecord(page);
 }
 
 // ---------------------------------------------------------------------------

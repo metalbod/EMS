@@ -47,6 +47,15 @@ function createListState({ sortKey, sortDir = 'asc', pageSize = 10, sortValue })
       state.page = 1;
     },
     resetPage() { state.page = 1; },
+    // Moves to the page (in the current sort order) that holds the first item
+    // matching `predicate`; returns whether one was found. Used by deep links,
+    // so the target row is on screen after the render.
+    showItem(data, predicate) {
+      const i = sorted(data).findIndex(predicate);
+      if (i < 0) return false;
+      state.page = Math.floor(i / state.pageSize) + 1;
+      return true;
+    },
     prevPage() { if (state.page > 1) state.page--; },
     nextPage(total) {
       const totalPages = Math.max(1, Math.ceil(total / state.pageSize));

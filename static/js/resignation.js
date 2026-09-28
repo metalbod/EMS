@@ -128,7 +128,10 @@ async function loadResignationApprovals() {
   if (!res?.ok) { tbody.innerHTML = ''; return; }
   resignApprovalRowsCache = await res.json();
   resignApprovalList.resetPage();
+  const focusId = pendingFocusId('resignation-approvals');
+  if (focusId) resignApprovalList.showItem(resignApprovalRowsCache, r => String(r.id) === focusId);
   renderResignationApprovalTable();
+  applyFocus('resignation-approvals');
 }
 
 function setResignationApprovalSort(key) { resignApprovalList.setSort(key); renderResignationApprovalTable(); }
@@ -153,7 +156,7 @@ function renderResignationApprovalTable() {
   if (pageInfoEl) pageInfoEl.textContent = `${start + 1}-${Math.min(start + resignApprovalList.pageSize, total)} of ${total}`;
 
   tbody.innerHTML = pageItems.map(r => `
-    <tr>
+    <tr data-focus-id="${r.id}">
       <td class="px-4 py-3">
         <p class="font-medium">${esc(displayName(r.employee_name, r.employee_preferred_name))}</p>
         <p class="text-xs text-slate-500">${esc(r.department || '')}${r.designation ? ' · ' + esc(r.designation) : ''}</p>
