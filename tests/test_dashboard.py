@@ -6,9 +6,13 @@ period_start — the ld_enrollments and manager-appraisal todo branches
 are covered indirectly once ld.py/performance.py get their own test files.
 """
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from conftest import _valid_employee_payload
+from routers.dashboard import _add_day_counts, _first_col, _to_local_date, _todo_sort_key
+
+KL = ZoneInfo("Asia/Kuala_Lumpur")
 
 
 def _this_monday():
@@ -149,6 +153,16 @@ def test_pending_leave_approval_appears_as_one_per_item_todo(
     assert match["employee_name"] == emp["full_name"]
     assert match["stage_type"] == "Leave"
     assert match["due_date"] == "2027-04-05"
+    # New contract: kind/ref_id for the UI, and a real waiting time computed
+    # server-side (submitted just now, and 2027 leave isn't overdue).
+    assert match["kind"] == "approval"
+    assert match["ref_id"] == app_id
+    assert match["event_date"] == "2027-04-05"
+    assert match["waiting_since"] and match["days_waiting"] == 0
+    assert match["days_overdue"] is None
+    # Approvals sort ahead of every task/reminder.
+    kinds = [t["kind"] for t in todos]
+    assert kinds == sorted(kinds, key=lambda k: {"approval": 0, "task": 1, "reminder": 2}[k])
     assert lt["name"] in match["stage"]
     assert emp["full_name"] in match["label"]
     assert "awaiting your approval" in match["label"]
@@ -214,6 +228,15 @@ def test_onboarding_checklist_items_appear_for_assigned_role(client, superadmin_
     assert all(t["page"] == "onboarding" and t["count"] == 1 for t in emp_ob_todos)
     assert any("Welcome Acknowledgement" in t["label"] for t in emp_ob_todos)
     assert not any(emp["full_name"] in t["label"] for t in emp_ob_todos)
+    # Checklist grouping fields: one checklist, progress counts consistent
+    # with the full item list, ref_id = the item, kind = "task".
+    assert all(t["kind"] == "task" and t["checklist_id"] == cl_id and t["employee_id"] == emp["employee_id"]
+               for t in emp_ob_todos)
+    assert all(t["ref_id"] in item_ids for t in emp_ob_todos)
+    assert all(t["checklist_total"] == len(item_ids) and 1 <= t["checklist_open"] <= t["checklist_total"]
+               for t in emp_ob_todos)
+    # Onboarding has no "leaves on" context (that's offboarding-only).
+    assert all(t["event_date"] is None for t in emp_ob_todos)
 
     # HR sees their own 'hr_admin'/'hr_manager'-assigned items across the
     # institution (not the employee's), each labeled with the employee's
@@ -222,3 +245,93 @@ def test_onboarding_checklist_items_appear_for_assigned_role(client, superadmin_
     hr_ob_todos = [t for t in hr_todos if t["key"].startswith("ob-item-") and int(t["key"].removeprefix("ob-item-")) in item_ids]
     assert hr_ob_todos
     assert all(emp["full_name"] in t["label"] for t in hr_ob_todos)
+
+
+def test_dashboard_todo_resignation_has_no_fake_deadline(client, employee_with_login, hr_manager_auth):
+    """A pending resignation has no deadline of its own — `effective_date`
+    used to be shown as "due", which coloured it red as soon as the
+    (often back-dated) effective date passed. Now due_date is None, the
+    last working day is informational `event_date`, and the wait is shown
+    as days_waiting from submission."""
+    emp, headers = employee_with_login(full_name="ZZ Resign Dates")
+    submit = client.post("/api/resignations", headers=headers, json={
+        "reason": "Date semantics", "effective_date": "2020-01-01", "last_working_day": "2027-06-30",
+    })
+    assert submit.status_code == 201, submit.text
+    req_id = submit.json()["id"]
+
+    todos = client.get("/api/todos", headers=hr_manager_auth).json()
+    match = next(t for t in todos if t["key"] == f"resignation-approval-{req_id}")
+    assert match["kind"] == "approval" and match["ref_id"] == req_id
+    assert match["due_date"] is None and match["days_overdue"] is None
+    assert match["event_date"] == "2027-06-30"
+    assert match["days_waiting"] == 0 and match["waiting_since"]
+
+    client.patch(f"/api/resignations/{req_id}", headers=hr_manager_auth, json={"status": "Rejected"})
+
+
+def test_reminder_rows_share_the_same_shape(client, hr_manager_auth):
+    """Aggregate rows (no single employee/request) still carry every new
+    field, as None, so the UI can read them uniformly."""
+    for t in client.get("/api/todos", headers=hr_manager_auth).json():
+        for field in ("kind", "ref_id", "employee_id", "due_date", "waiting_since", "event_date",
+                      "days_waiting", "days_overdue", "days_until_event", "checklist_id", "checklist_open", "checklist_total"):
+            assert field in t, f"{t['key']} is missing {field}"
+        if t["kind"] == "reminder":
+            assert t["ref_id"] is None and t["due_date"] is None and t["days_overdue"] is None
+
+
+def test_to_local_date_converts_utc_timestamps_but_not_plain_dates():
+    # 17:30 UTC on 27 Sep is already 01:30 on 28 Sep in Malaysia (UTC+8).
+    assert _to_local_date("2026-09-27 17:30:00", KL) == date(2026, 9, 28)
+    assert _to_local_date("2026-09-27 15:59:00", KL) == date(2026, 9, 27)
+    # A bare date is a calendar date already — never shifted.
+    assert _to_local_date("2026-09-27", KL) == date(2026, 9, 27)
+    assert _to_local_date(None, KL) is None
+    assert _to_local_date("not a date", KL) is None
+
+
+def test_add_day_counts_waiting_and_overdue():
+    today = date(2026, 9, 28)
+    t = {"waiting_since": "2026-09-11 02:00:00", "due_date": "2026-09-25"}
+    _add_day_counts(t, today, KL)
+    assert t["waiting_since"] == "2026-09-11"
+    assert t["days_waiting"] == 17
+    assert t["days_overdue"] == 3
+    assert t["days_until_event"] is None  # no event_date on this item
+
+    # event_date is signed: future is positive, today 0, past negative.
+    for ev, expected in (("2026-10-12", 14), ("2026-09-28", 0), ("2026-09-25", -3), (None, None)):
+        t = {"waiting_since": None, "due_date": None, "event_date": ev}
+        _add_day_counts(t, today, KL)
+        assert t["days_until_event"] == expected
+
+    # Due today is not overdue; a future or missing due date never is; a
+    # missing waiting_since gives no wait at all (not 0).
+    for due in ("2026-09-28", "2026-10-01", None):
+        t = {"waiting_since": None, "due_date": due}
+        _add_day_counts(t, today, KL)
+        assert t["days_overdue"] is None and t["days_waiting"] is None and t["waiting_since"] is None
+
+
+def test_todo_sort_key_orders_approvals_then_tasks_then_reminders():
+    items = [
+        {"key": "rem", "kind": "reminder", "waiting_since": None, "due_date": None},
+        {"key": "task-undated", "kind": "task", "waiting_since": None, "due_date": None},
+        {"key": "task-late", "kind": "task", "waiting_since": None, "due_date": "2026-09-01"},
+        {"key": "appr-new", "kind": "approval", "waiting_since": "2026-09-20", "due_date": None},
+        {"key": "appr-old", "kind": "approval", "waiting_since": "2026-09-01", "due_date": None},
+    ]
+    assert [t["key"] for t in sorted(items, key=_todo_sort_key)] == [
+        "appr-old", "appr-new", "task-late", "task-undated", "rem",
+    ]
+
+
+def test_first_col_skips_missing_and_null_columns():
+    class FakeRow(dict):
+        pass
+
+    # timesheet_project_approvals rows have no submitted_at at all.
+    assert _first_col(FakeRow(created_at="2026-09-01 00:00:00"), "submitted_at", "created_at") == "2026-09-01 00:00:00"
+    assert _first_col(FakeRow(submitted_at=None, created_at="x"), "submitted_at", "created_at") == "x"
+    assert _first_col(FakeRow(), "submitted_at", "created_at") is None
