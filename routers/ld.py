@@ -230,6 +230,11 @@ def update_ld_enrollment_status(conn, enr_id: int, body: LDEnrollStatusIn, user:
         raise HTTPException(404, "Enrollment not found")
 
     if body.status in ("Approved", "Rejected"):
+        # Same guard Leave has: without it a second approver acting after the
+        # first (or a reject arriving after an approve) silently re-decided an
+        # enrollment that was already settled.
+        if enr["status"] != "Pending Approval":
+            raise HTTPException(400, f"Enrollment is already {enr['status']}")
         action = "reject" if body.status == "Rejected" else "approve"
         if enr["approval_workflow_id"] and enr["approval_step"] is not None:
             try:

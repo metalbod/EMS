@@ -329,7 +329,9 @@ def get_todos(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, An
             # Home page To-Do queue's per-item rendering.
             "employee_name": employee_name, "stage": detail["stage"],
             "stage_type": detail["stage_type"], "due_date": detail["due_date"],
-            "kind": "approval", "ref_id": row["id"], "focus_id": detail["focus_id"],
+            # `module` lets the UI decide which requests can be approved/rejected
+            # straight from Home (see static/js/todo-decisions.js).
+            "kind": "approval", "module": module, "ref_id": row["id"], "focus_id": detail["focus_id"],
             "employee_id": detail["employee_id"],
             "waiting_since": detail["waiting_since"], "event_date": detail["event_date"],
         })
@@ -428,7 +430,7 @@ def get_todos(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, An
     # single employee/request/date, so their new fields are just None.
     for t in todos:
         t.setdefault("kind", "reminder")
-        for field in ("ref_id", "focus_id", "employee_id", "due_date", "waiting_since", "event_date",
+        for field in ("module", "ref_id", "focus_id", "employee_id", "due_date", "waiting_since", "event_date",
                       "checklist_id", "checklist_open", "checklist_total", "action_label"):
             t.setdefault(field, None)
         _add_day_counts(t, today, tz)
