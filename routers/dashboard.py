@@ -7,9 +7,20 @@ below), so this isn't a new exception to the "personal only" rule so much
 as generalizing the one that was already there.
 Computed on every request from live state (not stored), so items disappear
 automatically once actioned. Excluded for superadmin (no personal employee record).
+
+Every item carries a `kind` ("approval" | "task" | "reminder") plus three
+deliberately separate date concepts, so the UI never has to guess what a
+date means: `due_date` is only ever a real deadline (an approval that has
+no deadline of its own, e.g. a resignation, has none), `waiting_since` is
+when a pending approval request was submitted (a proxy for time-in-queue —
+the schema has no timestamp for when a request reached *this* approver's
+step), and `event_date` is purely informational context (a last working
+day, a leave start). `days_waiting`/`days_overdue` are computed here
+against the institution's own timezone, not by the browser in UTC.
 """
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List
+from datetime import date, datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends
 
@@ -47,8 +58,77 @@ def _batch_lookup(conn, table: str, key_col: str, value_col: str, ids, inst_id: 
     return {r[key_col]: r[value_col] for r in rows}
 
 
+def _institution_tz(conn, inst_id: int) -> ZoneInfo:
+    """The institution's own `timezone` column, falling back to UTC on a
+    missing/invalid value (same fallback core/tasks.py's reminder sweeps use)."""
+    row = conn.execute("SELECT timezone FROM institutions WHERE id=?", (inst_id,)).fetchone()
+    try:
+        return ZoneInfo((row["timezone"] if row else None) or "UTC")
+    except Exception:
+        return ZoneInfo("UTC")
+
+
+def _to_local_date(value, tz: ZoneInfo) -> Optional[date]:
+    """A date column ('YYYY-MM-DD') passes through as-is; a timestamp column
+    ('YYYY-MM-DD HH:MM:SS', stored in UTC — see the created_at defaults) is
+    converted to the institution's local calendar date first, so a request
+    submitted at 23:30 UTC counts as the next day in Malaysia."""
+    if not value:
+        return None
+    s = str(value)
+    try:
+        if len(s) > 10:
+            return datetime.fromisoformat(s.replace("T", " ")[:19]).replace(tzinfo=timezone.utc).astimezone(tz).date()
+        return date.fromisoformat(s)
+    except ValueError:
+        return None
+
+
+def _first_col(row, *names):
+    """First of `names` that exists on `row` and is non-null — the per-project
+    timesheet/overtime child tables don't carry every column their parent
+    table does (e.g. timesheet_project_approvals has no submitted_at)."""
+    cols = row.keys()
+    for n in names:
+        if n in cols and row[n] is not None:
+            return row[n]
+    return None
+
+
+def _add_day_counts(todo: Dict[str, Any], today: date, tz: ZoneInfo) -> None:
+    """Normalizes waiting_since to a local date and adds days_waiting
+    (approvals: how long since submission), days_overdue (only when a
+    real due_date is in the past; None otherwise — never 0 or negative)
+    and days_until_event."""
+    waiting = _to_local_date(todo.get("waiting_since"), tz)
+    todo["waiting_since"] = waiting.isoformat() if waiting else None
+    todo["days_waiting"] = max((today - waiting).days, 0) if waiting else None
+    due = _to_local_date(todo.get("due_date"), tz)
+    todo["days_overdue"] = (today - due).days if due and due < today else None
+    # Days until the informational event_date (an offboarding employee's last
+    # working day, a leave start): negative once it has passed, None if none.
+    event = _to_local_date(todo.get("event_date"), tz)
+    todo["days_until_event"] = (event - today).days if event else None
+
+
+_KIND_ORDER = {"approval": 0, "task": 1, "reminder": 2}
+
+
+def _todo_sort_key(t: Dict[str, Any]):
+    """Approvals first (longest-waiting first — the decision someone is
+    stuck on), then checklist tasks (nearest/most-overdue deadline first,
+    undated last), then aggregate reminders. sort() is stable, so ties keep
+    their query order (employee, then checklist item order)."""
+    kind = _KIND_ORDER[t["kind"]]
+    if kind == 0:
+        return (0, t["waiting_since"] is None, t["waiting_since"] or "")
+    if kind == 1:
+        return (1, t["due_date"] is None, t["due_date"] or "")
+    return (2, False, "")
+
+
 def _approval_row_detail(row, module: str, lookups: Dict[str, Dict]) -> Dict[str, Any]:
-    """Resolve the (employee, stage label, stage type, due date) shown on
+    """Resolve the (employee, stage label, stage type, dates) shown on
     one per-item To-Do row for a pending approval-workflow request —
     mirrors the shape the onboarding/offboarding checklist items below
     already use, rather than the aggregate "N items" count this replaced.
@@ -63,57 +143,70 @@ def _approval_row_detail(row, module: str, lookups: Dict[str, Dict]) -> Dict[str
     instead of querying inline — this used to run its own query per row
     per module (leave_types/benefit_plans/users/ld_courses), which meant
     a user with 20-30 pending items triggered 20-30+ individual round
-    trips just for this step, on the page that loads on every login."""
+    trips just for this step, on the page that loads on every login.
+
+    Dates: `due_date` is only set where the approver has a real deadline
+    (a leave request should be decided before it starts); `waiting_since`
+    is the raw submission timestamp/date (normalized to a local date in
+    get_todos); `event_date` is display-only context."""
     if module == "leave":
         name = lookups["leave_types"].get(row["leave_type_id"], "Leave")
         return {
             "employee_id": row["employee_id"],
             "stage": f"{name}: {row['start_date']} to {row['end_date']}",
             "stage_type": "Leave", "due_date": row["start_date"],
+            "waiting_since": row["created_at"], "event_date": row["start_date"],
         }
     if module == "claims":
         name = lookups["benefit_plans"].get(row["benefit_plan_id"], "Benefit")
         return {
             "employee_id": row["employee_id"],
             "stage": f"{name} claim — RM {row['amount_claimed']}",
-            "stage_type": "Benefit Claim", "due_date": row["claim_date"],
+            "stage_type": "Benefit Claim", "due_date": None,
+            "waiting_since": _first_col(row, "created_at", "claim_date"), "event_date": None,
         }
     if module == "requisition":
         return {
             "employee_id": lookups["requisition_creator_emp"].get(row["created_by"]),
             "stage": f"{row['title']} ({row['department']})",
-            "stage_type": "Job Requisition", "due_date": row["created_at"],
+            "stage_type": "Job Requisition", "due_date": None,
+            "waiting_since": row["created_at"], "event_date": None,
         }
     if module == "timesheet":
         return {
             "employee_id": row["employee_id"],
             "stage": f"Week of {row['period_start']}",
-            "stage_type": "Timesheet", "due_date": row["period_start"],
+            "stage_type": "Timesheet", "due_date": None,
+            "waiting_since": _first_col(row, "submitted_at", "created_at"), "event_date": row["period_start"],
         }
     if module == "ld_enrollment":
         title = lookups["ld_courses"].get(row["course_id"], "Training course")
         return {
             "employee_id": row["employee_id"],
             "stage": title,
-            "stage_type": "Training Enrollment", "due_date": row["created_at"],
+            "stage_type": "Training Enrollment", "due_date": None,
+            "waiting_since": row["created_at"], "event_date": None,
         }
     if module == "overtime":
         return {
             "employee_id": row["employee_id"],
             "stage": f"{row['overtime_hours']}h overtime on {row['work_date']}",
-            "stage_type": "Overtime", "due_date": row["work_date"],
+            "stage_type": "Overtime", "due_date": None,
+            "waiting_since": row["created_at"], "event_date": row["work_date"],
         }
     if module == "resignation":
         return {
             "employee_id": row["employee_id"],
             "stage": f"Resignation — last day {row['last_working_day']}",
-            "stage_type": "Resignation", "due_date": row["effective_date"],
+            "stage_type": "Resignation", "due_date": None,
+            "waiting_since": row["created_at"], "event_date": row["last_working_day"],
         }
     # pip: performance_cycles row (cycle_type='pip'), see MODULE_TABLE.
     return {
         "employee_id": row["employee_id"],
         "stage": row["name"],
-        "stage_type": "PIP", "due_date": row["created_at"],
+        "stage_type": "PIP", "due_date": None,
+        "waiting_since": row["created_at"], "event_date": None,
     }
 
 
@@ -126,9 +219,13 @@ def get_todos(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, An
     inst_id = need_inst(user)
     emp_id = user.get("employee_id")
     todos = []
+    # Institution-local calendar date, not UTC — in Malaysia (UTC+8) the two
+    # disagree between 00:00 and 08:00, which used to make "this week's
+    # timesheet" resolve to last week on early Monday mornings.
+    tz = _institution_tz(conn, inst_id)
+    today = datetime.now(tz).date()
 
     if emp_id:
-        today = datetime.now(timezone.utc).date()
         monday = (today - timedelta(days=today.weekday())).isoformat()
         row = conn.execute(
             "SELECT id FROM timesheets WHERE institution_id=? AND employee_id=? AND period_start=? AND status='Draft'",
@@ -206,6 +303,8 @@ def get_todos(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, An
             # Home page To-Do queue's per-item rendering.
             "employee_name": employee_name, "stage": detail["stage"],
             "stage_type": detail["stage_type"], "due_date": detail["due_date"],
+            "kind": "approval", "ref_id": row["id"], "employee_id": detail["employee_id"],
+            "waiting_since": detail["waiting_since"], "event_date": detail["event_date"],
         })
 
     # Employee document compliance reminders (work permit renewal, passport
@@ -234,7 +333,8 @@ def get_todos(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, An
     # only their subordinates', HR sees institution-wide — matching that
     # endpoint's existing role scoping exactly.
     ob_q = """
-        SELECT i.id, i.title, i.due_date, c.type, c.employee_id, e.full_name AS employee_name
+        SELECT i.id, i.title, i.due_date, c.id AS checklist_id, c.type, c.employee_id,
+               e.full_name AS employee_name, e.last_working_day
         FROM ob_checklist_items i
         JOIN ob_checklists c ON c.id = i.checklist_id
         JOIN employees e ON e.employee_id = c.employee_id AND e.institution_id = c.institution_id
@@ -248,6 +348,20 @@ def get_todos(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, An
         ob_q += " AND c.employee_id=?"; ob_params.append(emp_id or "")
     ob_q += " ORDER BY c.type, c.employee_id, i.order_index"
     ob_rows = conn.execute(ob_q, ob_params).fetchall()
+    # Per-checklist progress ("2 of 5 left") in one grouped query — counts
+    # every item on the checklist, not just those assigned to this role, so
+    # the number reflects how far along the whole checklist is.
+    ob_progress = {}
+    checklist_ids = sorted({r["checklist_id"] for r in ob_rows})
+    if checklist_ids:
+        placeholders = ",".join("?" * len(checklist_ids))
+        for pr in conn.execute(
+            f"SELECT checklist_id, COUNT(*) AS total, "
+            f"SUM(CASE WHEN status='Pending' THEN 1 ELSE 0 END) AS open_items "
+            f"FROM ob_checklist_items WHERE checklist_id IN ({placeholders}) GROUP BY checklist_id",
+            checklist_ids
+        ).fetchall():
+            ob_progress[pr["checklist_id"]] = (int(pr["open_items"] or 0), int(pr["total"]))
     ob_type_labels = {"onboarding": "Onboarding", "offboarding": "Offboarding"}
     for r in ob_rows:
         type_label = ob_type_labels.get(r["type"], r["type"].capitalize())
@@ -270,6 +384,22 @@ def get_todos(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, An
             # any older client still reading just label/page/count.
             "employee_name": r["employee_name"], "stage": r["title"],
             "stage_type": type_label, "due_date": r["due_date"],
+            "kind": "task", "ref_id": r["id"], "employee_id": r["employee_id"],
+            "checklist_id": r["checklist_id"],
+            "checklist_open": ob_progress.get(r["checklist_id"], (None, None))[0],
+            "checklist_total": ob_progress.get(r["checklist_id"], (None, None))[1],
+            # An offboarding checklist's own context: when this person leaves.
+            "event_date": r["last_working_day"] if r["type"] == "offboarding" else None,
         })
 
+    # Every item gets the same shape: the aggregate reminder rows (timesheet
+    # draft, training in progress, appraisals, expiring documents) have no
+    # single employee/request/date, so their new fields are just None.
+    for t in todos:
+        t.setdefault("kind", "reminder")
+        for field in ("ref_id", "employee_id", "due_date", "waiting_since", "event_date",
+                      "checklist_id", "checklist_open", "checklist_total"):
+            t.setdefault(field, None)
+        _add_day_counts(t, today, tz)
+    todos.sort(key=_todo_sort_key)
     return todos
