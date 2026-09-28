@@ -640,14 +640,20 @@ function _todoApprovalsHtml(rows, urgent) {
   const body = rows.map(t => {
     const isUrgent = t === urgent;
     const nav = _todoNav(t.page, t.focus_id);
+    // Leave and L&D can be decided right here (todo-decisions.js); those rows
+    // are not click-through, so an accidental click can't lose a half-typed
+    // reject reason. Everything else stays a click-through "Review".
+    const inline = todoDecisionSupported(t);
     return `
-    <tr role="row" class="cursor-pointer ${isUrgent ? 'todo-row-urgent' : 'hover:bg-slate-50'}" onclick="${nav}">
+    <tr role="row" class="${inline ? '' : 'cursor-pointer '}${isUrgent ? 'todo-row-urgent' : 'hover:bg-slate-50'}"${inline ? '' : ` onclick="${nav}"`}>
       <td role="cell" class="px-4 py-3 font-medium text-slate-800 todo-cell-wrap">${esc(_todoStageText(t))}</td>
       <td role="cell" class="px-4 py-3 text-slate-600"><span class="todo-cell-clip" title="${esc(t.employee_name || '')}">${esc(t.employee_name || '—')}</span></td>
       <td role="cell" class="px-4 py-3 text-slate-600 whitespace-nowrap">${esc(t.stage_type || '—')}</td>
       <td role="cell" class="px-4 py-3 text-slate-600 whitespace-nowrap">${_todoTimingHtml(t)}</td>
-      <td role="cell" class="px-4 py-3 text-right whitespace-nowrap">${_todoButtonHtml('Review', nav, isUrgent, `Review ${t.stage_type || 'request'} — ${t.employee_name || 'unknown employee'}: ${_todoStageText(t)}`)}</td>
-    </tr>`;
+      <td role="cell" class="px-4 py-3 text-right whitespace-nowrap">${inline
+        ? _todoDecisionActionsHtml(t, isUrgent)
+        : _todoButtonHtml('Review', nav, isUrgent, `Review ${t.stage_type || 'request'} — ${t.employee_name || 'unknown employee'}: ${_todoStageText(t)}`)}</td>
+    </tr>${inline ? _todoDecisionPanelHtml(t) : ''}`;
   }).join('');
   return `<section class="todo-section">
     <h3 class="todo-subheading" id="todo-decisions" tabindex="-1">Needs your decision</h3>
@@ -811,6 +817,17 @@ function _setTodoView(view, errorMsg) {
 }
 
 let _todoLoadSeq = 0;
+let _todoItems = []; // the last successfully loaded /api/todos list
+let _todoResultPending = ''; // outcome of a just-made decision, spoken with the refreshed list (todo-decisions.js)
+
+// Re-renders the card body from the cache (used after a local state change such
+// as opening a reject reason) and optionally puts focus back on a selector.
+function _renderTodos(focusSelector) {
+  const bodyEl = document.getElementById('dashboardTodoBody');
+  if (!bodyEl) return;
+  bodyEl.innerHTML = _todoBodyHtml(_todoItems);
+  if (focusSelector) document.querySelector(focusSelector)?.focus();
+}
 
 async function loadDashboardTodos() {
   const card=document.getElementById('dashboardTodoCard');
@@ -866,15 +883,24 @@ async function loadDashboardTodos() {
   // Announce the result through a persistent live region: un-hiding the
   // empty-state paragraph or the list isn't reliably read out by screen readers.
   const deciding = items.filter(t => t.kind === 'approval').length;
+  _todoItems = items;
+  // Forget inline-decision state for requests that are no longer in the list
+  // (including when the list has just become empty).
+  for (const key of [..._todoDecisionUi.keys()]) if (!items.some(t => t.key === key)) _todoDecisionUi.delete(key);
+  // A decision just made from this card is spoken first, then the new state of
+  // the list — otherwise the refresh would overwrite "Approved …" before a
+  // screen reader gets to it.
+  const outcome = _todoResultPending ? `${_todoResultPending} ` : '';
+  _todoResultPending = '';
   if(!items.length){
     bodyEl.innerHTML='';
     _setTodoView('empty');
-    if (liveEl) liveEl.textContent = "You're all caught up — nothing pending right now.";
+    if (liveEl) liveEl.textContent = `${outcome}You're all caught up — nothing pending right now.`;
     return;
   }
   bodyEl.innerHTML = _todoBodyHtml(items);
   _setTodoView('list');
-  if (liveEl) liveEl.textContent = `${_plural(items.length, 'item')} on your to-do list${deciding ? `, ${deciding} waiting for your decision` : ''}.`;
+  if (liveEl) liveEl.textContent = `${outcome}${_plural(items.length, 'item')} on your to-do list${deciding ? `, ${deciding} waiting for your decision` : ''}.`;
 }
 
 // Dashboard quick-action shortcuts (employee role only — see

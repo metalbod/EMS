@@ -25,6 +25,7 @@ module.exports = [
   'core.js',
   'employee-picker.js',
   'dashboard.js',
+  'todo-decisions.js',
   'employees.js',
   'orgchart.js',
   'ld.js',
