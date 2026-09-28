@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from conftest import _valid_employee_payload
-from routers.dashboard import _add_day_counts, _first_col, _to_local_date, _todo_sort_key
+from routers.dashboard import _add_day_counts, _approval_row_detail, _first_col, _to_local_date, _todo_sort_key
 
 KL = ZoneInfo("Asia/Kuala_Lumpur")
 
@@ -157,6 +157,7 @@ def test_pending_leave_approval_appears_as_one_per_item_todo(
     # server-side (submitted just now, and 2027 leave isn't overdue).
     assert match["kind"] == "approval"
     assert match["ref_id"] == app_id
+    assert match["focus_id"] == app_id  # the id the Leave Approvals page opens
     assert match["event_date"] == "2027-04-05"
     assert match["waiting_since"] and match["days_waiting"] == 0
     assert match["days_overdue"] is None
@@ -166,6 +167,14 @@ def test_pending_leave_approval_appears_as_one_per_item_todo(
     assert lt["name"] in match["stage"]
     assert emp["full_name"] in match["label"]
     assert "awaiting your approval" in match["label"]
+
+    # The Leave Approvals page deep-links with ?id= — exactly that application,
+    # regardless of status filters, and nothing for an id that doesn't exist.
+    one = client.get(f"/api/leave/applications?id={app_id}&limit=10", headers=hr_manager_auth)
+    assert one.status_code == 200
+    assert [a["id"] for a in one.json()] == [app_id]
+    assert one.headers["X-Total-Count"] == "1"
+    assert client.get("/api/leave/applications?id=2147483000&limit=10", headers=hr_manager_auth).json() == []
 
     client.delete(f"/api/users/{user_id}", headers=hr_manager_auth)
 
@@ -233,6 +242,7 @@ def test_onboarding_checklist_items_appear_for_assigned_role(client, superadmin_
     assert all(t["kind"] == "task" and t["checklist_id"] == cl_id and t["employee_id"] == emp["employee_id"]
                for t in emp_ob_todos)
     assert all(t["ref_id"] in item_ids for t in emp_ob_todos)
+    assert all(t["focus_id"] == cl_id for t in emp_ob_todos)  # a task is opened by opening its checklist
     assert all(t["checklist_total"] == len(item_ids) and 1 <= t["checklist_open"] <= t["checklist_total"]
                for t in emp_ob_todos)
     # Onboarding has no "leaves on" context (that's offboarding-only).
@@ -262,7 +272,7 @@ def test_dashboard_todo_resignation_has_no_fake_deadline(client, employee_with_l
 
     todos = client.get("/api/todos", headers=hr_manager_auth).json()
     match = next(t for t in todos if t["key"] == f"resignation-approval-{req_id}")
-    assert match["kind"] == "approval" and match["ref_id"] == req_id
+    assert match["kind"] == "approval" and match["ref_id"] == req_id and match["focus_id"] == req_id
     assert match["due_date"] is None and match["days_overdue"] is None
     assert match["event_date"] == "2027-06-30"
     assert match["days_waiting"] == 0 and match["waiting_since"]
@@ -275,7 +285,7 @@ def test_reminder_rows_share_the_same_shape(client, hr_manager_auth):
     field, as None, so the UI can read them uniformly."""
     for t in client.get("/api/todos", headers=hr_manager_auth).json():
         for field in ("kind", "ref_id", "employee_id", "due_date", "waiting_since", "event_date",
-                      "days_waiting", "days_overdue", "days_until_event", "checklist_id", "checklist_open", "checklist_total", "action_label"):
+                      "days_waiting", "days_overdue", "days_until_event", "checklist_id", "checklist_open", "checklist_total", "action_label", "focus_id"):
             assert field in t, f"{t['key']} is missing {field}"
         if t["kind"] == "reminder":
             assert t["ref_id"] is None and t["due_date"] is None and t["days_overdue"] is None
@@ -353,3 +363,43 @@ def test_first_col_skips_missing_and_null_columns():
     assert _first_col(FakeRow(created_at="2026-09-01 00:00:00"), "submitted_at", "created_at") == "2026-09-01 00:00:00"
     assert _first_col(FakeRow(submitted_at=None, created_at="x"), "submitted_at", "created_at") == "x"
     assert _first_col(FakeRow(), "submitted_at", "created_at") is None
+
+
+class _Row(dict):
+    """Stand-in for db.Row: subscriptable by column name, with keys()."""
+
+
+def _detail(module, row, **lookups):
+    base = {"leave_types": {}, "benefit_plans": {}, "ld_courses": {}, "requisition_creator_emp": {}, "overtime_timesheet": {}}
+    base.update(lookups)
+    return _approval_row_detail(_Row(row), module, base)
+
+
+def test_focus_id_is_the_record_the_destination_page_opens():
+    """Most modules open the request itself; the timesheet page also decides
+    overtime, and a per-project split row is a child of its timesheet."""
+    plain = {"id": 7, "employee_id": "E1", "created_at": "2026-09-01 00:00:00"}
+    assert _detail("leave", {**plain, "leave_type_id": 1, "start_date": "2026-10-01", "end_date": "2026-10-02"})["focus_id"] == 7
+    assert _detail("claims", {**plain, "benefit_plan_id": 1, "amount_claimed": 5, "claim_date": "2026-09-01"})["focus_id"] == 7
+    assert _detail("requisition", {**plain, "created_by": "u", "title": "T", "department": "D"})["focus_id"] == 7
+    assert _detail("ld_enrollment", {**plain, "course_id": 1})["focus_id"] == 7
+    assert _detail("resignation", {**plain, "last_working_day": "2026-12-10", "effective_date": "2026-09-01"})["focus_id"] == 7
+    assert _detail("pip", {**plain, "name": "PIP"})["focus_id"] == 7
+
+
+def test_focus_id_for_timesheet_and_overtime_split_rows_is_the_parent_timesheet():
+    # legacy timesheet row: its own id
+    legacy_ts = {"id": 40, "employee_id": "E1", "period_start": "2026-09-21", "created_at": "2026-09-27 01:00:00"}
+    assert _detail("timesheet", legacy_ts)["focus_id"] == 40
+    # per-project split row: id is the child; timesheet_id is the parent
+    split_ts = {"id": 901, "timesheet_id": 40, "employee_id": "E1", "period_start": "2026-09-21", "created_at": "2026-09-27 01:00:00"}
+    assert _detail("timesheet", split_ts)["focus_id"] == 40
+
+    # legacy overtime record carries timesheet_id itself
+    legacy_ot = {"id": 5, "timesheet_id": 40, "employee_id": "E1", "overtime_hours": 2, "work_date": "2026-09-22", "created_at": "2026-09-27 01:00:00"}
+    assert _detail("overtime", legacy_ot)["focus_id"] == 40
+    # split overtime row only knows its record — resolved through the batched lookup
+    split_ot = {"id": 88, "overtime_record_id": 5, "employee_id": "E1", "overtime_hours": 1, "work_date": "2026-09-22", "created_at": "2026-09-27 01:00:00"}
+    assert _detail("overtime", split_ot, overtime_timesheet={5: 40})["focus_id"] == 40
+    # a record the lookup can't resolve degrades to None (the UI then just opens the page)
+    assert _detail("overtime", split_ot)["focus_id"] is None

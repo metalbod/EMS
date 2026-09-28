@@ -33,7 +33,7 @@ const status = code => async () => ({ ok: false, status: code, json: async () =>
 const approval = (over = {}) => ({
   key: 'resignation-approval-1', label: 'Resignation — last day 2026-12-10 — Ng Say Li (resignation, awaiting your approval)',
   stage: 'Resignation — last day 2026-12-10', page: 'resignation-approvals', count: 1, kind: 'approval', employee_name: 'Ng Say Li',
-  employee_id: 'E1', stage_type: 'Resignation', due_date: null, waiting_since: '2026-09-11', days_waiting: 17, days_overdue: null, ...over,
+  employee_id: 'E1', focus_id: 11, stage_type: 'Resignation', due_date: null, waiting_since: '2026-09-11', days_waiting: 17, days_overdue: null, ...over,
 });
 const task = (over = {}) => ({
   key: 'ob-item-9', label: 'Exit Interview — Yahya (Offboarding)', stage: 'Exit Interview', page: 'offboarding', count: 1, kind: 'task',
@@ -625,5 +625,48 @@ describe('Home markup — tab semantics', () => {
 
   it('labels the Home headcount tile for what it counts', () => {
     expect(html).toContain('<p class="kpi-tile-label">Active headcount</p>');
+  });
+});
+
+
+describe('Home links deep-link to the exact record', () => {
+  const rowNav = () => body().querySelector('tbody tr').getAttribute('onclick');
+
+  it('an approval row and its button open that record (focus_id), not just the list', async () => {
+    const { loadDashboardTodos } = load(ok([approval({ page: 'leave-approvals', focus_id: 4021 })]));
+    await loadDashboardTodos();
+    expect(rowNav()).toBe("showPage('leave-approvals',{focus:4021})");
+    expect(body().querySelector('tbody .todo-action').getAttribute('onclick')).toContain("showPage('leave-approvals',{focus:4021})");
+  });
+
+  it('a split timesheet/overtime row links to the parent timesheet the server resolved', async () => {
+    const { loadDashboardTodos } = load(ok([approval({ page: 'timesheet-approvals', ref_id: 901, focus_id: 40 })]));
+    await loadDashboardTodos();
+    expect(rowNav()).toBe("showPage('timesheet-approvals',{focus:40})"); // 40, not the child 901
+  });
+
+  it('a checklist group opens its checklist', async () => {
+    const { loadDashboardTodos } = load(ok([task({ checklist_id: 77 })]));
+    await loadDashboardTodos();
+    expect(body().querySelector('.todo-group-head > button.todo-action').getAttribute('onclick')).toContain("showPage('offboarding',{focus:77})");
+  });
+
+  it('falls back to the plain page when there is no usable id, and never injects a non-numeric one', async () => {
+    const items = [approval({ key: 'a', focus_id: null }), approval({ key: 'b', focus_id: undefined }),
+                   approval({ key: 'c', focus_id: "1});alert(1);//" }), approval({ key: 'd', focus_id: 1.5 })];
+    const { loadDashboardTodos } = load(ok(items));
+    await loadDashboardTodos();
+    for (const tr of body().querySelectorAll('tbody tr')) {
+      expect(tr.getAttribute('onclick')).toBe("showPage('resignation-approvals')");
+    }
+  });
+
+  it('a Dashboard sub-tab link and a reminder stay exactly as they were', async () => {
+    const { loadDashboardTodos } = load(ok([reminder({ page: 'dash-leave', focus_id: 5 }), reminder({ key: 'r2', page: 'ld-trainings' })]));
+    await loadDashboardTodos();
+    const navs = [...body().querySelectorAll('.todo-reminders button')].map(b => b.getAttribute('onclick'));
+    expect(navs[0]).toContain("showPage('dashboard');switchDashTab('dash-leave')");
+    expect(navs[1]).toContain("showPage('ld-trainings')");
+    expect(navs[1]).not.toContain('focus');
   });
 });
