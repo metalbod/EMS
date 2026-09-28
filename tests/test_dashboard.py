@@ -10,7 +10,9 @@ from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from conftest import _valid_employee_payload
-from routers.dashboard import _add_day_counts, _approval_row_detail, _first_col, _to_local_date, _todo_sort_key
+from routers.dashboard import (
+    _add_day_counts, _approval_row_detail, _first_col, _to_local_date, _todo_sort_key, next_occurrence, previous_month,
+)
 
 KL = ZoneInfo("Asia/Kuala_Lumpur")
 
@@ -404,3 +406,132 @@ def test_focus_id_for_timesheet_and_overtime_split_rows_is_the_parent_timesheet(
     assert _detail("overtime", split_ot, overtime_timesheet={5: 40})["focus_id"] == 40
     # a record the lookup can't resolve degrades to None (the UI then just opens the page)
     assert _detail("overtime", split_ot)["focus_id"] is None
+
+
+# ---------------------------------------------------------------------------
+# Home "Payroll and compliance" strip + payroll dates settings
+# ---------------------------------------------------------------------------
+def test_next_occurrence_counts_today_and_rolls_to_next_month():
+    assert next_occurrence(date(2026, 9, 15), 15) == date(2026, 9, 15)   # today counts
+    assert next_occurrence(date(2026, 9, 16), 15) == date(2026, 10, 15)  # already passed this month
+    assert next_occurrence(date(2026, 9, 28), 25) == date(2026, 10, 25)
+    assert next_occurrence(date(2026, 12, 20), 15) == date(2027, 1, 15)  # year rollover
+
+
+def test_next_occurrence_clamps_a_day_past_a_short_months_end():
+    assert next_occurrence(date(2026, 9, 28), 31) == date(2026, 9, 30)   # September has 30 days
+    assert next_occurrence(date(2027, 2, 10), 31) == date(2027, 2, 28)
+    assert next_occurrence(date(2028, 2, 10), 30) == date(2028, 2, 29)   # leap year
+    assert next_occurrence(date(2026, 10, 1), 31) == date(2026, 10, 31)
+
+
+def test_previous_month_is_the_wages_month_a_remittance_covers():
+    assert previous_month(date(2026, 10, 15)) == "2026-09"
+    assert previous_month(date(2027, 1, 15)) == "2026-12"  # January covers December of the year before
+
+
+def _login_new_user(client, hr_headers, inst_code, role, label):
+    username = f"zz{label}_{os.urandom(4).hex()}"
+    password = "ZzPytest@123"
+    created = client.post("/api/users", headers=hr_headers, json={
+        "username": username, "full_name": f"ZZ {label}", "password": password, "role": role,
+    })
+    assert created.status_code == 201, created.text
+    login = client.post("/api/auth/login", json={"username": username, "password": password, "institution_code": inst_code})
+    assert login.status_code == 200, login.text
+    return {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+
+def test_payroll_settings_are_viewable_by_hr_but_editable_only_by_payroll_manager(client, superadmin_headers):
+    inst, hr = _fresh_institution_hr_manager_auth(client, superadmin_headers)
+    pm = _login_new_user(client, hr, inst["code"], "payroll_manager", "payrollmgr")
+
+    seen = client.get("/api/payroll/settings", headers=hr)
+    assert seen.status_code == 200, seen.text
+    assert seen.json() == {"pay_day": 25, "pay_cycle": "Monthly", "statutory_remittance_day": 15, "can_edit": False}
+    assert client.put("/api/payroll/settings", headers=hr, json={"pay_day": 28, "statutory_remittance_day": 10}).status_code == 403
+
+    saved = client.put("/api/payroll/settings", headers=pm, json={"pay_day": 31, "statutory_remittance_day": 10})
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["pay_day"] == 31 and saved.json()["statutory_remittance_day"] == 10 and saved.json()["can_edit"] is True
+    assert client.get("/api/payroll/settings", headers=hr).json()["statutory_remittance_day"] == 10
+    assert client.get("/api/payroll/settings", headers=pm).json()["can_edit"] is True
+
+
+def test_payroll_settings_reject_out_of_range_days_and_are_audited(client, superadmin_headers):
+    inst, hr = _fresh_institution_hr_manager_auth(client, superadmin_headers)
+    pm = _login_new_user(client, hr, inst["code"], "payroll_manager", "payrollmgr2")
+    for body in ({"pay_day": 0, "statutory_remittance_day": 15}, {"pay_day": 32, "statutory_remittance_day": 15},
+                 {"pay_day": 25, "statutory_remittance_day": 29}, {"pay_day": 25, "statutory_remittance_day": 0},
+                 {"pay_day": "x", "statutory_remittance_day": 15}, {"pay_day": 25}):
+        assert client.put("/api/payroll/settings", headers=pm, json=body).status_code == 422, body
+    assert client.get("/api/payroll/settings", headers=hr).json()["pay_day"] == 25  # nothing was saved
+
+    client.put("/api/payroll/settings", headers=pm, json={"pay_day": 28, "statutory_remittance_day": 12})
+    trail = client.get("/api/entity-audit-log", headers=hr, params={"entity_type": "payroll_settings", "include_legacy": "false"})
+    assert trail.status_code == 200, trail.text
+    rows = trail.json()
+    assert rows and rows[0]["action"] == "Payroll dates updated"
+    assert "Pay day: 25 -> 28" in rows[0]["detail"] and "reminder day: 15 -> 12" in rows[0]["detail"]
+
+    # saving the same values again writes no new audit row (nothing changed)
+    before = len(rows)
+    client.put("/api/payroll/settings", headers=pm, json={"pay_day": 28, "statutory_remittance_day": 12})
+    after = client.get("/api/entity-audit-log", headers=hr, params={"entity_type": "payroll_settings", "include_legacy": "false"}).json()
+    assert len(after) == before
+
+
+def test_statutory_strip_is_scoped_by_role(client, superadmin_headers):
+    inst, hr = _fresh_institution_hr_manager_auth(client, superadmin_headers)
+    pm = _login_new_user(client, hr, inst["code"], "payroll_manager", "payrollmgr3")
+    emp_login = _login_new_user(client, hr, inst["code"], "employee", "plainemp")
+
+    hr_view = client.get("/api/dashboard/statutory", headers=hr).json()
+    assert hr_view["payroll"] is not None and hr_view["documents"] is not None  # hr_manager: both
+
+    pm_view = client.get("/api/dashboard/statutory", headers=pm).json()
+    assert pm_view["payroll"] is not None and pm_view["documents"] is None      # payroll only
+
+    plain = client.get("/api/dashboard/statutory", headers=emp_login)
+    assert plain.status_code == 200
+    assert plain.json() == {"payroll": None, "documents": None}                 # nothing for an employee
+    assert client.get("/api/dashboard/statutory", headers=superadmin_headers).json() == {"payroll": None, "documents": None}
+    assert client.get("/api/dashboard/statutory").status_code in (401, 403)
+
+
+def test_statutory_strip_payroll_dates_follow_the_saved_settings(client, superadmin_headers):
+    inst, hr = _fresh_institution_hr_manager_auth(client, superadmin_headers)
+    pm = _login_new_user(client, hr, inst["code"], "payroll_manager", "payrollmgr4")
+    client.put("/api/payroll/settings", headers=pm, json={"pay_day": 20, "statutory_remittance_day": 15})
+
+    today = datetime.now(timezone.utc).date()  # a new institution's timezone is UTC
+    p = client.get("/api/dashboard/statutory", headers=pm).json()["payroll"]
+    assert (p["pay_day"], p["remittance_day"]) == (20, 15)
+    assert date.fromisoformat(p["next_pay_date"]) == next_occurrence(today, 20)
+    assert p["pay_days_until"] == (next_occurrence(today, 20) - today).days
+    remit = date.fromisoformat(p["next_remittance_date"])
+    assert remit == next_occurrence(today, 15) and remit.day == 15 and remit >= today
+    assert p["remittance_wages_month"] == previous_month(remit)
+    assert p["run"] is None  # no payroll run yet for that wages month
+
+
+def test_statutory_strip_documents_list_overdue_first_and_match_the_reminder_count(client, superadmin_headers):
+    inst, hr = _fresh_institution_hr_manager_auth(client, superadmin_headers)
+    dt = client.post("/api/employee-document-types", headers=hr, json={"name": "ZZ Work Permit", "reminder_window_days": 30}).json()
+    today = datetime.now(timezone.utc).date()
+    expected = []
+    for name, delta in (("ZZ Soon Employee", 5), ("ZZ Expired Employee", -3), ("ZZ Fine Employee", 400)):
+        emp = client.post("/api/employees", headers=hr, json=_valid_employee_payload(full_name=name)).json()
+        res = client.post(f"/api/employees/{emp['employee_id']}/documents", headers=hr,
+                           json={"document_type_id": dt["id"], "expiry_date": (today + timedelta(days=delta)).isoformat()})
+        assert res.status_code == 201, res.text
+        expected.append((name, delta))
+
+    docs = client.get("/api/dashboard/statutory", headers=hr).json()["documents"]
+    assert docs["total"] == 2  # the document 400 days out is not "expiring"
+    assert [(i["employee_name"], i["days_until"], i["status"]) for i in docs["items"]] == [
+        ("ZZ Expired Employee", -3, "overdue"), ("ZZ Soon Employee", 5, "expiring_soon"),
+    ]
+    assert all(i["document_type"] == "ZZ Work Permit" for i in docs["items"])
+    reminder = next(t for t in client.get("/api/todos", headers=hr).json() if t["key"] == "employee-documents-expiring")
+    assert reminder["count"] == docs["total"]  # the reminder and the strip can never disagree
