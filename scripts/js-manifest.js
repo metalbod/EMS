@@ -26,6 +26,7 @@ module.exports = [
   'employee-picker.js',
   'dashboard.js',
   'todo-decisions.js',
+  'home-compliance.js',
   'employees.js',
   'orgchart.js',
   'ld.js',

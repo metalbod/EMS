@@ -393,3 +393,8 @@ tr.todo-row-urgent:hover,.todo-group.todo-row-urgent .todo-group-head:hover{back
   .todo-decision-actions{flex-wrap:wrap;justify-content:flex-end}
   .todo-block tbody tr.todo-decision-row{display:block;padding:0}
 }
+
+/* Home: Payroll and compliance card (home-compliance.js) */
+.compliance-main{display:flex;flex-direction:column;gap:2px;min-width:0}
+.compliance-title{font-size:14px;font-weight:600;color:var(--ink)}
+.compliance-meta{font-size:13px;color:var(--muted)}

@@ -79,7 +79,7 @@ function renderDashboard() {
   // renderDashboard also re-runs on a role switch).
   const showMgmtHome = currentUser?.role !== 'employee';
   document.getElementById('dashKpiRow')?.classList.toggle('hidden', !showMgmtHome);
-  if (showMgmtHome) loadDashboardKpis();
+  if (showMgmtHome) { loadDashboardKpis(); loadStatutoryStrip(); }
   if (showMgmtHome) wireDashboardKpiTiles();
   // The Workforce tab (institution-wide headcount/composition stats) is hidden
   // for the plain employee role, so skip its fetch too.
@@ -494,26 +494,13 @@ function renderDashGreeting() {
 // that function — same figure as Workforce tab's statActive), pending
 // approvals (from /api/todos — see loadDashboardTodos, which populates
 // this tile itself once it has the data, to avoid a second fetch),
-// payroll cut-off (computed client-side from the institution's pay_day,
-// no new endpoint), open roles (reuses /api/recruitment/dashboard-stats,
+// the statutory-due tile (from /api/dashboard/statutory — see home-compliance.js;
+// it used to be a browser-side guess at pay day), open roles (reuses /api/recruitment/dashboard-stats,
 // same figure loadRecruitmentDash's rStatOpenReq shows). Each is
 // independent and fails soft (leaves the tile at its default "—") rather
 // than blocking the others — a role without recruitment access, for
 // instance, just doesn't get an Open Roles number.
 async function loadDashboardKpis() {
-  const inst = currentUser?.role === 'superadmin' ? currentInstitution : currentUser?.institution;
-  const cutoffEl = document.getElementById('kpiPayrollCutoff');
-  if (cutoffEl) {
-    const payDay = inst?.pay_day || 25;
-    const now = new Date();
-    let next = new Date(now.getFullYear(), now.getMonth(), payDay);
-    if (next < now) next = new Date(now.getFullYear(), now.getMonth() + 1, payDay);
-    cutoffEl.textContent = next.toLocaleDateString('en-MY', { day: 'numeric', month: 'short' });
-    const daysAway = Math.ceil((next - now) / 86400000);
-    const deltaEl = document.getElementById('kpiPayrollCutoffDelta');
-    if (deltaEl) deltaEl.textContent = daysAway <= 3 ? `${daysAway}d away` : `in ${daysAway} days`;
-  }
-
   api('/api/recruitment/dashboard-stats').then(async res => {
     const openRolesEl = document.getElementById('kpiOpenRoles');
     if (!openRolesEl) return;

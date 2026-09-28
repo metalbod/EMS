@@ -10,7 +10,54 @@ const PAYROLL_STATUS_COLORS={'Draft':'status-pending','Finalized':'status-positi
 // ---------------------------------------------------------------------------
 // Payroll Runs (list)
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Payroll dates (pay day + statutory remittance reminder day)
+// ---------------------------------------------------------------------------
+// Viewable by payroll_manager/hr_manager, editable only by payroll_manager
+// (same split as the rest of this page). Home reads these for the "Statutory
+// due" tile and the Payroll and compliance card.
+function _payrollDatesStatus(text, isError) {
+  const el = document.getElementById('payrollSettingsStatus');
+  if (!el) return;
+  el.textContent = text;
+  el.style.color = isError ? 'var(--overdue-ink)' : 'var(--muted)';
+}
+
+async function loadPayrollSettings() {
+  const card = document.getElementById('payrollSettingsCard');
+  if (!card) return;
+  _payrollDatesStatus('', false);
+  const res = await api('/api/payroll/settings');
+  if (!res?.ok) { card.classList.add('hidden'); return; } // a role without payroll access
+  const s = await res.json();
+  card.classList.remove('hidden');
+  const pay = document.getElementById('payrollPayDay');
+  const remit = document.getElementById('payrollRemitDay');
+  pay.value = s.pay_day;
+  remit.value = s.statutory_remittance_day;
+  pay.disabled = remit.disabled = !s.can_edit;
+  document.getElementById('savePayrollSettingsBtn').classList.toggle('hidden', !s.can_edit);
+  if (!s.can_edit) _payrollDatesStatus('Only a payroll manager can change these.', false);
+}
+
+const savePayrollSettings = guardAsync(async function() {
+  const payDay = Number(document.getElementById('payrollPayDay').value);
+  const remitDay = Number(document.getElementById('payrollRemitDay').value);
+  // Same ranges the server enforces (PayrollSettingsIn) — checked here so the message is specific.
+  if (!Number.isInteger(payDay) || payDay < 1 || payDay > 31) { _payrollDatesStatus('Pay day must be a whole day from 1 to 31.', true); return; }
+  if (!Number.isInteger(remitDay) || remitDay < 1 || remitDay > 28) { _payrollDatesStatus('Remittance reminder day must be a whole day from 1 to 28.', true); return; }
+  _payrollDatesStatus('Saving…', false);
+  const res = await api('/api/payroll/settings', { method: 'PUT', body: JSON.stringify({ pay_day: payDay, statutory_remittance_day: remitDay }) });
+  if (!res?.ok) {
+    const d = await res?.json().catch(() => ({}));
+    _payrollDatesStatus(`Couldn't save: ${apiErrorText(d?.detail, 'please try again.')}`, true);
+    return;
+  }
+  _payrollDatesStatus('Saved. Home will show the new dates.', false);
+});
+
 async function loadPayrollRuns() {
+  loadPayrollSettings();
   document.getElementById('newPayrollRunBtn').classList.toggle('hidden', !isPayrollManager());
   const listEl=document.getElementById('payrollRunList');
   const emptyEl=document.getElementById('payrollRunEmpty');
