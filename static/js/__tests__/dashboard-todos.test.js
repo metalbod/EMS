@@ -8,13 +8,19 @@ import { resolve } from 'node:path';
 const SRC = readFileSync(resolve(__dirname, '../dashboard.js'), 'utf8');
 
 const escStub = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-const fmtDateStub = v => (v ? String(v).slice(0, 10) : '—');
+// Same dd-Mon-yy shape as core.js's fmtDate, so tests can tell a formatted date from a raw ISO one.
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const fmtDateStub = v => {
+  if (!v) return '—';
+  const [y, m, d] = String(v).slice(0, 10).split('-');
+  return `${d}-${MONTHS[+m - 1]}-${y.slice(2)}`;
+};
 
 const shown = []; // pages showPage() was asked to open
 function load(apiImpl, user = { role: 'hr_manager', employee_id: 'E-ME' }) {
   // guardAsync (core.js) only adds a busy-button wrapper — pass-through here.
   const factory = new Function('api', 'esc', 'fmtDate', 'currentUser', 'guardAsync', 'showPage',
-    `${SRC}\nreturn { loadDashboardTodos, toggleTodoGroup, wireDashboardKpiTiles };`);
+    `${SRC}\nreturn { loadDashboardTodos, toggleTodoGroup, wireDashboardKpiTiles, dashTabKeydown, switchDashTab };`);
   const api = factory(apiImpl, escStub, fmtDateStub, user, fn => fn, p => shown.push(p));
   // inline onclick="toggleTodoGroup(this)" resolves in jsdom's own window
   (globalThis.jsdom?.window || document.defaultView).toggleTodoGroup = api.toggleTodoGroup;
@@ -112,7 +118,7 @@ describe('Home to-do card — empty state, count and KPI', () => {
     const { loadDashboardTodos } = load(ok(items));
     await loadDashboardTodos();
     expect($('kpiApprovals').textContent).toBe('2');
-    expect($('dashboardTodoCount').textContent).toBe('5');
+    expect($('dashboardTodoCount').textContent).toBe('5 items');
   });
 
   it('hides the card entirely for a superadmin', async () => {
@@ -140,7 +146,8 @@ describe('Home to-do card — sections', () => {
     const { loadDashboardTodos } = load(ok([approval()]));
     await loadDashboardTodos();
     const cells = [...body().querySelectorAll('tbody tr td')];
-    expect(cells[0].textContent).toBe('Resignation — last day 2026-12-10');
+    // the leading "Resignation — " is the Type column's job, and the ISO date is formatted like every other date
+    expect(cells[0].textContent).toBe('Last day 10-Dec-26');
     expect(cells[0].textContent).not.toContain('Ng Say Li');
     expect(cells[0].textContent).not.toContain('awaiting your approval');
     expect(cells[1].textContent).toBe('Ng Say Li');
@@ -157,7 +164,8 @@ describe('Home to-do card — approvals', () => {
     rows.forEach((row, i) => {
       const btn = row.querySelector('button[type="button"]');
       expect(btn.textContent).toBe('Review');
-      expect(btn.getAttribute('aria-label')).toBe(`Review: ${items[i].label}`);
+      expect(btn.getAttribute('aria-label')).not.toContain('awaiting your approval'); // not the long server label
+      expect(btn.getAttribute('aria-label')).not.toMatch(/\d{4}-\d{2}-\d{2}/); // no ISO date read out digit by digit
     });
   });
 
@@ -173,8 +181,10 @@ describe('Home to-do card — approvals', () => {
     const { loadDashboardTodos } = load(ok([approval({ due_date: '2026-09-25', days_overdue: 3 }), approval({ key: 'k', due_date: '2026-09-26', days_overdue: 1 })]));
     await loadDashboardTodos();
     const cells = [...body().querySelectorAll('.todo-overdue')];
-    expect(cells[0].textContent).toBe('Overdue 3 days');
-    expect(cells[1].textContent).toBe('Overdue 1 day');
+    expect(cells[0].firstChild.nextSibling.textContent).toBe('Overdue 3 days');
+    expect(cells[1].firstChild.nextSibling.textContent).toBe('Overdue 1 day');
+    // the exact date is in text a screen reader gets, not only in a hover title
+    expect(cells[0].querySelector('.sr-only-text').textContent).toBe(', due 25-Sep-26');
     expect(cells[0].querySelector('svg').getAttribute('aria-hidden')).toBe('true');
   });
 
@@ -220,23 +230,23 @@ describe('Home to-do card — checklist groups', () => {
     });
   });
 
-  it('summarises progress and departure: "2 to do · 2 of 5 done" and "Leaves … · in 14 days"', async () => {
+  it('names both scopes: "2 assigned to you · 3 of 5 open", and "Leaves … · in 14 days"', async () => {
     const { loadDashboardTodos } = load(ok([yahya({ key: 'a', checklist_open: 3 }), yahya({ key: 'b', checklist_open: 3 })]));
     await loadDashboardTodos();
     const text = body().querySelector('.todo-group-toggle').textContent.replace(/\s+/g, ' ');
     expect(text).toContain('Yahya');
-    expect(text).toContain('Offboarding · 2 to do · 2 of 5 done');
-    expect(text).toContain('Leaves 2026-10-12 · in 14 days');
+    expect(text).toContain('Offboarding · 2 assigned to you · 3 of 5 open');
+    expect(text).toContain('Leaves 12-Oct-26 · in 14 days');
   });
 
   it('says "Left" once the last working day has passed, and "today" on the day', async () => {
     let { loadDashboardTodos } = load(ok([yahya({ event_date: '2026-09-20', days_until_event: -8 })]));
     await loadDashboardTodos();
-    expect(body().textContent).toContain('Left 2026-09-20');
+    expect(body().textContent).toContain('Left 20-Sep-26');
     ({ loadDashboardTodos } = load(ok([yahya({ event_date: '2026-09-28', days_until_event: 0 })])));
     body().innerHTML = '';
     await loadDashboardTodos();
-    expect(body().textContent).toContain('Leaves 2026-09-28 · today');
+    expect(body().textContent).toContain('Leaves 28-Sep-26 · today');
   });
 
   it('titles a person\'s own checklist "Your onboarding" instead of naming them', async () => {
@@ -266,7 +276,7 @@ describe('Home to-do card — checklist groups', () => {
     expect(btn().getAttribute('aria-expanded')).toBe('true');
     expect(body().querySelector('.todo-group-items').hidden).toBe(false);
     expect(body().querySelector('.todo-group-items').textContent).toContain('Return laptop');
-    expect(body().querySelector('.todo-group-items').textContent).toContain('Due 2026-10-05');
+    expect(body().querySelector('.todo-group-items').textContent).toContain('Due 05-Oct-26');
     await loadDashboardTodos(); // re-render
     expect(btn().getAttribute('aria-expanded')).toBe('true');
     expect(body().querySelector('.todo-group-items').hidden).toBe(false);
@@ -460,5 +470,160 @@ describe('Home to-do card — screen-reader announcements', () => {
     ({ loadDashboardTodos } = load(status(500)));
     await loadDashboardTodos();
     expect(live()).toBe(''); // the error block is role="alert" and speaks for itself
+  });
+});
+
+
+describe('Home to-do card — the single highlight follows what is actually late', () => {
+  const leaveOverdue = (o = {}) => approval({ key: 'leave-1', stage: 'Annual Leave: 2026-09-25 to 2026-09-29', stage_type: 'Leave',
+    employee_name: 'Aiman', due_date: '2026-09-25', days_overdue: 3, waiting_since: '2026-09-20', days_waiting: 8, ...o });
+  const urgentText = () => body().querySelector('.todo-row-urgent')?.textContent || '';
+
+  it('an overdue leave request beats an older approval that has no deadline', async () => {
+    // server order puts the 17-day resignation first; the highlight must still go to the late leave
+    const { loadDashboardTodos } = load(ok([approval(), leaveOverdue()]));
+    await loadDashboardTodos();
+    expect(body().querySelectorAll('.todo-row-urgent')).toHaveLength(1);
+    expect(urgentText()).toContain('Aiman');
+    expect(urgentText()).not.toContain('Ng Say Li');
+  });
+
+  it('an overdue checklist item beats an approval that is merely waiting', async () => {
+    const late = task({ key: 'late', due_date: '2026-09-26', days_overdue: 2 });
+    const { loadDashboardTodos } = load(ok([approval(), late]));
+    await loadDashboardTodos();
+    const urgent = body().querySelector('.todo-row-urgent');
+    expect(urgent.classList.contains('todo-group')).toBe(true);
+    expect(body().querySelector('tbody tr').classList.contains('todo-row-urgent')).toBe(false);
+    expect(body().querySelectorAll('.todo-action-primary')).toHaveLength(1);
+  });
+
+  it('the most overdue item wins across kinds, and an approval wins a tie', async () => {
+    const { loadDashboardTodos } = load(ok([leaveOverdue({ days_overdue: 3 }), task({ key: 't9', due_date: '2026-09-19', days_overdue: 9 })]));
+    await loadDashboardTodos();
+    expect(body().querySelector('.todo-row-urgent').classList.contains('todo-group')).toBe(true);
+
+    document.getElementById('dashboardTodoBody').innerHTML = '';
+    const again = load(ok([task({ key: 't3', due_date: '2026-09-25', days_overdue: 3 }), leaveOverdue({ days_overdue: 3 })]));
+    await again.loadDashboardTodos();
+    expect(urgentText()).toContain('Aiman'); // tie -> the approval
+  });
+
+  it('orders checklist groups by how far past a deadline each is', async () => {
+    const items = [
+      task({ key: 'a', checklist_id: 1, employee_name: 'Yahya', due_date: '2026-09-26', days_overdue: 2 }),
+      task({ key: 'b', checklist_id: 2, employee_name: 'Cheng Kar Yan', due_date: '2026-09-19', days_overdue: 9 }),
+    ];
+    const { loadDashboardTodos } = load(ok(items));
+    await loadDashboardTodos();
+    expect([...body().querySelectorAll('.todo-group-name')].map(n => n.textContent)).toEqual(['Cheng Kar Yan', 'Yahya']);
+  });
+});
+
+describe('Home to-do card — plain, consistent copy', () => {
+  it('formats every ISO date inside stage text like the rest of Home', async () => {
+    const { loadDashboardTodos } = load(ok([approval({ stage: 'Annual Leave: 2026-10-05 to 2026-10-09', stage_type: 'Leave' })]));
+    await loadDashboardTodos();
+    const cell = body().querySelector('tbody tr td').textContent;
+    expect(cell).toBe('Annual Leave: 05-Oct-26 to 09-Oct-26');
+    expect(body().textContent).not.toMatch(/\d{4}-\d{2}-\d{2}/);
+  });
+
+  it('only strips a leading type that the Type column repeats — and leaves other stages intact', async () => {
+    const items = [approval(), approval({ key: 'w', stage: 'Week of 2026-09-21', stage_type: 'Timesheet' }),
+                   approval({ key: 'c', stage: 'Dental claim — RM 120.00', stage_type: 'Benefit Claim' })];
+    const { loadDashboardTodos } = load(ok(items));
+    await loadDashboardTodos();
+    const stages = [...body().querySelectorAll('tbody tr')].map(r => r.querySelector('td').textContent);
+    expect(stages).toEqual(['Last day 10-Dec-26', 'Week of 21-Sep-26', 'Dental claim — RM 120.00']);
+  });
+
+  it('a reminder button says where it goes when the server says so, and falls back to Open', async () => {
+    const { loadDashboardTodos } = load(ok([reminder({ key: 'docs', label: '3 employee documents expiring soon', page: 'dash-leave', action_label: 'View calendar' }), reminder()]));
+    await loadDashboardTodos();
+    const btns = [...body().querySelectorAll('.todo-reminders button')];
+    expect(btns.map(b => b.textContent)).toEqual(['View calendar', 'Open']);
+    expect(btns[0].getAttribute('aria-label')).toBe('View calendar: 3 employee documents expiring soon');
+  });
+
+  it('keeps the exact waiting date reachable without a hover: screen-reader text plus the title', async () => {
+    const { loadDashboardTodos } = load(ok([approval()]));
+    await loadDashboardTodos();
+    const t = body().querySelector('tbody .todo-timing');
+    expect(t.getAttribute('title')).toBe('Submitted 11-Sep-26');
+    expect(t.querySelector('.sr-only-text').textContent).toBe(', submitted 11-Sep-26');
+  });
+});
+
+
+describe('Home tab bar — ARIA tabs keyboard support', () => {
+  function tabsDom({ hiddenTabs = [] } = {}) {
+    const ids = ['general', 'workforce', 'recruitment', 'timesheet'];
+    document.body.insertAdjacentHTML('beforeend', `
+      <div id="tablist" role="tablist">
+        ${ids.map(t => `<button id="dash-tab-${t}-btn" role="tab" data-dashtab="dash-${t}" class="pill-tab ${hiddenTabs.includes(t) ? 'hidden' : ''}"></button>`).join('')}
+      </div>
+      ${ids.map(t => `<div id="dash-${t}" class="dash-tab-panel" role="tabpanel"></div>`).join('')}`);
+    return Object.fromEntries(ids.map(t => [t, document.getElementById(`dash-tab-${t}-btn`)]));
+  }
+  const press = (api, key) => {
+    const e = { key, currentTarget: document.getElementById('tablist'), prevented: false, preventDefault() { this.prevented = true; } };
+    api.dashTabKeydown(e);
+    return e;
+  };
+
+  it('leaves exactly one tab stop — the selected tab — via roving tabindex', () => {
+    const tabs = tabsDom();
+    const api = load(ok([]));
+    api.switchDashTab('dash-workforce');
+    expect(Object.values(tabs).map(t => t.getAttribute('tabindex'))).toEqual(['-1', '0', '-1', '-1']);
+    expect(tabs.workforce.getAttribute('aria-selected')).toBe('true');
+    expect(tabs.general.getAttribute('aria-selected')).toBe('false');
+  });
+
+  it('ArrowRight/ArrowLeft move focus (wrapping) without switching the panel; Home/End jump', () => {
+    const tabs = tabsDom();
+    const api = load(ok([]));
+    api.switchDashTab('dash-general');
+    tabs.general.focus();
+    expect(press(api, 'ArrowRight').prevented).toBe(true);
+    expect(document.activeElement).toBe(tabs.workforce);
+    expect(tabs.general.getAttribute('aria-selected')).toBe('true'); // focus moved, nothing activated (tabs lazy-load)
+    press(api, 'End');
+    expect(document.activeElement).toBe(tabs.timesheet);
+    press(api, 'ArrowRight'); // wraps to the first
+    expect(document.activeElement).toBe(tabs.general);
+    press(api, 'ArrowLeft'); // wraps to the last
+    expect(document.activeElement).toBe(tabs.timesheet);
+    press(api, 'Home');
+    expect(document.activeElement).toBe(tabs.general);
+  });
+
+  it('skips tabs this role cannot see, and ignores other keys and other focus', () => {
+    const tabs = tabsDom({ hiddenTabs: ['recruitment'] });
+    const api = load(ok([]));
+    tabs.workforce.focus();
+    press(api, 'ArrowRight');
+    expect(document.activeElement).toBe(tabs.timesheet); // recruitment is hidden
+    expect(press(api, 'a').prevented).toBe(false);
+    document.activeElement.blur();
+    expect(press(api, 'ArrowRight').prevented).toBe(false); // focus isn't on a tab
+  });
+});
+
+describe('Home markup — tab semantics', () => {
+  const html = readFileSync(resolve(__dirname, '../../index.html'), 'utf8');
+
+  it('every home tabpanel is labelled by an existing tab, and every tab controls an existing panel', () => {
+    const panels = [...html.matchAll(/<div id="(dash-[a-z]+)" class="dash-tab-panel[^"]*" role="tabpanel" aria-labelledby="([^"]+)"/g)];
+    expect(panels.length).toBe(6);
+    for (const [, panelId, labelledby] of panels) {
+      expect(html).toContain(`id="${labelledby}"`);
+      expect(html).toContain(`aria-controls="${panelId}"`);
+    }
+  });
+
+  it('labels the Home headcount tile for what it counts', () => {
+    expect(html).toContain('<p class="kpi-tile-label">Active headcount</p>');
   });
 });

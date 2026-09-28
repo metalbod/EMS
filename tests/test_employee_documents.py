@@ -323,6 +323,7 @@ def test_todos_includes_expiring_document_count_for_hr(client, superadmin_header
     item = next(t for t in after if t["key"] == "employee-documents-expiring")
     assert item["count"] == 1
     assert item["page"] == "dash-leave"
+    assert item["action_label"] == "View calendar"  # the button says where it goes
     assert "1 employee document" in item["label"]
 
 

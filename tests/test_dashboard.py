@@ -275,7 +275,7 @@ def test_reminder_rows_share_the_same_shape(client, hr_manager_auth):
     field, as None, so the UI can read them uniformly."""
     for t in client.get("/api/todos", headers=hr_manager_auth).json():
         for field in ("kind", "ref_id", "employee_id", "due_date", "waiting_since", "event_date",
-                      "days_waiting", "days_overdue", "days_until_event", "checklist_id", "checklist_open", "checklist_total"):
+                      "days_waiting", "days_overdue", "days_until_event", "checklist_id", "checklist_open", "checklist_total", "action_label"):
             assert field in t, f"{t['key']} is missing {field}"
         if t["kind"] == "reminder":
             assert t["ref_id"] is None and t["due_date"] is None and t["days_overdue"] is None
@@ -316,14 +316,32 @@ def test_add_day_counts_waiting_and_overdue():
 
 def test_todo_sort_key_orders_approvals_then_tasks_then_reminders():
     items = [
-        {"key": "rem", "kind": "reminder", "waiting_since": None, "due_date": None},
-        {"key": "task-undated", "kind": "task", "waiting_since": None, "due_date": None},
-        {"key": "task-late", "kind": "task", "waiting_since": None, "due_date": "2026-09-01"},
-        {"key": "appr-new", "kind": "approval", "waiting_since": "2026-09-20", "due_date": None},
-        {"key": "appr-old", "kind": "approval", "waiting_since": "2026-09-01", "due_date": None},
+        {"key": "rem", "kind": "reminder", "waiting_since": None, "due_date": None, "days_overdue": None},
+        {"key": "task-undated", "kind": "task", "waiting_since": None, "due_date": None, "days_overdue": None},
+        {"key": "task-late", "kind": "task", "waiting_since": None, "due_date": "2026-09-01", "days_overdue": 27},
+        {"key": "appr-new", "kind": "approval", "waiting_since": "2026-09-20", "due_date": None, "days_overdue": None},
+        {"key": "appr-old", "kind": "approval", "waiting_since": "2026-09-01", "due_date": None, "days_overdue": None},
     ]
     assert [t["key"] for t in sorted(items, key=_todo_sort_key)] == [
         "appr-old", "appr-new", "task-late", "task-undated", "rem",
+    ]
+
+
+def test_todo_sort_key_puts_overdue_approvals_first_most_overdue_first():
+    """An approval past a real deadline (a leave request that has already
+    started) outranks an older approval with no deadline, and among overdue
+    ones the most overdue leads; the rest stay longest-waiting first."""
+    def appr(key, waiting, overdue=None):
+        return {"key": key, "kind": "approval", "waiting_since": waiting, "due_date": None, "days_overdue": overdue}
+
+    items = [
+        appr("resignation-17d", "2026-09-11"),
+        appr("leave-overdue-3", "2026-09-20", overdue=3),
+        appr("claim-3d", "2026-09-25"),
+        appr("leave-overdue-9", "2026-09-22", overdue=9),
+    ]
+    assert [t["key"] for t in sorted(items, key=_todo_sort_key)] == [
+        "leave-overdue-9", "leave-overdue-3", "resignation-17d", "claim-3d",
     ]
 
 
