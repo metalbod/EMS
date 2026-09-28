@@ -156,6 +156,7 @@ def test_pending_leave_approval_appears_as_one_per_item_todo(
     # New contract: kind/ref_id for the UI, and a real waiting time computed
     # server-side (submitted just now, and 2027 leave isn't overdue).
     assert match["kind"] == "approval"
+    assert match["module"] == "leave"  # lets Home offer inline Approve/Reject for this kind of request
     assert match["ref_id"] == app_id
     assert match["focus_id"] == app_id  # the id the Leave Approvals page opens
     assert match["event_date"] == "2027-04-05"
@@ -285,7 +286,7 @@ def test_reminder_rows_share_the_same_shape(client, hr_manager_auth):
     field, as None, so the UI can read them uniformly."""
     for t in client.get("/api/todos", headers=hr_manager_auth).json():
         for field in ("kind", "ref_id", "employee_id", "due_date", "waiting_since", "event_date",
-                      "days_waiting", "days_overdue", "days_until_event", "checklist_id", "checklist_open", "checklist_total", "action_label", "focus_id"):
+                      "days_waiting", "days_overdue", "days_until_event", "checklist_id", "checklist_open", "checklist_total", "action_label", "focus_id", "module"):
             assert field in t, f"{t['key']} is missing {field}"
         if t["kind"] == "reminder":
             assert t["ref_id"] is None and t["due_date"] is None and t["days_overdue"] is None

@@ -168,6 +168,24 @@ def test_reject_enrollment_success(client, hr_manager_auth, employee_with_user, 
     assert res.json()["status"] == "Rejected"
 
 
+def test_decided_enrollment_cannot_be_decided_again(client, hr_manager_auth, employee_with_user, paid_course):
+    """A second approver (or a reject after an approve) must not re-decide an
+    enrollment that is already settled — same guard Leave applications have."""
+    emp, emp_headers = employee_with_user
+    enroll = client.post("/api/ld/enrollments", headers=emp_headers,
+                          json={"employee_id": emp["employee_id"], "course_id": paid_course["id"]}).json()
+    url = f"/api/ld/enrollments/{enroll['id']}/status"
+    assert client.patch(url, headers=hr_manager_auth, json={"status": "Approved"}).json()["status"] == "In Progress"
+
+    again = client.patch(url, headers=hr_manager_auth, json={"status": "Approved"})
+    assert again.status_code == 400
+    assert "already In Progress" in again.json()["detail"]
+    flip = client.patch(url, headers=hr_manager_auth, json={"status": "Rejected", "notes": "too late"})
+    assert flip.status_code == 400
+    listed = client.get("/api/ld/enrollments", headers=hr_manager_auth).json()
+    assert next(e for e in listed if e["id"] == enroll["id"])["status"] == "In Progress"  # the approval stands
+
+
 def test_update_enrollment_invalid_status_returns_400(client, hr_manager_auth, employee_with_user, free_course):
     emp, emp_headers = employee_with_user
     enroll = client.post("/api/ld/enrollments", headers=emp_headers,

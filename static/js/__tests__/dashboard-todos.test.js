@@ -5,7 +5,8 @@ import { resolve } from 'node:path';
 // Runs the REAL static/js/dashboard.js (not a copy of its logic) with the
 // handful of globals it reads stubbed, so the Home to-do card is tested
 // against the code that ships.
-const SRC = readFileSync(resolve(__dirname, '../dashboard.js'), 'utf8');
+// dashboard.js calls into todo-decisions.js (inline Approve/Reject), so both are loaded together.
+const SRC = ['../dashboard.js', '../todo-decisions.js'].map(f => readFileSync(resolve(__dirname, f), 'utf8')).join('\n');
 
 const escStub = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 // Same dd-Mon-yy shape as core.js's fmtDate, so tests can tell a formatted date from a raw ISO one.
@@ -19,9 +20,9 @@ const fmtDateStub = v => {
 const shown = []; // pages showPage() was asked to open
 function load(apiImpl, user = { role: 'hr_manager', employee_id: 'E-ME' }) {
   // guardAsync (core.js) only adds a busy-button wrapper — pass-through here.
-  const factory = new Function('api', 'esc', 'fmtDate', 'currentUser', 'guardAsync', 'showPage',
+  const factory = new Function('api', 'esc', 'fmtDate', 'currentUser', 'guardAsync', 'showPage', 'apiErrorText',
     `${SRC}\nreturn { loadDashboardTodos, toggleTodoGroup, wireDashboardKpiTiles, dashTabKeydown, switchDashTab };`);
-  const api = factory(apiImpl, escStub, fmtDateStub, user, fn => fn, p => shown.push(p));
+  const api = factory(apiImpl, escStub, fmtDateStub, user, fn => fn, p => shown.push(p), d => (typeof d === 'string' ? d : ''));
   // inline onclick="toggleTodoGroup(this)" resolves in jsdom's own window
   (globalThis.jsdom?.window || document.defaultView).toggleTodoGroup = api.toggleTodoGroup;
   return api;
