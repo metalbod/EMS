@@ -18,11 +18,29 @@ function switchDashTab(tabId) {
   document.querySelectorAll('[data-dashtab]').forEach(btn => {
     btn.classList.toggle('pill-tab-active', btn.dataset.dashtab === tabId);
     btn.setAttribute('aria-selected', btn.dataset.dashtab === tabId ? 'true' : 'false');
+    // Roving tabindex: one tab stop (the selected tab); arrow keys move between tabs.
+    btn.setAttribute('tabindex', btn.dataset.dashtab === tabId ? '0' : '-1');
   });
   if (tabId === 'dash-recruitment' && !_dashTabLoaded.recruitment) { _dashTabLoaded.recruitment = true; loadRecruitmentDash(); }
   if (tabId === 'dash-timesheet' && !_dashTabLoaded.timesheet) { _dashTabLoaded.timesheet = true; loadTimesheetDash(); }
   if (tabId === 'dash-compensation' && !_dashTabLoaded.compensation) { _dashTabLoaded.compensation = true; loadCompensationDash(); }
   if (tabId === 'dash-leave' && !_dashTabLoaded.leave) { _dashTabLoaded.leave = true; loadLeaveDash(); }
+}
+
+// ARIA tabs keyboard support on the Home tab bar: Left/Right (wrapping), Home
+// and End move focus between the visible tabs; Enter/Space (native button
+// behaviour) then activates. Activation is manual on purpose — most tabs fetch
+// their data on first open, so arrowing past one shouldn't trigger a load.
+function dashTabKeydown(e) {
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+  const tabs = [...e.currentTarget.querySelectorAll('[role="tab"]')].filter(t => !t.classList.contains('hidden'));
+  const i = tabs.indexOf(document.activeElement);
+  if (i < 0) return;
+  const next = e.key === 'Home' ? tabs[0]
+    : e.key === 'End' ? tabs[tabs.length - 1]
+    : tabs[(i + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length];
+  e.preventDefault();
+  next.focus();
 }
 
 function renderDashboard() {
@@ -556,6 +574,23 @@ const _CHEVRON_ICON = '<svg class="todo-chevron" width="14" height="14" fill="no
 
 function _plural(n, word) { return `${n} ${word}${n === 1 ? '' : 's'}`; }
 
+// The server builds some stage strings with raw ISO dates ("Annual Leave:
+// 2026-10-05 to 2026-10-09") and a leading type ("Resignation — last day …")
+// that the Type column already says. Show every date the way the rest of Home
+// does (fmtDate) and drop the redundant type prefix.
+function _fmtIsoDates(text) {
+  return String(text ?? '').replace(/\b\d{4}-\d{2}-\d{2}\b/g, d => fmtDate(d));
+}
+function _todoStageText(t) {
+  let s = String(t.stage || t.label || '');
+  const prefix = t.stage_type ? `${t.stage_type} — ` : '';
+  if (prefix && s.startsWith(prefix) && s.length > prefix.length) {
+    s = s.slice(prefix.length);
+    s = s.charAt(0).toUpperCase() + s.slice(1);
+  }
+  return _fmtIsoDates(s);
+}
+
 // A "dash-" page value is a Dashboard sub-tab (e.g. "dash-leave" for the
 // monthly calendar), not a top-level page — showPage() alone lands on the
 // Dashboard's default tab, so it needs switchDashTab() too. No top-level
@@ -568,14 +603,18 @@ function _todoNav(page) {
 // a real deadline that has passed reads "Overdue 3 days" (with an icon), an
 // upcoming deadline shows the date, and an approval with no deadline of its
 // own reads "Waiting 17 days" (from submission — see routers/dashboard.py).
+// The exact date behind a relative phrase is in a title (mouse hover) and in
+// screen-reader-only text — a title alone is unreachable by keyboard and touch.
 function _todoTimingHtml(t) {
   if (t.days_overdue) {
-    return `<span class="todo-overdue" title="Due ${esc(fmtDate(t.due_date))}">${_OVERDUE_ICON}Overdue ${_plural(t.days_overdue, 'day')}</span>`;
+    const due = esc(fmtDate(t.due_date));
+    return `<span class="todo-timing todo-overdue" title="Due ${due}">${_OVERDUE_ICON}Overdue ${_plural(t.days_overdue, 'day')}<span class="sr-only-text">, due ${due}</span></span>`;
   }
   if (t.due_date) return `<span>Due ${esc(fmtDate(t.due_date))}</span>`;
   if (t.kind === 'approval' && t.days_waiting != null) {
+    const since = esc(fmtDate(t.waiting_since));
     const label = t.days_waiting === 0 ? 'Submitted today' : `Waiting ${_plural(t.days_waiting, 'day')}`;
-    return `<span title="Submitted ${esc(fmtDate(t.waiting_since))}">${label}</span>`;
+    return `<span class="todo-timing" title="Submitted ${since}">${label}<span class="sr-only-text">, submitted ${since}</span></span>`;
   }
   return '—';
 }
@@ -598,11 +637,11 @@ function _todoApprovalsHtml(rows, urgent) {
     const nav = _todoNav(t.page);
     return `
     <tr role="row" class="cursor-pointer ${isUrgent ? 'todo-row-urgent' : 'hover:bg-slate-50'}" onclick="${nav}">
-      <td role="cell" class="px-4 py-3 font-medium text-slate-800 todo-cell-wrap">${esc(t.stage || t.label)}</td>
+      <td role="cell" class="px-4 py-3 font-medium text-slate-800 todo-cell-wrap">${esc(_todoStageText(t))}</td>
       <td role="cell" class="px-4 py-3 text-slate-600"><span class="todo-cell-clip" title="${esc(t.employee_name || '')}">${esc(t.employee_name || '—')}</span></td>
       <td role="cell" class="px-4 py-3 text-slate-600 whitespace-nowrap">${esc(t.stage_type || '—')}</td>
       <td role="cell" class="px-4 py-3 text-slate-600 whitespace-nowrap">${_todoTimingHtml(t)}</td>
-      <td role="cell" class="px-4 py-3 text-right whitespace-nowrap">${_todoButtonHtml('Review', nav, isUrgent, `Review: ${t.label}`)}</td>
+      <td role="cell" class="px-4 py-3 text-right whitespace-nowrap">${_todoButtonHtml('Review', nav, isUrgent, `Review ${t.stage_type || 'request'} — ${t.employee_name || 'unknown employee'}: ${_todoStageText(t)}`)}</td>
     </tr>`;
   }).join('');
   return `<section class="todo-section">
@@ -625,7 +664,7 @@ function _todoApprovalsHtml(rows, urgent) {
 // Checklist items grouped per person's checklist: six "Exit Interview /
 // Reference — Yahya" rows for three people become three rows, each stating
 // how much of it is left and (offboarding) when the person leaves. The
-// person with an overdue item, then the one leaving soonest, comes first.
+// person furthest past a deadline, then the one leaving soonest, comes first.
 function _todoGroups(tasks) {
   const byKey = new Map();
   for (const t of tasks) {
@@ -633,16 +672,16 @@ function _todoGroups(tasks) {
     if (!byKey.has(k)) {
       byKey.set(k, { id: k, employee_id: t.employee_id, name: t.employee_name, type: t.stage_type, page: t.page,
         open: t.checklist_open, total: t.checklist_total, event_date: t.event_date, days_until_event: t.days_until_event,
-        items: [], overdue: 0, minDue: null });
+        items: [], overdue: 0, maxOverdue: 0, minDue: null });
     }
     const g = byKey.get(k);
     g.items.push(t);
-    if (t.days_overdue) g.overdue++;
+    if (t.days_overdue) { g.overdue++; g.maxOverdue = Math.max(g.maxOverdue, t.days_overdue); }
     if (t.due_date && (g.minDue === null || t.due_date < g.minDue)) g.minDue = t.due_date;
   }
   const nullsLast = (a, b) => (a === b ? 0 : a === null ? 1 : b === null ? -1 : a < b ? -1 : 1);
   return [...byKey.values()].sort((a, b) =>
-    (b.overdue > 0) - (a.overdue > 0)
+    b.maxOverdue - a.maxOverdue
     || nullsLast(a.event_date || null, b.event_date || null)
     || nullsLast(a.minDue, b.minDue));
 }
@@ -664,8 +703,10 @@ function _todoGroupHtml(g, isUrgent) {
   const title = mine ? `Your ${typeLower}` : (g.name || 'Unknown');
   const parts = [];
   if (!mine) parts.push(esc(g.type || ''));
-  parts.push(`${g.items.length} to do`);
-  if (g.total) parts.push(`${g.total - g.open} of ${g.total} done`);
+  // Two different scopes, named as such: items assigned to *this user* vs how
+  // much of the whole checklist (every role's tasks) is still open.
+  parts.push(`${g.items.length} assigned to you`);
+  if (g.total) parts.push(`${g.open} of ${g.total} open`);
   let when = '';
   if (g.event_date) {
     const d = g.days_until_event;
@@ -677,7 +718,7 @@ function _todoGroupHtml(g, isUrgent) {
   // An item with no due date shows nothing on the right, not a "—".
   const items = g.items.map(t => {
     const timing = _todoTimingHtml(t);
-    return `<li><span>${esc(t.stage || t.label)}</span>${timing === '—' ? '' : `<span class="todo-item-timing">${timing}</span>`}</li>`;
+    return `<li><span>${esc(_todoStageText(t))}</span>${timing === '—' ? '' : `<span class="todo-item-timing">${timing}</span>`}</li>`;
   }).join('');
   return `<li class="todo-group ${isUrgent ? 'todo-row-urgent' : ''}">
     <div class="todo-group-head">
@@ -703,32 +744,45 @@ function _todoTasksHtml(groups, urgent) {
 // Aggregate rows ("3 training courses in progress"): no single employee or
 // date to show, so just the sentence and a way in.
 function _todoRemindersHtml(rows, urgent) {
-  const lis = rows.map(t => `<li>
+  const lis = rows.map(t => {
+    const verb = t.action_label || 'Open';
+    return `<li>
       <span>${esc(t.label)}</span>
-      ${_todoButtonHtml('Open', _todoNav(t.page), t === urgent, `Open: ${t.label}`)}
-    </li>`).join('');
+      ${_todoButtonHtml(verb, _todoNav(t.page), t === urgent, `${verb}: ${t.label}`)}
+    </li>`;
+  }).join('');
   return `<section class="todo-section">
     <h3 class="todo-subheading">Reminders</h3>
     <div class="todo-block"><ul class="todo-reminders">${lis}</ul></div>
   </section>`;
 }
 
-// Approvals first (already ordered longest-waiting first by the server), then
-// per-person checklist groups, then reminders — and exactly one highlighted
-// item across the whole card ("Only one row is highlighted at a time" in the
-// redesign brief): the first approval, else the top checklist group, else the
-// first reminder.
+// Exactly one highlighted item across the whole card ("Only one row is
+// highlighted at a time" in the redesign brief). Whatever is furthest past a
+// real deadline wins — a leave request that has already started, or a
+// checklist item that is days late — with an approval winning a tie; if
+// nothing is late it is the first approval (the server orders those
+// longest-waiting first), else the top checklist group, else the first
+// reminder. The filled button is the page's one instruction, so it must not
+// point at a merely-waiting request while something is overdue.
+function _pickUrgent(approvals, groups, reminders) {
+  const late = [...approvals, ...groups.flatMap(g => g.items)].filter(t => t.days_overdue);
+  if (late.length) {
+    return late.reduce((best, t) => (t.days_overdue > best.days_overdue ? t : best));
+  }
+  return approvals[0] || groups[0]?.items[0] || reminders[0] || null;
+}
+
+// Approvals first, then per-person checklist groups, then reminders.
 function _todoBodyHtml(items) {
   const approvals = items.filter(t => t.kind === 'approval');
   const groups = _todoGroups(items.filter(t => t.kind === 'task'));
   const reminders = items.filter(t => t.kind === 'reminder');
-  const urgentApproval = approvals[0] || null;
-  const urgentGroup = !urgentApproval ? (groups[0] || null) : null;
-  const urgentReminder = !urgentApproval && !urgentGroup ? (reminders[0] || null) : null;
+  const urgent = _pickUrgent(approvals, groups, reminders);
   return [
-    approvals.length ? _todoApprovalsHtml(approvals, urgentApproval) : '',
-    groups.length ? _todoTasksHtml(groups, urgentGroup) : '',
-    reminders.length ? _todoRemindersHtml(reminders, urgentReminder) : '',
+    approvals.length ? _todoApprovalsHtml(approvals, urgent) : '',
+    groups.length ? _todoTasksHtml(groups, groups.find(g => g.items.includes(urgent)) || null) : '',
+    reminders.length ? _todoRemindersHtml(reminders, urgent) : '',
   ].join('');
 }
 
@@ -803,7 +857,7 @@ async function loadDashboardTodos() {
 
   if (approvalsEl) approvalsEl.textContent = items.filter(t => t.kind === 'approval').length;
 
-  if (countEl) countEl.textContent = items.length || '';
+  if (countEl) countEl.textContent = items.length ? _plural(items.length, 'item') : '';
   // Announce the result through a persistent live region: un-hiding the
   // empty-state paragraph or the list isn't reliably read out by screen readers.
   const deciding = items.filter(t => t.kind === 'approval').length;

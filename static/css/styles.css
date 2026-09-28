@@ -155,9 +155,9 @@ body:has(#assistantFab:not(.hidden)) main.content-shell{ padding-bottom:88px; }
 .inp:focus{outline:none;box-shadow:0 0 0 2px var(--accent)}
 /* Keyboard focus ring themed from the palette (the browser default is a blue
    ring that belongs to no design system). :where() keeps specificity at 0. */
-:where(button,a[href],[role="tab"],[tabindex]:not([tabindex="-1"])):focus-visible{outline:2px solid var(--accent-ink);outline-offset:2px}
-.btn-primary{background:var(--accent);color:white;font-size:.875rem;font-weight:600;padding:.375rem 1rem;border-radius:var(--radius-pill);transition:background .15s;cursor:pointer}
-.btn-primary:hover{background:var(--accent-ink)}
+:where(button,a[href],[role="tab"],[tabindex]):focus-visible{outline:2px solid var(--accent-ink);outline-offset:2px}
+.btn-primary{background:var(--accent-ink);color:white;font-size:.875rem;font-weight:600;padding:.375rem 1rem;border-radius:var(--radius-pill);transition:background .15s;cursor:pointer}
+.btn-primary:hover{background:var(--accent-deep)}
 .btn-ghost{color:var(--ink-2);font-size:.875rem;padding:.375rem 1rem;border-radius:var(--radius-pill);transition:background .15s;cursor:pointer}
 .btn-ghost:hover{background:var(--surface-2)}
 .view-tab-active{border-bottom:2px solid var(--accent);color:var(--accent-ink);font-weight:600}
@@ -212,10 +212,10 @@ body:has(#assistantFab:not(.hidden)) main.content-shell{ padding-bottom:88px; }
    Tailwind text/hover utilities on other buttons.
 --------------------------------------------------------------------- */
 .btn-primary:disabled,.btn-ghost:disabled,.pill-btn:disabled,button.is-busy{opacity:.5;cursor:not-allowed}
-.btn-primary:disabled:hover{background:var(--accent)}
+.btn-primary:disabled:hover{background:var(--accent-ink)}
 .btn-ghost:disabled:hover{background:transparent}
 .pill-btn-outline:disabled:hover{background:transparent}
-.pill-btn-primary:disabled:hover{background:var(--accent);border-color:var(--accent)}
+.pill-btn-primary:disabled:hover{background:var(--accent-ink);border-color:var(--accent-ink)}
 
 /* ---------------------------------------------------------------------
    Sidebar nav — Sep 2026 redesign. No per-module colour (see the old
@@ -254,32 +254,38 @@ body:has(#assistantFab:not(.hidden)) main.content-shell{ padding-bottom:88px; }
 .pill-btn{font-family:var(--font-sans);font-size:13.5px;font-weight:600;padding:8px 18px;border-radius:var(--radius-pill);cursor:pointer;transition:background .15s,color .15s;display:inline-flex;align-items:center;gap:6px}
 .pill-btn-outline{background:transparent;border:1px solid var(--line);color:var(--ink-2)}
 .pill-btn-outline:hover{background:var(--surface-2)}
-.pill-btn-primary{background:var(--accent);border:1px solid var(--accent);color:#fff}
-.pill-btn-primary:hover{background:var(--accent-ink);border-color:var(--accent-ink)}
+/* Primary fill is --accent-ink, not --accent: white on --accent is 3.35:1, under AA for button-sized text; on --accent-ink it is 5.47:1. */
+.pill-btn-primary{background:var(--accent-ink);border:1px solid var(--accent-ink);color:#fff}
+.pill-btn-primary:hover{background:var(--accent-deep);border-color:var(--accent-deep)}
 
 /* To-do queue rows — real controls, text-not-colour overdue, load/error states */
 .todo-count{font-family:var(--font-sans);font-size:15px;font-weight:600;color:var(--muted);margin-left:8px}
 .todo-count:not(:empty)::before{content:"· "}
 .todo-section + .todo-section{margin-top:22px}
-.todo-subheading{font-family:var(--font-sans);font-size:13.5px;font-weight:700;color:var(--ink-2);margin:0 0 8px}
+.todo-subheading{width:fit-content;font-family:var(--font-sans);font-size:13.5px;font-weight:700;color:var(--ink-2);margin:0 0 8px}
 .todo-block{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
 .todo-scroll-x{overflow-x:auto}
 .todo-th{position:relative;padding-top:10px;padding-bottom:10px;color:var(--muted);background:var(--surface-2);border-bottom:1px solid var(--line)}
 .todo-row-urgent{background:var(--accent-tint)}
+tr.todo-row-urgent:hover,.todo-group.todo-row-urgent .todo-group-head:hover{background:#CBE9E4}
+/* muted grey drops to 4.2:1 on the tint — use the darker body ink there */
+.todo-row-urgent .todo-group-meta,.todo-row-urgent .todo-item-timing{color:var(--ink-2)}
 .todo-cell-wrap{min-width:14rem;overflow-wrap:break-word}
 .todo-cell-clip{display:block;max-width:16rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .todo-action{padding:6px 16px;font-size:12.5px;flex:none}
 .todo-action-primary{background:var(--accent-ink);border:1px solid var(--accent-ink);color:#fff}
 /* Touch screens: ~40px tall instead of ~33px */
-@media (pointer:coarse){.todo-action{padding:10px 18px}}
+@media (pointer:coarse){.todo-action{padding:10px 18px}.pill-tab{padding:12px 16px}}
 .todo-action-primary:hover{background:var(--accent-deep);border-color:var(--accent-deep)}
+.todo-timing{position:relative}
 .todo-overdue{display:inline-flex;align-items:center;gap:5px;color:var(--overdue-ink);font-weight:600}
 .todo-overdue-icon{flex:none}
 .todo-groups,.todo-group-items,.todo-reminders{list-style:none;margin:0;padding:0}
 .todo-group + .todo-group,.todo-reminders > li + li{border-top:1px solid var(--line-2)}
 .todo-group-head,.todo-reminders > li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 16px}
+.todo-group-head{padding-top:2px;padding-bottom:2px}
 .todo-reminders > li{font-size:14px;color:var(--ink-2)}
-.todo-group-toggle{flex:1;min-width:0;display:flex;align-items:center;flex-wrap:wrap;gap:2px 12px;text-align:left;background:none;border:0;padding:4px 0;cursor:pointer;color:inherit;font:inherit;border-radius:6px}
+.todo-group-toggle{flex:1;min-width:0;display:flex;align-items:center;flex-wrap:wrap;gap:2px 12px;text-align:left;background:none;border:0;padding:10px 0;cursor:pointer;color:inherit;font:inherit;border-radius:6px}
 .todo-group-title{display:inline-flex;align-items:flex-start;gap:8px;min-width:0;max-width:100%}
 .todo-chevron{flex:none;margin-top:3px;color:var(--muted)}
 .todo-group-toggle[aria-expanded="true"] .todo-chevron{transform:rotate(90deg)}
@@ -292,8 +298,8 @@ body:has(#assistantFab:not(.hidden)) main.content-shell{ padding-bottom:88px; }
 .todo-item-timing{font-size:13px;color:var(--muted);white-space:nowrap}
 /* Narrow cards (phones, and laptops once the sidebar takes its share): the
    five-column decisions table would push its Review button off screen, so
-   each request reflows into a stacked row (request on top, then employee ·
-   type · timing, action at the end). Keyed to the card's own width, not the
+   each request reflows into a stacked row (request on top, then employee,
+   type and timing, action at the end). Keyed to the card's own width, not the
    viewport's. display:block drops table semantics in some browsers — the
    markup carries explicit ARIA roles for that. */
 .todo-section{container-type:inline-size}
@@ -301,10 +307,10 @@ body:has(#assistantFab:not(.hidden)) main.content-shell{ padding-bottom:88px; }
   .todo-scroll-x{overflow-x:visible}
   .todo-block table,.todo-block tbody,.todo-block tr,.todo-block td{display:block}
   .todo-block thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
-  .todo-block tbody tr{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;padding:12px 16px}
+  .todo-block tbody tr{display:flex;flex-wrap:wrap;align-items:center;gap:4px 14px;padding:12px 16px}
   .todo-block tbody td{padding:0}
   .todo-block tbody td:first-child{flex-basis:100%}
-  .todo-block tbody td:nth-child(n+3):not(:last-child)::before{content:"·";margin-right:10px;color:var(--muted)}
+  .todo-block tbody td:nth-child(2){color:var(--ink-2);font-weight:600}
   .todo-block tbody td:last-child{margin-left:auto}
   .todo-cell-wrap{min-width:0}
 }
@@ -324,8 +330,9 @@ body:has(#assistantFab:not(.hidden)) main.content-shell{ padding-bottom:88px; }
 #dashKpiRow .kpi-tile-label{flex-basis:100%}
 #dashKpiRow .kpi-tile > .kpi-tile-delta{margin-top:0}
 .kpi-tile-link{cursor:pointer}
-.kpi-tile-link:hover{background:#EAEDEF}
-.kpi-tile-accent.kpi-tile-link:hover{background:#C7E9E3}
+/* Hover as an outline, not a fill: a darker fill pushed the tile's muted text under 4.5:1. */
+.kpi-tile-link:hover{box-shadow:inset 0 0 0 1px var(--faint)}
+.kpi-tile-accent.kpi-tile-link:hover{box-shadow:inset 0 0 0 1px var(--accent-ink)}
 .kpi-tile-arrow{position:absolute;top:14px;right:14px;color:var(--muted)}
 .kpi-tile-accent .kpi-tile-arrow{color:var(--accent-ink)}
 .kpi-tile-accent{background:var(--accent-tint)}

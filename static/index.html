@@ -582,7 +582,7 @@
                actually open its data-kpi-target page. -->
           <div id="dashKpiRow" class="hidden grid grid-cols-2 lg:grid-cols-4 gap-3.5 mb-5">
             <div class="kpi-tile" data-kpi-target="employees" data-kpi-title="View the employee list">
-              <p class="kpi-tile-label">Headcount</p>
+              <p class="kpi-tile-label">Active headcount</p>
               <p id="kpiHeadcount" class="kpi-number mt-1">—</p>
               <p id="kpiHeadcountDelta" class="kpi-tile-delta mt-1"></p>
             </div>
@@ -603,8 +603,8 @@
             </div>
           </div>
 
-          <div class="flex items-center gap-1 flex-wrap mb-1" role="tablist" aria-label="Home sections">
-            <button type="button" role="tab" aria-selected="true" aria-controls="dash-general" class="pill-tab pill-tab-active" data-dashtab="dash-general" onclick="switchDashTab('dash-general')">General</button>
+          <div class="flex items-center gap-1 flex-wrap mb-1" role="tablist" aria-label="Home sections" onkeydown="dashTabKeydown(event)">
+            <button id="dash-tab-general-btn" type="button" role="tab" aria-selected="true" aria-controls="dash-general" class="pill-tab pill-tab-active" data-dashtab="dash-general" onclick="switchDashTab('dash-general')">General</button>
             <button id="dash-tab-workforce-btn" type="button" role="tab" aria-selected="false" aria-controls="dash-workforce" class="pill-tab" data-dashtab="dash-workforce" onclick="switchDashTab('dash-workforce')">Workforce</button>
             <button id="dash-tab-recruitment-btn" type="button" role="tab" aria-selected="false" aria-controls="dash-recruitment" class="pill-tab hidden" data-dashtab="dash-recruitment" onclick="switchDashTab('dash-recruitment')">Recruitment</button>
             <button id="dash-tab-timesheet-btn" type="button" role="tab" aria-selected="false" aria-controls="dash-timesheet" class="pill-tab hidden" data-dashtab="dash-timesheet" onclick="switchDashTab('dash-timesheet')">Timesheet</button>
@@ -614,10 +614,10 @@
           <div class="mb-5" style="border-bottom:1px solid var(--line-2)"></div>
 
           <!-- General tab: to-do (default landing tab, always visible, loads immediately) -->
-          <div id="dash-general" class="dash-tab-panel" role="tabpanel">
+          <div id="dash-general" class="dash-tab-panel" role="tabpanel" aria-labelledby="dash-tab-general-btn">
             <!-- To-Do queue (all roles except superadmin) — always visible, even when empty -->
             <div id="dashboardTodoCard" class="hidden mb-6 relative">
-              <h2 class="section-heading mb-3">Your to-do<span id="dashboardTodoCount" class="todo-count" aria-hidden="true"></span></h2>
+              <h2 class="section-heading mb-3">Your to-do<span id="dashboardTodoCount" class="todo-count"></span></h2>
               <div id="dashboardTodoError" class="hidden todo-error" role="alert">
                 <svg class="todo-overdue-icon" width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/></svg>
                 <p id="dashboardTodoErrorMsg" class="text-sm"></p>
@@ -630,7 +630,7 @@
           </div>
 
           <!-- Workforce tab: overview stats + composition + locations (always visible, loads immediately) -->
-          <div id="dash-workforce" class="dash-tab-panel hidden" role="tabpanel">
+          <div id="dash-workforce" class="dash-tab-panel hidden" role="tabpanel" aria-labelledby="dash-tab-workforce-btn">
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
               <div class="kpi-tile">
                 <p class="kpi-tile-label">Total</p>
@@ -734,7 +734,7 @@
           </div>
 
           <!-- Recruitment tab (HR roles only — lazy-loaded on first click) -->
-          <div id="dash-recruitment" class="dash-tab-panel hidden" role="tabpanel">
+          <div id="dash-recruitment" class="dash-tab-panel hidden" role="tabpanel" aria-labelledby="dash-tab-recruitment-btn">
             <div id="recruitDashSection">
               <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
                 <div class="kpi-tile kpi-tile-accent cursor-pointer" onclick="showPage('requisitions')">
@@ -776,7 +776,7 @@
                billable/non-billable, plus a top-10 ranking of employees by
                missing hours this month. HR Manager / superadmin only —
                lazy-loaded. -->
-          <div id="dash-timesheet" class="dash-tab-panel hidden" role="tabpanel">
+          <div id="dash-timesheet" class="dash-tab-panel hidden" role="tabpanel" aria-labelledby="dash-tab-timesheet-btn">
             <div class="bg-white rounded-xl border border-slate-200 p-5 mb-6">
               <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
                 <h3 class="section-heading mb-0">Approved Clocked Hours — Last 6 Months</h3>
@@ -798,7 +798,7 @@
           </div>
 
           <!-- Compensation & Benefits tab (lazy-loaded) -->
-          <div id="dash-compensation" class="dash-tab-panel hidden" role="tabpanel">
+          <div id="dash-compensation" class="dash-tab-panel hidden" role="tabpanel" aria-labelledby="dash-tab-compensation-btn">
             <!-- Benefits Cost & Utilization (HR Manager / Compensation Manager / Manager) -->
             <div id="benefitsDashSection" class="hidden">
               <div class="flex items-center gap-2 mb-3">
@@ -879,7 +879,7 @@
                HR Manager/HR Admin only; My Leave is anyone with an employee
                record — both can be visible at once, same pattern as the
                Compensation & Benefits tab's two sections. -->
-          <div id="dash-leave" class="dash-tab-panel hidden" role="tabpanel">
+          <div id="dash-leave" class="dash-tab-panel hidden" role="tabpanel" aria-labelledby="dash-tab-leave-btn">
             <!-- Leave Calendar (anyone with Leave-tab access — see canViewLeaveDash/
                  hasEmployeeRecord in dashboard.js). HR Manager/HR Admin see each
                  chip labeled with the leave type; everyone else just sees who's out. -->
