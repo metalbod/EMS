@@ -24,6 +24,7 @@ actually opens — the parent timesheet for a split timesheet or overtime row,
 the checklist for a checklist task, otherwise the same as `ref_id`. The
 Home to-do links with `showPage(page, {focus: focus_id})`.
 """
+import calendar
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
@@ -32,11 +33,13 @@ from fastapi import APIRouter, Depends
 
 from core.deps import get_current_user, need_inst
 
+from core.roles import PAYROLL_VIEW_ROLES
+
 from core.org_queries import subordinates_in_clause
 
 from core.approval_workflow import pending_rows_for_approver
 
-from routers.employee_documents import STATUS_CASE_SQL
+from routers.employee_documents import STATUS_CASE_SQL, _HR_ROLES
 
 from db import get_db
 
@@ -436,3 +439,91 @@ def get_todos(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, An
         _add_day_counts(t, today, tz)
     todos.sort(key=_todo_sort_key)
     return todos
+
+
+# ---------------------------------------------------------------------------
+# Home "Payroll and compliance" strip — pay day, the statutory remittance
+# reminder, the latest payroll run for the wages month it covers, and the
+# documents (work permits, passports, ...) that are expiring or expired.
+# ---------------------------------------------------------------------------
+def next_occurrence(today: date, day: int) -> date:
+    """The next date (today counts) that falls on day-of-month `day`. A day
+    past the end of a short month (31 in September, 30 in February) means the
+    last day of that month — a firm that pays on the 31st pays on the 30th in
+    a 30-day month."""
+    year, month = today.year, today.month
+    for _ in range(2):
+        candidate = date(year, month, min(day, calendar.monthrange(year, month)[1]))
+        if candidate >= today:
+            return candidate
+        month += 1
+        if month > 12:
+            year, month = year + 1, 1
+    raise AssertionError("unreachable: the next month's day is always >= today")
+
+
+def previous_month(d: date) -> str:
+    """'YYYY-MM' of the month before `d`'s month — the wages month a
+    remittance due on `d` covers."""
+    y, m = (d.year - 1, 12) if d.month == 1 else (d.year, d.month - 1)
+    return f"{y:04d}-{m:02d}"
+
+
+DOCUMENT_STRIP_LIMIT = 5
+
+
+@router.get("/api/dashboard/statutory")
+@db_session
+def get_statutory_strip(conn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    """Each section is null unless the caller's role may see it: `payroll` for
+    payroll_manager/hr_manager (same as the Payroll page), `documents` for
+    hr_manager/hr_admin (same as the document-expiry calendar). Dates are the
+    institution's local calendar dates, like the to-do list."""
+    if user["role"] == "superadmin":
+        return {"payroll": None, "documents": None}
+    inst_id = need_inst(user)
+    tz = _institution_tz(conn, inst_id)
+    today = datetime.now(tz).date()
+    out: Dict[str, Any] = {"payroll": None, "documents": None}
+
+    if user["role"] in PAYROLL_VIEW_ROLES:
+        inst = conn.execute(
+            "SELECT pay_day, statutory_remittance_day FROM institutions WHERE id=?", (inst_id,)
+        ).fetchone()
+        next_pay = next_occurrence(today, inst["pay_day"])
+        next_remit = next_occurrence(today, inst["statutory_remittance_day"])
+        wages_month = previous_month(next_remit)
+        run = conn.execute(
+            "SELECT id, period_start, period_end, status FROM payroll_runs "
+            "WHERE institution_id=? AND substr(period_start, 1, 7)=? ORDER BY period_start DESC LIMIT 1",
+            (inst_id, wages_month)
+        ).fetchone()
+        out["payroll"] = {
+            "pay_day": inst["pay_day"], "next_pay_date": next_pay.isoformat(), "pay_days_until": (next_pay - today).days,
+            "remittance_day": inst["statutory_remittance_day"], "next_remittance_date": next_remit.isoformat(),
+            "remittance_days_until": (next_remit - today).days, "remittance_wages_month": wages_month,
+            "run": dict(run) if run else None,
+        }
+
+    if user["role"] in _HR_ROLES:
+        # Same predicate the "N employee documents expiring soon" reminder
+        # counts, so the two can never disagree.
+        rows = conn.execute(f"""
+            SELECT ed.employee_id, e.full_name, e.preferred_name, ed.expiry_date,
+                   edt.name AS document_type_name, {STATUS_CASE_SQL} AS status
+            FROM employee_documents ed
+            JOIN employee_document_types edt ON edt.id = ed.document_type_id
+            JOIN employees e ON e.employee_id = ed.employee_id AND e.institution_id = ed.institution_id
+            WHERE ed.institution_id=? AND ({STATUS_CASE_SQL}) != 'ok'
+            ORDER BY ed.expiry_date ASC, e.full_name ASC
+        """, (inst_id,)).fetchall()
+        items = []
+        for r in rows[:DOCUMENT_STRIP_LIMIT]:
+            expiry = _to_local_date(r["expiry_date"], tz)
+            items.append({
+                "employee_id": r["employee_id"], "employee_name": r["full_name"], "preferred_name": r["preferred_name"],
+                "document_type": r["document_type_name"], "expiry_date": r["expiry_date"], "status": r["status"],
+                "days_until": (expiry - today).days if expiry else None,
+            })
+        out["documents"] = {"total": len(rows), "items": items}
+    return out

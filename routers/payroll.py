@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import payroll_calc
 
@@ -37,6 +37,17 @@ PAYROLL_MANAGE_ROLES = ("payroll_manager",)
 class PayrollRunIn(BaseModel):
     period_start: str  # YYYY-MM-DD
     period_end: str
+
+
+class PayrollSettingsIn(BaseModel):
+    # Days of the month. pay_day may be 29-31 (a short month then pays on its
+    # last day — see routers/dashboard.py's next_occurrence); the remittance
+    # reminder day stops at 28 so it exists in every month.
+    pay_day: int = Field(..., ge=1, le=31)
+    statutory_remittance_day: int = Field(..., ge=1, le=28)
+
+
+_PAYROLL_SETTINGS_LABELS = {"pay_day": "Pay day", "statutory_remittance_day": "Statutory remittance reminder day"}
 
 
 class PayslipAdjustIn(BaseModel):
@@ -169,6 +180,44 @@ def _generate_payslip(conn, inst_id, run_id, emp, period_start, period_end):
             f"UPDATE performance_payouts SET status='Applied', payroll_run_id=?, applied_at=to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS') WHERE id IN ({placeholders})",
             (run_id, *ids)
         )
+
+
+@router.get("/api/payroll/settings")
+@db_session
+def get_payroll_settings(conn, user: dict = Depends(require_roles(*PAYROLL_VIEW_ROLES))) -> Dict[str, Any]:
+    """The institution's payroll dates. Viewable by payroll_manager/hr_manager;
+    only payroll_manager can change them (PUT below)."""
+    inst_id = need_inst(user)
+    row = conn.execute(
+        "SELECT pay_day, pay_cycle, statutory_remittance_day FROM institutions WHERE id=?", (inst_id,)
+    ).fetchone()
+    return {"pay_day": row["pay_day"], "pay_cycle": row["pay_cycle"],
+            "statutory_remittance_day": row["statutory_remittance_day"],
+            "can_edit": user["role"] in PAYROLL_MANAGE_ROLES}
+
+
+@router.put("/api/payroll/settings")
+@db_session
+def update_payroll_settings(conn, body: PayrollSettingsIn,
+                            user: dict = Depends(require_roles(*PAYROLL_MANAGE_ROLES))) -> Dict[str, Any]:
+    """Pay day (drives Home's "next pay day") and the statutory remittance
+    reminder day. The remittance day is a reminder for HR, not a compliance
+    calculation — payroll_calc.py models no statutory due dates."""
+    inst_id = need_inst(user)
+    old = conn.execute(
+        "SELECT pay_day, statutory_remittance_day FROM institutions WHERE id=?", (inst_id,)
+    ).fetchone()
+    new = {"pay_day": body.pay_day, "statutory_remittance_day": body.statutory_remittance_day}
+    changes = diff_fields(dict(old), new, _PAYROLL_SETTINGS_LABELS)
+    conn.execute("UPDATE institutions SET pay_day=?, statutory_remittance_day=? WHERE id=?",
+                 (body.pay_day, body.statutory_remittance_day, inst_id))
+    if changes:
+        write_entity_audit(conn, user, inst_id, "Payroll", "payroll_settings", inst_id, "Payroll dates updated",
+                           detail="; ".join(f"{c['label']}: {c['old']} -> {c['new']}" for c in changes),
+                           changes=changes, entity_label="Payroll dates")
+    conn.commit()
+    return {**new, "pay_cycle": conn.execute("SELECT pay_cycle FROM institutions WHERE id=?", (inst_id,)).fetchone()["pay_cycle"],
+            "can_edit": True}
 
 
 @router.get("/api/payroll/runs")
