@@ -115,13 +115,15 @@ _KIND_ORDER = {"approval": 0, "task": 1, "reminder": 2}
 
 
 def _todo_sort_key(t: Dict[str, Any]):
-    """Approvals first (longest-waiting first — the decision someone is
-    stuck on), then checklist tasks (nearest/most-overdue deadline first,
-    undated last), then aggregate reminders. sort() is stable, so ties keep
+    """Approvals first, then checklist tasks, then aggregate reminders.
+    Within approvals: anything past a real deadline first (most overdue
+    first — e.g. a leave request that has already started), then everything
+    else longest-waiting first. Within tasks: earliest deadline first, which
+    is also most-overdue first, undated last. sort() is stable, so ties keep
     their query order (employee, then checklist item order)."""
     kind = _KIND_ORDER[t["kind"]]
     if kind == 0:
-        return (0, t["waiting_since"] is None, t["waiting_since"] or "")
+        return (0, -(t["days_overdue"] or 0), t["waiting_since"] is None, t["waiting_since"] or "")
     if kind == 1:
         return (1, t["due_date"] is None, t["due_date"] or "")
     return (2, False, "")
@@ -323,6 +325,9 @@ def get_todos(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, An
                 "key": "employee-documents-expiring",
                 "label": f"{cnt} employee document{'s' if cnt != 1 else ''} expiring soon",
                 "page": "dash-leave", "count": cnt,
+                # There is no standalone documents list — expiries only surface
+                # on the Leave tab's calendar — so say where the button goes.
+                "action_label": "View calendar",
             })
 
     # Onboarding/Offboarding checklist items assigned to this user's role —
@@ -398,7 +403,7 @@ def get_todos(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, An
     for t in todos:
         t.setdefault("kind", "reminder")
         for field in ("ref_id", "employee_id", "due_date", "waiting_since", "event_date",
-                      "checklist_id", "checklist_open", "checklist_total"):
+                      "checklist_id", "checklist_open", "checklist_total", "action_label"):
             t.setdefault(field, None)
         _add_day_counts(t, today, tz)
     todos.sort(key=_todo_sort_key)
