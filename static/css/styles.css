@@ -23,6 +23,7 @@
 
   /* Status */
   --overdue:     #C2410C;  /* the ONLY warm colour on screen */
+  --overdue-ink: #9A3412;  /* --overdue as *text* — clears 4.5:1 on white and on --accent-tint */
   --danger:      #B3261E;  /* destructive actions only */
   --success:     #16a34a;
   --warning:     #ea580c;
@@ -117,6 +118,10 @@ main.content-shell{
 @media (max-width: 640px){
   main.content-shell{ margin:12px; padding:16px; }
 }
+/* The floating assistant button (56px, fixed 24px from the corner) would sit
+   over the last row of any page scrolled to its end — reserve room for it
+   whenever it is showing. */
+body:has(#assistantFab:not(.hidden)) main.content-shell{ padding-bottom:88px; }
 
 #globalLoadingBar{position:fixed;top:0;left:0;right:0;height:3px;z-index:9999;overflow:hidden;background:transparent;pointer-events:none}
 #globalLoadingBar .bar{position:absolute;top:0;height:100%;width:30%;background:var(--accent);animation:globalLoadingSlide 1s ease-in-out infinite}
@@ -148,6 +153,9 @@ main.content-shell{
 .inp.w-64{width:16rem}
 .lbl{display:block;font-size:.875rem;font-weight:500;color:var(--ink-2);margin-bottom:.25rem}
 .inp:focus{outline:none;box-shadow:0 0 0 2px var(--accent)}
+/* Keyboard focus ring themed from the palette (the browser default is a blue
+   ring that belongs to no design system). :where() keeps specificity at 0. */
+:where(button,a[href],[role="tab"],[tabindex]:not([tabindex="-1"])):focus-visible{outline:2px solid var(--accent-ink);outline-offset:2px}
 .btn-primary{background:var(--accent);color:white;font-size:.875rem;font-weight:600;padding:.375rem 1rem;border-radius:var(--radius-pill);transition:background .15s;cursor:pointer}
 .btn-primary:hover{background:var(--accent-ink)}
 .btn-ghost{color:var(--ink-2);font-size:.875rem;padding:.375rem 1rem;border-radius:var(--radius-pill);transition:background .15s;cursor:pointer}
@@ -249,7 +257,77 @@ main.content-shell{
 .pill-btn-primary{background:var(--accent);border:1px solid var(--accent);color:#fff}
 .pill-btn-primary:hover{background:var(--accent-ink);border-color:var(--accent-ink)}
 
-.kpi-tile{background:var(--surface-2);border-radius:var(--radius);padding:18px 20px}
+/* To-do queue rows — real controls, text-not-colour overdue, load/error states */
+.todo-count{font-family:var(--font-sans);font-size:15px;font-weight:600;color:var(--muted);margin-left:8px}
+.todo-count:not(:empty)::before{content:"· "}
+.todo-section + .todo-section{margin-top:22px}
+.todo-subheading{font-family:var(--font-sans);font-size:13.5px;font-weight:700;color:var(--ink-2);margin:0 0 8px}
+.todo-block{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+.todo-scroll-x{overflow-x:auto}
+.todo-th{position:relative;padding-top:10px;padding-bottom:10px;color:var(--muted);background:var(--surface-2);border-bottom:1px solid var(--line)}
+.todo-row-urgent{background:var(--accent-tint)}
+.todo-cell-wrap{min-width:14rem;overflow-wrap:break-word}
+.todo-cell-clip{display:block;max-width:16rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.todo-action{padding:6px 16px;font-size:12.5px;flex:none}
+.todo-action-primary{background:var(--accent-ink);border:1px solid var(--accent-ink);color:#fff}
+/* Touch screens: ~40px tall instead of ~33px */
+@media (pointer:coarse){.todo-action{padding:10px 18px}}
+.todo-action-primary:hover{background:var(--accent-deep);border-color:var(--accent-deep)}
+.todo-overdue{display:inline-flex;align-items:center;gap:5px;color:var(--overdue-ink);font-weight:600}
+.todo-overdue-icon{flex:none}
+.todo-groups,.todo-group-items,.todo-reminders{list-style:none;margin:0;padding:0}
+.todo-group + .todo-group,.todo-reminders > li + li{border-top:1px solid var(--line-2)}
+.todo-group-head,.todo-reminders > li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 16px}
+.todo-reminders > li{font-size:14px;color:var(--ink-2)}
+.todo-group-toggle{flex:1;min-width:0;display:flex;align-items:center;flex-wrap:wrap;gap:2px 12px;text-align:left;background:none;border:0;padding:4px 0;cursor:pointer;color:inherit;font:inherit;border-radius:6px}
+.todo-group-title{display:inline-flex;align-items:flex-start;gap:8px;min-width:0;max-width:100%}
+.todo-chevron{flex:none;margin-top:3px;color:var(--muted)}
+.todo-group-toggle[aria-expanded="true"] .todo-chevron{transform:rotate(90deg)}
+.todo-group:not(.todo-row-urgent) .todo-group-head:hover{background:var(--surface-2)}
+.todo-group-name{font-size:14px;font-weight:600;color:var(--ink)}
+.todo-group-meta{font-size:13px;color:var(--muted)}
+.todo-group-items{padding:0 16px 10px 42px}
+.todo-group-items[hidden]{display:none}
+.todo-group-items li{display:flex;justify-content:space-between;gap:12px;padding:5px 0;font-size:14px;color:var(--ink-2)}
+.todo-item-timing{font-size:13px;color:var(--muted);white-space:nowrap}
+/* Narrow cards (phones, and laptops once the sidebar takes its share): the
+   five-column decisions table would push its Review button off screen, so
+   each request reflows into a stacked row (request on top, then employee ·
+   type · timing, action at the end). Keyed to the card's own width, not the
+   viewport's. display:block drops table semantics in some browsers — the
+   markup carries explicit ARIA roles for that. */
+.todo-section{container-type:inline-size}
+@container (max-width:760px){
+  .todo-scroll-x{overflow-x:visible}
+  .todo-block table,.todo-block tbody,.todo-block tr,.todo-block td{display:block}
+  .todo-block thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+  .todo-block tbody tr{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;padding:12px 16px}
+  .todo-block tbody td{padding:0}
+  .todo-block tbody td:first-child{flex-basis:100%}
+  .todo-block tbody td:nth-child(n+3):not(:last-child)::before{content:"·";margin-right:10px;color:var(--muted)}
+  .todo-block tbody td:last-child{margin-left:auto}
+  .todo-cell-wrap{min-width:0}
+}
+.todo-error{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 16px;border-radius:var(--radius);background:var(--surface-2);color:var(--ink-2)}
+.todo-error .todo-overdue-icon{color:var(--overdue-ink)}
+.todo-skeleton-block{padding:14px 16px;display:grid;gap:12px}
+.todo-skeleton{display:block;height:14px;width:60%;border-radius:7px;background:var(--line-2)}
+@media (prefers-reduced-motion:no-preference){.todo-skeleton{animation:todo-pulse 1.4s ease-in-out infinite}.todo-chevron{transition:transform .15s}}
+@keyframes todo-pulse{0%,100%{opacity:1}50%{opacity:.45}}
+.sr-only-text{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+.kpi-tile{position:relative;background:var(--surface-2);border-radius:var(--radius);padding:14px 18px}
+.kpi-tile-delta:empty{display:none}
+/* Home row only: the delta ("in 27 days") sits on the number's baseline instead
+   of forcing every tile in the row to grow a third line. */
+#dashKpiRow .kpi-tile{display:flex;flex-wrap:wrap;align-items:baseline;column-gap:10px}
+#dashKpiRow .kpi-tile-label{flex-basis:100%}
+#dashKpiRow .kpi-tile > .kpi-tile-delta{margin-top:0}
+.kpi-tile-link{cursor:pointer}
+.kpi-tile-link:hover{background:#EAEDEF}
+.kpi-tile-accent.kpi-tile-link:hover{background:#C7E9E3}
+.kpi-tile-arrow{position:absolute;top:14px;right:14px;color:var(--muted)}
+.kpi-tile-accent .kpi-tile-arrow{color:var(--accent-ink)}
 .kpi-tile-accent{background:var(--accent-tint)}
 .kpi-tile-label{font-family:var(--font-sans);font-size:12.5px;font-weight:600;color:var(--muted)}
 .kpi-tile-accent .kpi-tile-label{color:var(--accent-ink)}

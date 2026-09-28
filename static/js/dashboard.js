@@ -17,6 +17,7 @@ function switchDashTab(tabId) {
   document.querySelectorAll('.dash-tab-panel').forEach(el => el.classList.toggle('hidden', el.id !== tabId));
   document.querySelectorAll('[data-dashtab]').forEach(btn => {
     btn.classList.toggle('pill-tab-active', btn.dataset.dashtab === tabId);
+    btn.setAttribute('aria-selected', btn.dataset.dashtab === tabId ? 'true' : 'false');
   });
   if (tabId === 'dash-recruitment' && !_dashTabLoaded.recruitment) { _dashTabLoaded.recruitment = true; loadRecruitmentDash(); }
   if (tabId === 'dash-timesheet' && !_dashTabLoaded.timesheet) { _dashTabLoaded.timesheet = true; loadTimesheetDash(); }
@@ -61,6 +62,7 @@ function renderDashboard() {
   const showMgmtHome = currentUser?.role !== 'employee';
   document.getElementById('dashKpiRow')?.classList.toggle('hidden', !showMgmtHome);
   if (showMgmtHome) loadDashboardKpis();
+  if (showMgmtHome) wireDashboardKpiTiles();
   // The Workforce tab (institution-wide headcount/composition stats) is hidden
   // for the plain employee role, so skip its fetch too.
   if (showMgmtHome) loadWorkforceStats();
@@ -499,75 +501,321 @@ async function loadDashboardKpis() {
     if (!openRolesEl) return;
     if (!res?.ok) { openRolesEl.textContent = '—'; return; }
     const s = await res.json();
-    openRolesEl.textContent = (s.req_by_status['Approved'] || 0) + (s.req_by_status['Draft'] || 0);
+    // Approved = signed off and still hiring; a Draft isn't open yet.
+    openRolesEl.textContent = s.req_by_status['Approved'] || 0;
   }).catch(() => {});
 }
 
-// Picks which single row gets the accent "needs action" treatment: the
-// item with the nearest due date if any todo has one (overdue first,
-// then soonest upcoming), otherwise the item with the highest count,
-// otherwise just the first row — always exactly one row, never zero
-// (matches "Only one row is highlighted at a time" in the redesign brief).
-function _pickUrgentTodo(items) {
-  const dated = items.filter(t => t.due_date);
-  if (dated.length) return dated.slice().sort((a, b) => a.due_date < b.due_date ? -1 : 1)[0];
-  return items.slice().sort((a, b) => (b.count || 0) - (a.count || 0))[0];
+// Home KPI tiles double as shortcuts: "Pending approvals" jumps to the
+// decisions section on this same page; the others open the page their number
+// comes from — but only when this role can actually see that page in the
+// sidebar (nav items are hidden per role by applyRoleUI in core.js, and a
+// collapsed sidebar group is `.hidden` too, so its own #submenu-* wrapper is
+// ignored). A tile whose page the role can't open stays plain, not a dead link.
+const _KPI_ARROW = '<svg class="kpi-tile-arrow" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>';
+
+function _canOpenPage(page) {
+  const item = document.querySelector(`[data-page="${page}"]`);
+  return !!item && !item.closest('.hidden:not([id^="submenu-"])');
 }
+
+function _goToDecisions() {
+  switchDashTab('dash-general');
+  const target = document.getElementById('todo-decisions') || document.querySelector('#dashboardTodoCard h2');
+  if (!target) return;
+  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  target.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+  target.focus({ preventScroll: true });
+}
+
+function wireDashboardKpiTiles() {
+  document.querySelectorAll('#dashKpiRow [data-kpi-target]').forEach(tile => {
+    const target = tile.dataset.kpiTarget;
+    const linkable = target === 'decisions' || _canOpenPage(target);
+    tile._kpiGo = linkable ? (target === 'decisions' ? _goToDecisions : () => showPage(target)) : null;
+    tile.classList.toggle('kpi-tile-link', linkable);
+    tile.querySelector('.kpi-tile-arrow')?.remove();
+    if (linkable) {
+      tile.setAttribute('role', 'link');
+      tile.setAttribute('tabindex', '0');
+      tile.setAttribute('title', tile.dataset.kpiTitle || '');
+      tile.insertAdjacentHTML('beforeend', _KPI_ARROW);
+    } else {
+      ['role', 'tabindex', 'title'].forEach(a => tile.removeAttribute(a));
+    }
+    if (!tile._kpiWired) { // bind once — renderDashboard re-runs on role switch
+      tile._kpiWired = true;
+      tile.addEventListener('click', () => tile._kpiGo?.());
+      tile.addEventListener('keydown', e => { if (e.key === 'Enter' && tile._kpiGo) { e.preventDefault(); tile._kpiGo(); } });
+    }
+  });
+}
+
+const _OVERDUE_ICON = '<svg class="todo-overdue-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/></svg>';
+const _CHEVRON_ICON = '<svg class="todo-chevron" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>';
+
+function _plural(n, word) { return `${n} ${word}${n === 1 ? '' : 's'}`; }
+
+// A "dash-" page value is a Dashboard sub-tab (e.g. "dash-leave" for the
+// monthly calendar), not a top-level page — showPage() alone lands on the
+// Dashboard's default tab, so it needs switchDashTab() too. No top-level
+// ALL_PAGES entry starts with "dash-", so this prefix check is unambiguous.
+function _todoNav(page) {
+  return page.startsWith('dash-') ? `showPage('dashboard');switchDashTab('${page}')` : `showPage('${page}')`;
+}
+
+// The timing cell says what its date means in words, never by colour alone:
+// a real deadline that has passed reads "Overdue 3 days" (with an icon), an
+// upcoming deadline shows the date, and an approval with no deadline of its
+// own reads "Waiting 17 days" (from submission — see routers/dashboard.py).
+function _todoTimingHtml(t) {
+  if (t.days_overdue) {
+    return `<span class="todo-overdue" title="Due ${esc(fmtDate(t.due_date))}">${_OVERDUE_ICON}Overdue ${_plural(t.days_overdue, 'day')}</span>`;
+  }
+  if (t.due_date) return `<span>Due ${esc(fmtDate(t.due_date))}</span>`;
+  if (t.kind === 'approval' && t.days_waiting != null) {
+    const label = t.days_waiting === 0 ? 'Submitted today' : `Waiting ${_plural(t.days_waiting, 'day')}`;
+    return `<span title="Submitted ${esc(fmtDate(t.waiting_since))}">${label}</span>`;
+  }
+  return '—';
+}
+
+// Every to-do gets a real, focusable control (a <tr onclick> is invisible to
+// keyboards and screen readers). Only the single highlighted item gets the
+// filled treatment; everything else is outline.
+function _todoButtonHtml(verb, nav, isUrgent, ariaLabel) {
+  const cls = isUrgent ? 'todo-action todo-action-primary' : 'todo-action pill-btn-outline';
+  return `<button type="button" onclick="event.stopPropagation();${nav}" class="pill-btn ${cls}" aria-label="${esc(ariaLabel)}">${verb}</button>`;
+}
+
+// "Needs your decision": a request waiting on this user. The Task column
+// shows only the stage — the employee and type already have their own
+// columns, so repeating them in a label ("… — Yahya (offboarding)") made the
+// widest column the least informative one.
+function _todoApprovalsHtml(rows, urgent) {
+  const body = rows.map(t => {
+    const isUrgent = t === urgent;
+    const nav = _todoNav(t.page);
+    return `
+    <tr role="row" class="cursor-pointer ${isUrgent ? 'todo-row-urgent' : 'hover:bg-slate-50'}" onclick="${nav}">
+      <td role="cell" class="px-4 py-3 font-medium text-slate-800 todo-cell-wrap">${esc(t.stage || t.label)}</td>
+      <td role="cell" class="px-4 py-3 text-slate-600"><span class="todo-cell-clip" title="${esc(t.employee_name || '')}">${esc(t.employee_name || '—')}</span></td>
+      <td role="cell" class="px-4 py-3 text-slate-600 whitespace-nowrap">${esc(t.stage_type || '—')}</td>
+      <td role="cell" class="px-4 py-3 text-slate-600 whitespace-nowrap">${_todoTimingHtml(t)}</td>
+      <td role="cell" class="px-4 py-3 text-right whitespace-nowrap">${_todoButtonHtml('Review', nav, isUrgent, `Review: ${t.label}`)}</td>
+    </tr>`;
+  }).join('');
+  return `<section class="todo-section">
+    <h3 class="todo-subheading" id="todo-decisions" tabindex="-1">Needs your decision</h3>
+    <div class="todo-block todo-scroll-x">
+      <table role="table" class="w-full text-sm" aria-label="Needs your decision">
+        <thead role="rowgroup"><tr role="row">
+          <th scope="col" role="columnheader" class="text-left px-4 text-xs font-semibold uppercase todo-th">Request</th>
+          <th scope="col" role="columnheader" class="text-left px-4 text-xs font-semibold uppercase todo-th">Employee</th>
+          <th scope="col" role="columnheader" class="text-left px-4 text-xs font-semibold uppercase todo-th">Type</th>
+          <th scope="col" role="columnheader" class="text-left px-4 text-xs font-semibold uppercase todo-th">Timing</th>
+          <th scope="col" role="columnheader" class="px-4 todo-th"><span class="sr-only-text">Action</span></th>
+        </tr></thead>
+        <tbody role="rowgroup" class="divide-y divide-slate-100">${body}</tbody>
+      </table>
+    </div>
+  </section>`;
+}
+
+// Checklist items grouped per person's checklist: six "Exit Interview /
+// Reference — Yahya" rows for three people become three rows, each stating
+// how much of it is left and (offboarding) when the person leaves. The
+// person with an overdue item, then the one leaving soonest, comes first.
+function _todoGroups(tasks) {
+  const byKey = new Map();
+  for (const t of tasks) {
+    const k = t.checklist_id != null ? `c${t.checklist_id}` : `k${t.key}`;
+    if (!byKey.has(k)) {
+      byKey.set(k, { id: k, employee_id: t.employee_id, name: t.employee_name, type: t.stage_type, page: t.page,
+        open: t.checklist_open, total: t.checklist_total, event_date: t.event_date, days_until_event: t.days_until_event,
+        items: [], overdue: 0, minDue: null });
+    }
+    const g = byKey.get(k);
+    g.items.push(t);
+    if (t.days_overdue) g.overdue++;
+    if (t.due_date && (g.minDue === null || t.due_date < g.minDue)) g.minDue = t.due_date;
+  }
+  const nullsLast = (a, b) => (a === b ? 0 : a === null ? 1 : b === null ? -1 : a < b ? -1 : 1);
+  return [...byKey.values()].sort((a, b) =>
+    (b.overdue > 0) - (a.overdue > 0)
+    || nullsLast(a.event_date || null, b.event_date || null)
+    || nullsLast(a.minDue, b.minDue));
+}
+
+const _todoOpenGroups = new Set(); // group ids left expanded, so a refresh doesn't collapse them
+
+function toggleTodoGroup(btn) {
+  const open = btn.getAttribute('aria-expanded') !== 'true';
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  const panel = document.getElementById(btn.getAttribute('aria-controls'));
+  if (panel) panel.hidden = !open;
+  const id = btn.dataset.group;
+  if (open) _todoOpenGroups.add(id); else _todoOpenGroups.delete(id);
+}
+
+function _todoGroupHtml(g, isUrgent) {
+  const mine = g.employee_id && g.employee_id === currentUser?.employee_id;
+  const typeLower = String(g.type || 'checklist').toLowerCase();
+  const title = mine ? `Your ${typeLower}` : (g.name || 'Unknown');
+  const parts = [];
+  if (!mine) parts.push(esc(g.type || ''));
+  parts.push(`${g.items.length} to do`);
+  if (g.total) parts.push(`${g.total - g.open} of ${g.total} done`);
+  let when = '';
+  if (g.event_date) {
+    const d = g.days_until_event;
+    when = d != null && d < 0 ? `Left ${esc(fmtDate(g.event_date))}`
+      : `Leaves ${esc(fmtDate(g.event_date))}${d != null ? ` · ${d === 0 ? 'today' : `in ${_plural(d, 'day')}`}` : ''}`;
+  }
+  const panelId = `todo-group-${g.id}`;
+  const open = _todoOpenGroups.has(g.id);
+  // An item with no due date shows nothing on the right, not a "—".
+  const items = g.items.map(t => {
+    const timing = _todoTimingHtml(t);
+    return `<li><span>${esc(t.stage || t.label)}</span>${timing === '—' ? '' : `<span class="todo-item-timing">${timing}</span>`}</li>`;
+  }).join('');
+  return `<li class="todo-group ${isUrgent ? 'todo-row-urgent' : ''}">
+    <div class="todo-group-head">
+      <button type="button" class="todo-group-toggle" data-group="${g.id}" aria-expanded="${open}" aria-controls="${panelId}" onclick="toggleTodoGroup(this)">
+        <span class="todo-group-title">${_CHEVRON_ICON}<span class="todo-group-name">${esc(title)}</span></span>
+        <span class="todo-group-meta">${parts.filter(Boolean).join(' · ')}</span>
+        ${when ? `<span class="todo-group-meta">${when}</span>` : ''}
+        ${g.overdue ? `<span class="todo-overdue">${_OVERDUE_ICON}${g.overdue} overdue</span>` : ''}
+      </button>
+      ${_todoButtonHtml('Open', _todoNav(g.page), isUrgent, `Open ${mine ? `your ${typeLower}` : `${g.name || ''}'s ${typeLower}`} checklist`)}
+    </div>
+    <ul class="todo-group-items" id="${panelId}" ${open ? '' : 'hidden'}>${items}</ul>
+  </li>`;
+}
+
+function _todoTasksHtml(groups, urgent) {
+  return `<section class="todo-section">
+    <h3 class="todo-subheading">Checklist tasks</h3>
+    <div class="todo-block"><ul class="todo-groups">${groups.map(g => _todoGroupHtml(g, g === urgent)).join('')}</ul></div>
+  </section>`;
+}
+
+// Aggregate rows ("3 training courses in progress"): no single employee or
+// date to show, so just the sentence and a way in.
+function _todoRemindersHtml(rows, urgent) {
+  const lis = rows.map(t => `<li>
+      <span>${esc(t.label)}</span>
+      ${_todoButtonHtml('Open', _todoNav(t.page), t === urgent, `Open: ${t.label}`)}
+    </li>`).join('');
+  return `<section class="todo-section">
+    <h3 class="todo-subheading">Reminders</h3>
+    <div class="todo-block"><ul class="todo-reminders">${lis}</ul></div>
+  </section>`;
+}
+
+// Approvals first (already ordered longest-waiting first by the server), then
+// per-person checklist groups, then reminders — and exactly one highlighted
+// item across the whole card ("Only one row is highlighted at a time" in the
+// redesign brief): the first approval, else the top checklist group, else the
+// first reminder.
+function _todoBodyHtml(items) {
+  const approvals = items.filter(t => t.kind === 'approval');
+  const groups = _todoGroups(items.filter(t => t.kind === 'task'));
+  const reminders = items.filter(t => t.kind === 'reminder');
+  const urgentApproval = approvals[0] || null;
+  const urgentGroup = !urgentApproval ? (groups[0] || null) : null;
+  const urgentReminder = !urgentApproval && !urgentGroup ? (reminders[0] || null) : null;
+  return [
+    approvals.length ? _todoApprovalsHtml(approvals, urgentApproval) : '',
+    groups.length ? _todoTasksHtml(groups, urgentGroup) : '',
+    reminders.length ? _todoRemindersHtml(reminders, urgentReminder) : '',
+  ].join('');
+}
+
+const _TODO_SKELETON = '<div class="todo-block todo-skeleton-block" aria-hidden="true">' + '<span class="todo-skeleton"></span>'.repeat(3) + '</div>';
+
+// Which of the card's four mutually exclusive states is showing:
+// 'loading' (skeleton, only when there is nothing to show yet), 'error'
+// (message + retry), 'empty' ("all caught up") or 'list'.
+function _setTodoView(view, errorMsg) {
+  const body = document.getElementById('dashboardTodoBody');
+  const empty = document.getElementById('dashboardTodoEmpty');
+  const error = document.getElementById('dashboardTodoError');
+  body?.classList.toggle('hidden', view !== 'list' && view !== 'loading');
+  body?.setAttribute('aria-busy', view === 'loading' ? 'true' : 'false');
+  empty?.classList.toggle('hidden', view !== 'empty');
+  error?.classList.toggle('hidden', view !== 'error');
+  if (view === 'error') {
+    const msg = document.getElementById('dashboardTodoErrorMsg');
+    if (msg) msg.textContent = errorMsg || "Couldn't load your to-do list.";
+  }
+}
+
+let _todoLoadSeq = 0;
 
 async function loadDashboardTodos() {
   const card=document.getElementById('dashboardTodoCard');
   if(!card) return;
   if(currentUser?.role==='superadmin'){ card.classList.add('hidden'); return; }
   card.classList.remove('hidden');
-  const listEl=document.getElementById('dashboardTodoList');
-  const emptyEl=document.getElementById('dashboardTodoEmpty');
-  const res=await api('/api/todos');
-  const items=res?.ok?await res.json():[];
-
+  const bodyEl=document.getElementById('dashboardTodoBody');
+  const countEl=document.getElementById('dashboardTodoCount');
+  const retryBtn=document.getElementById('dashboardTodoRetry');
+  const liveEl=document.getElementById('dashboardTodoLive');
   const approvalsEl = document.getElementById('kpiApprovals');
-  if (approvalsEl) {
-    const pending = items.filter(t => t.label.includes('awaiting your approval'))
-      .reduce((sum, t) => sum + (t.count || 0), 0);
-    approvalsEl.textContent = pending;
-  }
+  // Only a later call may overwrite the screen: if the user switches role/
+  // institution or hits Retry while a slower request is still in flight, the
+  // stale response is dropped instead of clobbering the newer one.
+  const seq = ++_todoLoadSeq;
+  if (retryBtn) retryBtn.disabled = true;
+  if (!bodyEl.children.length) { bodyEl.innerHTML = _TODO_SKELETON; _setTodoView('loading'); }
 
-  const wrapEl=document.getElementById('dashboardTodoTableWrap');
-  if(!items.length){
-    listEl.innerHTML='';
-    wrapEl.classList.add('hidden');
-    emptyEl.classList.remove('hidden');
+  let items = null, errorMsg = null;
+  try {
+    const res = await api('/api/todos');
+    if (seq !== _todoLoadSeq) return;
+    if (!res) return; // 401: api() has already started the logout flow
+    if (res.ok) {
+      const body = await res.json();
+      if (!Array.isArray(body)) throw new Error('unexpected /api/todos response');
+      items = body;
+    } else if (res.status === 403) {
+      errorMsg = "You don't have access to your to-do list.";
+    } else {
+      errorMsg = "Couldn't load your to-do list — something went wrong on our side.";
+    }
+  } catch (e) {
+    if (seq !== _todoLoadSeq) return;
+    errorMsg = "Couldn't load your to-do list. Check your connection and try again.";
+  }
+  if (retryBtn) retryBtn.disabled = false;
+
+  // A failed load must never read as "nothing pending": show the error and
+  // leave the approvals tile at "—" rather than a confident 0.
+  if (items === null) {
+    bodyEl.innerHTML = '';
+    if (countEl) countEl.textContent = '';
+    if (approvalsEl) approvalsEl.textContent = '—';
+    _setTodoView('error', errorMsg);
+    if (liveEl) liveEl.textContent = '';
     return;
   }
-  emptyEl.classList.add('hidden');
-  wrapEl.classList.remove('hidden');
-  const today = new Date().toISOString().slice(0, 10);
-  const urgent = _pickUrgentTodo(items);
-  listEl.innerHTML=items.map(t=>{
-    // A "dash-" page value is a Dashboard sub-tab (e.g. "dash-leave" for
-    // the monthly calendar), not a top-level page — showPage() alone
-    // lands on the Dashboard's default tab, so it needs switchDashTab()
-    // too. No top-level ALL_PAGES entry starts with "dash-", so this
-    // prefix check is unambiguous.
-    const onclick = t.page.startsWith('dash-')
-      ? `showPage('dashboard');switchDashTab('${t.page}')`
-      : `showPage('${t.page}')`;
-    const isUrgent = t === urgent;
-    const overdue = t.due_date && t.due_date < today;
-    const action = isUrgent
-      ? `<button onclick="event.stopPropagation();${onclick}" class="pill-btn pill-btn-primary" style="padding:6px 16px;font-size:12.5px">Review</button>`
-      : `<span class="text-xs text-slate-400">Open</span>`;
-    const dueCell = t.due_date
-      ? `<span${overdue ? ' style="color:var(--overdue);font-weight:600"' : ''}>${esc(fmtDate(t.due_date))}</span>`
-      : '—';
-    return `
-    <tr class="hover:bg-slate-50 cursor-pointer" ${isUrgent ? 'style="background:var(--accent-tint)"' : ''} onclick="${onclick}">
-      <td class="px-4 py-3 font-medium text-slate-800">${esc(t.label)}</td>
-      <td class="px-4 py-3 text-slate-600 whitespace-nowrap">${t.employee_name ? esc(t.employee_name) : '—'}</td>
-      <td class="px-4 py-3 text-slate-600 whitespace-nowrap">${t.stage_type ? esc(t.stage_type) : '—'}</td>
-      <td class="px-4 py-3 text-slate-600 whitespace-nowrap">${dueCell}</td>
-      <td class="px-4 py-3 text-right whitespace-nowrap">${action}</td>
-    </tr>`;
-  }).join('');
+
+  if (approvalsEl) approvalsEl.textContent = items.filter(t => t.kind === 'approval').length;
+
+  if (countEl) countEl.textContent = items.length || '';
+  // Announce the result through a persistent live region: un-hiding the
+  // empty-state paragraph or the list isn't reliably read out by screen readers.
+  const deciding = items.filter(t => t.kind === 'approval').length;
+  if(!items.length){
+    bodyEl.innerHTML='';
+    _setTodoView('empty');
+    if (liveEl) liveEl.textContent = "You're all caught up — nothing pending right now.";
+    return;
+  }
+  bodyEl.innerHTML = _todoBodyHtml(items);
+  _setTodoView('list');
+  if (liveEl) liveEl.textContent = `${_plural(items.length, 'item')} on your to-do list${deciding ? `, ${deciding} waiting for your decision` : ''}.`;
 }
 
 // Dashboard quick-action shortcuts (employee role only — see

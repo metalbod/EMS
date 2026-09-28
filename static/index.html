@@ -561,8 +561,8 @@
           <div id="dashboardNotifList"></div>
 
           <!-- Greeting header: date + serif greeting -->
-          <div class="mb-6">
-            <p id="dashGreetingDate" class="text-xs" style="color:var(--faint)"></p>
+          <div class="mb-4">
+            <p id="dashGreetingDate" class="text-xs" style="color:var(--muted)"></p>
             <h1 id="dashGreeting" class="page-greeting mt-1">Welcome back</h1>
           </div>
           <!-- Employee-role quick actions: one row below the greeting. The three
@@ -577,65 +577,60 @@
             <p id="dashboardResignStatus" class="hidden text-xs" style="color:var(--muted)"></p>
           </div>
 
-          <!-- KPI tiles: headcount, pending approvals (accent), payroll cut-off, open roles -->
-          <div id="dashKpiRow" class="hidden grid grid-cols-2 lg:grid-cols-4 gap-3.5 mb-6">
-            <div class="kpi-tile">
+          <!-- KPI tiles: headcount, pending approvals (accent), pay day, open roles. Each is
+               upgraded to a link by wireDashboardKpiTiles() (dashboard.js) when this role can
+               actually open its data-kpi-target page. -->
+          <div id="dashKpiRow" class="hidden grid grid-cols-2 lg:grid-cols-4 gap-3.5 mb-5">
+            <div class="kpi-tile" data-kpi-target="employees" data-kpi-title="View the employee list">
               <p class="kpi-tile-label">Headcount</p>
               <p id="kpiHeadcount" class="kpi-number mt-1">—</p>
               <p id="kpiHeadcountDelta" class="kpi-tile-delta mt-1"></p>
             </div>
-            <div class="kpi-tile kpi-tile-accent">
+            <div class="kpi-tile kpi-tile-accent" data-kpi-target="decisions" data-kpi-title="Jump to what needs your decision">
               <p class="kpi-tile-label">Pending approvals</p>
               <p id="kpiApprovals" class="kpi-number mt-1">—</p>
               <p id="kpiApprovalsDelta" class="kpi-tile-delta mt-1"></p>
             </div>
-            <div class="kpi-tile">
-              <p class="kpi-tile-label">Payroll cut-off</p>
+            <div class="kpi-tile" data-kpi-target="payroll-runs" data-kpi-title="Open payroll runs">
+              <p class="kpi-tile-label">Pay day</p>
               <p id="kpiPayrollCutoff" class="kpi-number mt-1">—</p>
               <p id="kpiPayrollCutoffDelta" class="kpi-tile-delta mt-1"></p>
             </div>
-            <div class="kpi-tile">
+            <div class="kpi-tile" data-kpi-target="requisitions" data-kpi-title="Open job requisitions">
               <p class="kpi-tile-label">Open roles</p>
               <p id="kpiOpenRoles" class="kpi-number mt-1">—</p>
               <p id="kpiOpenRolesDelta" class="kpi-tile-delta mt-1"></p>
             </div>
           </div>
 
-          <div class="flex items-center gap-1 flex-wrap mb-1">
-            <button class="pill-tab pill-tab-active" data-dashtab="dash-general" onclick="switchDashTab('dash-general')">General</button>
-            <button id="dash-tab-workforce-btn" class="pill-tab" data-dashtab="dash-workforce" onclick="switchDashTab('dash-workforce')">Workforce</button>
-            <button id="dash-tab-recruitment-btn" class="pill-tab hidden" data-dashtab="dash-recruitment" onclick="switchDashTab('dash-recruitment')">Recruitment</button>
-            <button id="dash-tab-timesheet-btn" class="pill-tab hidden" data-dashtab="dash-timesheet" onclick="switchDashTab('dash-timesheet')">Timesheet</button>
-            <button id="dash-tab-compensation-btn" class="pill-tab hidden" data-dashtab="dash-compensation" onclick="switchDashTab('dash-compensation')">Compensation &amp; Benefits</button>
-            <button id="dash-tab-leave-btn" class="pill-tab hidden" data-dashtab="dash-leave" onclick="switchDashTab('dash-leave')">Leave</button>
+          <div class="flex items-center gap-1 flex-wrap mb-1" role="tablist" aria-label="Home sections">
+            <button type="button" role="tab" aria-selected="true" aria-controls="dash-general" class="pill-tab pill-tab-active" data-dashtab="dash-general" onclick="switchDashTab('dash-general')">General</button>
+            <button id="dash-tab-workforce-btn" type="button" role="tab" aria-selected="false" aria-controls="dash-workforce" class="pill-tab" data-dashtab="dash-workforce" onclick="switchDashTab('dash-workforce')">Workforce</button>
+            <button id="dash-tab-recruitment-btn" type="button" role="tab" aria-selected="false" aria-controls="dash-recruitment" class="pill-tab hidden" data-dashtab="dash-recruitment" onclick="switchDashTab('dash-recruitment')">Recruitment</button>
+            <button id="dash-tab-timesheet-btn" type="button" role="tab" aria-selected="false" aria-controls="dash-timesheet" class="pill-tab hidden" data-dashtab="dash-timesheet" onclick="switchDashTab('dash-timesheet')">Timesheet</button>
+            <button id="dash-tab-compensation-btn" type="button" role="tab" aria-selected="false" aria-controls="dash-compensation" class="pill-tab hidden" data-dashtab="dash-compensation" onclick="switchDashTab('dash-compensation')">Compensation &amp; Benefits</button>
+            <button id="dash-tab-leave-btn" type="button" role="tab" aria-selected="false" aria-controls="dash-leave" class="pill-tab hidden" data-dashtab="dash-leave" onclick="switchDashTab('dash-leave')">Leave</button>
           </div>
-          <div class="mb-6" style="border-bottom:1px solid var(--line-2)"></div>
+          <div class="mb-5" style="border-bottom:1px solid var(--line-2)"></div>
 
           <!-- General tab: to-do (default landing tab, always visible, loads immediately) -->
-          <div id="dash-general" class="dash-tab-panel">
+          <div id="dash-general" class="dash-tab-panel" role="tabpanel">
             <!-- To-Do queue (all roles except superadmin) — always visible, even when empty -->
-            <div id="dashboardTodoCard" class="hidden mb-6">
-              <h3 class="section-heading mb-3">Your to-do</h3>
-              <div id="dashboardTodoTableWrap" class="hidden bg-white rounded-xl border border-slate-200 table-scroll">
-                <table class="w-full text-sm">
-                  <thead class="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
-                    <tr>
-                      <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Task</th>
-                      <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Employee</th>
-                      <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Type</th>
-                      <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Due</th>
-                      <th class="px-4 py-3"></th>
-                    </tr>
-                  </thead>
-                  <tbody id="dashboardTodoList" class="divide-y divide-slate-100"></tbody>
-                </table>
+            <div id="dashboardTodoCard" class="hidden mb-6 relative">
+              <h2 class="section-heading mb-3">Your to-do<span id="dashboardTodoCount" class="todo-count" aria-hidden="true"></span></h2>
+              <div id="dashboardTodoError" class="hidden todo-error" role="alert">
+                <svg class="todo-overdue-icon" width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/></svg>
+                <p id="dashboardTodoErrorMsg" class="text-sm"></p>
+                <button id="dashboardTodoRetry" type="button" class="pill-btn pill-btn-outline" onclick="loadDashboardTodos()">Try again</button>
               </div>
-              <p id="dashboardTodoEmpty" class="hidden text-sm py-2" style="color:var(--faint)">You're all caught up — nothing pending right now.</p>
+              <p id="dashboardTodoLive" class="sr-only-text" role="status" aria-live="polite"></p>
+              <div id="dashboardTodoBody" class="hidden" aria-busy="false"></div>
+              <p id="dashboardTodoEmpty" class="hidden text-sm py-2" style="color:var(--muted)">You're all caught up — nothing pending right now.</p>
             </div>
           </div>
 
           <!-- Workforce tab: overview stats + composition + locations (always visible, loads immediately) -->
-          <div id="dash-workforce" class="dash-tab-panel hidden">
+          <div id="dash-workforce" class="dash-tab-panel hidden" role="tabpanel">
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
               <div class="kpi-tile">
                 <p class="kpi-tile-label">Total</p>
@@ -739,7 +734,7 @@
           </div>
 
           <!-- Recruitment tab (HR roles only — lazy-loaded on first click) -->
-          <div id="dash-recruitment" class="dash-tab-panel hidden">
+          <div id="dash-recruitment" class="dash-tab-panel hidden" role="tabpanel">
             <div id="recruitDashSection">
               <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
                 <div class="kpi-tile kpi-tile-accent cursor-pointer" onclick="showPage('requisitions')">
@@ -781,7 +776,7 @@
                billable/non-billable, plus a top-10 ranking of employees by
                missing hours this month. HR Manager / superadmin only —
                lazy-loaded. -->
-          <div id="dash-timesheet" class="dash-tab-panel hidden">
+          <div id="dash-timesheet" class="dash-tab-panel hidden" role="tabpanel">
             <div class="bg-white rounded-xl border border-slate-200 p-5 mb-6">
               <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
                 <h3 class="section-heading mb-0">Approved Clocked Hours — Last 6 Months</h3>
@@ -803,7 +798,7 @@
           </div>
 
           <!-- Compensation & Benefits tab (lazy-loaded) -->
-          <div id="dash-compensation" class="dash-tab-panel hidden">
+          <div id="dash-compensation" class="dash-tab-panel hidden" role="tabpanel">
             <!-- Benefits Cost & Utilization (HR Manager / Compensation Manager / Manager) -->
             <div id="benefitsDashSection" class="hidden">
               <div class="flex items-center gap-2 mb-3">
@@ -884,7 +879,7 @@
                HR Manager/HR Admin only; My Leave is anyone with an employee
                record — both can be visible at once, same pattern as the
                Compensation & Benefits tab's two sections. -->
-          <div id="dash-leave" class="dash-tab-panel hidden">
+          <div id="dash-leave" class="dash-tab-panel hidden" role="tabpanel">
             <!-- Leave Calendar (anyone with Leave-tab access — see canViewLeaveDash/
                  hasEmployeeRecord in dashboard.js). HR Manager/HR Admin see each
                  chip labeled with the leave type; everyone else just sees who's out. -->
