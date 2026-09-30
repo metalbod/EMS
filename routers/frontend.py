@@ -1,22 +1,29 @@
 """SPA frontend catch-all route. Must be mounted last (after every API router)
 since it matches any path not already claimed by a more specific route."""
 import hashlib
+import json
 import os
 import re
 import subprocess
+from typing import Any, Dict, List
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 from starlette.staticfiles import StaticFiles
+
+from core.changelog import compute_changelog
+from core.deps import get_current_user
 
 router = APIRouter()
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
+CHANGELOG_FILE = os.path.join(os.path.dirname(STATIC_DIR), "CHANGELOG.json")
 
 _CACHE_BUST_RE = re.compile(r"\?v=[A-Za-z0-9]+")
 _index_html_cache = {"version": None, "content": None}
 _version_cache = {"value": None}
 _app_version_cache = {"value": None}
+_changelog_cache = {"value": None}
 
 
 def _app_version() -> str:
@@ -51,6 +58,35 @@ def _app_version() -> str:
                 version = "dev"
         _app_version_cache["value"] = version
     return _app_version_cache["value"]
+
+
+def _changelog() -> List[Dict[str, Any]]:
+    """[{version, date, commits: [{sha, summary}]}, ...], newest-first — the
+    data behind the in-app About panel (user menu -> About). Computed once
+    per process and cached, same reasoning as _app_version/
+    _static_asset_version above (a deployed container is immutable for its
+    whole lifetime).
+
+    In production, reads CHANGELOG.json (written by scripts/
+    generate_changelog.py, run by deploy.sh right before `fly deploy` bakes
+    it into the image — the deployed container has no .git, see
+    .dockerignore, so it can't compute this at request time). Local dev has
+    no such file, but does have .git, so it falls back to computing the
+    same thing live via core.changelog.compute_changelog; if even that
+    fails (git not installed, not a repo), falls back to an empty list
+    rather than raising — this must never break the About panel over
+    something cosmetic."""
+    if _changelog_cache["value"] is None:
+        if os.path.exists(CHANGELOG_FILE):
+            with open(CHANGELOG_FILE, "r", encoding="utf-8") as f:
+                changelog = json.load(f)
+        else:
+            try:
+                changelog = compute_changelog()
+            except Exception:
+                changelog = []
+        _changelog_cache["value"] = changelog
+    return _changelog_cache["value"]
 
 
 def _static_asset_version() -> str:
@@ -92,6 +128,15 @@ class CachedStaticFiles(StaticFiles):
         response = super().file_response(*args, **kwargs)
         response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         return response
+
+
+@router.get("/api/changelog")
+def get_changelog(user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
+    """Backs the About panel (user menu -> About) — every deployed
+    version's commit summaries, newest first. Any authenticated role: same
+    information the repo's own public GitHub Tags/Releases page already
+    shows, nothing institution-specific or sensitive."""
+    return _changelog()
 
 
 @router.get("/{full_path:path}")

@@ -18,6 +18,11 @@
 # and incremented as plain integers (never floating-point arithmetic), so
 # there's no risk of 0.1 + 0.1 drifting to something like 0.1999999999.
 #
+# scripts/generate_changelog.py runs right after (writing CHANGELOG.json,
+# gitignored, baked into the image) so the in-app About panel (user menu ->
+# About; GET /api/changelog) can show every version's commits without the
+# deployed container needing .git, which it doesn't have.
+#
 # If the post-deploy health check fails, this automatically redeploys the
 # previous release's exact image (fast — no rebuild) rather than leaving
 # prod on a broken release until someone notices and rolls back by hand.
@@ -57,6 +62,9 @@ else
   minor="${last_version#*.}"
 fi
 app_version="$major.$((minor + 1))"
+
+echo "==> Generating CHANGELOG.json for the About panel..."
+.venv/bin/python3 scripts/generate_changelog.py "$app_version"
 
 echo "==> Deploying to Fly.io (v$app_version)..."
 fly deploy --app ems-app --build-arg "APP_VERSION=$app_version"

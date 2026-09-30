@@ -918,3 +918,51 @@ describe('Remember me (login)', () => {
     expect(localStorage.getItem(REMEMBERED_LOGIN_KEY)).toBeNull();
   });
 });
+
+describe('About panel changelog rendering', () => {
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  // Mirrors renderAboutBody's body.innerHTML construction (minus fmtDate's
+  // own parsing, already covered by the "fmtDate / fmtDateTime" describe
+  // block above) — same structure: newest-first, one heading + bullet list
+  // per version, "No changes recorded" for an empty commit list.
+  function renderAboutBodyHtml(changelog) {
+    if (!changelog.length) return '<p class="empty">No version history available.</p>';
+    return changelog.map(v => `
+      <div>
+        <h3>v${esc(v.version)}</h3>
+        ${v.commits.length
+          ? `<ul>${v.commits.map(c => `<li>${esc(c.summary)}</li>`).join('')}</ul>`
+          : '<p class="empty">No changes recorded.</p>'}
+      </div>`).join('');
+  }
+
+  it('shows a placeholder when there is no version history at all', () => {
+    expect(renderAboutBodyHtml([])).toContain('No version history available');
+  });
+
+  it('lists each version\'s commits as bullets, in the order given (newest-first from the API)', () => {
+    const html = renderAboutBodyHtml([
+      { version: '0.2', date: '2026-10-02', commits: [{ sha: 'abc', summary: 'Second change' }] },
+      { version: '0.1', date: '2026-10-01', commits: [{ sha: 'def', summary: 'First change' }] },
+    ]);
+    const v2 = html.indexOf('v0.2'), v1 = html.indexOf('v0.1');
+    expect(v2).toBeGreaterThanOrEqual(0);
+    expect(v1).toBeGreaterThan(v2);
+    expect(html).toContain('<li>Second change</li>');
+    expect(html).toContain('<li>First change</li>');
+  });
+
+  it('shows "No changes recorded" for a version with an empty commit list', () => {
+    const html = renderAboutBodyHtml([{ version: '0.1', date: '2026-10-01', commits: [] }]);
+    expect(html).toContain('No changes recorded');
+  });
+
+  it('escapes commit summaries — a commit message is never trusted as HTML', () => {
+    const html = renderAboutBodyHtml([
+      { version: '0.1', date: '2026-10-01', commits: [{ sha: 'abc', summary: '<img src=x onerror=alert(1)>' }] },
+    ]);
+    expect(html).not.toContain('<img');
+    expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
+  });
+});

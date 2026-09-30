@@ -489,6 +489,10 @@
               <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
               Sign out
             </button>
+            <button onclick="toggleUserMenu();openAboutModal()" class="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2">
+              <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              About
+            </button>
           </div>
         </div>
         <div class="min-w-0 flex-1">
@@ -6321,6 +6325,21 @@
         <button type="submit" class="btn-primary">Change Password</button>
       </div>
     </form>
+  </div>
+</div>
+
+<!-- About Modal — every deployed version's commit summaries, newest first
+     (user menu -> About; core.js's openAboutModal(), GET /api/changelog). -->
+<div id="aboutModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <div>
+        <h2 class="text-base font-semibold">About</h2>
+        <p id="aboutCurrentVersion" class="text-xs text-slate-400 mt-0.5"></p>
+      </div>
+      <button onclick="closeAboutModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <div id="aboutBody" class="p-6 max-h-[70vh] overflow-y-auto space-y-5"></div>
   </div>
 </div>
 

@@ -652,6 +652,51 @@ async function submitChangePassword(e) {
   document.getElementById('changePasswordModal').classList.add('hidden');
 }
 
+// Fetched once per page load and cached — the same reasoning as the
+// server side's own _changelog() cache (routers/frontend.py): this can
+// only change on a fresh deploy, which already means a fresh page load
+// for everyone.
+let aboutChangelogCache = null;
+
+async function openAboutModal() {
+  document.getElementById('aboutModal').classList.remove('hidden');
+  const body = document.getElementById('aboutBody');
+  const versionLabel = document.getElementById('aboutCurrentVersion');
+  if (aboutChangelogCache) { renderAboutBody(aboutChangelogCache); return; }
+  body.innerHTML = '<p class="text-slate-400 text-sm">Loading…</p>';
+  versionLabel.textContent = '';
+  const res = await api('/api/changelog');
+  if (!res || !res.ok) { body.innerHTML = '<p class="text-red-500 text-sm">Failed to load version history.</p>'; return; }
+  aboutChangelogCache = await res.json();
+  renderAboutBody(aboutChangelogCache);
+}
+
+function renderAboutBody(changelog) {
+  const versionLabel = document.getElementById('aboutCurrentVersion');
+  const body = document.getElementById('aboutBody');
+  if (!changelog.length) {
+    versionLabel.textContent = '';
+    body.innerHTML = '<p class="text-slate-400 text-sm">No version history available.</p>';
+    return;
+  }
+  versionLabel.textContent = `Currently running v${changelog[0].version}${changelog[0].date ? ' · ' + fmtDate(changelog[0].date) : ''}`;
+  body.innerHTML = changelog.map(v => `
+    <div>
+      <div class="flex items-baseline gap-2 mb-1.5">
+        <h3 class="text-sm font-semibold">v${esc(v.version)}</h3>
+        ${v.date ? `<span class="text-xs text-slate-400">${fmtDate(v.date)}</span>` : ''}
+      </div>
+      ${v.commits.length ? `
+        <ul class="space-y-1 list-disc list-inside">
+          ${v.commits.map(c => `<li class="text-sm text-slate-600">${esc(c.summary)}</li>`).join('')}
+        </ul>` : '<p class="text-sm text-slate-400">No changes recorded.</p>'}
+    </div>`).join('');
+}
+
+function closeAboutModal() {
+  document.getElementById('aboutModal').classList.add('hidden');
+}
+
 function updateBrandHeader() {
   const inst = currentUser?.role === 'superadmin' ? currentInstitution : currentUser?.institution;
   const logoImg = document.getElementById('brandLogoImg');

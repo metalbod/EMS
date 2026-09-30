@@ -1,4 +1,8 @@
 .env
+# Regenerated fresh by deploy.sh (scripts/generate_changelog.py) right
+# before every deploy and baked into the image -- never source-controlled,
+# same as APP_VERSION itself (see routers/frontend.py's _app_version).
+CHANGELOG.json
 *.db
 *.db.v1.backup
 __pycache__/
