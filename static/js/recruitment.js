@@ -381,9 +381,147 @@ function openCandModal(candData=null, presetReqId=null) {
   document.getElementById('candFilesInput').value='';
   renderCandFileList();
   switchCandFormTab('cm-personal');
+  dismissCandDupPanel();
   document.getElementById('candModal').classList.remove('hidden');
 }
 function closeCandModal(){closeModal('candModal');}
+
+// ---------------------------------------------------------------------------
+// Recruitment — "is this an existing candidate?" duplicate detection
+// (Add Candidate modal) and applying an existing person to another
+// requisition (GET .../candidates/search, POST .../candidates/{id}/apply
+// — see 20260930_0002_add_candidate_requisitions).
+// ---------------------------------------------------------------------------
+let candDupSearchTimer=null, candDupSearchSeq=0;
+
+// Only runs while creating a brand-new candidate (candId is still empty)
+// — editing an existing one already IS that person, nothing to detect.
+function onCandIdentityInput() {
+  if(document.getElementById('candId').value) return;
+  clearTimeout(candDupSearchTimer);
+  candDupSearchTimer=setTimeout(runCandDupSearch, 300);
+}
+
+// IC number is the stronger identity signal when present (min 4 chars —
+// short partial ICs match too much); full name otherwise, gated at 3
+// chars to avoid a noisy search on the very first keystroke.
+function candDupSearchQuery(name, ic) {
+  if((ic||'').trim().length>=4) return ic.trim();
+  if((name||'').trim().length>=3) return name.trim();
+  return '';
+}
+
+async function runCandDupSearch() {
+  const q=candDupSearchQuery(document.getElementById('candFullName').value, document.getElementById('candIc').value);
+  const panel=document.getElementById('candDupPanel');
+  if(!q){ panel.classList.add('hidden'); return; }
+  const seq=++candDupSearchSeq;
+  const res=await api(`/api/recruitment/candidates/search?q=${encodeURIComponent(q)}`);
+  if(seq!==candDupSearchSeq) return; // a newer keystroke's search has since started
+  if(!res||!res.ok){ panel.classList.add('hidden'); return; }
+  const matches=await res.json();
+  if(!matches.length){ panel.classList.add('hidden'); return; }
+  renderCandDupMatches(matches);
+}
+
+function renderCandDupMatches(matches) {
+  document.getElementById('candDupList').innerHTML=matches.map(m=>`
+    <div class="flex items-center justify-between gap-3 bg-white border border-amber-200 rounded-lg px-3 py-2">
+      <div class="min-w-0">
+        <p class="text-sm font-medium text-slate-800 truncate">${esc(m.full_name)}</p>
+        <p class="text-xs text-slate-500 truncate">${esc(m.email||'—')}${m.phone?' · '+esc(m.phone):''}${m.ic_number?' · IC '+esc(m.ic_number):''}</p>
+        <p class="text-xs text-slate-400 truncate">${m.applications.length?m.applications.map(a=>`${esc(a.requisition_title||'General interest')} (${esc(a.stage)})`).join(', '):'No applications yet'}</p>
+      </div>
+      <button type="button" class="btn-ghost text-xs whitespace-nowrap" onclick="applyExistingCandidateFromModal(${m.id})">Use this person</button>
+    </div>`).join('');
+  document.getElementById('candDupPanel').classList.remove('hidden');
+}
+
+function dismissCandDupPanel() {
+  candDupSearchSeq++; // invalidate any in-flight search so a late response can't reopen the panel
+  document.getElementById('candDupPanel').classList.add('hidden');
+  document.getElementById('candDupList').innerHTML='';
+}
+
+// Applies the picked existing person to the requisition/fields already
+// filled in the Add Candidate form, instead of creating a duplicate
+// candidates row — the actual feature this whole panel exists for.
+async function applyExistingCandidateFromModal(candId) {
+  const err=document.getElementById('candFormErr');
+  err.classList.add('hidden');
+  const body={
+    requisition_id:parseInt(document.getElementById('candReqId').value)||null,
+    source:document.getElementById('candSource').value||'Direct',
+    notes:document.getElementById('candNotes').value||null,
+    expected_salary:parseFloat(document.getElementById('candExpSalary').value)||null,
+    notice_period:document.getElementById('candNotice').value||null,
+    referral_by:document.getElementById('candReferral').value||null,
+  };
+  const res=await api(`/api/recruitment/candidates/${candId}/apply`,{method:'POST',body:JSON.stringify(body)});
+  if(!res||!res.ok){const d=await res?.json();err.textContent=d?.detail||'Failed to apply this candidate';err.classList.remove('hidden');return;}
+  closeCandModal();
+  loadCandidates();
+  openCandDetail(candId);
+}
+
+// "+ Apply to Another Requisition" from an already-open Candidate Detail —
+// the complementary entry point to the Add Candidate panel above, for when
+// HR already knows which existing person they mean.
+async function openApplyModal() {
+  if(!viewingCandId) return;
+  await loadRecruitMeta();
+  document.getElementById('applyForName').textContent=`Applying ${viewingCandData?.full_name||'this candidate'} to:`;
+  const rsel=document.getElementById('applyReqId');
+  rsel.innerHTML='<option value="">General / No specific requisition</option>';
+  const r=await api('/api/recruitment/requisitions?status=Approved');
+  if(r&&r.ok){
+    const reqs=await r.json();
+    const appliedIds=new Set((viewingCandData?.applications||[]).map(a=>a.requisition_id));
+    reqs.filter(req=>!appliedIds.has(req.id)).forEach(req=>{
+      const o=document.createElement('option');o.value=req.id;o.textContent=`${esc(req.title)} (${esc(req.department)})`;rsel.appendChild(o);
+    });
+  }
+  const ss=document.getElementById('applySource');
+  ss.innerHTML=(recruitMeta.sources||['Direct','JobStreet','LinkedIn','Referral','Agency','Other']).map(s=>`<option>${esc(s)}</option>`).join('');
+  document.getElementById('applyNotes').value='';
+  document.getElementById('applyFormErr').classList.add('hidden');
+  document.getElementById('applyModal').classList.remove('hidden');
+}
+function closeApplyModal(){closeModal('applyModal');}
+async function submitApplyForm(e) {
+  e.preventDefault();
+  if(!viewingCandId) return;
+  const err=document.getElementById('applyFormErr');
+  err.classList.add('hidden');
+  const body={
+    requisition_id:parseInt(document.getElementById('applyReqId').value)||null,
+    source:document.getElementById('applySource').value||'Direct',
+    notes:document.getElementById('applyNotes').value||null,
+  };
+  const res=await api(`/api/recruitment/candidates/${viewingCandId}/apply`,{method:'POST',body:JSON.stringify(body)});
+  if(!res||!res.ok){const d=await res?.json();err.textContent=d?.detail||'Failed';err.classList.remove('hidden');return;}
+  closeApplyModal();
+  await openCandDetail(viewingCandId);
+  loadRequisitions();
+}
+
+// The legacy single cdStageSelect can't tell which application to move
+// once there's more than one (move_stage's own 400 — see
+// _transition_candidate_stage's docstring) — per-row controls in the
+// Applications section take over at that point instead.
+function shouldShowPerApplicationStages(applications) {
+  return (applications||[]).length > 1;
+}
+
+async function moveApplicationStage(candId, requisitionId, selectEl) {
+  const stage=selectEl.value;
+  const reqPath=requisitionId==null?0:requisitionId; // path param can't carry NULL — 0 means "general interest"
+  const res=await api(`/api/recruitment/candidates/${candId}/requisitions/${reqPath}/stage`,
+    {method:'PATCH',body:JSON.stringify({stage})});
+  if(!res||!res.ok){const d=await res?.json().catch(()=>({}));alert(d?.detail||'Failed to update stage');return;}
+  if(viewingCandId===candId) await openCandDetail(candId);
+  loadCandidates();
+}
 
 function renderCandFileList() {
   const el=document.getElementById('candFileList');
@@ -488,8 +626,33 @@ async function openCandDetail(candId) {
   document.getElementById('cdMeta').textContent=`${c.email||''}${c.phone?' · '+c.phone:''} · ${c.source||''}`;
   const badge=document.getElementById('cdStageBadge');
   badge.textContent=c.stage; badge.className=`badge ${stageBadgeClass(c.stage)}`;
+  const canManage=HR_MANAGE_ROLES.includes(currentUser?.role);
+  const multiApp=shouldShowPerApplicationStages(c.applications);
+  // Applications section — only shown once there's more than one (the
+  // common single-application case stays exactly as before: just the
+  // header badge + footer cdStageSelect). See _transition_candidate_stage's
+  // docstring for why candidates.stage/etc (everything else on this page)
+  // stops being trustworthy once that's true.
+  const appsHtml=multiApp?`
+    <div class="mb-4 border border-slate-200 rounded-xl divide-y divide-slate-100">
+      <p class="text-xs font-medium text-slate-500 px-4 py-2 bg-slate-50 rounded-t-xl">Applications (${c.applications.length})</p>
+      ${c.applications.map(a=>`
+        <div class="flex items-center justify-between gap-2 px-4 py-2">
+          <div class="min-w-0 flex-1">
+            <p class="text-sm font-medium text-slate-800 truncate">${esc(a.requisition_title||'General Interest')}</p>
+            <p class="text-xs text-slate-400">${esc(a.source||'')}${a.created_at?' · '+fmtDateOnly(a.created_at):''}</p>
+          </div>
+          <span class="badge ${stageBadgeClass(a.stage)}">${esc(a.stage)}</span>
+          ${canManage?`
+          <select class="inp w-36 text-xs">
+            ${(recruitMeta.stages||[]).map(s=>`<option${s===a.stage?' selected':''}>${esc(s)}</option>`).join('')}
+          </select>
+          <button type="button" class="btn-ghost text-xs" onclick="moveApplicationStage(${c.id},${a.requisition_id??'null'},this.previousElementSibling)">Update</button>`:''}
+        </div>`).join('')}
+    </div>`:'';
   // Profile tab
   document.getElementById('cdt-profile').innerHTML=`
+    ${appsHtml}
     <div class="grid grid-cols-2 gap-4 text-sm">
       <div><p class="text-xs text-slate-400 mb-1">IC Number</p><p>${esc(c.ic_number||'—')}</p></div>
       <div><p class="text-xs text-slate-400 mb-1">Nationality</p><p>${esc(c.nationality||'—')}</p></div>
@@ -540,12 +703,15 @@ async function openCandDetail(candId) {
   document.getElementById('cdt-resume').innerHTML=`
     ${docsHtml||'<p class="text-slate-400 text-sm mb-3">No files uploaded.</p>'}
     ${c.resume_text?`<pre class="text-xs whitespace-pre-wrap text-slate-700 mt-3">${esc(c.resume_text)}</pre>`:''}`;
-  // Stage select
+  // Stage select — hidden once the Applications section above has taken
+  // over (move_stage, the endpoint behind this control, 400s as soon as a
+  // candidate has more than one application; see shouldShowPerApplicationStages).
   const ss=document.getElementById('cdStageSelect');
   ss.innerHTML=(recruitMeta.stages||[]).map(s=>`<option${s===c.stage?' selected':''}>${esc(s)}</option>`).join('');
-  const canManage=HR_MANAGE_ROLES.includes(currentUser?.role);
+  ss.classList.toggle('hidden',multiApp);
   document.getElementById('cdScheduleBtn').classList.toggle('hidden',!canManage);
   document.getElementById('cdOfferBtn').classList.toggle('hidden',!canManage);
+  document.getElementById('cdApplyBtn').classList.toggle('hidden',!canManage);
   const showConvert=canManage&&['Offer','Hired'].includes(c.stage)&&(c.offers||[]).some(o=>o.status==='Accepted'&&o.offer_type==='Offer');
   document.getElementById('cdConvertBtn').classList.toggle('hidden',!showConvert);
   // History tab visible to HR roles only

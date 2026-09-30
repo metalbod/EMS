@@ -5043,10 +5043,15 @@
 
       <!-- Tab: Personal Info -->
       <div id="cm-personal" class="p-6 grid grid-cols-2 gap-4">
-        <div class="col-span-2"><label class="lbl">Full Name <span class="text-red-500">*</span></label><input id="candFullName" type="text" class="inp" required/></div>
+        <div class="col-span-2"><label class="lbl">Full Name <span class="text-red-500">*</span></label><input id="candFullName" type="text" class="inp" oninput="onCandIdentityInput()" required/></div>
+        <div id="candDupPanel" class="hidden col-span-2 border border-amber-200 bg-amber-50 rounded-xl p-3 space-y-2">
+          <p class="text-xs font-medium text-amber-800">Possible existing candidate(s) found — is this the same person?</p>
+          <div id="candDupList" class="space-y-2"></div>
+          <button type="button" onclick="dismissCandDupPanel()" class="text-xs text-slate-500 hover:underline">No, this is a different person — continue adding new</button>
+        </div>
         <div><label class="lbl">Email</label><input id="candEmail" type="email" class="inp"/></div>
         <div><label class="lbl">Phone</label><input id="candPhone" type="tel" class="inp" placeholder="012-3456789"/></div>
-        <div><label class="lbl">IC Number</label><input id="candIc" type="text" class="inp" placeholder="900101-14-1234"/></div>
+        <div><label class="lbl">IC Number</label><input id="candIc" type="text" class="inp" placeholder="900101-14-1234" oninput="onCandIdentityInput()"/></div>
         <div><label class="lbl">Nationality</label><input id="candNationality" type="text" class="inp" value="Malaysian"/></div>
         <div><label class="lbl">Gender</label>
           <select id="candGender" class="inp">
@@ -5134,10 +5139,32 @@
       <button onclick="openIntModal(viewingCandId)" class="btn-ghost hidden" id="cdScheduleBtn">+ Schedule Interview</button>
       <button onclick="openOfferModal(null,viewingCandId)" class="btn-primary hidden" id="cdOfferBtn">Generate Letter</button>
       <button onclick="convertToEmployee()" class="btn-primary hidden" id="cdConvertBtn" style="background:#059669">Convert to Employee</button>
+      <button onclick="openApplyModal()" class="btn-ghost hidden" id="cdApplyBtn">+ Apply to Another Req</button>
       <div class="flex-1"></div>
       <button onclick="editCand()" class="btn-ghost">Edit</button>
       <button onclick="closeCandDetailModal()" class="btn-ghost">Close</button>
     </div>
+  </div>
+</div>
+
+<!-- Apply (existing candidate) to Another Requisition Modal -->
+<div id="applyModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-md">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h2 class="text-base font-semibold">Apply to Another Requisition</h2>
+      <button onclick="closeApplyModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form onsubmit="submitApplyForm(event)" class="p-6 space-y-4">
+      <p id="applyForName" class="text-sm text-slate-600"></p>
+      <div><label class="lbl">Requisition</label><select id="applyReqId" class="inp"><option value="">General / No specific requisition</option></select></div>
+      <div><label class="lbl">Source</label><select id="applySource" class="inp"></select></div>
+      <div><label class="lbl">Notes</label><textarea id="applyNotes" class="inp" style="height:4rem;resize:none" placeholder="Optional…"></textarea></div>
+      <p id="applyFormErr" class="hidden text-sm text-red-600"></p>
+      <div class="flex justify-end gap-2">
+        <button type="button" onclick="closeApplyModal()" class="btn-ghost">Cancel</button>
+        <button type="submit" class="btn-primary">Apply</button>
+      </div>
+    </form>
   </div>
 </div>
 

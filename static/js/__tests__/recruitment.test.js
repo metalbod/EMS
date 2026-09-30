@@ -64,3 +64,91 @@ describe('Convert candidate to employee — Reports To gets populated', () => {
     expect(rt.options.length).toBe(4);
   });
 });
+
+// Phase 2/3 of "one candidate, many requisitions" — mirrors recruitment.js's
+// candDupSearchQuery (the Add Candidate modal's "is this an existing
+// candidate?" duplicate-detection panel) and shouldShowPerApplicationStages
+// (Candidate Detail's legacy single cdStageSelect vs. the per-application
+// Applications section — see 20260930_0002_add_candidate_requisitions and
+// _transition_candidate_stage's docstring in routers/recruitment.py).
+describe('Candidate duplicate-detection search query', () => {
+  function candDupSearchQuery(name, ic) {
+    if ((ic || '').trim().length >= 4) return ic.trim();
+    if ((name || '').trim().length >= 3) return name.trim();
+    return '';
+  }
+
+  it('prefers IC number over full name when both are present — the stronger identity signal', () => {
+    expect(candDupSearchQuery('Ali bin Abu', '900101-14-1234')).toBe('900101-14-1234');
+  });
+
+  it('falls back to full name once it reaches 3 characters', () => {
+    expect(candDupSearchQuery('Ali', '')).toBe('Ali');
+  });
+
+  it('does not search on a 1-2 character name — too noisy, matches almost everything', () => {
+    expect(candDupSearchQuery('Al', '')).toBe('');
+  });
+
+  it('does not search on a short partial IC (under 4 chars) even if the name is also too short', () => {
+    expect(candDupSearchQuery('A', '900')).toBe('');
+  });
+
+  it('trims surrounding whitespace before searching', () => {
+    expect(candDupSearchQuery('  Ali  ', '')).toBe('Ali');
+  });
+
+  it('an empty name and empty IC search for nothing', () => {
+    expect(candDupSearchQuery('', '')).toBe('');
+  });
+});
+
+describe('Candidate Detail — single vs. per-application stage controls', () => {
+  function shouldShowPerApplicationStages(applications) {
+    return (applications || []).length > 1;
+  }
+
+  it('a candidate with one application keeps the legacy single cdStageSelect (no visible change for the common case)', () => {
+    expect(shouldShowPerApplicationStages([{ requisition_id: 1, stage: 'New' }])).toBe(false);
+  });
+
+  it('a candidate with zero applications (defensive — pre-Phase-2 data) also keeps the legacy control', () => {
+    expect(shouldShowPerApplicationStages([])).toBe(false);
+    expect(shouldShowPerApplicationStages(undefined)).toBe(false);
+  });
+
+  it('a candidate with two or more applications switches to the per-application Applications section — the legacy endpoint 400s past one application', () => {
+    expect(shouldShowPerApplicationStages([
+      { requisition_id: 1, stage: 'New' },
+      { requisition_id: 2, stage: 'Interview' },
+    ])).toBe(true);
+  });
+});
+
+// Mirrors openApplyModal's requisition picker — an "Apply to Another
+// Requisition" dropdown should never re-offer a requisition the candidate
+// already has an open application against (that POST would just 400 on the
+// UNIQUE(candidate_id, requisition_id) constraint).
+describe('Apply to Another Requisition — excludes already-applied requisitions', () => {
+  function availableRequisitions(allApprovedReqs, applications) {
+    const appliedIds = new Set((applications || []).map(a => a.requisition_id));
+    return allApprovedReqs.filter(req => !appliedIds.has(req.id));
+  }
+
+  const reqs = [{ id: 1, title: 'Engineer' }, { id: 2, title: 'Designer' }, { id: 3, title: 'Analyst' }];
+
+  it('excludes a requisition the candidate has already applied to', () => {
+    const rows = availableRequisitions(reqs, [{ requisition_id: 1 }]);
+    expect(rows.map(r => r.id)).toEqual([2, 3]);
+  });
+
+  it('a general-interest (null requisition_id) application does not exclude any real requisition', () => {
+    const rows = availableRequisitions(reqs, [{ requisition_id: null }]);
+    expect(rows.map(r => r.id)).toEqual([1, 2, 3]);
+  });
+
+  it('a candidate with no applications yet can apply to any approved requisition', () => {
+    const rows = availableRequisitions(reqs, []);
+    expect(rows.map(r => r.id)).toEqual([1, 2, 3]);
+  });
+});

@@ -548,10 +548,17 @@ def create_requisition(conn, body: RequisitionIn, user: dict = Depends(get_curre
 def get_requisition(conn, req_id: int, user: dict = Depends(get_current_user)) -> Optional[Dict[str, Any]]:
     inst_id = need_inst(user)
     r = _get_req(conn, inst_id, req_id)
-    cands = conn.execute(
-        "SELECT id,full_name,stage,source,created_at FROM candidates WHERE requisition_id=? AND institution_id=? ORDER BY created_at DESC",
-        (req_id, inst_id)
-    ).fetchall()
+    # Phase 3: reads candidate_requisitions (per-application) rather than
+    # candidates directly, so a person who applied here via POST .../apply
+    # shows up too — candidates.requisition_id only mirrors a candidate's
+    # SOLE application (see _transition_candidate_stage's docstring), so it
+    # misses every requisition reached that way for a multi-application
+    # candidate.
+    cands = conn.execute("""
+        SELECT cr.candidate_id AS id, c.full_name, cr.stage, cr.source, cr.created_at
+        FROM candidate_requisitions cr JOIN candidates c ON c.id = cr.candidate_id
+        WHERE cr.requisition_id=? AND cr.institution_id=? ORDER BY cr.created_at DESC
+    """, (req_id, inst_id)).fetchall()
     r["candidates"] = [dict(c) for c in cands]
     return r
 

@@ -102,41 +102,59 @@ wrapper everywhere.
   not a one-shot rewrite of the app's access control. See
   `permission_matrix.py`'s module docstring before touching either file.
 
-- **"One candidate, many requisitions" — Phases 1+2 shipped, Phase 3
-  (frontend) not yet started** (`candidate_requisitions`,
+- **"One candidate, many requisitions" — Phases 1-3 shipped, Phase 4
+  (cleanup migration) not yet started** (`candidate_requisitions`,
   `migrations/versions/20260930_0002_add_candidate_requisitions.py`,
-  `routers/recruitment.py`): `candidates.requisition_id` used to be a
-  single nullable FK — one `candidates` row per application, so the same
-  real person applying to a second requisition meant a second, unrelated
-  row with no link to the first. `candidate_requisitions` is now the real
+  `routers/recruitment.py`, `static/js/recruitment.js`,
+  `static/index.html`): `candidates.requisition_id` used to be a single
+  nullable FK — one `candidates` row per application, so the same real
+  person applying to a second requisition meant a second, unrelated row
+  with no link to the first. `candidate_requisitions` is now the real
   per-application record (`stage`/`source`/`notes`/`expected_salary`/
   `notice_period`/`referral_by`, `UNIQUE(candidate_id, requisition_id)` plus
   a partial unique index limiting a candidate to at most one NULL-requisition
   "general interest" row); `candidate_stage_history` grew a `requisition_id`
   column alongside it, since it used to assume at most one open stage per
-  candidate. `create_candidate` now inserts the person's first application
+  candidate. `create_candidate` inserts the person's first application
   there too; `POST /api/recruitment/candidates/{cand_id}/apply` applies an
   *existing* person to another requisition without duplicating their
-  profile; `GET .../candidates/search` is the new person-level lookup (by
-  name/IC/email/phone, each match's `applications` array included) Phase 3's
-  duplicate-detection UI will use; `PATCH .../candidates/{cand_id}/
+  profile; `GET .../candidates/search` is the person-level lookup (by
+  name/IC/email/phone, each match's `applications` array included) driving
+  Phase 3's duplicate-detection panel; `PATCH .../candidates/{cand_id}/
   requisitions/{requisition_id}/stage` moves one application's stage
-  explicitly. `_transition_candidate_stage` (the single place a
-  `candidate_requisitions` row's stage is ever written, called from
-  `move_stage`/`schedule_interview`/`create_offer`/`update_offer_status`
-  too) is the one to read before touching stage transitions again — see its
-  own docstring for the **Phase 2 transitional dual-write**: `candidates.
-  stage`/`.requisition_id`/etc (the pre-Phase-3 frontend's own read path)
-  are kept mirrored only while a candidate has exactly one application;
-  once a second one exists (only reachable via `.../apply`, which nothing
-  in the UI calls yet) the legacy columns simply stop being updated rather
-  than guessing which application to mirror. `list_requisitions`'s counts
-  and `recruitment_dashboard_stats` now read `candidate_requisitions`
-  instead of `candidates`. `interviews`/`offers` needed no schema change —
-  they already carry their own `requisition_id` alongside `candidate_id`.
-  Phase 3 adds the "is this an existing candidate?" search UI in Add
-  Candidate; only once that's stable does a later cleanup migration drop
-  the now-dead legacy columns from `candidates`.
+  explicitly (`requisition_id=0` in the URL means the NULL/general-interest
+  application — a path param can't carry NULL). `_transition_candidate_stage`
+  (the single place a `candidate_requisitions` row's stage is ever written,
+  called from `move_stage`/`schedule_interview`/`create_offer`/
+  `update_offer_status` too) is the one to read before touching stage
+  transitions again — see its own docstring for the **Phase 2 transitional
+  dual-write**: `candidates.stage`/`.requisition_id`/etc (the legacy
+  columns pre-Phase-3 code used to be the only reader of) are kept mirrored
+  only while a candidate has exactly one application; once a second one
+  exists the legacy columns simply stop being updated rather than guessing
+  which application to mirror. `list_requisitions`'s counts,
+  `recruitment_dashboard_stats`, and `get_requisition`'s nested `candidates`
+  list all read `candidate_requisitions` instead of `candidates` for this
+  reason — `get_requisition`'s was a Phase 3 fix (bundled in, not a separate
+  phase) since without it a person who joined a requisition only via
+  `.../apply` would never show up there. `interviews`/`offers` needed no
+  schema change — they already carry their own `requisition_id` alongside
+  `candidate_id`.
+  Phase 3 (frontend, `static/js/recruitment.js`): the Add Candidate modal's
+  Full Name/IC inputs debounce-search `.../candidates/search` as HR types
+  and surface matches in a dismissible `#candDupPanel` ("is this the same
+  person?") — picking one calls `.../apply` with whatever the form's
+  already filled in in place of creating a duplicate `candidates` row.
+  Candidate Detail's Profile tab conditionally shows an Applications
+  section with its own per-row stage control once `c.applications.length >
+  1` (`shouldShowPerApplicationStages`) — until then the legacy single
+  `#cdStageSelect` keeps working exactly as before, unchanged, since
+  `move_stage` (the endpoint behind it) 400s past one application. A
+  standalone "+ Apply to Another Req" button/modal on Candidate Detail is
+  the second entry point into `.../apply`, for an already-open candidate
+  instead of mid-Add-Candidate. Phase 4 (not yet started): once Phase 3 is
+  the only code path in production, a cleanup migration drops the now-dead
+  legacy columns from `candidates`.
 
 - **Generic audit trail (`entity_audit_log`)** (`core/audit.py`'s
   `write_entity_audit` + `diff_fields`, `GET /api/entity-audit-log` in
@@ -334,6 +352,17 @@ wrapper everywhere.
   - Re-provisioning a fresh local test DB should follow the same recipe
     (steps 1-9 above; you shouldn't need step 10's incident again if you
     follow the explicit-swap pattern it describes).
+  - **Browser-testing a UI change against real data (not just pytest)**:
+    the default `.claude/launch.json` "EMS" config runs `main:app` straight
+    against `.env`'s plain `DATABASE_URL` (prod) — fine for a real deploy,
+    wrong for poking at in-progress work through the browser. Use the
+    `"EMS-test-db"` config instead (`scripts/dev_against_test_db.py`, port
+    8010): it does step 10's explicit env-swap-and-assert inside the
+    process itself before importing `main`, so it always starts against
+    `localhost:5433`, never prod. Log in with the shared `test_institution`
+    fixture's own seeded account (company code `ZZPYTEST`, username
+    `zzpytest_admin`, password `ZzPytest@123` — see `tests/conftest.py`'s
+    `test_institution`) rather than creating a fresh one by hand.
 - **`tests/conftest.py`'s `test_institution` fixture is
   session-scoped** — created once, shared by every test in one pytest
   invocation, and never cleaned up. Data your test creates (workflows,

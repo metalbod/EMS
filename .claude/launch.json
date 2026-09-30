@@ -6,6 +6,12 @@
       "runtimeExecutable": "/Users/kenneth/Claude/Code/ems/.venv/bin/python3",
       "runtimeArgs": ["-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--app-dir", "/Users/kenneth/Claude/Code/ems"],
       "port": 8000
+    },
+    {
+      "name": "EMS-test-db",
+      "runtimeExecutable": "/Users/kenneth/Claude/Code/ems/.venv/bin/python3",
+      "runtimeArgs": ["/Users/kenneth/Claude/Code/ems/scripts/dev_against_test_db.py"],
+      "port": 8010
     }
   ]
 }
