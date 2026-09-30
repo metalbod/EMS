@@ -102,6 +102,31 @@ wrapper everywhere.
   not a one-shot rewrite of the app's access control. See
   `permission_matrix.py`'s module docstring before touching either file.
 
+- **"One candidate, many requisitions" — in progress, Phase 1 only shipped
+  so far** (`candidate_requisitions`, `migrations/versions/
+  20260930_0002_add_candidate_requisitions.py`): today, `candidates.
+  requisition_id` is a single nullable FK — one `candidates` row per
+  application, so the same real person applying to a second requisition
+  means a second, unrelated row with no link to the first (duplicated
+  profile data, and a stage change on one application can't reflect, or
+  fail to reflect, on the other). Phase 1 only adds the new
+  `candidate_requisitions` join table (the actual per-application state:
+  `stage`/`source`/`notes`/`expected_salary`/`notice_period`/
+  `referral_by`) and a `requisition_id` column on `candidate_stage_history`
+  — backfilled from every existing `candidates` row (deliberately no
+  attempt to detect/merge historical duplicates — every pre-existing row
+  stays its own independent person with exactly one application). **No
+  application code reads or writes this table yet** —
+  `routers/recruitment.py` still reads/writes `candidates.requisition_id`/
+  `.stage`/etc directly, unchanged; `interviews`/`offers` need no schema
+  change at all (they already carry their own `requisition_id` alongside
+  `candidate_id`). Phase 2 (not yet started) rewires every recruitment
+  endpoint to the new table plus a `POST /api/recruitment/candidates/
+  {cand_id}/apply` endpoint for applying an existing person to another
+  requisition; Phase 3 adds the "is this an existing candidate?" search UI
+  in Add Candidate. Only once Phase 2/3 are stable does a later cleanup
+  migration drop the now-dead columns from `candidates`.
+
 - **Generic audit trail (`entity_audit_log`)** (`core/audit.py`'s
   `write_entity_audit` + `diff_fields`, `GET /api/entity-audit-log` in
   `routers/audit.py`, Settings → Audit → System Activity tab, shared
