@@ -1,13 +1,12 @@
 """Schema-level tests for candidate_requisitions (migrations/versions/
 20260930_0002_add_candidate_requisitions.py) — Phase 1 of "one candidate,
-many requisitions". Deliberately NOT endpoint-level: no router reads or
-writes this table yet (that's Phase 2), so there's no HTTP surface to test
-against — these call db.py directly, the same pattern
-tests/test_rls_enforcement.py uses to verify RLS independent of any
-endpoint's own query. Phase 2 will add real API-level coverage once
-routers/recruitment.py actually uses this table; this file's job is only
-to prove the table itself — constraints, trigger, RLS — behaves as the
-migration intends, and stays that way if it's ever touched again.
+many requisitions". Deliberately NOT endpoint-level: these call db.py
+directly, the same pattern tests/test_rls_enforcement.py uses to verify RLS
+independent of any endpoint's own query, so this file's job is only to prove
+the table itself — constraints, trigger, RLS — behaves as the migration
+intends, and stays that way if it's ever touched again. Phase 2's own
+API-level behavior (apply/search/move-stage endpoints, dual-write mirror) is
+covered separately in tests/test_recruitment_applications.py.
 """
 import os
 
@@ -71,34 +70,29 @@ def test_table_shape_matches_the_migration(two_requisitions_and_a_candidate):
         assert cols >= {"id", "institution_id", "candidate_id", "requisition_id", "stage",
                         "source", "notes", "expected_salary", "notice_period", "referral_by",
                         "created_by", "created_at", "updated_at"}
-        # The migration's backfill only ran once, at migration time, for
-        # rows that already existed — a candidate created afterward (via
-        # the fixture above, through today's still-unchanged create_candidate)
-        # gets no automatic candidate_requisitions row until Phase 2 wires
-        # that up. Asserting that explicitly here so this doesn't silently
-        # start failing (or silently start passing for the wrong reason)
-        # once Phase 2 lands.
+        # Phase 2's create_candidate inserts a matching candidate_requisitions
+        # row as the candidate's first application (see
+        # test_recruitment_applications.py for the full behavioral coverage) —
+        # just a sanity check here that the fixture's own candidate got one.
         cand_id = two_requisitions_and_a_candidate["candidate"]["id"]
         auto_rows = conn.execute(
             "SELECT COUNT(*) AS n FROM candidate_requisitions WHERE candidate_id=?", (cand_id,)
         ).fetchone()["n"]
-        assert auto_rows == 0, "Phase 1 must not auto-populate candidate_requisitions on candidate creation yet"
+        assert auto_rows == 1, "create_candidate should insert exactly one candidate_requisitions row"
     finally:
         conn.close()
 
 
 def test_same_candidate_can_have_two_different_requisitions(two_requisitions_and_a_candidate):
     """The actual feature: this is what today's create_candidate cannot do
-    (one candidates row, one requisition_id) but the new join table can."""
+    (one candidates row, one requisition_id) but the new join table can.
+    create_candidate (Phase 2) already inserted the req1 application as
+    part of the fixture; this only adds the second."""
     data = two_requisitions_and_a_candidate
     cand_id = data["candidate"]["id"]
     req1, req2 = data["requisitions"][0]["id"], data["requisitions"][1]["id"]
     conn = get_admin_db()
     try:
-        conn.execute(
-            "INSERT INTO candidate_requisitions (institution_id,candidate_id,requisition_id,created_by) VALUES (?,?,?,?)",
-            (data["institution_id"], cand_id, req1, "zz_pytest")
-        )
         conn.execute(
             "INSERT INTO candidate_requisitions (institution_id,candidate_id,requisition_id,created_by) VALUES (?,?,?,?)",
             (data["institution_id"], cand_id, req2, "zz_pytest")
@@ -114,15 +108,13 @@ def test_same_candidate_can_have_two_different_requisitions(two_requisitions_and
 
 
 def test_cannot_apply_the_same_candidate_to_the_same_requisition_twice(two_requisitions_and_a_candidate):
+    """create_candidate (Phase 2) already inserted the (cand_id, req_id)
+    application as part of the fixture — this just proves a second one
+    for the exact same pair is rejected."""
     data = two_requisitions_and_a_candidate
     cand_id, req_id = data["candidate"]["id"], data["requisitions"][0]["id"]
     conn = get_admin_db()
     try:
-        conn.execute(
-            "INSERT INTO candidate_requisitions (institution_id,candidate_id,requisition_id,created_by) VALUES (?,?,?,?)",
-            (data["institution_id"], cand_id, req_id, "zz_pytest")
-        )
-        conn.commit()
         with pytest.raises(psycopg2.errors.UniqueViolation):
             conn.execute(
                 "INSERT INTO candidate_requisitions (institution_id,candidate_id,requisition_id,created_by) VALUES (?,?,?,?)",
@@ -185,7 +177,9 @@ def test_updated_at_trigger_is_wired_up():
 def test_rls_isolates_candidate_requisitions_by_institution(two_requisitions_and_a_candidate, superadmin_headers, client):
     """Same proof shape as test_rls_enforcement.py: scope a connection to
     one institution with no WHERE filter at all, confirm another
-    institution's row is invisible regardless."""
+    institution's row is invisible regardless. Reuses the (cand_id, req_id)
+    application create_candidate (Phase 2) already inserted as part of the
+    fixture, rather than inserting a duplicate."""
     data = two_requisitions_and_a_candidate
     inst_a_id, cand_id, req_id = data["institution_id"], data["candidate"]["id"], data["requisitions"][0]["id"]
 
@@ -201,12 +195,6 @@ def test_rls_isolates_candidate_requisitions_by_institution(two_requisitions_and
 
     admin_conn = get_admin_db()
     try:
-        admin_conn.execute(
-            "INSERT INTO candidate_requisitions (institution_id,candidate_id,requisition_id,created_by) VALUES (?,?,?,?)",
-            (inst_a_id, cand_id, req_id, "zz_pytest")
-        )
-        admin_conn.commit()
-
         try:
             set_rls_context(inst_b_id, bypass_rls=False)
             conn = get_db()

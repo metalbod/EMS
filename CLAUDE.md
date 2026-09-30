@@ -102,30 +102,41 @@ wrapper everywhere.
   not a one-shot rewrite of the app's access control. See
   `permission_matrix.py`'s module docstring before touching either file.
 
-- **"One candidate, many requisitions" — in progress, Phase 1 only shipped
-  so far** (`candidate_requisitions`, `migrations/versions/
-  20260930_0002_add_candidate_requisitions.py`): today, `candidates.
-  requisition_id` is a single nullable FK — one `candidates` row per
-  application, so the same real person applying to a second requisition
-  means a second, unrelated row with no link to the first (duplicated
-  profile data, and a stage change on one application can't reflect, or
-  fail to reflect, on the other). Phase 1 only adds the new
-  `candidate_requisitions` join table (the actual per-application state:
-  `stage`/`source`/`notes`/`expected_salary`/`notice_period`/
-  `referral_by`) and a `requisition_id` column on `candidate_stage_history`
-  — backfilled from every existing `candidates` row (deliberately no
-  attempt to detect/merge historical duplicates — every pre-existing row
-  stays its own independent person with exactly one application). **No
-  application code reads or writes this table yet** —
-  `routers/recruitment.py` still reads/writes `candidates.requisition_id`/
-  `.stage`/etc directly, unchanged; `interviews`/`offers` need no schema
-  change at all (they already carry their own `requisition_id` alongside
-  `candidate_id`). Phase 2 (not yet started) rewires every recruitment
-  endpoint to the new table plus a `POST /api/recruitment/candidates/
-  {cand_id}/apply` endpoint for applying an existing person to another
-  requisition; Phase 3 adds the "is this an existing candidate?" search UI
-  in Add Candidate. Only once Phase 2/3 are stable does a later cleanup
-  migration drop the now-dead columns from `candidates`.
+- **"One candidate, many requisitions" — Phases 1+2 shipped, Phase 3
+  (frontend) not yet started** (`candidate_requisitions`,
+  `migrations/versions/20260930_0002_add_candidate_requisitions.py`,
+  `routers/recruitment.py`): `candidates.requisition_id` used to be a
+  single nullable FK — one `candidates` row per application, so the same
+  real person applying to a second requisition meant a second, unrelated
+  row with no link to the first. `candidate_requisitions` is now the real
+  per-application record (`stage`/`source`/`notes`/`expected_salary`/
+  `notice_period`/`referral_by`, `UNIQUE(candidate_id, requisition_id)` plus
+  a partial unique index limiting a candidate to at most one NULL-requisition
+  "general interest" row); `candidate_stage_history` grew a `requisition_id`
+  column alongside it, since it used to assume at most one open stage per
+  candidate. `create_candidate` now inserts the person's first application
+  there too; `POST /api/recruitment/candidates/{cand_id}/apply` applies an
+  *existing* person to another requisition without duplicating their
+  profile; `GET .../candidates/search` is the new person-level lookup (by
+  name/IC/email/phone, each match's `applications` array included) Phase 3's
+  duplicate-detection UI will use; `PATCH .../candidates/{cand_id}/
+  requisitions/{requisition_id}/stage` moves one application's stage
+  explicitly. `_transition_candidate_stage` (the single place a
+  `candidate_requisitions` row's stage is ever written, called from
+  `move_stage`/`schedule_interview`/`create_offer`/`update_offer_status`
+  too) is the one to read before touching stage transitions again — see its
+  own docstring for the **Phase 2 transitional dual-write**: `candidates.
+  stage`/`.requisition_id`/etc (the pre-Phase-3 frontend's own read path)
+  are kept mirrored only while a candidate has exactly one application;
+  once a second one exists (only reachable via `.../apply`, which nothing
+  in the UI calls yet) the legacy columns simply stop being updated rather
+  than guessing which application to mirror. `list_requisitions`'s counts
+  and `recruitment_dashboard_stats` now read `candidate_requisitions`
+  instead of `candidates`. `interviews`/`offers` needed no schema change —
+  they already carry their own `requisition_id` alongside `candidate_id`.
+  Phase 3 adds the "is this an existing candidate?" search UI in Add
+  Candidate; only once that's stable does a later cleanup migration drop
+  the now-dead legacy columns from `candidates`.
 
 - **Generic audit trail (`entity_audit_log`)** (`core/audit.py`'s
   `write_entity_audit` + `diff_fields`, `GET /api/entity-audit-log` in
