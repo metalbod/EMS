@@ -1,4 +1,5 @@
 """Tests for Phase 2 location features: transfers, payroll dashboards, trends."""
+import secrets
 import pytest
 from datetime import datetime, timedelta
 from conftest import _valid_employee_payload, _valid_location_payload
@@ -444,7 +445,7 @@ class TestPhase2IntegrationWorkflows:
         )
         assert response.status_code == 200
 
-    def test_multi_location_payroll_analysis(self, client, hr_manager_auth, test_institution):
+    def test_multi_location_payroll_analysis(self, client, hr_manager_auth, payroll_manager_auth, test_institution):
         """Test payroll analysis across multiple locations."""
         inst_id = test_institution["id"]
 
@@ -477,6 +478,28 @@ class TestPhase2IntegrationWorkflows:
             },
             headers=hr_manager_auth,
         )
+
+        # /api/payroll/institution/{id}/summary's employee_count is
+        # COUNT(DISTINCT ps.employee_id) through a join to payslips — this
+        # test used to assert total_employees >= 1 without ever creating a
+        # payslip of its own, only ever passing because *some* earlier test
+        # elsewhere in the shared, permanently-reused test_institution (see
+        # conftest.py's test_institution docstring) happened to have already
+        # left one behind. True by luck on a long-lived, years-old test
+        # database; false on a genuinely fresh one whose test files just
+        # happen to collect in an order where no payroll run has run yet
+        # (see CLAUDE.md's flaky-test entry for this test). A random, far-
+        # future period keeps this collision-free against every other
+        # test's own payroll-run period, this run and any future one.
+        period_base = datetime(2200, 1, 1) + timedelta(days=35 * secrets.randbelow(50_000))
+        period_start = period_base.date().isoformat()
+        period_end = (period_base + timedelta(days=27)).date().isoformat()
+        run_res = client.post(
+            "/api/payroll/runs",
+            json={"period_start": period_start, "period_end": period_end},
+            headers=payroll_manager_auth,
+        )
+        assert run_res.status_code == 202, run_res.text
 
         # Get institution summary
         response = client.get(

@@ -328,21 +328,27 @@ wrapper everywhere.
   non-pooled connection) isn't practical in CI. A real regression here
   would show up as this test failing *reliably*, not just occasionally
   under full-suite load.
-  - Second confirmed instance of this same class, found 2026-09-30 (the
+  - Second instance of this same class, found **and fixed** 2026-09-30 (the
     first time the full suite got run to completion in one sitting in a
     long while — local Postgres runs the whole 1190-test suite in ~10
     minutes, where the old Supabase test project took 1-4+ hours, likely
     why a full run had never actually finished cleanly before):
-    `tests/test_location_phase2.py::TestPhase2IntegrationWorkflows::test_multi_location_payroll_analysis`.
-    Passes alone and as its whole file; failed only once, in the one full
-    run so far, on `assert body["total_employees"] >= 1` (got 0) —
-    `/api/payroll/institution/{id}/summary`'s employee_count is `COUNT(DISTINCT
-    ps.employee_id)` through a join to `payslips`, and this test never
-    creates a payroll run/payslip for its own employee, only ever passing
-    because some earlier test in the same run happened to leave one behind
-    in the shared `test_institution`. Not yet root-caused which earlier
-    test's ordering/absence it depends on. Same rule as above: only a
-    *reliable* failure here means something real broke.
+    `tests/test_location_phase2.py::TestPhase2IntegrationWorkflows::test_multi_location_payroll_analysis`
+    failed once on `assert body["total_employees"] >= 1` (got 0).
+    Root cause: `/api/payroll/institution/{id}/summary`'s employee_count is
+    `COUNT(DISTINCT ps.employee_id)` through a join to `payslips`, but the
+    test never created a payroll run/payslip for its own employee — it only
+    ever passed because `test_institution` is looked up by a fixed code and
+    reused *permanently across every pytest run ever* (see its own docstring
+    in `tests/conftest.py`), so on the years-old Supabase project some
+    earlier `test_payroll.py` run had always already left a payslip behind
+    by the time this test ran; on a genuinely fresh database this test's
+    file happens to collect alphabetically before `test_payroll.py`, so
+    nothing had run yet. Fixed by having the test create its own payroll
+    run (a real `POST /api/payroll/runs`, random far-future period to stay
+    collision-free) instead of relying on incidental state elsewhere —
+    confirmed by re-provisioning the local test DB from scratch and running
+    the full suite again: 1188 passed, 2 skipped, 0 failed.
 - **Bash tool's cwd resets between calls** — always use absolute paths
   or prefix `cd /path/to/ems &&`.
 - **`fly deploy` does not run migrations on its own** — use `./deploy.sh`
