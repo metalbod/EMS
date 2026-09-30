@@ -181,31 +181,123 @@ wrapper everywhere.
   to whichever day it actually fires on, not the week ending on that
   day. Same "compute it, don't schedule it"
   philosophy as everything else in this bullet.
-- **Tests run against a dedicated test Supabase project, not prod** —
+- **Tests run against a local Postgres, not prod** —
   `TEST_DATABASE_URL`/`TEST_ADMIN_DATABASE_URL` in `.env`,
   `tests/conftest.py` swaps them in for `DATABASE_URL`/`ADMIN_DATABASE_URL`
   before anything else imports `db.py`/`main.py`. Falls back to running
   against prod if the `TEST_*` vars aren't set. When a new Alembic
-  migration is added, apply it to the test project too (`alembic upgrade
-  head` with `ADMIN_DATABASE_URL` env-overridden to
-  `TEST_ADMIN_DATABASE_URL`) — it does **not** happen automatically,
-  `deploy.sh` only migrates prod.
+  migration is added, apply it to the test DB too (`alembic upgrade head`
+  with `ADMIN_DATABASE_URL` env-overridden to `TEST_ADMIN_DATABASE_URL`)
+  — it does **not** happen automatically, `deploy.sh` only migrates prod.
+  - History: originally a dedicated Supabase test *project* (separate from
+    prod's Supabase project). That project's tenant became unreachable
+    ("tenant/user ... not found" on both its connection strings) on
+    2026-09-30, with no indication of when/whether it'd come back — replaced
+    the same day with a local Postgres 17 (Homebrew `postgresql@17`, kept on
+    **port 5433**, not 5432, so it doesn't collide with another Postgres
+    instance/project already using the default port) — a `TEST_DATABASE_URL`
+    pointing at `localhost` also makes `tests/*` eligible for the "Testing
+    the user's own application" exception, unlike a remote project ever
+    would be. Runs noticeably faster too (no network round trip to Supabase's
+    ap-northeast-2) — the full suite (1190 tests) that used to take 1-4+
+    hours against Supabase now finishes in well under 30 minutes locally.
   - Provisioning note: the historical Alembic chain assumes the schema
     already exists (it grew out of the pre-Alembic `main.py init_db()`
     era) and is **not** currently replayable from a truly empty database —
     `20260717_0001_full_schema_ddl.py` itself contains ALTER statements
-    against tables added by later migrations. The test project was
-    bootstrapped by dumping prod's schema (`pg_dump --schema-only
-    --no-owner --no-privileges -n public`), restoring it into the empty
-    project, granting `ems_app` the same DML privileges as prod, then
-    `alembic stamp head` (schema already matches head; this just writes
-    the bookkeeping row). Re-provisioning a fresh test project should
-    follow the same recipe, not `alembic upgrade head` from empty — that
-    still fails partway through today. (`eb95a484c74a`'s `depends_on` was
-    fixed to require `20260717_0001` first, which was a real, separate
-    ordering bug, but doesn't make the chain fully bootstrap-clean on its
-    own — a from-scratch-safe migration chain is a larger, separate
-    project.)
+    against tables added by later migrations. So — same recipe as the
+    original Supabase test project, adapted for a plain local Postgres:
+    1. **Match `pg_dump`'s version to prod's server** (`pg_dump` refuses to
+       dump from a *newer* server than itself) — prod is Postgres 17;
+       Homebrew's default `postgresql@15` `pg_dump` won't work, use
+       `$(brew --prefix postgresql@17)/bin/pg_dump` explicitly (`brew
+       install postgresql@17` first if not already present — it doesn't
+       need to be the *running* local service, just installed for its
+       client binaries).
+    2. `pg_dump --schema-only --no-owner --no-privileges -n public
+       "$ADMIN_DATABASE_URL" > schema.sql` against **prod** (read-only,
+       schema only — never dump prod's data for this).
+    3. Create the local `ems_test` database and an `ems_app` role
+       (`LOGIN PASSWORD '...'`, no `BYPASSRLS`/`SUPERUSER` — must match
+       prod's `ems_app` role shape for RLS to mean anything in tests); the
+       admin role can just be your own local Postgres superuser (simpler
+       than replicating prod's non-superuser-but-`BYPASSRLS` `postgres`
+       role — superuser already implies bypassing RLS).
+    4. In the new, still-empty `ems_test`: `DROP SCHEMA public CASCADE;`
+       (a fresh database already has an empty `public` schema, which
+       collides with the dump's own `CREATE SCHEMA public;`), then restore
+       with a **matching-version `psql`** (`$(brew --prefix
+       postgresql@17)/bin/psql -f schema.sql` — PG17's dump output starts
+       with a `\restrict ...` meta-command an older `psql` won't recognize).
+    5. **Recreate the `ensure_rls` event trigger by hand** —
+       `rls_auto_enable()` (the function it calls) comes through the dump
+       fine (it's a normal `public`-schema function), but `pg_dump -n
+       public` does not carry over the event trigger itself (event triggers
+       are database-level objects, not schema-scoped). Get its exact
+       definition from prod first (`pg_get_functiondef`/`pg_event_trigger`
+       system catalogs) rather than assuming it matches this doc verbatim.
+       Skip trying to dump/recreate the *other* event triggers prod's
+       `pg_event_trigger` catalog lists (`pgrst_ddl_watch`,
+       `issue_pg_cron_access`, etc.) — those are Supabase-platform
+       internals (PostgREST/pg_cron/pg_graphql hooks), not this app's own,
+       and reference handler functions/schemas (`supabase_functions.*`)
+       that don't exist on a plain local Postgres.
+    6. Grant `ems_app` the same DML privileges as prod (`SELECT, INSERT,
+       UPDATE, DELETE` on tables, `USAGE, SELECT, UPDATE` on sequences) —
+       **plus `ALTER DEFAULT PRIVILEGES`** for both, so a future migration's
+       new tables don't need a manual re-grant every time.
+    7. `ADMIN_DATABASE_URL="$TEST_ADMIN_DATABASE_URL" alembic stamp head`
+       (schema already matches head structurally; this only writes the
+       bookkeeping row — never `alembic upgrade head` from empty, it still
+       fails partway through today, same as it always has:
+       `eb95a484c74a`'s `depends_on` was fixed to require `20260717_0001`
+       first, a real ordering bug, but that alone doesn't make the chain
+       fully bootstrap-clean).
+    8. **`db.py` hardcodes `sslmode="require"` for every connection** (see
+       `_get_pool`/`_get_admin_pool`) — prod's Supabase Postgres always has
+       SSL; a fresh local Postgres does not by default, so *every* app
+       connection to it would fail otherwise. Generate a self-signed cert
+       (`openssl req -new -x509 -days 3650 -nodes -out server.crt -keyout
+       server.key -subj "/CN=localhost"` in the data directory, `chmod 600`
+       the key), set `ssl = on` in `postgresql.conf`, restart — `require`
+       mode doesn't validate the cert against a CA, so self-signed is
+       sufficient.
+    9. Call `core.seed.init_db_seed()` once (seeds the platform
+       `superadmin` account + default OB templates — same seeding that
+       runs on every real app boot) — **then fix the superadmin password**:
+       the seed's actual default is `Admin@123`, but
+       `tests/conftest.py`'s session-scoped `superadmin_token` fixture
+       (depended on by nearly every DB-touching test file) logs in with
+       `admin123` — a real, pre-existing mismatch between the seed code and
+       what the test suite has always assumed, invisible until a genuinely
+       fresh database exposed it. Match the test suite's expectation
+       (`UPDATE users SET password_hash=..., must_change_password=0 WHERE
+       role='superadmin'`, hashing `"admin123"`), not the seed's own
+       default — don't "fix" this the other way by changing
+       `tests/conftest.py`, since that fixture is what every other test
+       file already assumes.
+    10. **Guard every one-off script against the wrong database before it
+        writes anything.** `tests/conftest.py`'s `TEST_DATABASE_URL` swap
+        only happens *inside a pytest run*; a plain `python -c "..."` or
+        `set -a && . .env && set +a && python ...` one-off does **not**
+        get that swap, and `DATABASE_URL`/`ADMIN_DATABASE_URL` (prod) sit
+        right next to `TEST_DATABASE_URL`/`TEST_ADMIN_DATABASE_URL` in the
+        same `.env` — a script that imports `db.py`/`core.seed`/`main`
+        directly (bypassing conftest.py) silently runs against **prod**
+        with no error, since `DATABASE_URL` is simply already set. Any
+        one-off script that's meant to touch the test DB should
+        explicitly do `os.environ["DATABASE_URL"] =
+        os.environ["TEST_DATABASE_URL"]` (and the admin equivalent) itself,
+        immediately after `load_dotenv()` and before importing `db`/`main`
+        — and assert/print the resolved host before any write, not just
+        trust that the right env var was exported. This is exactly how the
+        local test DB's own bootstrap went wrong the first time: a bulk
+        `UPDATE ... WHERE role='superadmin'` meant for the new local
+        database landed on prod's real superadmin account instead, because
+        of this exact gap.
+  - Re-provisioning a fresh local test DB should follow the same recipe
+    (steps 1-9 above; you shouldn't need step 10's incident again if you
+    follow the explicit-swap pattern it describes).
 - **`tests/conftest.py`'s `test_institution` fixture is
   session-scoped** — created once, shared by every test in one pytest
   invocation, and never cleaned up. Data your test creates (workflows,
@@ -236,6 +328,21 @@ wrapper everywhere.
   non-pooled connection) isn't practical in CI. A real regression here
   would show up as this test failing *reliably*, not just occasionally
   under full-suite load.
+  - Second confirmed instance of this same class, found 2026-09-30 (the
+    first time the full suite got run to completion in one sitting in a
+    long while — local Postgres runs the whole 1190-test suite in ~10
+    minutes, where the old Supabase test project took 1-4+ hours, likely
+    why a full run had never actually finished cleanly before):
+    `tests/test_location_phase2.py::TestPhase2IntegrationWorkflows::test_multi_location_payroll_analysis`.
+    Passes alone and as its whole file; failed only once, in the one full
+    run so far, on `assert body["total_employees"] >= 1` (got 0) —
+    `/api/payroll/institution/{id}/summary`'s employee_count is `COUNT(DISTINCT
+    ps.employee_id)` through a join to `payslips`, and this test never
+    creates a payroll run/payslip for its own employee, only ever passing
+    because some earlier test in the same run happened to leave one behind
+    in the shared `test_institution`. Not yet root-caused which earlier
+    test's ordering/absence it depends on. Same rule as above: only a
+    *reliable* failure here means something real broke.
 - **Bash tool's cwd resets between calls** — always use absolute paths
   or prefix `cd /path/to/ems &&`.
 - **`fly deploy` does not run migrations on its own** — use `./deploy.sh`

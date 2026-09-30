@@ -272,7 +272,15 @@ def get_or_create_default_workflow(conn, inst_id: int, module: str) -> Dict[str,
             (workflow_id,)
         )
     conn.commit()
-    return conn.execute("SELECT * FROM approval_workflows WHERE id=?", (workflow_id,)).fetchone()
+    # dict(), not a bare Row — matches the "existing row" branch above.
+    # db.py's Row deliberately mimics sqlite3.Row (subscript/keys() only,
+    # no .get()), and start_workflow()'s workflow.get("mode") needs a real
+    # dict. This only broke the *first* time a module's default workflow
+    # gets auto-created for an institution (every later call takes the
+    # "existing row" branch instead), so it stayed invisible for a long
+    # time against a shared test DB where almost everything already had
+    # one.
+    return dict(conn.execute("SELECT * FROM approval_workflows WHERE id=?", (workflow_id,)).fetchone())
 
 
 def get_steps(conn, workflow_id: int) -> List[Dict[str, Any]]:
