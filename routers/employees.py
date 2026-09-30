@@ -327,12 +327,7 @@ def _resolve_manager_name(conn, inst_id: int, reports_to: Optional[str]) -> Dict
 
 
 # Allowlisted, not user-supplied directly — sort_by picks a key into this
-# map rather than being interpolated into the query itself. Deliberately
-# only the plain DB columns the Employee List's table can sort against —
-# manager_name/location_name/pay_grade_name/years_of_service are resolved
-# below via post-query lookups (not real columns, and not worth an inline
-# JOIN just for sorting), so those 4 columns stay sorted client-side
-# against whatever page is currently loaded, not the full table.
+# map rather than being interpolated into the query itself.
 _EMPLOYEE_SORT_COLUMNS = {
     "employee_id": "employee_id", "full_name": "full_name", "preferred_name": "preferred_name",
     "work_email": "work_email", "phone": "phone", "designation": "designation", "department": "department",
@@ -340,6 +335,63 @@ _EMPLOYEE_SORT_COLUMNS = {
     "last_working_day": "last_working_day", "date_of_birth": "date_of_birth",
     "gender": "gender", "race": "race", "employment_type": "employment_type", "status": "status",
 }
+
+# manager_name/location_name/pay_grade_name aren't real columns on employees
+# (see the post-query bulk lookups in list_employees below, which resolve
+# them the same way for the response body) — these correlated scalar
+# subqueries let ORDER BY sort the *entire* table by them anyway, without
+# restructuring the base query (which already varies per role: a recursive
+# CTE for `manager`, a plain WHERE for everyone else) into a JOIN. Each one
+# mirrors the exact table/condition its post-query counterpart uses, so the
+# two never disagree about what "this employee's manager/location/pay
+# grade" means. `employees` (unaliased) refers to the base query's own
+# table — safe because every branch above still selects `FROM employees`.
+_EMPLOYEE_SORT_SUBQUERIES = {
+    "manager_name": """(SELECT mgr.full_name FROM employees mgr
+                         WHERE mgr.institution_id = employees.institution_id
+                           AND mgr.employee_id = employees.reports_to)""",
+    "location_name": """(SELECT l.name FROM employee_location_assignments ela
+                          JOIN locations l ON l.id = ela.location_id
+                          WHERE ela.institution_id = employees.institution_id
+                            AND ela.employee_id = employees.employee_id
+                            AND ela.assignment_type = 'primary' AND ela.is_active = 1
+                          LIMIT 1)""",
+    "pay_grade_name": """(SELECT pg.grade_name FROM employee_compensation ec
+                           JOIN pay_grades pg ON pg.id = ec.pay_grade_id
+                           WHERE ec.institution_id = employees.institution_id
+                             AND ec.employee_id = employees.employee_id
+                             AND ec.is_current = 1
+                           LIMIT 1)""",
+}
+
+
+def _employee_sort_clause(sort_by: Optional[str], sort_dir: str, user: dict) -> str:
+    """The `<expr> <ASC|DESC>` half of GET /api/employees' optional
+    (paginated) ORDER BY — see _EMPLOYEE_SORT_COLUMNS/_EMPLOYEE_SORT_SUBQUERIES
+    just above for what each sort_by resolves to. sort_by is allowlisted
+    against those two maps, never interpolated directly, so this is safe
+    even though the result gets spliced straight into the query string."""
+    desc = str(sort_dir).lower() == "desc"
+    if sort_by == "years_of_service":
+        # Not a real column either — purely derived from start_date (see
+        # the frontend's yearsOfServiceValue), and an *older* start_date
+        # means *more* years of service, so sorting start_date in the
+        # opposite direction gives the identical row order without a
+        # subquery of its own. NULL start_date sorts as if "0 years" —
+        # Postgres's default NULLS LAST-on-ASC/FIRST-on-DESC, applied to
+        # this inverted mapping, puts it with the least-tenured on a
+        # descending years-of-service sort and vice versa, which is the
+        # same "no data -> treat as newest" convention the old client-side
+        # sentinel (yearsOfServiceValue returning -1) used.
+        return f"start_date {'ASC' if desc else 'DESC'}"
+    if sort_by == "pay_grade_name" and user["role"] not in ("hr_manager", "payroll_manager", "compensation_manager"):
+        # Matches the post-query enrichment below, which blanks
+        # pay_grade_name for every other role — sorting by it here would
+        # leak relative grade ordering through row position even though
+        # the value itself never reaches the response.
+        sort_by = None
+    expr = _EMPLOYEE_SORT_SUBQUERIES.get(sort_by) or _EMPLOYEE_SORT_COLUMNS.get(sort_by, "full_name")
+    return f"{expr} {'DESC' if desc else 'ASC'}"
 
 
 @router.get("/api/employees", response_model=List[EmployeeOut])
@@ -388,11 +440,9 @@ def list_employees(
     if limit is not None:
         total = conn.execute(f"SELECT COUNT(*) FROM ({q}) AS sub", p).fetchone()[0]
         response.headers["X-Total-Count"] = str(total)
-        sort_col = _EMPLOYEE_SORT_COLUMNS.get(sort_by, "full_name")
-        sort_dir_sql = "DESC" if str(sort_dir).lower() == "desc" else "ASC"
         limit = min(max(1, limit), 500)
         offset = max(0, offset)
-        q += f" ORDER BY {sort_col} {sort_dir_sql} LIMIT ? OFFSET ?"
+        q += f" ORDER BY {_employee_sort_clause(sort_by, sort_dir, user)} LIMIT ? OFFSET ?"
         rows = conn.execute(q, p + [limit, offset]).fetchall()
     else:
         q += " ORDER BY created_at DESC"

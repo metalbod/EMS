@@ -199,6 +199,111 @@ def test_list_employees_pay_grade_name_only_for_compensation_roles(
 
 
 # ---------------------------------------------------------------------------
+# Sorting by a column that isn't a real one on `employees` (manager_name,
+# location_name, pay_grade_name, years_of_service) — routers/employees.py's
+# _employee_sort_clause. Each test below scopes to exactly its own two
+# disposable employees via a random search suffix (same isolation trick as
+# test_list_employees_offset_pages_through_results above), then fetches
+# them one at a time with limit=1 — proving the ORDER BY happened in the
+# database across the *whole* matching set, not just whatever page the
+# frontend happened to have already loaded (the bug this replaced: sorting
+# these 4 columns used to re-sort only the current page, client-side).
+# ---------------------------------------------------------------------------
+def test_list_employees_sorts_by_years_of_service_across_the_whole_table(client, hr_manager_auth, make_test_employee):
+    suffix = uuid.uuid4().hex[:8]
+    tenured = make_test_employee(full_name=f"ZZ YOS {suffix} Tenured", start_date="1980-01-01")
+    new_hire = make_test_employee(full_name=f"ZZ YOS {suffix} NewHire", start_date="2026-09-01")
+
+    params = {"search": suffix, "sort_by": "years_of_service", "sort_dir": "desc", "limit": 1}
+    first = client.get("/api/employees", headers=hr_manager_auth, params={**params, "offset": 0}).json()
+    second = client.get("/api/employees", headers=hr_manager_auth, params={**params, "offset": 1}).json()
+    assert len(first) == 1 and len(second) == 1
+    assert first[0]["employee_id"] == tenured["employee_id"], "most years of service must sort first, descending"
+    assert second[0]["employee_id"] == new_hire["employee_id"]
+
+
+def test_list_employees_sorts_by_manager_name_across_the_whole_table(client, hr_manager_auth, make_test_employee):
+    suffix = uuid.uuid4().hex[:8]
+    mgr_aaron = make_test_employee(full_name=f"ZZ Mgr Aaron {uuid.uuid4().hex[:8]}")
+    mgr_zed = make_test_employee(full_name=f"ZZ Mgr Zed {uuid.uuid4().hex[:8]}")
+    reports_to_zed = make_test_employee(full_name=f"ZZ Report {suffix} A", reports_to=mgr_zed["employee_id"])
+    reports_to_aaron = make_test_employee(full_name=f"ZZ Report {suffix} B", reports_to=mgr_aaron["employee_id"])
+
+    params = {"search": suffix, "sort_by": "manager_name", "sort_dir": "desc", "limit": 1}
+    first = client.get("/api/employees", headers=hr_manager_auth, params={**params, "offset": 0}).json()
+    second = client.get("/api/employees", headers=hr_manager_auth, params={**params, "offset": 1}).json()
+    assert len(first) == 1 and len(second) == 1
+    assert first[0]["employee_id"] == reports_to_zed["employee_id"], "manager name 'Zed...' sorts last alphabetically = first, descending"
+    assert second[0]["employee_id"] == reports_to_aaron["employee_id"]
+
+
+def test_list_employees_sorts_by_location_name_across_the_whole_table(
+    client, hr_manager_auth, make_test_employee, make_test_location
+):
+    suffix = uuid.uuid4().hex[:8]
+    loc_alpha = make_test_location(name=f"ZZ Loc Alpha {uuid.uuid4().hex[:8]}")
+    loc_zeta = make_test_location(name=f"ZZ Loc Zeta {uuid.uuid4().hex[:8]}")
+    emp_alpha = make_test_employee(full_name=f"ZZ Loc {suffix} A")
+    emp_zeta = make_test_employee(full_name=f"ZZ Loc {suffix} B")
+    for emp, loc in ((emp_alpha, loc_alpha), (emp_zeta, loc_zeta)):
+        res = client.post(f"/api/employees/{emp['employee_id']}/locations", headers=hr_manager_auth, json={
+            "location_id": loc["id"], "assignment_type": "primary", "start_date": "2026-01-01",
+        })
+        assert res.status_code == 201, res.text
+
+    params = {"search": suffix, "sort_by": "location_name", "sort_dir": "desc", "limit": 1}
+    first = client.get("/api/employees", headers=hr_manager_auth, params={**params, "offset": 0}).json()
+    second = client.get("/api/employees", headers=hr_manager_auth, params={**params, "offset": 1}).json()
+    assert len(first) == 1 and len(second) == 1
+    assert first[0]["employee_id"] == emp_zeta["employee_id"], "'Zeta...' sorts last alphabetically = first, descending"
+    assert second[0]["employee_id"] == emp_alpha["employee_id"]
+
+
+def test_list_employees_sorts_by_pay_grade_name_across_the_whole_table_and_only_for_compensation_roles(
+    client, hr_manager_auth, make_test_user, test_institution, make_test_employee
+):
+    suffix = uuid.uuid4().hex[:8]
+    # full_name's own trailing word deliberately sorts the *opposite* way
+    # from the pay grade each is assigned below, so the admin-fallback
+    # assertion further down can't pass by naming coincidence — it only
+    # passes if the fallback genuinely switched to sorting by full_name.
+    emp_alpha = make_test_employee(full_name=f"ZZ Grade {suffix} Zulu")
+    emp_zeta = make_test_employee(full_name=f"ZZ Grade {suffix} Bravo")
+    for emp, grade_name in ((emp_alpha, f"ZZ Grade Alpha {uuid.uuid4().hex[:8]}"),
+                             (emp_zeta, f"ZZ Grade Zeta {uuid.uuid4().hex[:8]}")):
+        grade_res = client.post("/api/compensation/pay-grades", headers=hr_manager_auth, json={
+            "grade_code": _unique_code("ZZ"), "grade_name": grade_name, "grade_level": 1,
+            "min_salary": 1000.00, "midpoint_salary": 1500.00, "max_salary": 2000.00,
+        })
+        assert grade_res.status_code == 201, grade_res.text
+        comp_res = client.post(f"/api/compensation/employees/{emp['employee_id']}/compensation", headers=hr_manager_auth, json={
+            "pay_grade_id": grade_res.json()["id"], "effective_date": "2026-07-19",
+        })
+        assert comp_res.status_code == 201, comp_res.text
+
+    params = {"search": suffix, "sort_by": "pay_grade_name", "sort_dir": "desc", "limit": 1}
+    first = client.get("/api/employees", headers=hr_manager_auth, params={**params, "offset": 0}).json()
+    second = client.get("/api/employees", headers=hr_manager_auth, params={**params, "offset": 1}).json()
+    assert len(first) == 1 and len(second) == 1
+    assert first[0]["employee_id"] == emp_zeta["employee_id"], "'Zeta...' sorts last alphabetically = first, descending"
+    assert second[0]["employee_id"] == emp_alpha["employee_id"]
+
+    # A role that can't see pay_grade_name at all must not have it silently
+    # steer row order either — sort_by=pay_grade_name falls back to the
+    # default (full_name) sort for them instead of leaking relative grade
+    # order through row position.
+    admin_token, _ = make_test_user(role="hr_admin")
+    admin_headers = {"Authorization": f"Bearer {admin_token}", "X-Institution-Id": str(test_institution["id"])}
+    # params still carries sort_dir=desc, so the fallback sort is full_name
+    # DESCENDING — "...Zulu" (emp_alpha) comes before "...Bravo" (emp_zeta),
+    # the exact opposite of the grade-based order asserted above.
+    by_name_desc = sorted([emp_alpha, emp_zeta], key=lambda e: e["full_name"], reverse=True)
+    admin_first = client.get("/api/employees", headers=admin_headers, params={**params, "offset": 0}).json()
+    assert admin_first[0]["employee_id"] == by_name_desc[0]["employee_id"] == emp_alpha["employee_id"]
+    assert admin_first[0]["pay_grade_name"] is None
+
+
+# ---------------------------------------------------------------------------
 # Workforce stats — deliberately NOT scoped like List employees above (see
 # get_workforce_stats' own docstring-equivalent comment in routers/
 # employees.py): aggregate counts only, so every role — including

@@ -28,15 +28,13 @@ function yearsOfServiceLabel(e) {
 // by org chart/pickers/dashboards via loadEmployees() above is completely
 // unaffected). Independent of employees[]: this screen's rows come from
 // its own dedicated fetch below, not from filtering the full roster.
-// manager_name/location_name/pay_grade_name/years_of_service aren't real
-// DB columns (resolved server-side per-row via post-query lookups, same
-// as before) so they're not in the server sort allowlist — sorting by one
-// of those sorts only the current page, client-side (empClientSort*),
-// rather than the whole table like the 13 plain-column sorts do.
-const EMP_DERIVED_SORT_KEYS = new Set(['manager_name', 'location_name', 'pay_grade_name', 'years_of_service']);
+// Every sortable column — including manager_name/location_name/
+// pay_grade_name/years_of_service, none of which are real columns on
+// employees — sorts the whole table server-side (see
+// routers/employees.py's _employee_sort_clause), not just whatever page
+// happens to be loaded.
 let empPage = 1, empPageSize = 50, empTotal = 0;
 let empSortKey = 'full_name', empSortDir = 'asc';
-let empClientSortKey = null, empClientSortDir = 'asc';
 let empPageRows = [];
 let empSearchDebounceTimer = null;
 
@@ -127,13 +125,6 @@ function renderEmpColumnsPicker() {
 }
 
 function setEmpSort(key) {
-  if (EMP_DERIVED_SORT_KEYS.has(key)) {
-    if (empClientSortKey === key) empClientSortDir = empClientSortDir === 'asc' ? 'desc' : 'asc';
-    else { empClientSortKey = key; empClientSortDir = 'asc'; }
-    renderEmpTable();
-    return;
-  }
-  empClientSortKey = null; // a real server sort replaces any current-page-only client sort
   if (empSortKey === key) empSortDir = empSortDir === 'asc' ? 'desc' : 'asc';
   else { empSortKey = key; empSortDir = 'asc'; }
   empPage = 1;
@@ -202,23 +193,6 @@ async function loadEmployeeListPage() {
   renderEmpTable();
 }
 
-function empSortValue(e, key) { return key === 'years_of_service' ? yearsOfServiceValue(e) : e[key]; }
-
-// Applies the current-page-only derived-column sort, if one is active;
-// otherwise rows are already in the server's sorted order.
-function empDisplayRows() {
-  if (!empClientSortKey) return empPageRows;
-  const dir = empClientSortDir === 'asc' ? 1 : -1;
-  return [...empPageRows].sort((a, b) => {
-    let x = empSortValue(a, empClientSortKey), y = empSortValue(b, empClientSortKey);
-    if (typeof x === 'string') x = x.toLowerCase();
-    if (typeof y === 'string') y = y.toLowerCase();
-    if (x == null) x = '';
-    if (y == null) y = '';
-    return x < y ? -1 * dir : x > y ? 1 * dir : 0;
-  });
-}
-
 function renderEmpTableHead() {
   ensureEmpColumnPrefsLoaded();
   const cols = empAvailableColumns().filter(c => empVisibleColumns.has(c.key));
@@ -236,9 +210,7 @@ function renderEmpTable() {
   renderEmpTableHead();
   document.querySelectorAll('.emp-sort-arrow').forEach(el => {
     const key = el.dataset.sortKey;
-    const activeKey = empClientSortKey || empSortKey;
-    const activeDir = empClientSortKey ? empClientSortDir : empSortDir;
-    el.textContent = key === activeKey ? (activeDir === 'asc' ? ' ▲' : ' ▼') : '';
+    el.textContent = key === empSortKey ? (empSortDir === 'asc' ? ' ▲' : ' ▼') : '';
   });
   if (!empPageRows.length) { tbody.innerHTML=''; empty.classList.remove('hidden'); pagination.classList.add('hidden'); return; }
   empty.classList.add('hidden');
@@ -250,7 +222,7 @@ function renderEmpTable() {
     `${offset + 1}-${Math.min(offset + empPageSize, empTotal)} of ${empTotal}`;
 
   const cols = empAvailableColumns().filter(c => empVisibleColumns.has(c.key));
-  tbody.innerHTML = empDisplayRows().map(e=>`
+  tbody.innerHTML = empPageRows.map(e=>`
     <tr class="hover:bg-slate-50 transition cursor-pointer" onclick="viewEmployee('${esc(e.employee_id)}')">
       <td class="px-4 py-3">
         <div class="flex items-center gap-3">
