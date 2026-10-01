@@ -223,17 +223,13 @@ def _transition_candidate_stage(conn, inst_id: int, cand_id: int, requisition_id
     compares correctly instead of the usual SQL "NULL <> NULL is unknown"
     trap.
 
-    Phase 2 transitional dual-write: candidates.stage (candidates.
-    requisition_id's own destination — Phase 1's now-deprecated,
-    single-application-shaped columns, still read by the pre-Phase-3
-    frontend) is kept in sync too, but ONLY when this candidate has
-    exactly one application — the case every existing candidates row and
-    every current UI flow is still in. Once a second application exists
-    for someone (only reachable via the new POST .../apply endpoint, which
-    nothing in the UI calls yet), candidates.stage simply stops being
-    updated rather than guessing which application it should mirror —
-    query candidate_requisitions instead once that's true. Phase 4 drops
-    these columns once the frontend (Phase 3) no longer reads them."""
+    Used to also dual-write a `candidates.stage` mirror column (Phase 2)
+    for the pre-Phase-3 frontend — removed once Phase 3 read
+    candidate_requisitions directly and Phase 4's migration
+    (20261001_0001_drop_candidates_legacy_application_columns) dropped the
+    column entirely. `_candidate_with_derived_fields` is the read-side
+    equivalent now: it derives a candidate's "current" stage/requisition
+    from their sole application when they have exactly one."""
     conn.execute(
         "UPDATE candidate_stage_history SET exited_at=to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS') "
         "WHERE candidate_id=? AND requisition_id IS NOT DISTINCT FROM ? AND institution_id=? AND exited_at IS NULL",
@@ -248,12 +244,6 @@ def _transition_candidate_stage(conn, inst_id: int, cand_id: int, requisition_id
         "WHERE candidate_id=? AND requisition_id IS NOT DISTINCT FROM ? AND institution_id=?",
         (new_stage, cand_id, requisition_id, inst_id)
     )
-    application_count = conn.execute(
-        "SELECT COUNT(*) AS n FROM candidate_requisitions WHERE candidate_id=? AND institution_id=?",
-        (cand_id, inst_id)
-    ).fetchone()["n"]
-    if application_count <= 1:
-        conn.execute("UPDATE candidates SET stage=? WHERE id=? AND institution_id=?", (new_stage, cand_id, inst_id))
 
 
 def _get_candidate(conn, inst_id, cand_id):
@@ -262,6 +252,48 @@ def _get_candidate(conn, inst_id, cand_id):
     ).fetchone()
     if not row: raise HTTPException(404, "Candidate not found")
     return dict(row)
+
+
+def _sole_application(conn, inst_id, cand_id):
+    """The candidate's one application (candidate_requisitions row, plus
+    its requisition's title/department), if and only if they have exactly
+    one — the same "unambiguous when there's only one" resolution
+    `_candidate_with_derived_fields`, `move_stage`, `schedule_interview`,
+    and `create_offer` all rely on now that `candidates` itself carries no
+    application-level columns of its own (see
+    20260930_0002_add_candidate_requisitions and
+    20261001_0001_drop_candidates_legacy_application_columns). Returns
+    None for zero or multiple applications — there's no single answer to
+    derive in either case."""
+    apps = conn.execute("""
+        SELECT cr.*, r.title AS requisition_title, r.department AS requisition_department
+        FROM candidate_requisitions cr LEFT JOIN job_requisitions r ON r.id = cr.requisition_id
+        WHERE cr.candidate_id=? AND cr.institution_id=?
+    """, (cand_id, inst_id)).fetchall()
+    return dict(apps[0]) if len(apps) == 1 else None
+
+
+def _sole_application_requisition_id(conn, inst_id, cand_id):
+    app = _sole_application(conn, inst_id, cand_id)
+    return app["requisition_id"] if app else None
+
+
+def _candidate_with_derived_fields(conn, inst_id, cand_id):
+    """The person record (candidates.*) merged with the application-level
+    view fields — stage/requisition_id/requisition/source/notes/
+    expected_salary/notice_period/referral_by — that `candidates` itself
+    used to carry directly pre-Phase-4. Derived from the candidate's sole
+    application when they have exactly one (still true for virtually all
+    data); left None once a person has more than one, since there's no
+    single answer to show — the Applications section in Candidate Detail
+    (static/js/recruitment.js) is the real multi-application view."""
+    c = _get_candidate(conn, inst_id, cand_id)
+    app = _sole_application(conn, inst_id, cand_id)
+    for key in ("stage", "requisition_id", "source", "notes", "expected_salary", "notice_period", "referral_by"):
+        c[key] = app[key] if app else None
+    c["requisition"] = ({"id": app["requisition_id"], "title": app["requisition_title"], "department": app["requisition_department"]}
+                         if app and app["requisition_id"] else None)
+    return c
 
 
 def _get_req(conn, inst_id, req_id):
@@ -548,12 +580,11 @@ def create_requisition(conn, body: RequisitionIn, user: dict = Depends(get_curre
 def get_requisition(conn, req_id: int, user: dict = Depends(get_current_user)) -> Optional[Dict[str, Any]]:
     inst_id = need_inst(user)
     r = _get_req(conn, inst_id, req_id)
-    # Phase 3: reads candidate_requisitions (per-application) rather than
-    # candidates directly, so a person who applied here via POST .../apply
-    # shows up too — candidates.requisition_id only mirrors a candidate's
-    # SOLE application (see _transition_candidate_stage's docstring), so it
-    # misses every requisition reached that way for a multi-application
-    # candidate.
+    # Reads candidate_requisitions (per-application), not candidates — a
+    # person who applied here via POST .../apply shows up too, which a
+    # candidates-table query never could (candidates carries no
+    # application-level columns at all since Phase 4 — see
+    # 20261001_0001_drop_candidates_legacy_application_columns).
     cands = conn.execute("""
         SELECT cr.candidate_id AS id, c.full_name, cr.stage, cr.source, cr.created_at
         FROM candidate_requisitions cr JOIN candidates c ON c.id = cr.candidate_id
@@ -699,11 +730,11 @@ def get_requisition_audit_log(conn, req_id: int, user: dict = Depends(get_curren
 CANDIDATE_SORT_COLUMNS = {
     "full_name": "c.full_name",
     "requisition_title": "r.title",
-    "source": "c.source",
-    "created_at": "c.created_at",
+    "source": "cr.source",
+    "created_at": "cr.created_at",
     "experience_years": "c.experience_years",
     "last_interview_date": "last_interview_date",
-    "stage": "c.stage",
+    "stage": "cr.stage",
 }
 
 
@@ -723,19 +754,31 @@ def list_candidates(conn, response: Response,
     # pickers (openIntModal/openOfferModal in recruitment.js) need the
     # full candidate list, not one page of it, so only the Candidate Bank
     # screen's own dedicated fetch passes limit/offset.
+    #
+    # One row per APPLICATION (candidate_requisitions), not per person —
+    # matches list_requisitions'/get_requisition's own per-application
+    # counts since Phase 2/3, and is the only sensible shape once a person
+    # can have more than one open application with its own stage. A
+    # candidate with 2 applications appears twice here, same candidate id
+    # both times, each row its own stage/requisition — clicking either
+    # opens the same Candidate Detail, whose Applications section (Phase 3)
+    # shows both.
     inst_id = need_inst(user)
-    q = """SELECT c.*, r.title AS requisition_title,
-               (SELECT MAX(i.scheduled_date) FROM interviews i WHERE i.candidate_id=c.id) AS last_interview_date
-           FROM candidates c
-           LEFT JOIN job_requisitions r ON r.id = c.requisition_id
-           WHERE c.institution_id=?"""
+    q = """SELECT c.*, r.title AS requisition_title, cr.requisition_id AS requisition_id,
+               cr.stage AS stage, cr.source AS source, cr.created_at AS created_at,
+               (SELECT MAX(i.scheduled_date) FROM interviews i
+                 WHERE i.candidate_id=c.id AND i.requisition_id IS NOT DISTINCT FROM cr.requisition_id) AS last_interview_date
+           FROM candidate_requisitions cr
+           JOIN candidates c ON c.id = cr.candidate_id
+           LEFT JOIN job_requisitions r ON r.id = cr.requisition_id
+           WHERE cr.institution_id=?"""
     p = [inst_id]
-    if requisition_id: q += " AND c.requisition_id=?"; p.append(requisition_id)
+    if requisition_id: q += " AND cr.requisition_id=?"; p.append(requisition_id)
     if stage is not None:
         if not stage:
             q += " AND FALSE"
         else:
-            q += f" AND c.stage IN ({','.join('?' for _ in stage)})"
+            q += f" AND cr.stage IN ({','.join('?' for _ in stage)})"
             p.extend(stage)
     if search:
         like = f"%{search}%"
@@ -764,25 +807,23 @@ def create_candidate(conn, body: CandidateIn, user: dict = Depends(get_current_u
     require_permission(conn, user, "recruitment.create_edit_requisition_candidate_interview_offer")
     inst_id = need_inst(user)
     conn.execute("""
-        INSERT INTO candidates (institution_id,requisition_id,full_name,email,phone,ic_number,
+        INSERT INTO candidates (institution_id,full_name,email,phone,ic_number,
             nationality,gender,date_of_birth,address,current_position,current_company,
             experience_years,employment_history,highest_qualification,field_of_study,
-            institution_name,graduation_year,certifications,skills,source,resume_text,
-            expected_salary,notice_period,linkedin_url,referral_by,notes,created_by)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-    """, (inst_id, body.requisition_id, body.full_name, body.email, body.phone, body.ic_number,
+            institution_name,graduation_year,certifications,skills,resume_text,
+            linkedin_url,created_by)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    """, (inst_id, body.full_name, body.email, body.phone, body.ic_number,
           body.nationality, body.gender, body.date_of_birth, body.address,
           body.current_position, body.current_company, body.experience_years, body.employment_history,
           body.highest_qualification, body.field_of_study, body.institution_name, body.graduation_year,
-          body.certifications, body.skills, body.source, body.resume_text,
-          body.expected_salary, body.notice_period, body.linkedin_url, body.referral_by,
-          body.notes, user["username"]))
+          body.certifications, body.skills, body.resume_text, body.linkedin_url,
+          user["username"]))
     cid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-    row = conn.execute("SELECT stage FROM candidates WHERE id=?", (cid,)).fetchone()
     # The candidate's first application — see 20260930_0002_add_candidate_requisitions.
-    # Mirrors the same application-level fields the candidates row above
-    # just got (Phase 2 transitional duplication, not a second source of
-    # truth going forward — see _transition_candidate_stage's docstring).
+    # The application-level fields (requisition/source/notes/salary/notice/
+    # referral) live only here now, not on candidates — see
+    # 20261001_0001_drop_candidates_legacy_application_columns.
     conn.execute("""
         INSERT INTO candidate_requisitions
             (institution_id,candidate_id,requisition_id,source,notes,
@@ -790,11 +831,10 @@ def create_candidate(conn, body: CandidateIn, user: dict = Depends(get_current_u
         VALUES (?,?,?,?,?,?,?,?,?)
     """, (inst_id, cid, body.requisition_id, body.source, body.notes,
           body.expected_salary, body.notice_period, body.referral_by, user["username"]))
-    _transition_candidate_stage(conn, inst_id, cid, body.requisition_id, row["stage"])
+    _transition_candidate_stage(conn, inst_id, cid, body.requisition_id, "New")
     _log_candidate(conn, inst_id, cid, "Created", f"Candidate '{body.full_name}' added via {body.source}", user["username"])
     conn.commit()
-    row = conn.execute("SELECT * FROM candidates WHERE id=?", (cid,)).fetchone()
-    return dict(row)
+    return _candidate_with_derived_fields(conn, inst_id, cid)
 
 
 @router.post("/api/recruitment/candidates/{cand_id}/apply", status_code=201)
@@ -884,12 +924,7 @@ def search_candidates(conn, q: str, user: dict = Depends(get_current_user)) -> L
 @db_session
 def get_candidate(conn, cand_id: int, user: dict = Depends(get_current_user)) -> Optional[Dict[str, Any]]:
     inst_id = need_inst(user)
-    c = _get_candidate(conn, inst_id, cand_id)
-    req = None
-    if c.get("requisition_id"):
-        r = conn.execute("SELECT id,title,department FROM job_requisitions WHERE id=?",
-                         (c["requisition_id"],)).fetchone()
-        req = dict(r) if r else None
+    c = _candidate_with_derived_fields(conn, inst_id, cand_id)
     interviews = conn.execute("""
         SELECT i.*, STRING_AGG(s.scored_by, ',') AS scored_by_list,
                AVG(s.overall_score) AS avg_score
@@ -913,15 +948,13 @@ def get_candidate(conn, cand_id: int, user: dict = Depends(get_current_user)) ->
         "SELECT id,file_name,mime_type,data_url,uploaded_by,created_at FROM candidate_documents WHERE candidate_id=? AND institution_id=? ORDER BY created_at",
         (cand_id, inst_id)
     ).fetchall()
-    c["requisition"] = req
     c["interviews"] = interview_list
     c["offers"] = [dict(o) for o in offers]
     c["documents"] = [dict(d) for d in docs]
-    # Every application this person has (Phase 2) — the pre-Phase-3
-    # frontend ignores this and keeps reading the top-level fields above,
-    # which the dual-write in _transition_candidate_stage/update_candidate
-    # keeps mirroring to this candidate's sole application, if they have
-    # exactly one.
+    # Every application this person has — the top-level stage/requisition
+    # fields above (_candidate_with_derived_fields) only resolve when
+    # there's exactly one; the Applications section in Candidate Detail
+    # (static/js/recruitment.js) is what actually renders all of them.
     apps = conn.execute("""
         SELECT cr.*, r.title AS requisition_title FROM candidate_requisitions cr
         LEFT JOIN job_requisitions r ON r.id = cr.requisition_id
@@ -1029,23 +1062,25 @@ def update_candidate(conn, cand_id: int, body: CandidateIn, user: dict = Depends
     inst_id = need_inst(user)
     _get_candidate(conn, inst_id, cand_id)
     conn.execute("""
-        UPDATE candidates SET requisition_id=?,full_name=?,email=?,phone=?,ic_number=?,
+        UPDATE candidates SET full_name=?,email=?,phone=?,ic_number=?,
             nationality=?,gender=?,date_of_birth=?,address=?,current_position=?,current_company=?,
             experience_years=?,employment_history=?,highest_qualification=?,field_of_study=?,
-            institution_name=?,graduation_year=?,certifications=?,skills=?,source=?,resume_text=?,
-            expected_salary=?,notice_period=?,linkedin_url=?,referral_by=?,notes=?
+            institution_name=?,graduation_year=?,certifications=?,skills=?,resume_text=?,
+            linkedin_url=?
         WHERE id=? AND institution_id=?
-    """, (body.requisition_id, body.full_name, body.email, body.phone, body.ic_number,
+    """, (body.full_name, body.email, body.phone, body.ic_number,
           body.nationality, body.gender, body.date_of_birth, body.address,
           body.current_position, body.current_company, body.experience_years, body.employment_history,
           body.highest_qualification, body.field_of_study, body.institution_name, body.graduation_year,
-          body.certifications, body.skills, body.source, body.resume_text,
-          body.expected_salary, body.notice_period, body.linkedin_url, body.referral_by,
-          body.notes, cand_id, inst_id))
-    # Phase 2 transitional dual-write (see _transition_candidate_stage's
-    # docstring) — only when this is still this candidate's sole
-    # application, matched by row id since body.requisition_id may itself
-    # be the field being changed.
+          body.certifications, body.skills, body.resume_text, body.linkedin_url,
+          cand_id, inst_id))
+    # Application-level fields (requisition/source/notes/salary/notice/
+    # referral) only live on candidate_requisitions now — only writable
+    # here when this is still the candidate's sole application, matched by
+    # row id since body.requisition_id may itself be the field being
+    # changed. Once a second application exists, this form simply can't
+    # edit application-level data (no single row to target) — the
+    # Applications section in Candidate Detail is where that happens.
     apps = conn.execute(
         "SELECT id FROM candidate_requisitions WHERE candidate_id=? AND institution_id=?",
         (cand_id, inst_id)
@@ -1059,8 +1094,7 @@ def update_candidate(conn, cand_id: int, body: CandidateIn, user: dict = Depends
               body.notice_period, body.referral_by, apps[0]["id"]))
     _log_candidate(conn, inst_id, cand_id, "Updated", "Candidate profile details updated", user["username"])
     conn.commit()
-    row = conn.execute("SELECT * FROM candidates WHERE id=?", (cand_id,)).fetchone()
-    return dict(row)
+    return _candidate_with_derived_fields(conn, inst_id, cand_id)
 
 
 @router.patch("/api/recruitment/candidates/{cand_id}/stage")
@@ -1070,29 +1104,29 @@ def move_stage(conn, cand_id: int, body: CandidateStageIn, user: dict = Depends(
     if body.stage not in CANDIDATE_STAGES:
         raise HTTPException(400, f"Stage must be one of: {', '.join(CANDIDATE_STAGES)}")
     inst_id = need_inst(user)
-    _get_candidate(conn, inst_id, cand_id)
+    old = _candidate_with_derived_fields(conn, inst_id, cand_id)
+    apps = conn.execute(
+        "SELECT id, requisition_id FROM candidate_requisitions WHERE candidate_id=? AND institution_id=?",
+        (cand_id, inst_id)
+    ).fetchall()
+    if len(apps) > 1:
+        raise HTTPException(400, "This candidate has more than one application — move the stage on the "
+                             "specific requisition instead (PATCH .../requisitions/{requisition_id}/stage)")
     extra_notes = f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M')}] Stage moved to {body.stage} by {user['username']}: {body.notes or ''}".strip()
-    old = _get_candidate(conn, inst_id, cand_id)
-    conn.execute("""
-        UPDATE candidates SET notes=COALESCE(notes,'') || ?
-        WHERE id=? AND institution_id=?
-    """, (extra_notes, cand_id, inst_id))
+    if apps:
+        # The free-text annotation used to land on candidates.notes
+        # (person-level) — now the sole application's own notes, since
+        # that column no longer exists on candidates.
+        conn.execute("UPDATE candidate_requisitions SET notes=COALESCE(notes,'') || ? WHERE id=?",
+                     (extra_notes, apps[0]["id"]))
+    requisition_id = apps[0]["requisition_id"] if apps else None
     if body.stage != old.get("stage"):
-        apps = conn.execute(
-            "SELECT requisition_id FROM candidate_requisitions WHERE candidate_id=? AND institution_id=?",
-            (cand_id, inst_id)
-        ).fetchall()
-        if len(apps) > 1:
-            raise HTTPException(400, "This candidate has more than one application — move the stage on the "
-                                 "specific requisition instead (PATCH .../requisitions/{requisition_id}/stage)")
-        requisition_id = apps[0]["requisition_id"] if apps else None
         _transition_candidate_stage(conn, inst_id, cand_id, requisition_id, body.stage)
-    detail = f"Stage changed: {old.get('stage','?')} → {body.stage}"
+    detail = f"Stage changed: {old.get('stage') or '?'} → {body.stage}"
     if body.notes: detail += f" | Reason: {body.notes}"
     _log_candidate(conn, inst_id, cand_id, "Stage Changed", detail, user["username"])
     conn.commit()
-    row = conn.execute("SELECT * FROM candidates WHERE id=?", (cand_id,)).fetchone()
-    return dict(row)
+    return _candidate_with_derived_fields(conn, inst_id, cand_id)
 
 
 # ---------------------------------------------------------------------------
@@ -1127,19 +1161,29 @@ def schedule_interview(conn, body: InterviewIn, user: dict = Depends(get_current
     require_permission(conn, user, "recruitment.create_edit_requisition_candidate_interview_offer")
     inst_id = need_inst(user)
     _get_candidate(conn, inst_id, body.candidate_id)
+    # The Interview modal has no requisition picker of its own (see #intModal
+    # in static/index.html) — resolve it from the candidate's own sole
+    # application instead, so the interview (and the stage transition below)
+    # tie to the real requisition rather than silently landing on "general
+    # interest"/NULL for the overwhelmingly common single-application case.
+    req_id = body.requisition_id
+    if req_id is None:
+        req_id = _sole_application_requisition_id(conn, inst_id, body.candidate_id)
     conn.execute("""
         INSERT INTO interviews (institution_id,candidate_id,requisition_id,interview_type,
             scheduled_date,scheduled_time,duration_mins,location,interviewers,notes,created_by)
         VALUES (?,?,?,?,?,?,?,?,?,?,?)
-    """, (inst_id, body.candidate_id, body.requisition_id, body.interview_type,
+    """, (inst_id, body.candidate_id, req_id, body.interview_type,
           body.scheduled_date, body.scheduled_time, body.duration_mins,
           body.location, body.interviewers, body.notes, user["username"]))
     iid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     # Auto-move candidate to Interview stage
-    cand_row = conn.execute("SELECT stage FROM candidates WHERE id=? AND institution_id=?",
-                            (body.candidate_id, inst_id)).fetchone()
-    if cand_row and cand_row["stage"] in ("New", "Screening"):
-        _transition_candidate_stage(conn, inst_id, body.candidate_id, body.requisition_id, "Interview")
+    app = conn.execute(
+        "SELECT stage FROM candidate_requisitions WHERE candidate_id=? AND requisition_id IS NOT DISTINCT FROM ? AND institution_id=?",
+        (body.candidate_id, req_id, inst_id)
+    ).fetchone()
+    if app and app["stage"] in ("New", "Screening"):
+        _transition_candidate_stage(conn, inst_id, body.candidate_id, req_id, "Interview")
     _log_candidate(conn, inst_id, body.candidate_id, "Interview Scheduled",
         f"{body.interview_type} interview on {body.scheduled_date} at {body.scheduled_time}"
         + (f" with {body.interviewers}" if body.interviewers else ""),
@@ -1284,7 +1328,7 @@ def create_offer(conn, body: OfferIn, user: dict = Depends(get_current_user)) ->
     if body.offer_type not in OFFER_TYPES:
         raise HTTPException(400, f"offer_type must be one of: {', '.join(OFFER_TYPES)}")
 
-    cand, req, emp = None, None, None
+    cand, req, emp, req_id = None, None, None, body.requisition_id
     if body.offer_type == "Confirmation":
         if not body.employee_id:
             raise HTTPException(400, "employee_id is required for a Confirmation letter")
@@ -1293,8 +1337,14 @@ def create_offer(conn, body: OfferIn, user: dict = Depends(get_current_user)) ->
         if not body.candidate_id:
             raise HTTPException(400, "candidate_id is required")
         cand = _get_candidate(conn, inst_id, body.candidate_id)
-        if body.requisition_id:
-            r = conn.execute("SELECT * FROM job_requisitions WHERE id=?", (body.requisition_id,)).fetchone()
+        # offerReqId defaults to blank in the UI — fall back to the
+        # candidate's own sole application when HR leaves it unset, same
+        # resolution schedule_interview uses for its own requisition-less form.
+        req_id = body.requisition_id
+        if req_id is None:
+            req_id = _sole_application_requisition_id(conn, inst_id, body.candidate_id)
+        if req_id:
+            r = conn.execute("SELECT * FROM job_requisitions WHERE id=?", (req_id,)).fetchone()
             req = dict(r) if r else None
 
     # Auto-generate letter if not provided, from the requested template (or
@@ -1318,7 +1368,7 @@ def create_offer(conn, body: OfferIn, user: dict = Depends(get_current_user)) ->
         INSERT INTO offers (institution_id,candidate_id,employee_id,requisition_id,offer_type,
             salary_offered,start_date,expiry_date,letter_content,created_by)
         VALUES (?,?,?,?,?,?,?,?,?,?)
-    """, (inst_id, body.candidate_id, body.employee_id, body.requisition_id, body.offer_type,
+    """, (inst_id, body.candidate_id, body.employee_id, req_id, body.offer_type,
           body.salary_offered, body.start_date, body.expiry_date, letter, user["username"]))
     oid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     if cand:
@@ -1326,7 +1376,7 @@ def create_offer(conn, body: OfferIn, user: dict = Depends(get_current_user)) ->
         # letter (company-initiated), so it maps to Rejected by Company —
         # distinct from a candidate declining/withdrawing themselves.
         new_stage = "Offer" if body.offer_type == "Offer" else "Rejected by Company"
-        _transition_candidate_stage(conn, inst_id, body.candidate_id, body.requisition_id, new_stage)
+        _transition_candidate_stage(conn, inst_id, body.candidate_id, req_id, new_stage)
         sal = f"RM {body.salary_offered:,.0f}" if body.salary_offered else "—"
         _log_candidate(conn, inst_id, body.candidate_id, f"{body.offer_type} Letter Generated",
             f"{body.offer_type} letter created" + (f" | Salary: {sal}" if body.offer_type == "Offer" else ""),
@@ -1543,15 +1593,19 @@ def convert_to_employee_prefill(conn, cand_id: int, user: dict = Depends(get_cur
     """Return candidate data pre-formatted for the Add Employee form."""
     inst_id = need_inst(user)
     c = _get_candidate(conn, inst_id, cand_id)
-    req = None
-    if c.get("requisition_id"):
-        r = conn.execute("SELECT * FROM job_requisitions WHERE id=?", (c["requisition_id"],)).fetchone()
-        req = dict(r) if r else None
     # Get accepted offer for salary/start date
     offer = conn.execute(
         "SELECT * FROM offers WHERE candidate_id=? AND offer_type='Offer' AND status='Accepted' ORDER BY created_at DESC LIMIT 1",
         (cand_id,)
     ).fetchone()
+    # The accepted offer's own requisition_id is the authoritative answer —
+    # it's what the candidate was actually hired for — falling back to the
+    # candidate's sole application only if that offer somehow has none.
+    req_id = (offer["requisition_id"] if offer else None) or _sole_application_requisition_id(conn, inst_id, cand_id)
+    req = None
+    if req_id:
+        r = conn.execute("SELECT * FROM job_requisitions WHERE id=?", (req_id,)).fetchone()
+        req = dict(r) if r else None
     return {
         "full_name":        c.get("full_name",""),
         "ic_number":        c.get("ic_number",""),

@@ -623,9 +623,14 @@ async function openCandDetail(candId) {
   const c=await res.json();
   viewingCandData=c;
   document.getElementById('cdName').textContent=c.full_name;
-  document.getElementById('cdMeta').textContent=`${c.email||''}${c.phone?' · '+c.phone:''} · ${c.source||''}`;
+  document.getElementById('cdMeta').textContent=`${c.email||''}${c.phone?' · '+c.phone:''}${c.source?' · '+c.source:''}`;
+  // c.stage is None once a candidate has more than one application (no
+  // single answer to derive — see _candidate_with_derived_fields) — the
+  // Applications section below is the real view for that case, so the
+  // single header badge just hides rather than showing "undefined".
   const badge=document.getElementById('cdStageBadge');
-  badge.textContent=c.stage; badge.className=`badge ${stageBadgeClass(c.stage)}`;
+  if(c.stage){ badge.textContent=c.stage; badge.className=`badge ${stageBadgeClass(c.stage)}`; badge.classList.remove('hidden'); }
+  else { badge.classList.add('hidden'); }
   const canManage=HR_MANAGE_ROLES.includes(currentUser?.role);
   const multiApp=shouldShowPerApplicationStages(c.applications);
   // Applications section — only shown once there's more than one (the
@@ -868,11 +873,23 @@ async function openIntModal(candId=null) {
   // populate candidate select — always fetched fresh, unbounded (no
   // limit param): independent of the Candidate Bank screen's own current
   // page/search/stage-filter, and never stale.
+  // One option per APPLICATION, not per person (list_candidates is
+  // application-level since Phase 4) — a candidate with 2 applications
+  // appears twice, each tied to its own requisition via data-req-id, which
+  // submitIntForm sends through since the Interview form itself has no
+  // requisition picker of its own.
   const cs=document.getElementById('intCandId');
   cs.innerHTML='<option value="">Select candidate…</option>';
   const candRes=await api('/api/recruitment/candidates');
   const cands=(candRes&&candRes.ok)?await candRes.json():[];
-  cands.forEach(c=>{const o=document.createElement('option');o.value=c.id;o.textContent=`${esc(c.full_name)} [${esc(c.stage)}]`;if(candId&&c.id===candId)o.selected=true;cs.appendChild(o);});
+  cands.forEach(c=>{
+    const o=document.createElement('option');
+    o.value=c.id;
+    o.dataset.reqId=c.requisition_id??'';
+    o.textContent=`${esc(c.full_name)} — ${esc(c.requisition_title||'General Interest')} [${esc(c.stage)}]`;
+    if(candId&&c.id===candId)o.selected=true;
+    cs.appendChild(o);
+  });
   document.getElementById('intDate').value='';
   document.getElementById('intTime').value='';
   document.getElementById('intDuration').value=60;
@@ -888,8 +905,11 @@ async function submitIntForm(e) {
   e.preventDefault();
   const err=document.getElementById('intFormErr');
   err.classList.add('hidden');
+  const candSel=document.getElementById('intCandId');
+  const reqIdStr=candSel.selectedOptions[0]?.dataset.reqId;
   const body={
-    candidate_id:parseInt(document.getElementById('intCandId').value),
+    candidate_id:parseInt(candSel.value),
+    requisition_id:reqIdStr?parseInt(reqIdStr):null,
     interview_type:document.getElementById('intType').value,
     scheduled_date:document.getElementById('intDate').value,
     scheduled_time:document.getElementById('intTime').value,
@@ -1021,9 +1041,19 @@ async function openOfferModal(offerId=null, preCandId=null, preEmpId=null) {
   // Always fetched fresh, unbounded — see openIntModal's identical comment.
   const candRes=await api('/api/recruitment/candidates');
   const cands=(candRes&&candRes.ok)?await candRes.json():[];
+  // One option per APPLICATION, not per person — see openIntModal's
+  // identical comment. data-req-id drives onOfferCandChange's auto-select
+  // of the matching Requisition option below.
   const cs=document.getElementById('offerCandId');
   cs.innerHTML='<option value="">Select candidate…</option>';
-  cands.forEach(c=>{const o=document.createElement('option');o.value=c.id;o.textContent=`${esc(c.full_name)} [${esc(c.stage)}]`;if(preCandId&&c.id===preCandId)o.selected=true;cs.appendChild(o);});
+  cands.forEach(c=>{
+    const o=document.createElement('option');
+    o.value=c.id;
+    o.dataset.reqId=c.requisition_id??'';
+    o.textContent=`${esc(c.full_name)} — ${esc(c.requisition_title||'General Interest')} [${esc(c.stage)}]`;
+    if(preCandId&&c.id===preCandId)o.selected=true;
+    cs.appendChild(o);
+  });
   // Populate active employees (for a Confirmation letter)
   let emps=employees;
   if(!emps?.length){const r=await api('/api/employees');if(r&&r.ok){emps=await r.json();}}
@@ -1035,6 +1065,7 @@ async function openOfferModal(offerId=null, preCandId=null, preEmpId=null) {
   rs.innerHTML='<option value="">None</option>';
   const rr=await api('/api/recruitment/requisitions?status=Approved');
   if(rr&&rr.ok){const reqs=await rr.json();reqs.forEach(r=>{const o=document.createElement('option');o.value=r.id;o.textContent=`${esc(r.title)}`;rs.appendChild(o);});}
+  if(preCandId) onOfferCandChange(); // pick up the preselected candidate's own requisition, same as a manual selection would
   document.getElementById('offerType').value=preEmpId?'Confirmation':'Offer';
   document.getElementById('offerSalary').value='';
   document.getElementById('offerStart').value='';
@@ -1205,5 +1236,14 @@ function printLetter() {
   w.document.write(`<pre style="font-family:monospace;white-space:pre-wrap;padding:2rem;max-width:70ch;margin:auto">${content.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre>`);
   w.print();
 }
-function onOfferCandChange() {} // placeholder for future filtering
+// Auto-selects the Requisition dropdown to match whichever candidate
+// (application) was just picked, so HR doesn't have to separately remember
+// to set it — create_offer resolves this server-side too when it's left
+// blank, but doing it here keeps the visible selection honest.
+function onOfferCandChange() {
+  const sel=document.getElementById('offerCandId');
+  const reqId=sel.selectedOptions[0]?.dataset.reqId;
+  const reqSel=document.getElementById('offerReqId');
+  if(reqId && [...reqSel.options].some(o=>o.value===reqId)) reqSel.value=reqId;
+}
 

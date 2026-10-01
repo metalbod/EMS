@@ -102,14 +102,15 @@ wrapper everywhere.
   not a one-shot rewrite of the app's access control. See
   `permission_matrix.py`'s module docstring before touching either file.
 
-- **"One candidate, many requisitions" — Phases 1-3 shipped, Phase 4
-  (cleanup migration) not yet started** (`candidate_requisitions`,
-  `migrations/versions/20260930_0002_add_candidate_requisitions.py`,
+- **"One candidate, many requisitions" — all 4 phases shipped**
+  (`candidate_requisitions`, `migrations/versions/
+  20260930_0002_add_candidate_requisitions.py` and
+  `20261001_0001_drop_candidates_legacy_application_columns.py`,
   `routers/recruitment.py`, `static/js/recruitment.js`,
   `static/index.html`): `candidates.requisition_id` used to be a single
   nullable FK — one `candidates` row per application, so the same real
   person applying to a second requisition meant a second, unrelated row
-  with no link to the first. `candidate_requisitions` is now the real
+  with no link to the first. `candidate_requisitions` is the real
   per-application record (`stage`/`source`/`notes`/`expected_salary`/
   `notice_period`/`referral_by`, `UNIQUE(candidate_id, requisition_id)` plus
   a partial unique index limiting a candidate to at most one NULL-requisition
@@ -120,31 +121,43 @@ wrapper everywhere.
   *existing* person to another requisition without duplicating their
   profile; `GET .../candidates/search` is the person-level lookup (by
   name/IC/email/phone, each match's `applications` array included) driving
-  Phase 3's duplicate-detection panel; `PATCH .../candidates/{cand_id}/
-  requisitions/{requisition_id}/stage` moves one application's stage
-  explicitly (`requisition_id=0` in the URL means the NULL/general-interest
-  application — a path param can't carry NULL). `_transition_candidate_stage`
-  (the single place a `candidate_requisitions` row's stage is ever written,
-  called from `move_stage`/`schedule_interview`/`create_offer`/
-  `update_offer_status` too) is the one to read before touching stage
-  transitions again — see its own docstring for the **Phase 2 transitional
-  dual-write**: `candidates.stage`/`.requisition_id`/etc (the legacy
-  columns pre-Phase-3 code used to be the only reader of) are kept mirrored
-  only while a candidate has exactly one application; once a second one
-  exists the legacy columns simply stop being updated rather than guessing
-  which application to mirror. `list_requisitions`'s counts,
-  `recruitment_dashboard_stats`, and `get_requisition`'s nested `candidates`
-  list all read `candidate_requisitions` instead of `candidates` for this
-  reason — `get_requisition`'s was a Phase 3 fix (bundled in, not a separate
-  phase) since without it a person who joined a requisition only via
-  `.../apply` would never show up there. `interviews`/`offers` needed no
-  schema change — they already carry their own `requisition_id` alongside
-  `candidate_id`.
+  the Add Candidate modal's duplicate-detection panel; `PATCH .../
+  candidates/{cand_id}/requisitions/{requisition_id}/stage` moves one
+  application's stage explicitly (`requisition_id=0` in the URL means the
+  NULL/general-interest application — a path param can't carry NULL).
+  `_transition_candidate_stage` (the single place a `candidate_requisitions`
+  row's stage is ever written, called from `move_stage`/`schedule_interview`/
+  `create_offer`/`update_offer_status` too) is the one to read before
+  touching stage transitions again.
+  **Phase 4** (`20261001_0001_drop_candidates_legacy_application_columns.py`)
+  dropped `candidates.requisition_id`/`.stage`/`.source`/`.notes`/
+  `.expected_salary`/`.notice_period`/`.referral_by` outright — every
+  remaining read of them was rewired first, in the same commit:
+  `list_candidates` (the Candidate Bank table, and the Interview/Offer
+  "select candidate" pickers that reuse it) is now one row per
+  APPLICATION, not per person, matching `list_requisitions`'s/
+  `get_requisition`'s own per-application counts;
+  `_candidate_with_derived_fields` (routers/recruitment.py) is the read-side
+  replacement for the old mirror columns — it derives a candidate's
+  top-level `stage`/`requisition`/`source`/`notes`/`expected_salary`/
+  `notice_period`/`referral_by` from their SOLE application when they have
+  exactly one, else `None` (there's no single answer once a person has more
+  than one — the Applications section in Candidate Detail, Phase 3, is the
+  real multi-application view, and the header stage badge there just hides
+  rather than showing "undefined"). `schedule_interview` and `create_offer`
+  now resolve a missing `requisition_id` from the candidate's sole
+  application too (`_sole_application_requisition_id`) — the Interview
+  modal never had a requisition picker of its own, and the Offer modal's
+  defaults to blank, so before this fix every interview silently landed on
+  NULL/general-interest regardless of which real requisition the candidate
+  was for; the Interview/Offer candidate pickers now carry a `data-req-id`
+  per option (one per application) so this is explicit, not guessed, when a
+  specific application is picked.
   Phase 3 (frontend, `static/js/recruitment.js`): the Add Candidate modal's
   Full Name/IC inputs debounce-search `.../candidates/search` as HR types
   and surface matches in a dismissible `#candDupPanel` ("is this the same
   person?") — picking one calls `.../apply` with whatever the form's
-  already filled in in place of creating a duplicate `candidates` row.
+  already filled in, instead of creating a duplicate `candidates` row.
   Candidate Detail's Profile tab conditionally shows an Applications
   section with its own per-row stage control once `c.applications.length >
   1` (`shouldShowPerApplicationStages`) — until then the legacy single
@@ -152,9 +165,7 @@ wrapper everywhere.
   `move_stage` (the endpoint behind it) 400s past one application. A
   standalone "+ Apply to Another Req" button/modal on Candidate Detail is
   the second entry point into `.../apply`, for an already-open candidate
-  instead of mid-Add-Candidate. Phase 4 (not yet started): once Phase 3 is
-  the only code path in production, a cleanup migration drops the now-dead
-  legacy columns from `candidates`.
+  instead of mid-Add-Candidate.
 
 - **Generic audit trail (`entity_audit_log`)** (`core/audit.py`'s
   `write_entity_audit` + `diff_fields`, `GET /api/entity-audit-log` in

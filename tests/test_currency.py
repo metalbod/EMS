@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 CURRENCY_COLUMNS = [
     ("employees", "basic_salary"), ("employees", "hourly_rate"),
     ("job_requisitions", "salary_min"), ("job_requisitions", "salary_max"),
-    ("candidates", "expected_salary"),
+    ("candidate_requisitions", "expected_salary"),
     ("offers", "salary_offered"),
     ("ld_courses", "cost"),
     ("payslips", "basic_salary"), ("payslips", "unpaid_leave_deduction"),

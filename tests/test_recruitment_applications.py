@@ -1,13 +1,14 @@
-"""API-level tests for Phase 2 of "one candidate, many requisitions"
+"""API-level tests for "one candidate, many requisitions"
 (routers/recruitment.py using candidate_requisitions — see
 migrations/versions/20260930_0002_add_candidate_requisitions.py and
 tests/test_candidate_requisitions_schema.py for Phase 1's schema-only
 coverage). Covers: POST .../apply, GET .../candidates/search, the new
 per-requisition PATCH .../requisitions/{requisition_id}/stage endpoint,
 move_stage's ambiguity guard once a candidate has more than one
-application, and the transitional dual-write mirror onto
-candidates.stage/requisition_id (kept in sync only while a candidate has
-exactly one application — see _transition_candidate_stage's docstring).
+application, and get_candidate's derived top-level stage/requisition
+fields (_candidate_with_derived_fields in routers/recruitment.py) now that
+candidates itself carries no application-level columns of its own (Phase
+4 — see 20261001_0001_drop_candidates_legacy_application_columns).
 """
 import os
 
@@ -136,35 +137,43 @@ def test_move_stage_still_works_for_single_application_candidate(client, hr_mana
     assert detail["applications"][0]["stage"] == "Interview"
 
 
-def test_dual_write_mirrors_stage_for_single_application_candidate(client, hr_manager_auth):
-    """candidates.stage (the pre-Phase-3 frontend's own read path) must
-    stay in sync as long as the candidate has exactly one application."""
+def test_candidate_detail_stage_derives_from_sole_application(client, hr_manager_auth):
+    """get_candidate's top-level `stage` (Candidate Detail's header badge
+    and legacy single stage-select both read this) is derived from the
+    candidate's one application, since candidates itself carries no stage
+    column of its own anymore."""
     req = _make_requisition(client, hr_manager_auth)
     cand = _make_candidate(client, hr_manager_auth, requisition_id=req["id"])
     client.patch(
         f"/api/recruitment/candidates/{cand['id']}/requisitions/{req['id']}/stage",
         headers=hr_manager_auth, json={"stage": "Screening"}
     )
-    legacy = client.get(f"/api/recruitment/candidates/{cand['id']}", headers=hr_manager_auth).json()
-    assert legacy["stage"] == "Screening"
+    detail = client.get(f"/api/recruitment/candidates/{cand['id']}", headers=hr_manager_auth).json()
+    assert detail["stage"] == "Screening"
+    assert detail["requisition"]["id"] == req["id"]
 
 
-def test_dual_write_stops_once_candidate_has_two_applications(client, hr_manager_auth):
-    """Once ambiguous, candidates.stage simply stops being updated rather
-    than guessing which application it should mirror."""
+def test_candidate_detail_stage_is_none_once_ambiguous(client, hr_manager_auth):
+    """Once a candidate has more than one application, get_candidate's
+    top-level `stage`/`requisition` have no single answer to derive — None
+    rather than guessing which application they mean. The Applications
+    section (not these top-level fields) is the real multi-application
+    view."""
     req1 = _make_requisition(client, hr_manager_auth)
     req2 = _make_requisition(client, hr_manager_auth)
     cand = _make_candidate(client, hr_manager_auth, requisition_id=req1["id"])
     client.post(f"/api/recruitment/candidates/{cand['id']}/apply", headers=hr_manager_auth,
                 json={"requisition_id": req2["id"]})
-    before = client.get(f"/api/recruitment/candidates/{cand['id']}", headers=hr_manager_auth).json()["stage"]
+    detail = client.get(f"/api/recruitment/candidates/{cand['id']}", headers=hr_manager_auth).json()
+    assert detail["stage"] is None
+    assert detail["requisition"] is None
 
     client.patch(
         f"/api/recruitment/candidates/{cand['id']}/requisitions/{req1['id']}/stage",
         headers=hr_manager_auth, json={"stage": "Interview"}
     )
-    after = client.get(f"/api/recruitment/candidates/{cand['id']}", headers=hr_manager_auth).json()["stage"]
-    assert after == before, "candidates.stage must not be mutated once the candidate has more than one application"
+    after = client.get(f"/api/recruitment/candidates/{cand['id']}", headers=hr_manager_auth).json()
+    assert after["stage"] is None
 
 
 def test_search_returns_person_with_every_application(client, hr_manager_auth):
@@ -201,3 +210,52 @@ def test_requisition_candidate_count_counts_applications_not_people(client, hr_m
     row2 = next(r for r in listing if r["id"] == req2["id"])
     assert row1["candidate_count"] == 1
     assert row2["candidate_count"] == 1
+
+
+def test_candidate_list_shows_one_row_per_application(client, hr_manager_auth):
+    """list_candidates (the Candidate Bank table, and the Interview/Offer
+    "select candidate" pickers that reuse it) is per-APPLICATION since
+    Phase 4, not per-person — a candidate with two applications appears
+    twice, once per requisition, each with its own stage."""
+    req1 = _make_requisition(client, hr_manager_auth)
+    req2 = _make_requisition(client, hr_manager_auth)
+    unique_name = f"ZZ List Shape Candidate {os.urandom(4).hex()}"
+    cand = _make_candidate(client, hr_manager_auth, requisition_id=req1["id"], full_name=unique_name)
+    client.post(f"/api/recruitment/candidates/{cand['id']}/apply", headers=hr_manager_auth,
+                json={"requisition_id": req2["id"]})
+
+    rows = client.get("/api/recruitment/candidates", headers=hr_manager_auth,
+                       params={"search": unique_name}).json()
+    assert len(rows) == 2
+    assert all(r["id"] == cand["id"] for r in rows)
+    assert {r["requisition_id"] for r in rows} == {req1["id"], req2["id"]}
+
+
+def test_schedule_interview_resolves_requisition_from_sole_application(client, hr_manager_auth):
+    """The Interview modal has no requisition picker of its own — the
+    backend resolves it from the candidate's one application so the
+    interview (and the auto stage-move it triggers) ties to the real
+    requisition instead of silently landing on NULL/general-interest."""
+    req = _make_requisition(client, hr_manager_auth)
+    cand = _make_candidate(client, hr_manager_auth, requisition_id=req["id"])
+    res = client.post("/api/recruitment/interviews", headers=hr_manager_auth, json={
+        "candidate_id": cand["id"], "interview_type": "Phone",
+        "scheduled_date": "2027-01-15", "scheduled_time": "10:00",
+    })
+    assert res.status_code == 201, res.text
+    assert res.json()["requisition_id"] == req["id"]
+
+    detail = client.get(f"/api/recruitment/candidates/{cand['id']}", headers=hr_manager_auth).json()
+    assert detail["stage"] == "Interview"
+
+
+def test_create_offer_resolves_requisition_from_sole_application_when_unset(client, hr_manager_auth):
+    """Same resolution as scheduling an interview, for the Offer form's own
+    requisition picker when HR leaves it blank (defaults to None)."""
+    req = _make_requisition(client, hr_manager_auth)
+    cand = _make_candidate(client, hr_manager_auth, requisition_id=req["id"])
+    res = client.post("/api/recruitment/offers", headers=hr_manager_auth, json={
+        "candidate_id": cand["id"], "offer_type": "Offer", "salary_offered": 5000,
+    })
+    assert res.status_code == 201, res.text
+    assert res.json()["requisition_id"] == req["id"]

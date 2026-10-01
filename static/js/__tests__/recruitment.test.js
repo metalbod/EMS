@@ -152,3 +152,29 @@ describe('Apply to Another Requisition — excludes already-applied requisitions
     expect(rows.map(r => r.id)).toEqual([1, 2, 3]);
   });
 });
+
+// Phase 4: list_candidates became application-level, so the Interview/Offer
+// "select candidate" pickers now carry a requisition id per option
+// (data-req-id) instead of per-person. Mirrors onOfferCandChange's
+// auto-select of the matching Requisition dropdown option when HR picks a
+// candidate/application — the Interview form has no requisition picker at
+// all, so submitIntForm sends the same data-req-id straight through
+// instead (no separate auto-select step to test there).
+describe('Offer modal — auto-selecting the requisition from the picked application', () => {
+  function resolveOfferReqId(candidateReqId, availableReqIds) {
+    if (candidateReqId && availableReqIds.includes(candidateReqId)) return candidateReqId;
+    return null;
+  }
+
+  it("auto-selects the requisition tied to the candidate's application", () => {
+    expect(resolveOfferReqId('5', ['3', '5', '9'])).toBe('5');
+  });
+
+  it('leaves the requisition unset for a general-interest application (no requisition_id)', () => {
+    expect(resolveOfferReqId('', ['3', '5', '9'])).toBe(null);
+  });
+
+  it('does not select a requisition absent from the Approved-only dropdown (e.g. since closed)', () => {
+    expect(resolveOfferReqId('99', ['3', '5', '9'])).toBe(null);
+  });
+});
