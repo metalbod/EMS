@@ -441,17 +441,19 @@ function onCandIdentityInput() {
   candDupSearchTimer=setTimeout(runCandDupSearch, 300);
 }
 
-// IC number is the stronger identity signal when present (min 4 chars —
-// short partial ICs match too much); full name otherwise, gated at 3
-// chars to avoid a noisy search on the very first keystroke.
-function candDupSearchQuery(name, ic) {
+// IC number is the strongest identity signal when present (min 4 chars —
+// short partial ICs match too much), then email (a real "@" and enough
+// of a local part to be worth a query), then full name, gated at 3 chars
+// to avoid a noisy search on the very first keystroke.
+function candDupSearchQuery(name, ic, email) {
   if((ic||'').trim().length>=4) return ic.trim();
+  if((email||'').trim().length>=5 && email.includes('@')) return email.trim();
   if((name||'').trim().length>=3) return name.trim();
   return '';
 }
 
 async function runCandDupSearch() {
-  const q=candDupSearchQuery(document.getElementById('candFullName').value, document.getElementById('candIc').value);
+  const q=candDupSearchQuery(document.getElementById('candFullName').value, document.getElementById('candIc').value, document.getElementById('candEmail').value);
   const panel=document.getElementById('candDupPanel');
   if(!q){ panel.classList.add('hidden'); return; }
   const seq=++candDupSearchSeq;

@@ -263,10 +263,16 @@ wrapper everywhere.
   per option (one per application) so this is explicit, not guessed, when a
   specific application is picked.
   Phase 3 (frontend, `static/js/recruitment.js`): the Add Candidate modal's
-  Full Name/IC inputs debounce-search `.../candidates/search` as HR types
-  and surface matches in a dismissible `#candDupPanel` ("is this the same
-  person?") — picking one calls `.../apply` with whatever the form's
+  Full Name/IC/Email inputs debounce-search `.../candidates/search` as HR
+  types and surface matches in a dismissible `#candDupPanel` ("is this the
+  same person?") — picking one calls `.../apply` with whatever the form's
   already filled in, instead of creating a duplicate `candidates` row.
+  Email is mandatory (`CandidateIn.email`, backend-validated, not just the
+  input's `required` attribute) and wired into this same search
+  (`candDupSearchQuery`'s priority: IC > email > name) — added
+  2026-10-01, since it's the identity signal HR actually recognizes a
+  repeat applicant by, and the public careers application endpoint
+  (`routers/public_careers.py`) already required it for the same reason.
   Candidate Detail's Profile tab conditionally shows an Applications
   section with its own per-row stage control once `c.applications.length >
   1` (`shouldShowPerApplicationStages`) — until then the legacy single

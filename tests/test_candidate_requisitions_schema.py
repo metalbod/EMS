@@ -41,7 +41,7 @@ def two_requisitions_and_a_candidate(client, hr_manager_auth, test_institution):
         reqs.append(res.json())
 
     cand_res = client.post("/api/recruitment/candidates", headers=hr_manager_auth, json={
-        "full_name": "ZZ Schema Test Candidate", "ic_number": f"ZZ{os.urandom(4).hex()}",
+        "full_name": "ZZ Schema Test Candidate", "email": "zzpytest.cand1.33299@example.com", "ic_number": f"ZZ{os.urandom(4).hex()}",
         "requisition_id": reqs[0]["id"],
     })
     assert cand_res.status_code == 201, cand_res.text

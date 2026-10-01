@@ -29,6 +29,7 @@ def _make_requisition(client, hr_manager_auth):
 def _make_candidate(client, hr_manager_auth, requisition_id=None, **overrides):
     body = {
         "full_name": "ZZ Applications Test Candidate",
+        "email": f"zzpytest.applications.{os.urandom(4).hex()}@example.com",
         "ic_number": f"ZZ{os.urandom(4).hex()}",
         "requisition_id": requisition_id,
     }

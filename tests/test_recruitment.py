@@ -59,7 +59,7 @@ def test_list_requisitions_offer_count_reflects_candidate_stage(client, hr_manag
     req = client.post("/api/recruitment/requisitions", headers=hr_manager_auth,
                        json={"title": _unique_title(), "department": "Engineering"}).json()
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth, json={
-        "full_name": "ZZ Offer Stage Candidate", "requisition_id": req["id"],
+        "full_name": "ZZ Offer Stage Candidate", "email": "zzpytest.cand1.7188@example.com", "requisition_id": req["id"],
     }).json()
     move = client.patch(f"/api/recruitment/candidates/{cand['id']}/stage", headers=hr_manager_auth,
                          json={"stage": "Offer"})
@@ -76,14 +76,14 @@ def test_list_requisitions_stats_include_pending_checks_and_rejected_split(clien
                        json={"title": _unique_title(), "department": "Engineering"}).json()
 
     pending = client.post("/api/recruitment/candidates", headers=hr_manager_auth, json={
-        "full_name": "ZZ Pending Checks Req Candidate", "requisition_id": req["id"],
+        "full_name": "ZZ Pending Checks Req Candidate", "email": "zzpytest.cand2.71595@example.com", "requisition_id": req["id"],
     }).json()
     client.patch(f"/api/recruitment/candidates/{pending['id']}/stage", headers=hr_manager_auth,
                  json={"stage": "Pending Checks"})
 
     for stage in ("Rejected by Candidate", "Rejected by Company"):
         cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth, json={
-            "full_name": f"ZZ {stage} Req Candidate", "requisition_id": req["id"],
+            "full_name": f"ZZ {stage} Req Candidate", "email": "zzpytest.cand3.63122@example.com", "requisition_id": req["id"],
         }).json()
         client.patch(f"/api/recruitment/candidates/{cand['id']}/stage", headers=hr_manager_auth,
                      json={"stage": stage})
@@ -317,7 +317,8 @@ def test_list_candidates_requires_auth(client):
 def test_create_candidate_requires_write_role(client, make_test_user, test_institution):
     token, _ = make_test_user(role="employee")
     headers = {"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}
-    res = client.post("/api/recruitment/candidates", headers=headers, json={"full_name": "ZZ Candidate"})
+    res = client.post("/api/recruitment/candidates", headers=headers,
+                       json={"full_name": "ZZ Candidate", "email": "zzpytest.writerole@example.com"})
     assert res.status_code == 403
 
 
@@ -343,7 +344,7 @@ def test_create_candidate_success_and_appears_in_list(client, hr_manager_auth):
 # ---------------------------------------------------------------------------
 def test_list_candidates_without_limit_is_unbounded_and_has_no_total_count_header(client, hr_manager_auth):
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Unbounded Candidate"}).json()
+                        json={"full_name": "ZZ Unbounded Candidate", "email": "zzpytest.cand4.38999@example.com",}).json()
     res = client.get("/api/recruitment/candidates", headers=hr_manager_auth, params={"search": "ZZ Unbounded"})
     assert res.status_code == 200
     assert "X-Total-Count" not in res.headers
@@ -353,7 +354,7 @@ def test_list_candidates_without_limit_is_unbounded_and_has_no_total_count_heade
 def test_list_candidates_exposes_total_count_header_when_limit_given(client, hr_manager_auth):
     suffix = os.urandom(4).hex()
     client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                json={"full_name": f"ZZ Count {suffix}"})
+                json={"full_name": f"ZZ Count {suffix}", "email": "zzpytest.cand5.81426@example.com",})
     res = client.get("/api/recruitment/candidates", headers=hr_manager_auth,
                       params={"search": suffix, "limit": 1})
     assert res.status_code == 200
@@ -369,9 +370,9 @@ def test_list_candidates_offset_pages_through_results(client, hr_manager_auth):
     data elsewhere in the shared, session-scoped test institution."""
     suffix = os.urandom(4).hex()
     client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                json={"full_name": f"ZZ Paging {suffix} Alice"})
+                json={"full_name": f"ZZ Paging {suffix} Alice", "email": "zzpytest.cand6.31124@example.com",})
     client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                json={"full_name": f"ZZ Paging {suffix} Bob"})
+                json={"full_name": f"ZZ Paging {suffix} Bob", "email": "zzpytest.cand7.43710@example.com",})
 
     page1 = client.get("/api/recruitment/candidates", headers=hr_manager_auth,
                         params={"search": suffix, "sort_by": "full_name", "sort_dir": "asc",
@@ -391,7 +392,7 @@ def test_list_candidates_search_is_case_insensitive(client, hr_manager_auth):
     and current_company (skills/email match the same way)."""
     suffix = os.urandom(4).hex()
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth, json={
-        "full_name": f"ZZ Case {suffix.upper()} Candidate", "current_company": "ZZ Acme Widgets Corp",
+        "full_name": f"ZZ Case {suffix.upper()} Candidate", "email": "zzpytest.cand8.42644@example.com", "current_company": "ZZ Acme Widgets Corp",
     }).json()
 
     name_res = client.get("/api/recruitment/candidates", headers=hr_manager_auth, params={"search": suffix.lower()})
@@ -405,7 +406,7 @@ def test_list_candidates_search_is_case_insensitive(client, hr_manager_auth):
 
 def test_get_candidate_includes_interviews_and_offers(client, hr_manager_auth):
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Candidate Detail"}).json()
+                        json={"full_name": "ZZ Candidate Detail", "email": "zzpytest.cand9.31160@example.com",}).json()
     res = client.get(f"/api/recruitment/candidates/{cand['id']}", headers=hr_manager_auth)
     assert res.status_code == 200
     body = res.json()
@@ -420,16 +421,16 @@ def test_get_candidate_not_found_returns_404(client, hr_manager_auth):
 
 def test_update_candidate_success(client, hr_manager_auth):
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Before Update"}).json()
+                        json={"full_name": "ZZ Before Update", "email": "zzpytest.cand10.30617@example.com",}).json()
     res = client.put(f"/api/recruitment/candidates/{cand['id']}", headers=hr_manager_auth,
-                      json={"full_name": "ZZ After Update", "source": "Referral"})
+                      json={"full_name": "ZZ After Update", "email": "zzpytest.cand10.30617@example.com", "source": "Referral"})
     assert res.status_code == 200, res.text
     assert res.json()["full_name"] == "ZZ After Update"
 
 
 def test_move_stage_invalid_stage_returns_400(client, hr_manager_auth):
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Stage Candidate"}).json()
+                        json={"full_name": "ZZ Stage Candidate", "email": "zzpytest.cand11.572@example.com",}).json()
     res = client.patch(f"/api/recruitment/candidates/{cand['id']}/stage", headers=hr_manager_auth,
                         json={"stage": "Bogus"})
     assert res.status_code == 400
@@ -437,7 +438,7 @@ def test_move_stage_invalid_stage_returns_400(client, hr_manager_auth):
 
 def test_move_stage_to_pending_checks_success(client, hr_manager_auth):
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Pending Checks Candidate"}).json()
+                        json={"full_name": "ZZ Pending Checks Candidate", "email": "zzpytest.cand12.46392@example.com",}).json()
     res = client.patch(f"/api/recruitment/candidates/{cand['id']}/stage", headers=hr_manager_auth,
                         json={"stage": "Pending Checks"})
     assert res.status_code == 200, res.text
@@ -450,7 +451,7 @@ def test_move_stage_bare_rejected_no_longer_valid(client, hr_manager_auth):
     accepted going forward (existing rows were backfilled by migration
     a05baafa6355, not left as a still-valid third option)."""
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Bare Rejected Candidate"}).json()
+                        json={"full_name": "ZZ Bare Rejected Candidate", "email": "zzpytest.cand13.19741@example.com",}).json()
     res = client.patch(f"/api/recruitment/candidates/{cand['id']}/stage", headers=hr_manager_auth,
                         json={"stage": "Rejected"})
     assert res.status_code == 400
@@ -459,7 +460,7 @@ def test_move_stage_bare_rejected_no_longer_valid(client, hr_manager_auth):
 def test_move_stage_to_rejected_by_candidate_and_company(client, hr_manager_auth):
     for stage in ("Rejected by Candidate", "Rejected by Company"):
         cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                            json={"full_name": f"ZZ {stage} Candidate"}).json()
+                            json={"full_name": f"ZZ {stage} Candidate", "email": "zzpytest.cand14.82142@example.com",}).json()
         res = client.patch(f"/api/recruitment/candidates/{cand['id']}/stage", headers=hr_manager_auth,
                             json={"stage": stage})
         assert res.status_code == 200, res.text
@@ -468,7 +469,7 @@ def test_move_stage_to_rejected_by_candidate_and_company(client, hr_manager_auth
 
 def test_move_stage_success(client, hr_manager_auth):
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Stage Candidate 2"}).json()
+                        json={"full_name": "ZZ Stage Candidate 2", "email": "zzpytest.cand15.4939@example.com",}).json()
     res = client.patch(f"/api/recruitment/candidates/{cand['id']}/stage", headers=hr_manager_auth,
                         json={"stage": "Screening", "notes": "ZZ looks promising"})
     assert res.status_code == 200, res.text
@@ -477,7 +478,7 @@ def test_move_stage_success(client, hr_manager_auth):
 
 def test_candidate_audit_log_records_creation_and_stage_change(client, hr_manager_auth):
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Audit Candidate"}).json()
+                        json={"full_name": "ZZ Audit Candidate", "email": "zzpytest.cand16.56978@example.com",}).json()
     client.patch(f"/api/recruitment/candidates/{cand['id']}/stage", headers=hr_manager_auth,
                  json={"stage": "Screening"})
     res = client.get(f"/api/recruitment/candidates/{cand['id']}/audit-log", headers=hr_manager_auth)
@@ -489,7 +490,7 @@ def test_candidate_audit_log_records_creation_and_stage_change(client, hr_manage
 
 def test_candidate_audit_log_requires_manage_role(client, hr_manager_auth, make_test_user, test_institution):
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Restricted Audit Candidate"}).json()
+                        json={"full_name": "ZZ Restricted Audit Candidate", "email": "zzpytest.cand17.30549@example.com",}).json()
     token, _ = make_test_user(role="employee")
     headers = {"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}
     res = client.get(f"/api/recruitment/candidates/{cand['id']}/audit-log", headers=headers)
@@ -501,7 +502,7 @@ def test_candidate_audit_log_requires_manage_role(client, hr_manager_auth, make_
 # ---------------------------------------------------------------------------
 def test_create_candidate_seeds_initial_stage_history_row(client, hr_manager_auth):
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Stage History Seed Candidate"}).json()
+                        json={"full_name": "ZZ Stage History Seed Candidate", "email": "zzpytest.cand18.90786@example.com",}).json()
     res = client.get(f"/api/recruitment/candidates/{cand['id']}/stage-history", headers=hr_manager_auth)
     assert res.status_code == 200
     rows = res.json()
@@ -513,7 +514,7 @@ def test_create_candidate_seeds_initial_stage_history_row(client, hr_manager_aut
 
 def test_move_stage_closes_previous_row_and_opens_new_one(client, hr_manager_auth):
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Stage History Move Candidate"}).json()
+                        json={"full_name": "ZZ Stage History Move Candidate", "email": "zzpytest.cand19.66885@example.com",}).json()
     client.patch(f"/api/recruitment/candidates/{cand['id']}/stage", headers=hr_manager_auth,
                  json={"stage": "Screening"})
     rows = client.get(f"/api/recruitment/candidates/{cand['id']}/stage-history",
@@ -528,7 +529,7 @@ def test_move_stage_to_same_stage_does_not_duplicate_history_row(client, hr_mana
     adding notes via the Move Stage action) must not split one
     continuous stay into two history rows."""
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Stage History Noop Candidate"}).json()
+                        json={"full_name": "ZZ Stage History Noop Candidate", "email": "zzpytest.cand20.10838@example.com",}).json()
     client.patch(f"/api/recruitment/candidates/{cand['id']}/stage", headers=hr_manager_auth,
                  json={"stage": "New", "notes": "still reviewing"})
     rows = client.get(f"/api/recruitment/candidates/{cand['id']}/stage-history",
@@ -538,7 +539,7 @@ def test_move_stage_to_same_stage_does_not_duplicate_history_row(client, hr_mana
 
 def test_schedule_interview_tracks_stage_history(client, hr_manager_auth):
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Stage History Interview Candidate"}).json()
+                        json={"full_name": "ZZ Stage History Interview Candidate", "email": "zzpytest.cand21.66254@example.com",}).json()
     client.post("/api/recruitment/interviews", headers=hr_manager_auth, json={
         "candidate_id": cand["id"], "scheduled_date": "2030-01-01", "scheduled_time": "10:00",
     })
@@ -549,7 +550,7 @@ def test_schedule_interview_tracks_stage_history(client, hr_manager_auth):
 
 def test_offer_and_decline_track_stage_history(client, hr_manager_auth):
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Stage History Offer Candidate"}).json()
+                        json={"full_name": "ZZ Stage History Offer Candidate", "email": "zzpytest.cand22.66797@example.com",}).json()
     client.post("/api/recruitment/offers", headers=hr_manager_auth,
                 json={"candidate_id": cand["id"], "offer_type": "Offer", "salary_offered": 5000.0})
     rows = client.get(f"/api/recruitment/candidates/{cand['id']}/stage-history",
@@ -557,7 +558,7 @@ def test_offer_and_decline_track_stage_history(client, hr_manager_auth):
     assert [r["stage"] for r in rows] == ["New", "Offer"]
 
     decline_cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                                json={"full_name": "ZZ Stage History Decline Candidate"}).json()
+                                json={"full_name": "ZZ Stage History Decline Candidate", "email": "zzpytest.cand23.85865@example.com",}).json()
     client.post("/api/recruitment/offers", headers=hr_manager_auth,
                 json={"candidate_id": decline_cand["id"], "offer_type": "Decline"})
     decline_rows = client.get(f"/api/recruitment/candidates/{decline_cand['id']}/stage-history",
@@ -567,7 +568,7 @@ def test_offer_and_decline_track_stage_history(client, hr_manager_auth):
 
 def test_accept_offer_status_tracks_stage_history_without_duplicating(client, hr_manager_auth):
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Stage History Accept Candidate"}).json()
+                        json={"full_name": "ZZ Stage History Accept Candidate", "email": "zzpytest.cand24.70492@example.com",}).json()
     offer = client.post("/api/recruitment/offers", headers=hr_manager_auth,
                         json={"candidate_id": cand["id"], "salary_offered": 5000.0}).json()
     # create_offer already moved the candidate to 'Offer' — accepting it
@@ -581,7 +582,7 @@ def test_accept_offer_status_tracks_stage_history_without_duplicating(client, hr
 
 def test_stage_history_requires_manage_role(client, hr_manager_auth, make_test_user, test_institution):
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Restricted Stage History Candidate"}).json()
+                        json={"full_name": "ZZ Restricted Stage History Candidate", "email": "zzpytest.cand25.2766@example.com",}).json()
     token, _ = make_test_user(role="employee")
     headers = {"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}
     res = client.get(f"/api/recruitment/candidates/{cand['id']}/stage-history", headers=headers)
@@ -592,7 +593,7 @@ def test_stage_history_allows_manager_role(client, hr_manager_auth, make_test_us
     """Deliberately broader than the audit log — manager can see how long
     their own candidates have sat in each stage."""
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Manager Stage History Candidate"}).json()
+                        json={"full_name": "ZZ Manager Stage History Candidate", "email": "zzpytest.cand26.29185@example.com",}).json()
     token, _ = make_test_user(role="manager")
     headers = {"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}
     res = client.get(f"/api/recruitment/candidates/{cand['id']}/stage-history", headers=headers)
@@ -601,7 +602,7 @@ def test_stage_history_allows_manager_role(client, hr_manager_auth, make_test_us
 
 def test_dashboard_stats_includes_avg_time_in_stage(client, hr_manager_auth):
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Dashboard Stage Time Candidate"}).json()
+                        json={"full_name": "ZZ Dashboard Stage Time Candidate", "email": "zzpytest.cand27.45492@example.com",}).json()
     client.patch(f"/api/recruitment/candidates/{cand['id']}/stage", headers=hr_manager_auth,
                  json={"stage": "Screening"})
     res = client.get("/api/recruitment/dashboard-stats", headers=hr_manager_auth)
@@ -620,7 +621,7 @@ _TEST_PDF_DATA_URL = "data:application/pdf;base64,JVBERi0xLjQKJcOkw7zDtsO4Cg=="
 
 def test_add_candidate_documents_success(client, hr_manager_auth):
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Docs Candidate"}).json()
+                        json={"full_name": "ZZ Docs Candidate", "email": "zzpytest.cand28.79287@example.com",}).json()
     res = client.post(f"/api/recruitment/candidates/{cand['id']}/documents", headers=hr_manager_auth,
                        json=[
                            {"file_name": "resume.pdf", "mime_type": "application/pdf", "data_url": _TEST_PDF_DATA_URL},
@@ -640,7 +641,7 @@ def test_add_candidate_documents_success(client, hr_manager_auth):
 
 def test_add_candidate_documents_rejects_bad_mime_type(client, hr_manager_auth):
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Docs Bad Mime"}).json()
+                        json={"full_name": "ZZ Docs Bad Mime", "email": "zzpytest.cand29.35271@example.com",}).json()
     res = client.post(f"/api/recruitment/candidates/{cand['id']}/documents", headers=hr_manager_auth,
                        json=[{"file_name": "virus.exe", "mime_type": "application/x-msdownload",
                               "data_url": "data:application/x-msdownload;base64,AAAA"}])
@@ -655,7 +656,7 @@ def test_add_candidate_documents_candidate_not_found_returns_404(client, hr_mana
 
 def test_delete_candidate_document_success(client, hr_manager_auth):
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Docs Delete Candidate"}).json()
+                        json={"full_name": "ZZ Docs Delete Candidate", "email": "zzpytest.cand30.2675@example.com",}).json()
     doc = client.post(f"/api/recruitment/candidates/{cand['id']}/documents", headers=hr_manager_auth,
                        json=[{"file_name": "resume.pdf", "mime_type": "application/pdf", "data_url": _TEST_PDF_DATA_URL}]
                        ).json()[0]
@@ -668,7 +669,7 @@ def test_delete_candidate_document_success(client, hr_manager_auth):
 
 def test_add_candidate_documents_requires_write_role(client, hr_manager_auth, make_test_user, test_institution):
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Docs Restricted Candidate"}).json()
+                        json={"full_name": "ZZ Docs Restricted Candidate", "email": "zzpytest.cand31.41813@example.com",}).json()
     token, _ = make_test_user(role="employee")
     headers = {"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}
     res = client.post(f"/api/recruitment/candidates/{cand['id']}/documents", headers=headers,
@@ -688,7 +689,7 @@ def test_schedule_interview_candidate_not_found_returns_404(client, hr_manager_a
 
 def test_schedule_interview_success_moves_candidate_to_interview_stage(client, hr_manager_auth):
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Interview Candidate"}).json()
+                        json={"full_name": "ZZ Interview Candidate", "email": "zzpytest.cand32.31358@example.com",}).json()
     res = client.post("/api/recruitment/interviews", headers=hr_manager_auth, json={
         "candidate_id": cand["id"], "interview_type": "Video",
         "scheduled_date": "2030-01-01", "scheduled_time": "10:00", "interviewers": "ZZ Interviewer",
@@ -710,7 +711,7 @@ def test_update_interview_not_found_returns_404(client, hr_manager_auth):
 
 def test_update_interview_status_invalid_returns_400(client, hr_manager_auth):
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Status Candidate"}).json()
+                        json={"full_name": "ZZ Status Candidate", "email": "zzpytest.cand33.11998@example.com",}).json()
     interview = client.post("/api/recruitment/interviews", headers=hr_manager_auth, json={
         "candidate_id": cand["id"], "scheduled_date": "2030-01-01", "scheduled_time": "10:00",
     }).json()
@@ -721,7 +722,7 @@ def test_update_interview_status_invalid_returns_400(client, hr_manager_auth):
 
 def test_update_interview_status_success(client, hr_manager_auth):
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Status Candidate 2"}).json()
+                        json={"full_name": "ZZ Status Candidate 2", "email": "zzpytest.cand34.38975@example.com",}).json()
     interview = client.post("/api/recruitment/interviews", headers=hr_manager_auth, json={
         "candidate_id": cand["id"], "scheduled_date": "2030-01-01", "scheduled_time": "10:00",
     }).json()
@@ -733,7 +734,7 @@ def test_update_interview_status_success(client, hr_manager_auth):
 
 def test_list_interviews_filters_by_candidate(client, hr_manager_auth):
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ List Candidate"}).json()
+                        json={"full_name": "ZZ List Candidate", "email": "zzpytest.cand35.30041@example.com",}).json()
     interview = client.post("/api/recruitment/interviews", headers=hr_manager_auth, json={
         "candidate_id": cand["id"], "scheduled_date": "2030-02-01", "scheduled_time": "11:00",
     }).json()
@@ -751,7 +752,7 @@ def test_submit_score_interview_not_found_returns_404(client, hr_manager_auth):
 
 def test_submit_score_success_and_upserts_on_resubmit(client, hr_manager_auth):
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Score Candidate"}).json()
+                        json={"full_name": "ZZ Score Candidate", "email": "zzpytest.cand36.68678@example.com",}).json()
     interview = client.post("/api/recruitment/interviews", headers=hr_manager_auth, json={
         "candidate_id": cand["id"], "scheduled_date": "2030-03-01", "scheduled_time": "09:00",
     }).json()
@@ -787,7 +788,7 @@ def test_create_offer_auto_generates_letter_and_moves_stage(client, hr_manager_a
     req = client.post("/api/recruitment/requisitions", headers=hr_manager_auth,
                        json={"title": _unique_title(), "department": "Engineering"}).json()
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Offer Candidate", "requisition_id": req["id"]}).json()
+                        json={"full_name": "ZZ Offer Candidate", "email": "zzpytest.cand37.6260@example.com", "requisition_id": req["id"]}).json()
     res = client.post("/api/recruitment/offers", headers=hr_manager_auth, json={
         "candidate_id": cand["id"], "requisition_id": req["id"],
         "offer_type": "Offer", "salary_offered": 6000.0, "start_date": "2030-01-01",
@@ -809,7 +810,7 @@ def test_offer_letter_dates_render_in_same_style_as_today(client, hr_manager_aut
     req = client.post("/api/recruitment/requisitions", headers=hr_manager_auth,
                        json={"title": _unique_title(), "department": "Engineering"}).json()
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Offer Date Format Candidate", "requisition_id": req["id"]}).json()
+                        json={"full_name": "ZZ Offer Date Format Candidate", "email": "zzpytest.cand38.77574@example.com", "requisition_id": req["id"]}).json()
     offer = client.post("/api/recruitment/offers", headers=hr_manager_auth, json={
         "candidate_id": cand["id"], "requisition_id": req["id"], "offer_type": "Offer",
         "salary_offered": 6000.0, "start_date": "2030-01-15", "expiry_date": "2030-02-01",
@@ -825,7 +826,7 @@ def test_create_decline_offer_moves_candidate_to_rejected_by_company(client, hr_
     'Rejected by Company', not the ambiguous bare 'Rejected' or
     'Rejected by Candidate'."""
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Decline Candidate"}).json()
+                        json={"full_name": "ZZ Decline Candidate", "email": "zzpytest.cand39.33723@example.com",}).json()
     res = client.post("/api/recruitment/offers", headers=hr_manager_auth, json={
         "candidate_id": cand["id"], "offer_type": "Decline",
     })
@@ -843,7 +844,7 @@ def test_get_offer_not_found_returns_404(client, hr_manager_auth):
 
 def test_update_offer_status_invalid_returns_400(client, hr_manager_auth):
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Offer Status Candidate"}).json()
+                        json={"full_name": "ZZ Offer Status Candidate", "email": "zzpytest.cand40.31277@example.com",}).json()
     offer = client.post("/api/recruitment/offers", headers=hr_manager_auth,
                          json={"candidate_id": cand["id"]}).json()
     res = client.patch(f"/api/recruitment/offers/{offer['id']}/status", headers=hr_manager_auth,
@@ -859,7 +860,7 @@ def test_update_offer_status_not_found_returns_404(client, hr_manager_auth):
 
 def test_update_offer_status_success(client, hr_manager_auth):
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Offer Status Candidate 2"}).json()
+                        json={"full_name": "ZZ Offer Status Candidate 2", "email": "zzpytest.cand41.91846@example.com",}).json()
     offer = client.post("/api/recruitment/offers", headers=hr_manager_auth,
                          json={"candidate_id": cand["id"], "salary_offered": 5000.0}).json()
     res = client.patch(f"/api/recruitment/offers/{offer['id']}/status", headers=hr_manager_auth,
@@ -870,7 +871,7 @@ def test_update_offer_status_success(client, hr_manager_auth):
 
 def test_generate_letter_regenerates_content(client, hr_manager_auth):
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Regen Candidate"}).json()
+                        json={"full_name": "ZZ Regen Candidate", "email": "zzpytest.cand42.79804@example.com",}).json()
     offer = client.post("/api/recruitment/offers", headers=hr_manager_auth,
                          json={"candidate_id": cand["id"], "salary_offered": 4000.0}).json()
     res = client.post(f"/api/recruitment/offers/{offer['id']}/generate-letter", headers=hr_manager_auth)
@@ -885,7 +886,7 @@ def test_generate_letter_not_found_returns_404(client, hr_manager_auth):
 
 def test_delete_offer_removes_it(client, hr_manager_auth):
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Delete Offer Candidate"}).json()
+                        json={"full_name": "ZZ Delete Offer Candidate", "email": "zzpytest.cand43.58740@example.com",}).json()
     offer = client.post("/api/recruitment/offers", headers=hr_manager_auth,
                          json={"candidate_id": cand["id"]}).json()
     res = client.delete(f"/api/recruitment/offers/{offer['id']}", headers=hr_manager_auth)
@@ -902,7 +903,7 @@ def test_delete_accepted_offer_rejected(client, hr_manager_auth):
     """An Accepted offer is a finalized record — deletable statuses are
     everything before/instead of that (Draft/Sent/Rejected/Withdrawn)."""
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Accepted Offer Candidate"}).json()
+                        json={"full_name": "ZZ Accepted Offer Candidate", "email": "zzpytest.cand44.38404@example.com",}).json()
     offer = client.post("/api/recruitment/offers", headers=hr_manager_auth,
                          json={"candidate_id": cand["id"]}).json()
     client.patch(f"/api/recruitment/offers/{offer['id']}/status", headers=hr_manager_auth,
@@ -913,7 +914,7 @@ def test_delete_accepted_offer_rejected(client, hr_manager_auth):
 
 def test_delete_offer_requires_write_role(client, hr_manager_auth, make_test_user, test_institution):
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Offer Delete Role Candidate"}).json()
+                        json={"full_name": "ZZ Offer Delete Role Candidate", "email": "zzpytest.cand45.93547@example.com",}).json()
     offer = client.post("/api/recruitment/offers", headers=hr_manager_auth,
                          json={"candidate_id": cand["id"]}).json()
     token, _ = make_test_user(role="employee")
@@ -941,7 +942,7 @@ def test_create_offer_using_custom_template(client, hr_manager_auth):
         "body": "Hello ${candidate_name}, welcome to ${department}! Salary: ${salary_offered}",
     }).json()
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Custom Template Candidate"}).json()
+                        json={"full_name": "ZZ Custom Template Candidate", "email": "zzpytest.cand46.87485@example.com",}).json()
     req = client.post("/api/recruitment/requisitions", headers=hr_manager_auth,
                        json={"title": _unique_title(), "department": "Finance"}).json()
     offer = client.post("/api/recruitment/offers", headers=hr_manager_auth, json={
@@ -956,7 +957,7 @@ def test_create_offer_with_mismatched_template_type_404s(client, hr_manager_auth
         "offer_type": "Decline", "name": "ZZ Decline Only Template", "body": "Sorry ${candidate_name}",
     }).json()
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Mismatch Candidate"}).json()
+                        json={"full_name": "ZZ Mismatch Candidate", "email": "zzpytest.cand47.39483@example.com",}).json()
     res = client.post("/api/recruitment/offers", headers=hr_manager_auth,
                        json={"candidate_id": cand["id"], "offer_type": "Offer", "template_id": tmpl["id"]})
     assert res.status_code == 404
@@ -1100,7 +1101,7 @@ def test_convert_prefill_pulls_accepted_offer_details(client, hr_manager_auth):
                        json={"title": "ZZ Prefill Role", "department": "Engineering",
                              "employment_type": "Permanent"}).json()
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth, json={
-        "full_name": "ZZ Prefill Candidate", "ic_number": "900101015555",
+        "full_name": "ZZ Prefill Candidate", "email": "zzpytest.cand48.79860@example.com", "ic_number": "900101015555",
         "requisition_id": req["id"],
     }).json()
     offer = client.post("/api/recruitment/offers", headers=hr_manager_auth, json={

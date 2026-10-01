@@ -5129,7 +5129,7 @@
           <div id="candDupList" class="space-y-2"></div>
           <button type="button" onclick="dismissCandDupPanel()" class="text-xs text-slate-500 hover:underline">No, this is a different person — continue adding new</button>
         </div>
-        <div><label class="lbl">Email</label><input id="candEmail" type="email" class="inp"/></div>
+        <div><label class="lbl">Email <span class="text-red-500">*</span></label><input id="candEmail" type="email" class="inp" oninput="onCandIdentityInput()" required/></div>
         <div><label class="lbl">Phone</label><input id="candPhone" type="tel" class="inp" placeholder="012-3456789"/></div>
         <div><label class="lbl">IC Number</label><input id="candIc" type="text" class="inp" placeholder="900101-14-1234" oninput="onCandIdentityInput()"/></div>
         <div><label class="lbl">Nationality</label><input id="candNationality" type="text" class="inp" value="Malaysian"/></div>

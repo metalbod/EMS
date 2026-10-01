@@ -72,14 +72,27 @@ describe('Convert candidate to employee — Reports To gets populated', () => {
 // Applications section — see 20260930_0002_add_candidate_requisitions and
 // _transition_candidate_stage's docstring in routers/recruitment.py).
 describe('Candidate duplicate-detection search query', () => {
-  function candDupSearchQuery(name, ic) {
+  function candDupSearchQuery(name, ic, email) {
     if ((ic || '').trim().length >= 4) return ic.trim();
+    if ((email || '').trim().length >= 5 && email.includes('@')) return email.trim();
     if ((name || '').trim().length >= 3) return name.trim();
     return '';
   }
 
   it('prefers IC number over full name when both are present — the stronger identity signal', () => {
     expect(candDupSearchQuery('Ali bin Abu', '900101-14-1234')).toBe('900101-14-1234');
+  });
+
+  it('prefers IC number over email when both are present', () => {
+    expect(candDupSearchQuery('', '900101-14-1234', 'ali@example.com')).toBe('900101-14-1234');
+  });
+
+  it('falls back to email when no IC is present', () => {
+    expect(candDupSearchQuery('Ali bin Abu', '', 'ali@example.com')).toBe('ali@example.com');
+  });
+
+  it('does not search on an email with no "@" or under 5 characters', () => {
+    expect(candDupSearchQuery('', '', 'a@b')).toBe('');
   });
 
   it('falls back to full name once it reaches 3 characters', () => {
@@ -98,8 +111,8 @@ describe('Candidate duplicate-detection search query', () => {
     expect(candDupSearchQuery('  Ali  ', '')).toBe('Ali');
   });
 
-  it('an empty name and empty IC search for nothing', () => {
-    expect(candDupSearchQuery('', '')).toBe('');
+  it('an empty name, IC, and email search for nothing', () => {
+    expect(candDupSearchQuery('', '', '')).toBe('');
   });
 });
 

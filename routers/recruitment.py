@@ -53,7 +53,7 @@ class RequisitionApprovalIn(BaseModel):
 class CandidateIn(BaseModel):
     requisition_id: Optional[int] = None
     full_name: str
-    email: Optional[str] = None
+    email: str
     phone: Optional[str] = None
     ic_number: Optional[str] = None
     nationality: str = "Malaysian"
@@ -77,6 +77,14 @@ class CandidateIn(BaseModel):
     linkedin_url: Optional[str] = None
     referral_by: Optional[str] = None
     notes: Optional[str] = None
+
+    @field_validator("email")
+    @classmethod
+    def _validate_email(cls, v):
+        v = (v or "").strip()
+        if not v or "@" not in v or v.startswith("@") or v.endswith("@"):
+            raise ValueError("email must be a valid email address")
+        return v
 
 
 class CandidateDocumentIn(BaseModel):

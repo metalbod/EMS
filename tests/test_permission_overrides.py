@@ -764,7 +764,7 @@ def test_recruitment_view_denied_by_default_for_manager(client, hr_manager_auth,
     req = client.post("/api/recruitment/requisitions", headers=hr_manager_auth,
                        json={"title": _unique_title(), "department": "Engineering"}).json()
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Perm Override Candidate"}).json()
+                        json={"full_name": "ZZ Perm Override Candidate", "email": "zzpytest.cand1.12886@example.com",}).json()
 
     mgr_token, _ = make_test_user(role="manager")
     mgr_headers = {"Authorization": f"Bearer {mgr_token}", "X-Institution-Id": str(test_institution["id"])}
@@ -851,7 +851,7 @@ def test_candidate_stage_timing_override_eligible_for_other_roles(client, hr_man
     test_permission_overrides' module docstring) and can never be
     overridden regardless — not what this key change affects."""
     cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
-                        json={"full_name": "ZZ Stage Timing Override Candidate"}).json()
+                        json={"full_name": "ZZ Stage Timing Override Candidate", "email": "zzpytest.cand2.83916@example.com",}).json()
 
     emp_token, _ = make_test_user(role="employee")
     emp_headers = {"Authorization": f"Bearer {emp_token}", "X-Institution-Id": str(test_institution["id"])}
