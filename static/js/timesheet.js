@@ -209,6 +209,7 @@ function setProjectFilter(status) {
 function switchProjectTab(name) {
   ['details','tasks'].forEach(t=>{
     document.getElementById(`projectTab-${t}`)?.classList.toggle('hidden', t!==name);
+    document.getElementById(`projectModalFooter-${t}`)?.classList.toggle('hidden', t!==name);
     const btn=document.querySelector(`.project-tab-btn[data-ptab="${t}"]`);
     if(btn){ btn.classList.toggle('project-tab-active', t===name); btn.classList.toggle('text-slate-500', t!==name); }
   });

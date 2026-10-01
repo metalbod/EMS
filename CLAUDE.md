@@ -60,6 +60,27 @@ wrapper everywhere.
 
 ## Recently added (not yet in README's prose — check git log for detail)
 
+- **Sticky modal footers (Save/Cancel always visible, no scroll needed)**
+  — only `#projectModal` (Timesheet → Projects' Add/Edit, both the Details
+  and Tasks tabs) has this so far, fixed 2026-10-01 after it was reported
+  live. The pattern: the modal's outer panel is `flex flex-col` with a
+  fixed `style="max-height:85vh"`; header and tab bar are `shrink-0`;
+  the scrollable body is `.p-6.overflow-y-auto.flex-1`; and the action
+  buttons live in their own `shrink-0` bar *outside* that scrollable
+  div, not inside it — `#populateHolidaysModal` already did this
+  correctly and was the template copied here. For a tabbed modal, use
+  one footer div per tab (toggled alongside the tab panes themselves,
+  e.g. `switchProjectTab()`'s `projectModalFooter-${t}` toggle) rather
+  than one shared footer, since different tabs can need different
+  buttons. A survey done the same day found **40+ other modals with
+  the same scroll-to-save problem** (buttons sitting inside scrolling
+  content with no sticky footer) — notably the biggest forms in the
+  app: Employee (`empModal`, 4 tabs), Candidate (`candModal`, 4 tabs),
+  Institution (`instModal`), Employee View (`viewModal`), Leave Type,
+  Benefit Plan, Location, several Compensation detail modals, Leave
+  Apply. Deliberately left unfixed for now (scoped to Projects/Tasks
+  only, per instruction) — if asked to fix another one, apply the same
+  pattern rather than re-deriving it.
 - **Fixed: `has_permission()` silently never enforced overrides for
   per-institution custom roles** (`core/permission_matrix.py`,
   `routers/roles.py`). Found live in institution 4: HR granted the custom
