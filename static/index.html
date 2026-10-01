@@ -792,7 +792,16 @@
             </div>
           </div>
 
-          <!-- Recruitment tab (HR roles only — lazy-loaded on first click) -->
+          <!-- Recruitment tab — HR/manager roles see the analytics section
+               below (recruitDashSection); every other role (employee, and
+               anyone else without recruitment access) sees
+               recruitOpenPositionsSection instead: the same Approved +
+               public-applications-enabled postings from routers/
+               public_careers.py's own listing endpoint, each with an Apply
+               button straight into the public apply form (same page/
+               endpoint external applicants use — see static/js/
+               public_careers.js — opened in a new tab so logged-in
+               prefill/Internal tagging kicks in automatically). -->
           <div id="dash-recruitment" class="dash-tab-panel hidden" role="tabpanel" aria-labelledby="dash-tab-recruitment-btn">
             <div id="recruitDashSection">
               <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
@@ -827,6 +836,12 @@
                   <div id="rReqStatus" class="space-y-2"></div>
                 </div>
               </div>
+            </div>
+            <div id="recruitOpenPositionsSection" class="hidden">
+              <h3 class="section-heading mb-1">Open Positions</h3>
+              <p class="text-xs text-slate-400 mb-4">Internal openings currently accepting applications — apply directly, no need to re-enter your details.</p>
+              <div id="recruitOpenPositionsList" class="space-y-2"></div>
+              <p id="recruitOpenPositionsEmpty" class="hidden text-slate-400 text-sm">No open positions right now. Check back later.</p>
             </div>
           </div>
 

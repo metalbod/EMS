@@ -103,8 +103,14 @@ function renderDashboard() {
   const canViewBenefitsDash = BENEFITS_DASHBOARD_ROLES.includes(currentUser?.role);
   const hasEmployeeRecord = !!currentUser?.employee_id;
   const canViewLeaveDash = HR_STAFF_ROLES.includes(currentUser?.role);
+  // Recruitment tab: HR/manager roles get the analytics view; every other
+  // role still gets the tab, but only to see+apply to public-enabled open
+  // positions (loadRecruitmentDash branches on canRecruit) — so this stays
+  // visible for "employee" unlike Workforce/Timesheet above, hidden only
+  // for a superadmin with no institution selected (nothing to list yet).
+  const showRecruitTab = !(currentUser?.role === 'superadmin' && !currentInstitution);
   document.getElementById('dash-tab-workforce-btn').classList.toggle('hidden', !showMgmtHome);
-  document.getElementById('dash-tab-recruitment-btn').classList.toggle('hidden', !canRecruit);
+  document.getElementById('dash-tab-recruitment-btn').classList.toggle('hidden', !showRecruitTab);
   document.getElementById('dash-tab-timesheet-btn').classList.toggle('hidden', !canViewUtil);
   document.getElementById('dash-tab-compensation-btn').classList.toggle('hidden', !(canViewBenefitsDash || hasEmployeeRecord));
   document.getElementById('dash-tab-leave-btn').classList.toggle('hidden', !(canViewLeaveDash || hasEmployeeRecord));
@@ -255,6 +261,10 @@ function loadLocationsOverviewDash() {
 }
 
 function loadRecruitmentDash() {
+  const canRecruit = HR_AND_MANAGER_ROLES.includes(currentUser?.role);
+  document.getElementById('recruitDashSection').classList.toggle('hidden', !canRecruit);
+  document.getElementById('recruitOpenPositionsSection').classList.toggle('hidden', canRecruit);
+  if (!canRecruit) { loadOpenPositionsForEmployee(); return; }
   api('/api/recruitment/dashboard-stats').then(async res => {
     if (!res || !res.ok) return;
     const s = await res.json();
@@ -296,6 +306,32 @@ function loadRecruitmentDash() {
           <div class="text-xs text-slate-500 w-5 text-right">${cnt}</div>
         </div>`).join('') || '<p class="text-slate-400 text-sm">No requisitions yet.</p>';
   });
+}
+
+// Recruitment tab for roles without recruitment access (employee, etc) —
+// reuses routers/public_careers.py's own listing endpoint (no auth
+// required, so calling it from inside the authenticated app works
+// unchanged) instead of a separate internal-only endpoint, so "what's
+// open" is always exactly what the public careers page itself shows.
+function loadOpenPositionsForEmployee() {
+  const inst = currentUser?.role === 'superadmin' ? currentInstitution : currentUser?.institution;
+  const list = document.getElementById('recruitOpenPositionsList');
+  const empty = document.getElementById('recruitOpenPositionsEmpty');
+  empty.classList.add('hidden');
+  if (!inst?.code) { list.innerHTML = ''; empty.classList.remove('hidden'); return; }
+  fetch(`/api/public/careers/${encodeURIComponent(inst.code)}`).then(async res => {
+    if (!res.ok) { list.innerHTML = ''; empty.classList.remove('hidden'); return; }
+    const data = await res.json();
+    if (!data.positions.length) { list.innerHTML = ''; empty.classList.remove('hidden'); return; }
+    list.innerHTML = data.positions.map(p => `
+      <div class="flex items-center justify-between bg-white rounded-xl border border-slate-200 p-4">
+        <div class="min-w-0">
+          <p class="font-medium text-slate-800 truncate">${esc(p.title)}</p>
+          <p class="text-xs text-slate-500">${esc(p.department)} · ${esc(p.employment_type)}</p>
+        </div>
+        <a href="/careers/apply/${esc(p.public_token)}" target="_blank" rel="noopener" class="btn-ghost text-sm whitespace-nowrap">Apply</a>
+      </div>`).join('');
+  }).catch(() => { list.innerHTML = ''; empty.classList.remove('hidden'); });
 }
 
 // Shared by both the project-level bar and each of its task-level bars —

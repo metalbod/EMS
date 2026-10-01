@@ -103,9 +103,20 @@ wrapper everywhere.
   in-memory per-IP rate limit (same deliberate single-process tradeoff as
   `routers/auth.py`'s login limiter — move to Redis if this ever runs as
   multiple workers/machines) and optional Cloudflare Turnstile (`TURNSTILE_
-  SITE_KEY`/`TURNSTILE_SECRET_KEY` in `.env` — verification is skipped
-  entirely, not failed, when unset, so local dev/tests need no Cloudflare
-  account).
+  SITE_KEY`/`TURNSTILE_SECRET_KEY` — set as **Fly secrets**
+  (`fly secrets set`), not `.env`, so local dev/tests keep skipping
+  verification unset; live and verified working in prod as of 2026-10-01).
+  Also surfaced inside the app itself: Home's **Recruitment** tab
+  (`static/js/dashboard.js`'s `loadRecruitmentDash`/
+  `loadOpenPositionsForEmployee`) is now shown to every role, not just
+  HR/manager — HR still sees the existing analytics section
+  (`recruitDashSection`), but any other role (employee, etc) sees an "Open
+  Positions" list instead, fetched straight from the same
+  `GET /api/public/careers/{institution_code}` the public page itself
+  uses, each with an Apply link into `/careers/apply/{token}` (opened in a
+  new tab) — the logged-in-prefill/`source="Internal"` tagging in
+  `routers/public_careers.py` kicks in automatically since it's the exact
+  same endpoint.
 
 - **Approval workflow** now also covers **Timesheet** and **Overtime**,
   supports a **Project Manager** approver type (resolved via the

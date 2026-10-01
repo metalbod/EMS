@@ -331,3 +331,49 @@ describe('Timesheet tab dashboard (monthly bar heights, missing-hours bar width,
     expect(missingBarPct(0, 0)).toBe(0);
   });
 });
+
+// Recruitment tab for employees — static/js/dashboard.js's
+// loadOpenPositionsForEmployee (the branch loadRecruitmentDash takes for
+// any role without recruitment access). Reuses routers/public_careers.py's
+// own public listing endpoint rather than a separate internal-only one.
+describe('Recruitment tab — Open Positions for non-recruiting roles', () => {
+  const HR_AND_MANAGER_ROLES = ['superadmin', 'hr_manager', 'hr_admin', 'manager'];
+
+  function showsAnalytics(role) {
+    return HR_AND_MANAGER_ROLES.includes(role);
+  }
+
+  it('HR and manager roles see the analytics section, not Open Positions', () => {
+    ['superadmin', 'hr_manager', 'hr_admin', 'manager'].forEach(role => {
+      expect(showsAnalytics(role)).toBe(true);
+    });
+  });
+
+  it('employee (and any other role without recruitment access) sees Open Positions instead', () => {
+    ['employee', 'payroll_manager', 'compensation_manager'].forEach(role => {
+      expect(showsAnalytics(role)).toBe(false);
+    });
+  });
+
+  function renderPositions(positions) {
+    if (!positions.length) return '';
+    return positions.map(p => `
+      <div class="flex items-center justify-between bg-white rounded-xl border border-slate-200 p-4">
+        <div class="min-w-0">
+          <p class="font-medium text-slate-800 truncate">${p.title}</p>
+          <p class="text-xs text-slate-500">${p.department} · ${p.employment_type}</p>
+        </div>
+        <a href="/careers/apply/${p.public_token}" target="_blank" rel="noopener" class="btn-ghost text-sm whitespace-nowrap">Apply</a>
+      </div>`).join('');
+  }
+
+  it('each open position links straight to its own public apply form', () => {
+    const html = renderPositions([{ title: 'QA Engineer', department: 'PS', employment_type: 'Internship', public_token: 'abc-123' }]);
+    expect(html).toContain('href="/careers/apply/abc-123"');
+    expect(html).toContain('target="_blank"');
+  });
+
+  it('renders nothing (caller shows the empty state) when there are no open positions', () => {
+    expect(renderPositions([])).toBe('');
+  });
+});
