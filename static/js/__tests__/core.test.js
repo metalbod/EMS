@@ -966,3 +966,38 @@ describe('About panel changelog rendering', () => {
     expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
   });
 });
+
+// Recruitment nav-group visibility — mirrors applyRoleUI's toggle for
+// #nav-recruit-group (core.js). can_view_recruitment comes from
+// GET /api/auth/me (core/deps.py's build_current_user_out, driven by
+// core/permission_matrix.py's has_permission for the "View requisitions /
+// candidates / interviews / offers" action) and reflects this
+// institution's own role_permission_overrides, not just a static role —
+// so a manager/payroll_manager/compensation_manager granted access via the
+// Permission Matrix still sees the nav.
+describe('Recruitment nav group visibility', () => {
+  function shouldHideRecruitNav({ role, hideEmp, canViewRecruitment }) {
+    return hideEmp || role === 'employee' || !canViewRecruitment;
+  }
+
+  it('hidden for employee regardless of can_view_recruitment (defense in depth)', () => {
+    expect(shouldHideRecruitNav({ role: 'employee', hideEmp: false, canViewRecruitment: true })).toBe(true);
+  });
+
+  it('hidden for a superadmin with no institution context selected', () => {
+    expect(shouldHideRecruitNav({ role: 'superadmin', hideEmp: true, canViewRecruitment: true })).toBe(true);
+  });
+
+  it('hidden for manager by default (denied, matching the new matrix row)', () => {
+    expect(shouldHideRecruitNav({ role: 'manager', hideEmp: false, canViewRecruitment: false })).toBe(true);
+  });
+
+  it('shown for manager once their institution overrides the action to Allow', () => {
+    expect(shouldHideRecruitNav({ role: 'manager', hideEmp: false, canViewRecruitment: true })).toBe(false);
+  });
+
+  it('shown for hr_manager/hr_admin (locked roles, always allowed)', () => {
+    expect(shouldHideRecruitNav({ role: 'hr_manager', hideEmp: false, canViewRecruitment: true })).toBe(false);
+    expect(shouldHideRecruitNav({ role: 'hr_admin', hideEmp: false, canViewRecruitment: true })).toBe(false);
+  });
+});

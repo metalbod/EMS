@@ -1,9 +1,10 @@
 """Integration tests for the Settings > Roles > Permission Matrix override
 system (core/permission_matrix.py's has_permission, routers/roles.py's
-PUT/DELETE .../permission-matrix/override) — the pilot retrofit of
-routers/employees.py's 6 flat-gated actions. See permission_matrix.py's
-module docstring for why this started as a small pilot instead of every
-router at once.
+PUT/DELETE .../permission-matrix/override) — started as a pilot retrofit of
+routers/employees.py's 6 flat-gated actions, since joined by Recruitment's
+"View requisitions / candidates / interviews / offers" action (see the
+dedicated tests below). See permission_matrix.py's module docstring for why
+this is an incremental rollout rather than every router at once.
 """
 import os
 
@@ -744,3 +745,97 @@ def test_overtime_approval_action_stays_non_enforced(client, hr_manager_auth):
         "action_key": "overtime.approve_reject_overtime", "role": "manager", "access_value": "allow",
     })
     assert res.status_code == 400, res.text
+
+
+# ---------------------------------------------------------------------------
+# Recruitment — "View requisitions / candidates / interviews / offers"
+# ---------------------------------------------------------------------------
+def _unique_title():
+    import os
+    return f"ZZ Perm Override Test Role {os.urandom(4).hex()}"
+
+
+def test_recruitment_view_denied_by_default_for_manager(client, hr_manager_auth, make_test_user, test_institution):
+    """list_requisitions/get_requisition/list_candidates/get_candidate/
+    list_interviews/list_offers/get_offer previously had either no gate at
+    all (the first five) or were tied to the write action's key (offers) —
+    all seven now default-deny manager (and payroll_manager/
+    compensation_manager/employee) via their own view-specific key."""
+    req = client.post("/api/recruitment/requisitions", headers=hr_manager_auth,
+                       json={"title": _unique_title(), "department": "Engineering"}).json()
+    cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
+                        json={"full_name": "ZZ Perm Override Candidate"}).json()
+
+    mgr_token, _ = make_test_user(role="manager")
+    mgr_headers = {"Authorization": f"Bearer {mgr_token}", "X-Institution-Id": str(test_institution["id"])}
+
+    assert client.get("/api/recruitment/requisitions", headers=mgr_headers).status_code == 403
+    assert client.get(f"/api/recruitment/requisitions/{req['id']}", headers=mgr_headers).status_code == 403
+    assert client.get("/api/recruitment/candidates", headers=mgr_headers).status_code == 403
+    assert client.get(f"/api/recruitment/candidates/{cand['id']}", headers=mgr_headers).status_code == 403
+    assert client.get("/api/recruitment/interviews", headers=mgr_headers).status_code == 403
+    assert client.get("/api/recruitment/offers", headers=mgr_headers).status_code == 403
+
+
+def test_recruitment_view_override_actually_changes_behavior(client, hr_manager_auth, make_test_user, test_institution):
+    """The core claim of this feature, same as the Employees-module test
+    above: overriding manager's access here must really let them view
+    requisitions, not just change what the matrix displays."""
+    mgr_token, _ = make_test_user(role="manager")
+    mgr_headers = {"Authorization": f"Bearer {mgr_token}", "X-Institution-Id": str(test_institution["id"])}
+
+    before = client.get("/api/recruitment/requisitions", headers=mgr_headers)
+    assert before.status_code == 403, before.text
+
+    override = client.put("/api/roles/permission-matrix/override", headers=hr_manager_auth, json={
+        "action_key": "recruitment.view_requisitions_candidates_interviews_offers",
+        "role": "manager", "access_value": "allow",
+    })
+    assert override.status_code == 200, override.text
+    try:
+        after = client.get("/api/recruitment/requisitions", headers=mgr_headers)
+        assert after.status_code == 200, after.text
+    finally:
+        client.delete("/api/roles/permission-matrix/override", headers=hr_manager_auth,
+                       params={"action_key": "recruitment.view_requisitions_candidates_interviews_offers", "role": "manager"})
+
+    after_reset = client.get("/api/recruitment/requisitions", headers=mgr_headers)
+    assert after_reset.status_code == 403, after_reset.text
+
+
+def test_recruitment_view_hr_manager_and_hr_admin_unaffected(client, hr_manager_auth, make_test_user, test_institution):
+    """hr_manager/hr_admin are LOCKED_ROLES — always allowed here, same as
+    every other recruitment write action, regardless of any override."""
+    assert client.get("/api/recruitment/requisitions", headers=hr_manager_auth).status_code == 200
+
+    admin_token, _ = make_test_user(role="hr_admin")
+    admin_headers = {"Authorization": f"Bearer {admin_token}", "X-Institution-Id": str(test_institution["id"])}
+    assert client.get("/api/recruitment/requisitions", headers=admin_headers).status_code == 200
+
+
+def test_current_user_can_view_recruitment_field_reflects_override(client, hr_manager_auth, make_test_user, test_institution):
+    """GET /api/auth/me's can_view_recruitment (core/deps.py's
+    build_current_user_out) is what static/js/core.js's applyRoleUI uses to
+    decide whether to show the Recruitment nav group — must track the same
+    override, not just the static role."""
+    mgr_token, _ = make_test_user(role="manager")
+    mgr_headers = {"Authorization": f"Bearer {mgr_token}", "X-Institution-Id": str(test_institution["id"])}
+
+    before = client.get("/api/auth/me", headers=mgr_headers)
+    assert before.status_code == 200, before.text
+    assert before.json()["can_view_recruitment"] is False
+
+    override = client.put("/api/roles/permission-matrix/override", headers=hr_manager_auth, json={
+        "action_key": "recruitment.view_requisitions_candidates_interviews_offers",
+        "role": "manager", "access_value": "allow",
+    })
+    assert override.status_code == 200, override.text
+    try:
+        after = client.get("/api/auth/me", headers=mgr_headers)
+        assert after.json()["can_view_recruitment"] is True
+    finally:
+        client.delete("/api/roles/permission-matrix/override", headers=hr_manager_auth,
+                       params={"action_key": "recruitment.view_requisitions_candidates_interviews_offers", "role": "manager"})
+
+    hr_me = client.get("/api/auth/me", headers=hr_manager_auth)
+    assert hr_me.json()["can_view_recruitment"] is True

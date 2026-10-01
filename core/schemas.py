@@ -39,6 +39,14 @@ class CurrentUserOut(BaseModel):
     employee_id: Optional[str] = None
     institution: Optional[InstitutionBrief] = None
     must_change_password: bool = False
+    # Drives the frontend's Recruitment nav-group/KPI-tile visibility
+    # (static/js/core.js's applyRoleUI) — computed server-side via
+    # has_permission() for the "recruitment.view_requisitions_candidates_
+    # interviews_offers" action, so it reflects this institution's own
+    # role_permission_overrides, not just a static role list. True for
+    # superadmin and any role with no institution context, since the
+    # permission check itself doesn't apply there.
+    can_view_recruitment: bool = True
 
 
 class TokenResponse(BaseModel):

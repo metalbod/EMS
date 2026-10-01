@@ -536,6 +536,7 @@ def list_requisitions(conn,
     department: Optional[str] = None,
     user: dict = Depends(get_current_user),
 ):
+    require_permission(conn, user, "recruitment.view_requisitions_candidates_interviews_offers")
     inst_id = need_inst(user)
     q = """
         SELECT r.*,
@@ -579,6 +580,7 @@ def create_requisition(conn, body: RequisitionIn, user: dict = Depends(get_curre
 @router.get("/api/recruitment/requisitions/{req_id}")
 @db_session
 def get_requisition(conn, req_id: int, user: dict = Depends(get_current_user)) -> Optional[Dict[str, Any]]:
+    require_permission(conn, user, "recruitment.view_requisitions_candidates_interviews_offers")
     inst_id = need_inst(user)
     r = _get_req(conn, inst_id, req_id)
     # Reads candidate_requisitions (per-application), not candidates — a
@@ -805,6 +807,7 @@ def list_candidates(conn, response: Response,
     # both times, each row its own stage/requisition — clicking either
     # opens the same Candidate Detail, whose Applications section (Phase 3)
     # shows both.
+    require_permission(conn, user, "recruitment.view_requisitions_candidates_interviews_offers")
     inst_id = need_inst(user)
     q = """SELECT c.*, r.title AS requisition_title, cr.requisition_id AS requisition_id,
                cr.stage AS stage, cr.source AS source, cr.created_at AS created_at,
@@ -965,6 +968,7 @@ def search_candidates(conn, q: str, user: dict = Depends(get_current_user)) -> L
 @router.get("/api/recruitment/candidates/{cand_id}")
 @db_session
 def get_candidate(conn, cand_id: int, user: dict = Depends(get_current_user)) -> Optional[Dict[str, Any]]:
+    require_permission(conn, user, "recruitment.view_requisitions_candidates_interviews_offers")
     inst_id = need_inst(user)
     c = _candidate_with_derived_fields(conn, inst_id, cand_id)
     interviews = conn.execute("""
@@ -1181,6 +1185,7 @@ def list_interviews(conn,
     status: Optional[str] = None,
     user: dict = Depends(get_current_user),
 ):
+    require_permission(conn, user, "recruitment.view_requisitions_candidates_interviews_offers")
     inst_id = need_inst(user)
     q = """SELECT i.*, c.full_name AS candidate_name, r.title AS requisition_title,
                   COUNT(s.id) AS score_count, AVG(s.overall_score) AS avg_score
@@ -1338,7 +1343,7 @@ def list_offers(conn,
     offer_type: Optional[str] = None,
     user: dict = Depends(get_current_user),
 ):
-    require_permission(conn, user, "recruitment.create_edit_requisition_candidate_interview_offer")
+    require_permission(conn, user, "recruitment.view_requisitions_candidates_interviews_offers")
     inst_id = need_inst(user)
     # candidate_id/employee_id are mutually exclusive per row (see
     # offers.employee_id's migration) — LEFT JOIN both and coalesce a
@@ -1436,7 +1441,7 @@ def create_offer(conn, body: OfferIn, user: dict = Depends(get_current_user)) ->
 @router.get("/api/recruitment/offers/{offer_id}")
 @db_session
 def get_offer(conn, offer_id: int, user: dict = Depends(get_current_user)) -> Optional[Dict[str, Any]]:
-    require_permission(conn, user, "recruitment.create_edit_requisition_candidate_interview_offer")
+    require_permission(conn, user, "recruitment.view_requisitions_candidates_interviews_offers")
     inst_id = need_inst(user)
     row = conn.execute("""
         SELECT o.*, COALESCE(c.full_name, e.full_name) AS candidate_name

@@ -221,7 +221,12 @@ MATRIX: List[Dict[str, Any]] = [
     {
         "module": "Recruitment",
         "actions": [
-            _action("View requisitions / candidates / interviews / offers", "GET endpoints", _no_restriction()),
+            _action("View requisitions / candidates / interviews / offers", "GET endpoints", _flat(*_RECRUIT_WRITE),
+                     note="Enforced (see ENFORCED_ACTION_KEYS) — list_requisitions/get_requisition/list_candidates/"
+                          "get_candidate/list_interviews/list_offers/get_offer in routers/recruitment.py all call "
+                          "require_permission() with this key now, having previously had no gate at all (the first "
+                          "four) or been tied to the write action's key instead (offers) — this is the one key for "
+                          "all of them, so an override here covers every GET across the module uniformly."),
             _action("Create / edit requisition, candidate, interview, offer", "POST/PUT endpoints", _flat(*_RECRUIT_WRITE)),
             _action("Approve requisition", "POST /api/recruitment/requisitions/{id}/approve", _flat("hr_manager"),
                      note=CONFIGURABLE + " — approval-workflow engine; HR fallback here is hr_manager only (narrower than most other modules, no hr_admin)."),
@@ -523,11 +528,13 @@ ENFORCED_ACTION_KEYS = frozenset({
     "recruitment.create_edit_requisition_candidate_interview_offer",
     "recruitment.view_candidate_audit_log",
     "recruitment.view_requisition_audit_log",
-    # NOT recruitment.view_requisitions_candidates_interviews_offers —
-    # NO_RESTRICTION at the matrix level (though several of the underlying
-    # GET endpoints, e.g. list_offers/get_offer, are actually gated the
-    # same as the write action today — a pre-existing doc/reality mismatch,
-    # not something introduced or fixed by this retrofit).
+    "recruitment.view_requisitions_candidates_interviews_offers",
+    # list_requisitions/get_requisition/list_candidates/get_candidate/
+    # list_interviews previously had no gate at all (any authenticated user
+    # in the institution); list_offers/get_offer were tied to the WRITE
+    # action's key instead of their own (a pre-existing doc/reality
+    # mismatch) — all seven now call require_permission() with this one
+    # key, so a single override covers every GET across the module.
     # NOT recruitment.approve_requisition — approval-workflow engine, same
     # reasoning as every other *.approve_reject_*/approve_* key; its inline
     # fallback (`if user["role"] not in ("superadmin","hr_manager")`) stays

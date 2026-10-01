@@ -60,6 +60,34 @@ wrapper everywhere.
 
 ## Recently added (not yet in README's prose — check git log for detail)
 
+- **Recruitment's "View requisitions / candidates / interviews / offers"
+  permission-matrix action is now enforced** (`core/permission_matrix.py`,
+  `routers/recruitment.py`) — second module retrofitted into
+  `ENFORCED_ACTION_KEYS` after the Employees pilot. `list_requisitions`/
+  `get_requisition`/`list_candidates`/`get_candidate`/`list_interviews`
+  previously had no gate at all; `list_offers`/`get_offer` were tied to
+  the *write* action's key instead of their own (a pre-existing doc/
+  reality mismatch) — all seven now call `require_permission(conn, user,
+  "recruitment.view_requisitions_candidates_interviews_offers")`, whose
+  matrix row defaults to `hr_manager`/`hr_admin` only (locked) with
+  `manager`/`payroll_manager`/`compensation_manager`/`employee`
+  denied-by-default but override-eligible via Settings → Roles →
+  Permission Matrix. First time an enforced action's default/override
+  state also drives **frontend nav visibility**, not just backend 403s:
+  `GET /api/auth/me`'s new `can_view_recruitment` field (`core/deps.py`'s
+  `build_current_user_out`, computed via `has_permission()`) is what
+  `static/js/core.js`'s `applyRoleUI()` checks to show/hide
+  `#nav-recruit-group` — reflects this institution's own
+  `role_permission_overrides`, not a static role list, so granting
+  `manager` access makes the nav reappear without a code change. The Home
+  dashboard's own Recruitment tab (Open Positions for non-recruiting
+  roles — see the entry below) is unrelated and unaffected: it reads the
+  public careers listing endpoint, which has no permission check at all.
+  Home's "Open Roles" KPI tile already had a generic "hide the link,
+  keep the number" fallback for exactly this case (`dashboard.js`'s
+  `_canOpenPage`), so it needed no changes — once the nav item is hidden,
+  the tile stops being clickable automatically.
+
 - **Public (no-login) job applications** (`routers/public_careers.py`,
   `static/js/public_careers.js`, `20261001_0002_add_requisition_public_token`):
   the only unauthenticated, no-pre-shared-secret write path anywhere in this

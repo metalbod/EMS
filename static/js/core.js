@@ -756,7 +756,15 @@ function applyRoleUI() {
   document.getElementById('nav-audit').classList.toggle('hidden', !canAudit);
   document.getElementById('nav-users').classList.toggle('hidden', !canUsers);
   document.getElementById('addEmpBtn').classList.toggle('hidden', !canManage);
-  document.getElementById('nav-recruit-group').classList.toggle('hidden', hideEmp || role === 'employee');
+  // can_view_recruitment (core/deps.py's build_current_user_out, via
+  // core/permission_matrix.py's has_permission) reflects this institution's
+  // own role_permission_overrides for the "View requisitions / candidates /
+  // interviews / offers" action — not just a static role list, so a manager/
+  // payroll_manager/compensation_manager who's been granted access here
+  // still sees the nav. The Home dashboard's own Recruitment tab (Open
+  // Positions for non-recruiting roles) is unaffected — it reads the public
+  // careers listing endpoint, which has no permission check at all.
+  document.getElementById('nav-recruit-group').classList.toggle('hidden', hideEmp || role === 'employee' || !currentUser?.can_view_recruitment);
   document.getElementById('nav-ld-group')?.classList.toggle('hidden', hideEmp);
   document.getElementById('nav-leave-group')?.classList.toggle('hidden', hideEmp);
   document.getElementById('nav-leave-approvals')?.classList.toggle('hidden', !HR_AND_MANAGER_ROLES.includes(role));

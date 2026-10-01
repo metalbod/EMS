@@ -152,6 +152,7 @@ def build_current_user_out(conn, user: dict, role_override: str = None):
     response is the newly-switched-to one, not user["role"].
     """
     from core.schemas import CurrentUserOut
+    from core.permission_matrix import has_permission
 
     roles = [r.strip() for r in (user.get("roles") or user["role"]).split(",") if r.strip()]
     inst = None
@@ -160,17 +161,25 @@ def build_current_user_out(conn, user: dict, role_override: str = None):
             "SELECT id, name, code, status, logo_url, pay_day FROM institutions WHERE id=?", (user["institution_id"],)
         ).fetchone()
         inst = dict(inst_row) if inst_row else None
+    effective_role = role_override or user["role"]
+    can_view_recruitment = True
+    if user.get("institution_id") and effective_role != "superadmin":
+        can_view_recruitment = has_permission(
+            conn, user["institution_id"], {"role": effective_role},
+            "recruitment.view_requisitions_candidates_interviews_offers",
+        )
     return CurrentUserOut(
         id=user["id"],
         username=user["username"],
         full_name=user["full_name"],
-        role=role_override or user["role"],
+        role=effective_role,
         roles=roles,
         institution_id=user.get("institution_id"),
         department=user.get("department"),
         employee_id=user.get("employee_id"),
         institution=inst,
         must_change_password=bool(user.get("must_change_password", False)),
+        can_view_recruitment=can_view_recruitment,
     )
 
 
