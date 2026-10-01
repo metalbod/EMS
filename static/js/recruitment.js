@@ -78,7 +78,10 @@ async function loadRequisitions() {
   empty?.classList.add('hidden');
   body.innerHTML=rows.map(r=>`
     <tr class="hover:bg-slate-50 cursor-pointer" onclick="openReqDetail(${r.id})">
-      <td class="px-4 py-3 font-medium text-slate-800">${esc(r.title)}</td>
+      <td class="px-4 py-3 font-medium text-slate-800">
+        ${esc(r.title)}
+        ${r.public_token?`<span class="badge status-positive" style="font-size:.65rem;padding:.1rem .4rem;margin-left:.35rem" title="Accepting public applications">Published</span>`:''}
+      </td>
       <td class="px-4 py-3 text-slate-600 hidden md:table-cell">${esc(r.department)}</td>
       <td class="px-4 py-3 hidden lg:table-cell"><span class="badge ${priorityBadge(r.priority)}">${esc(r.priority)}</span></td>
       <td class="px-4 py-3 text-center text-slate-700 hidden sm:table-cell">${r.headcount}</td>

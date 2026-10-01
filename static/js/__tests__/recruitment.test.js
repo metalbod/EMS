@@ -178,3 +178,21 @@ describe('Offer modal — auto-selecting the requisition from the picked applica
     expect(resolveOfferReqId('99', ['3', '5', '9'])).toBe(null);
   });
 });
+
+// Job Requisitions table — the "Published" pill next to the position
+// title, shown only when public applications are enabled for that
+// requisition (job_requisitions.public_token is set). Mirrors
+// loadRequisitions' own row template in recruitment.js.
+describe('Job Requisitions — "Published" pill', () => {
+  function renderTitleCell(r) {
+    return `${r.title}${r.public_token ? '<span class="badge status-positive">Published</span>' : ''}`;
+  }
+
+  it('shows the pill when public applications are enabled', () => {
+    expect(renderTitleCell({ title: 'QA Engineer', public_token: 'abc-123' })).toContain('Published');
+  });
+
+  it('omits the pill when public applications are not enabled', () => {
+    expect(renderTitleCell({ title: 'QA Engineer', public_token: null })).not.toContain('Published');
+  });
+});
