@@ -839,3 +839,49 @@ def test_current_user_can_view_recruitment_field_reflects_override(client, hr_ma
 
     hr_me = client.get("/api/auth/me", headers=hr_manager_auth)
     assert hr_me.json()["can_view_recruitment"] is True
+
+
+def test_candidate_stage_timing_override_eligible_for_other_roles(client, hr_manager_auth, make_test_user, test_institution):
+    """get_candidate_stage_history already called require_permission() with
+    this key before it was added to ENFORCED_ACTION_KEYS — manager is
+    flat-ALLOW by default already (unaffected by this test). employee is
+    the role this actually unlocks: denied by default, with no way to
+    grant an override until the key was added to ENFORCED_ACTION_KEYS.
+    payroll_manager/compensation_manager are LOCKED_ROLES (see
+    test_permission_overrides' module docstring) and can never be
+    overridden regardless — not what this key change affects."""
+    cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
+                        json={"full_name": "ZZ Stage Timing Override Candidate"}).json()
+
+    emp_token, _ = make_test_user(role="employee")
+    emp_headers = {"Authorization": f"Bearer {emp_token}", "X-Institution-Id": str(test_institution["id"])}
+
+    before = client.get(f"/api/recruitment/candidates/{cand['id']}/stage-history", headers=emp_headers)
+    assert before.status_code == 403, before.text
+
+    override = client.put("/api/roles/permission-matrix/override", headers=hr_manager_auth, json={
+        "action_key": "recruitment.view_candidate_stage_timing", "role": "employee", "access_value": "allow",
+    })
+    assert override.status_code == 200, override.text
+    try:
+        after = client.get(f"/api/recruitment/candidates/{cand['id']}/stage-history", headers=emp_headers)
+        assert after.status_code == 200, after.text
+    finally:
+        client.delete("/api/roles/permission-matrix/override", headers=hr_manager_auth,
+                       params={"action_key": "recruitment.view_candidate_stage_timing", "role": "employee"})
+
+    after_reset = client.get(f"/api/recruitment/candidates/{cand['id']}/stage-history", headers=emp_headers)
+    assert after_reset.status_code == 403, after_reset.text
+
+
+def test_approve_requisition_stays_non_enforced(client, hr_manager_auth):
+    """CONFIGURABLE (the approval-workflow engine resolves the real
+    approver per-institution) — an override here would let someone "grant"
+    approval rights the engine would still completely ignore, since
+    advance_or_finalize never consults role_permission_overrides. Must
+    never be added to ENFORCED_ACTION_KEYS, same reasoning as every other
+    *.approve_reject_*/approve_* key in this file."""
+    res = client.put("/api/roles/permission-matrix/override", headers=hr_manager_auth, json={
+        "action_key": "recruitment.approve_requisition", "role": "manager", "access_value": "allow",
+    })
+    assert res.status_code == 400, res.text

@@ -535,6 +535,16 @@ ENFORCED_ACTION_KEYS = frozenset({
     # action's key instead of their own (a pre-existing doc/reality
     # mismatch) — all seven now call require_permission() with this one
     # key, so a single override covers every GET across the module.
+    "recruitment.view_candidate_stage_timing",
+    # get_candidate_stage_history already called require_permission() with
+    # this exact key before this key was added here — has_permission()
+    # itself doesn't consult ENFORCED_ACTION_KEYS at all, only
+    # routers/roles.py's override endpoint does (it refuses to write an
+    # override row for a key not in this set). So the only thing this
+    # addition actually changes is letting HR create an override for
+    # payroll_manager/compensation_manager/employee in the first place —
+    # manager was already flat-ALLOW by default (_flat(*_RECRUIT_WRITE,
+    # "manager")) and stays that way, locked roles stay locked.
     # NOT recruitment.approve_requisition — approval-workflow engine, same
     # reasoning as every other *.approve_reject_*/approve_* key; its inline
     # fallback (`if user["role"] not in ("superadmin","hr_manager")`) stays
