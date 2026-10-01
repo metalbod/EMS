@@ -60,6 +60,29 @@ wrapper everywhere.
 
 ## Recently added (not yet in README's prose — check git log for detail)
 
+- **Fixed: `has_permission()` silently never enforced overrides for
+  per-institution custom roles** (`core/permission_matrix.py`,
+  `routers/roles.py`). Found live in institution 4: HR granted the custom
+  "Hiring Manager" role access via Settings → Roles → Permission Matrix
+  (the UI showed it as granted), but the user still couldn't see
+  Recruitment at all. Root cause — `routers/roles.py`'s
+  `get_permission_matrix` (display) and `_validate_overridable`
+  (write-time) both already proxied a custom role to `"employee"` for its
+  default/eligibility check (`eligibility_proxy_role`, now exported from
+  `core/permission_matrix.py` so both files share one copy instead of
+  drifting again), but `has_permission()` — the actual runtime enforcement
+  every `require_permission()` call goes through — checked the raw custom
+  role string directly against MATRIX's static access dicts (which only
+  ever have the 6 built-in roles as keys). That always missed, so
+  `is_override_eligible()` returned `False` and the override table was
+  never even queried — a custom role was hard-denied for every enforced
+  action with no way to grant it back, regardless of what the matrix UI
+  displayed. `has_permission()` now applies the same `eligibility_proxy_role`
+  for its default/eligibility check, while still looking up the override
+  row by the *literal* role key — a custom role's override is stored (and
+  must stay) independent of Employee's, so a custom role and real
+  employees can be granted different access for the same action.
+
 - **Recruitment's "View requisitions / candidates / interviews / offers"
   permission-matrix action is now enforced** (`core/permission_matrix.py`,
   `routers/recruitment.py`) — second module retrofitted into

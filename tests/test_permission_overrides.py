@@ -874,6 +874,90 @@ def test_candidate_stage_timing_override_eligible_for_other_roles(client, hr_man
     assert after_reset.status_code == 403, after_reset.text
 
 
+def test_custom_role_denied_by_default_then_override_actually_works(client, hr_manager_auth, make_test_user, test_institution):
+    """Regression test for a real production bug (institution 4, custom
+    role "Hiring Manager"): has_permission() used to check the raw custom
+    role string directly against MATRIX's static access dicts, which are
+    only ever built from ALL_ROLES — so a custom role could never match
+    an access-default key AND is_override_eligible() also always failed
+    for it, meaning has_permission() returned False unconditionally and
+    never even queried role_permission_overrides. The Settings > Roles
+    matrix UI (routers/roles.py's get_permission_matrix/
+    _validate_overridable, via eligibility_proxy_role) already proxied
+    custom roles to "employee" for display/write-validation, so HR could
+    create an override for the custom role's own literal role_key and see
+    it reflected in the matrix — but it silently never took effect at the
+    actual enforcement point. This test creates a real custom role (not
+    just a user whose .role happens to be a custom string), confirms it's
+    denied by the same default as Employee, then confirms a per-custom-
+    role override granted via the matrix actually changes real endpoint
+    behavior, not just the matrix's own display."""
+    role_res = client.post("/api/roles", headers=hr_manager_auth,
+                            json={"display_name": f"ZZ Hiring Manager {os.urandom(3).hex()}"})
+    assert role_res.status_code == 201, role_res.text
+    role_key = role_res.json()["role_key"]
+    role_id = role_res.json()["id"]
+    try:
+        hm_token, _ = make_test_user(role=role_key)
+        hm_headers = {"Authorization": f"Bearer {hm_token}", "X-Institution-Id": str(test_institution["id"])}
+
+        before = client.get("/api/recruitment/requisitions", headers=hm_headers)
+        assert before.status_code == 403, before.text
+
+        matrix = client.get("/api/roles/permission-matrix", headers=hr_manager_auth).json()
+        action = next(a for m in matrix["modules"] for a in m["actions"]
+                       if a["key"] == "recruitment.view_requisitions_candidates_interviews_offers")
+        assert action["editable"][role_key] is True, "custom role must display as override-eligible, proxied to employee"
+
+        override = client.put("/api/roles/permission-matrix/override", headers=hr_manager_auth, json={
+            "action_key": "recruitment.view_requisitions_candidates_interviews_offers",
+            "role": role_key, "access_value": "allow",
+        })
+        assert override.status_code == 200, override.text
+        try:
+            after = client.get("/api/recruitment/requisitions", headers=hm_headers)
+            assert after.status_code == 200, after.text
+        finally:
+            client.delete("/api/roles/permission-matrix/override", headers=hr_manager_auth,
+                           params={"action_key": "recruitment.view_requisitions_candidates_interviews_offers", "role": role_key})
+
+        after_reset = client.get("/api/recruitment/requisitions", headers=hm_headers)
+        assert after_reset.status_code == 403, after_reset.text
+    finally:
+        client.delete(f"/api/roles/{role_id}", headers=hr_manager_auth)
+
+
+def test_custom_role_override_is_independent_of_employee_override(client, hr_manager_auth, make_test_user, test_institution):
+    """A custom role's override is stored/looked-up by its own literal
+    role_key, not silently merged into "employee"'s override row — HR
+    must be able to grant the custom role access without that also
+    granting every real Employee the same access, and vice versa."""
+    role_res = client.post("/api/roles", headers=hr_manager_auth,
+                            json={"display_name": f"ZZ IT Infra {os.urandom(3).hex()}"})
+    assert role_res.status_code == 201, role_res.text
+    role_key = role_res.json()["role_key"]
+    role_id = role_res.json()["id"]
+    try:
+        hm_token, _ = make_test_user(role=role_key)
+        hm_headers = {"Authorization": f"Bearer {hm_token}", "X-Institution-Id": str(test_institution["id"])}
+        emp_token, _ = make_test_user(role="employee")
+        emp_headers = {"Authorization": f"Bearer {emp_token}", "X-Institution-Id": str(test_institution["id"])}
+
+        override = client.put("/api/roles/permission-matrix/override", headers=hr_manager_auth, json={
+            "action_key": "recruitment.view_requisitions_candidates_interviews_offers",
+            "role": role_key, "access_value": "allow",
+        })
+        assert override.status_code == 200, override.text
+        try:
+            assert client.get("/api/recruitment/requisitions", headers=hm_headers).status_code == 200
+            assert client.get("/api/recruitment/requisitions", headers=emp_headers).status_code == 403
+        finally:
+            client.delete("/api/roles/permission-matrix/override", headers=hr_manager_auth,
+                           params={"action_key": "recruitment.view_requisitions_candidates_interviews_offers", "role": role_key})
+    finally:
+        client.delete(f"/api/roles/{role_id}", headers=hr_manager_auth)
+
+
 def test_approve_requisition_stays_non_enforced(client, hr_manager_auth):
     """CONFIGURABLE (the approval-workflow engine resolves the real
     approver per-institution) — an override here would let someone "grant"

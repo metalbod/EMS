@@ -683,6 +683,20 @@ NOT_YET_ENFORCED_MODULES: Dict[str, str] = {
 # module has at least one enforced key.
 
 
+def eligibility_proxy_role(role: str) -> str:
+    """Custom (per-institution) roles have no column of their own in
+    MATRIX's static access dicts — those are only ever built from
+    ALL_ROLES — so their default/eligibility is proxied to "employee".
+    Shared by has_permission() below and routers/roles.py's
+    get_permission_matrix/_validate_overridable, which must use the
+    exact same proxy — those two used to each define their own copy,
+    and has_permission()'s copy silently fell out of sync (it used the
+    raw role with no proxy at all), which is how a custom role could
+    look override-eligible in the Settings UI while every retrofitted
+    endpoint still hard-denied it with no way to grant it back."""
+    return role if role in ALL_ROLES else "employee"
+
+
 def is_override_eligible(action: Dict[str, Any], role: str) -> bool:
     if role in LOCKED_ROLES:
         return False
@@ -696,15 +710,27 @@ def has_permission(conn, inst_id: int, user: dict, action_key: str) -> bool:
     call in this codebase that lists it explicitly. Falls back to this
     file's hardcoded default the moment anything is ambiguous (unknown
     action_key, locked role, non-flat access type, no override row) —
-    never fails open."""
+    never fails open.
+
+    A per-institution custom role (e.g. "hiring_manager") has no column
+    of its own in MATRIX's static access dicts — those are only ever
+    built from ALL_ROLES — so its default/eligibility is proxied to
+    "employee", exactly like routers/roles.py's _eligibility_proxy_role
+    (used by get_permission_matrix's display and _validate_overridable's
+    write-time check). The override ROW lookup still uses the literal
+    role string, not the proxy: set_permission_override stores overrides
+    per custom role_key (HR can grant "Hiring Manager" a different
+    access than "Employee"), so proxying there too would silently ignore
+    a real, specifically-granted custom-role override."""
     role = user["role"]
     if role == "superadmin":
         return True
     action = ACTION_BY_KEY.get(action_key)
     if not action:
         return False
-    default = action["access"].get(role, DENY)
-    if not is_override_eligible(action, role):
+    proxy_role = eligibility_proxy_role(role)
+    default = action["access"].get(proxy_role, DENY)
+    if not is_override_eligible(action, proxy_role):
         return default == ALLOW
     row = conn.execute(
         "SELECT access_value FROM role_permission_overrides WHERE institution_id=? AND action_key=? AND role=?",

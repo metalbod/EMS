@@ -16,7 +16,7 @@ from core.roles import BUILTIN_ROLES, LEAVE_MANAGE_ROLES
 
 from core.constants import ROLE_LABELS
 
-from core.permission_matrix import ALL_ROLES, MATRIX, LOCKED_ROLES, ENFORCED_ACTION_KEYS, ACTION_BY_KEY, is_override_eligible, require_permission
+from core.permission_matrix import ALL_ROLES, MATRIX, LOCKED_ROLES, ENFORCED_ACTION_KEYS, ACTION_BY_KEY, is_override_eligible, require_permission, eligibility_proxy_role
 
 from core.audit import write_entity_audit
 
@@ -57,14 +57,6 @@ def list_roles(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, A
     ).fetchall()
     custom = [{"id": r["id"], "role_key": r["role_key"], "display_name": r["display_name"], "is_builtin": False} for r in custom_rows]
     return builtin + custom
-
-
-def _eligibility_proxy_role(role: str) -> str:
-    """Custom roles have no row of their own in MATRIX's static access
-    dicts (see permission_matrix.py) — they're synthesized as a copy of
-    Employee at request time, so eligibility for a custom role is
-    whatever Employee's eligibility is for that action."""
-    return role if role in ALL_ROLES else "employee"
 
 
 @router.get("/api/roles/permission-matrix")
@@ -109,7 +101,7 @@ def get_permission_matrix(conn, user: dict = Depends(require_roles(*ROLE_MANAGE_
             enforced = a["key"] in ENFORCED_ACTION_KEYS
             editable = {}
             for role in all_columns:
-                elig = enforced and role not in LOCKED_ROLES and is_override_eligible(a, _eligibility_proxy_role(role))
+                elig = enforced and role not in LOCKED_ROLES and is_override_eligible(a, eligibility_proxy_role(role))
                 editable[role] = elig
                 if elig:
                     override_val = overrides.get((a["key"], role))
@@ -157,7 +149,7 @@ def _validate_overridable(conn, inst_id: int, action_key: str, role: str) -> Dic
         ).fetchone()
         if not exists:
             raise HTTPException(400, f"Unknown role '{role}'")
-    if not is_override_eligible(action, _eligibility_proxy_role(role)):
+    if not is_override_eligible(action, eligibility_proxy_role(role)):
         raise HTTPException(400, "This action's default access for this role can't be overridden")
     return action
 
