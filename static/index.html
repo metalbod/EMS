@@ -5130,6 +5130,18 @@
 
       <!-- Tab: Personal Info -->
       <div id="cm-personal" class="p-6 grid grid-cols-2 gap-4">
+        <div class="col-span-2 bg-slate-50 border border-slate-200 rounded-xl p-3">
+          <label class="lbl">Attachments <span class="text-xs text-slate-400">(resume, portfolio, certs — PDF/Word/image, max 6MB each, multiple allowed)</span></label>
+          <input id="candFilesInput" type="file" multiple accept=".pdf,.doc,.docx,.txt,image/*" onchange="handleCandFilesSelected(event)" class="block w-full text-sm text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
+          <div id="candFileList" class="mt-2 space-y-1"></div>
+          <p class="text-xs text-slate-400 mt-1">Attach a resume first — once it's a PDF or image, you can extract the fields below with AI instead of typing them in.</p>
+          <div id="candExtractAiWrap" class="hidden mt-3 pt-3 border-t border-slate-200">
+            <button type="button" id="candExtractAiBtn" onclick="extractCandidateResumeWithAI()" class="btn-ghost text-sm flex items-center gap-1.5">
+              <span aria-hidden="true">✨</span> Extract details with AI
+            </button>
+            <p id="candExtractAiStatus" class="hidden text-xs mt-1.5"></p>
+          </div>
+        </div>
         <div class="col-span-2"><label class="lbl">Full Name <span class="text-red-500">*</span></label><input id="candFullName" type="text" class="inp" oninput="onCandIdentityInput()" required/></div>
         <div id="candDupPanel" class="hidden col-span-2 border border-amber-200 bg-amber-50 rounded-xl p-3 space-y-2">
           <p class="text-xs font-medium text-amber-800">Possible existing candidate(s) found — is this the same person?</p>
@@ -5168,12 +5180,7 @@
         <div><label class="lbl">Institution / University</label><input id="candInstitution" type="text" class="inp"/></div>
         <div><label class="lbl">Graduation Year</label><input id="candGradYear" type="number" class="inp" placeholder="2020" min="1970" max="2030"/></div>
         <div class="col-span-2"><label class="lbl">Certifications / Professional Qualifications</label><textarea id="candCerts" class="inp" style="height:5rem;resize:none" placeholder="e.g. AWS Certified, CPA, PMP…"></textarea></div>
-        <div class="col-span-2"><label class="lbl">Resume / CV <span class="text-xs text-slate-400">(paste text or summary)</span></label><textarea id="candResume" class="inp" style="height:6rem;resize:none"></textarea></div>
-        <div class="col-span-2">
-          <label class="lbl">Attachments <span class="text-xs text-slate-400">(resume, portfolio, certs — PDF/Word/image, max 6MB each, multiple allowed)</span></label>
-          <input id="candFilesInput" type="file" multiple accept=".pdf,.doc,.docx,.txt,image/*" onchange="handleCandFilesSelected(event)" class="block w-full text-sm text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
-          <div id="candFileList" class="mt-2 space-y-1"></div>
-        </div>
+        <div class="col-span-2"><label class="lbl">Resume / CV <span class="text-xs text-slate-400">(paste text or summary — or use "Extract details with AI" on the Personal Info tab)</span></label><textarea id="candResume" class="inp" style="height:6rem;resize:none"></textarea></div>
       </div>
 
       <!-- Tab: Others -->

@@ -1,17 +1,25 @@
 """Recruitment module: Job Requisitions, Candidates/ATS, Interviews, and Offers."""
+import base64
+import json
+import logging
+import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from string import Template
 from typing import Any, Dict, List, Optional
 
+import anthropic
+import redis
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ValidationError, field_validator
 
 from core.deps import get_current_user, need_inst
 
-from core.validators import validate_document_data_url
+from core.validators import validate_document_data_url, validate_ai_extractable_data_url
 
 from core.approval_workflow import start_workflow, advance_or_finalize
+
+from core.anthropic_client import get_client_for_institution
 
 from db import get_db, IntegrityError
 
@@ -19,6 +27,8 @@ from core.db_session import db_session
 from core.audit import diff_rows, write_entity_audit
 
 from core.permission_matrix import require_permission
+
+logger = logging.getLogger("ems")
 
 router = APIRouter()
 
@@ -32,6 +42,83 @@ PRIORITIES        = ["Low","Normal","High","Urgent"]
 SOURCES           = ["Direct","JobStreet","LinkedIn","Indeed","Referral","Agency","Walk-In","Other"]
 QUALIFICATIONS    = ["SPM","STPM","Diploma","Bachelor's Degree","Master's Degree","PhD","Professional Cert","Other"]
 SCORE_LABELS      = ["technical_score","communication_score","attitude_score","culture_fit_score","overall_score"]
+
+# ---------------------------------------------------------------------------
+# Resume AI extraction (Add Candidate's "Extract with AI" button) — reuses
+# the same BYOK-or-platform Anthropic client resolution as the chatbot
+# (routers/assistant.py), but inverted: a single *forced* tool call whose
+# input_schema is the candidate-fields schema, so Claude returns structured
+# data instead of choosing from a set of read tools. Nothing here is
+# persisted (no audit log entry either) — same "ephemeral, not logged"
+# treatment as the read-only assistant chat (see CLAUDE.md), since this
+# endpoint only reads an uploaded file and returns field values; nothing is
+# written until the HR user actually submits the Add Candidate form, which
+# already logs normally via _log_candidate.
+# ---------------------------------------------------------------------------
+EXTRACT_RESUME_MODEL = "claude-haiku-4-5"
+EXTRACT_RESUME_RATE_LIMIT_PER_HOUR = 5
+
+_redis = redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+
+EXTRACT_CANDIDATE_TOOL = {
+    "name": "extract_candidate_fields",
+    "description": (
+        "Record the candidate profile fields found in the attached resume/CV. Only include a "
+        "field if the resume actually states (or, for experience_years, clearly implies via "
+        "work history dates) it — omit anything not actually present. Never invent or guess a "
+        "value."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "full_name": {"type": "string"},
+            "email": {"type": "string"},
+            "phone": {"type": "string"},
+            "ic_number": {"type": "string", "description": "Malaysian IC number, only if explicitly present"},
+            "nationality": {"type": "string"},
+            "gender": {"type": "string", "enum": ["Male", "Female"]},
+            "date_of_birth": {"type": "string", "description": "YYYY-MM-DD, only if explicitly stated"},
+            "address": {"type": "string"},
+            "current_position": {"type": "string", "description": "Most recent or current job title"},
+            "current_company": {"type": "string", "description": "Most recent or current employer"},
+            "experience_years": {"type": "integer", "description": "Total years of professional experience"},
+            "employment_history": {"type": "string", "description": "Brief summary of roles, companies, and achievements, most recent first"},
+            "highest_qualification": {"type": "string", "enum": QUALIFICATIONS},
+            "field_of_study": {"type": "string"},
+            "institution_name": {"type": "string", "description": "University/institution of the highest qualification"},
+            "graduation_year": {"type": "integer"},
+            "certifications": {"type": "string"},
+            "skills": {"type": "string", "description": "Comma-separated list of key skills"},
+            "resume_text": {"type": "string", "description": "A clean plain-text summary of the resume's full content"},
+            "linkedin_url": {"type": "string"},
+        },
+        "additionalProperties": False,
+    },
+}
+
+
+def _enforce_extract_resume_rate_limit(user: dict) -> None:
+    bucket = datetime.now(timezone.utc).strftime("%Y%m%d%H")
+    key = f"recruitment_extract_resume_rl:{user['id']}:{bucket}"
+    try:
+        count = _redis.incr(key)
+        if count == 1:
+            _redis.expire(key, 3600)
+    except redis.RedisError:
+        logger.warning("resume extraction rate limit check failed (redis unavailable) - failing open")
+        return
+    if count > EXTRACT_RESUME_RATE_LIMIT_PER_HOUR:
+        raise HTTPException(429, "You've reached the hourly limit for AI resume extraction. Try again later, or fill in the fields manually.")
+
+
+def _parse_data_url(data_url: str) -> tuple:
+    """data:<mime>;base64,<payload> -> (mime, payload). Callers already ran
+    this through validate_ai_extractable_data_url, which only accepts a
+    fixed, known-good prefix set, so the split here is never hit with
+    anything malformed."""
+    header, _, payload = data_url.partition(",")
+    mime = header[len("data:"):].split(";")[0]
+    return mime, payload
 
 class RequisitionIn(BaseModel):
     title: str
@@ -99,6 +186,52 @@ class CandidateDocumentIn(BaseModel):
         if not v:
             raise ValueError("data_url is required")
         return v
+
+
+class ExtractResumeIn(BaseModel):
+    data_url: str  # data:application/pdf or data:image/... — see AI_EXTRACTABLE_MIME_PREFIXES
+
+    @field_validator("data_url")
+    @classmethod
+    def _validate_data_url(cls, v):
+        v = validate_ai_extractable_data_url(v)
+        if not v:
+            raise ValueError("data_url is required")
+        return v
+
+
+class ExtractedCandidateFields(BaseModel):
+    """Every field here mirrors a CandidateIn field the Add Candidate form
+    can populate from a resume — deliberately excludes requisition_id,
+    source, expected_salary, notice_period, referral_by, notes, which a
+    resume doesn't reliably state and which stay HR-entered. All Optional:
+    the model is told to omit, not guess, anything not actually in the
+    resume, and the frontend only fills blank fields with whatever comes
+    back (see fillBlankCandidateFields in static/js/recruitment.js)."""
+    full_name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    ic_number: Optional[str] = None
+    nationality: Optional[str] = None
+    gender: Optional[str] = None
+    date_of_birth: Optional[str] = None
+    address: Optional[str] = None
+    current_position: Optional[str] = None
+    current_company: Optional[str] = None
+    experience_years: Optional[int] = None
+    employment_history: Optional[str] = None
+    highest_qualification: Optional[str] = None
+    field_of_study: Optional[str] = None
+    institution_name: Optional[str] = None
+    graduation_year: Optional[int] = None
+    certifications: Optional[str] = None
+    skills: Optional[str] = None
+    resume_text: Optional[str] = None
+    linkedin_url: Optional[str] = None
+
+
+class ExtractResumeOut(BaseModel):
+    fields: ExtractedCandidateFields
 
 
 class CandidateStageIn(BaseModel):
@@ -888,6 +1021,61 @@ def create_candidate(conn, body: CandidateIn, user: dict = Depends(get_current_u
     _log_candidate(conn, inst_id, cid, "Created", f"Candidate '{body.full_name}' added via {body.source}", user["username"])
     conn.commit()
     return _candidate_with_derived_fields(conn, inst_id, cid)
+
+
+@router.post("/api/recruitment/candidates/extract-resume")
+async def extract_resume_fields(body: ExtractResumeIn, user: dict = Depends(get_current_user)) -> ExtractResumeOut:
+    """Reads an uploaded resume (PDF or image, not yet attached to any
+    candidate — this runs before the candidate exists) and asks Claude to
+    pull out whatever Add Candidate fields it can find, powering that
+    modal's "Extract with AI" button. Same write permission as creating
+    the candidate itself, since this is part of that same flow."""
+    _enforce_extract_resume_rate_limit(user)
+
+    conn = get_db()
+    try:
+        require_permission(conn, user, "recruitment.create_edit_requisition_candidate_interview_offer")
+        inst_id = need_inst(user)
+        anthropic_client = get_client_for_institution(conn, inst_id)
+    finally:
+        conn.close()
+
+    if anthropic_client is None:
+        raise HTTPException(400, "AI extraction isn't set up for your organization yet — ask your HR manager to configure it under Settings → AI Assistant, or fill in the fields manually.")
+
+    mime, payload = _parse_data_url(body.data_url)
+    content_block = {
+        "type": "document" if mime == "application/pdf" else "image",
+        "source": {"type": "base64", "media_type": mime, "data": payload},
+    }
+
+    try:
+        resp = anthropic_client.messages.create(
+            model=EXTRACT_RESUME_MODEL,
+            max_tokens=1536,
+            tools=[EXTRACT_CANDIDATE_TOOL],
+            tool_choice={"type": "tool", "name": "extract_candidate_fields"},
+            messages=[{
+                "role": "user",
+                "content": [
+                    content_block,
+                    {"type": "text", "text": "Extract the candidate's profile fields from this resume."},
+                ],
+            }],
+        )
+    except (anthropic.RateLimitError, anthropic.APIStatusError, anthropic.APIConnectionError) as e:
+        logger.warning(f"resume extraction: Anthropic API error: {e}")
+        raise HTTPException(502, "Couldn't reach the AI extraction service right now — please try again shortly, or fill in the fields manually.")
+
+    tool_use = next((b for b in resp.content if b.type == "tool_use"), None)
+    if not tool_use:
+        raise HTTPException(502, "The AI couldn't extract any fields from this file — please fill in the fields manually.")
+    try:
+        fields = ExtractedCandidateFields(**tool_use.input)
+    except ValidationError as e:
+        logger.warning(f"resume extraction: tool_use input failed validation: {e}")
+        raise HTTPException(502, "The AI's response couldn't be read — please fill in the fields manually.")
+    return ExtractResumeOut(fields=fields)
 
 
 @router.post("/api/recruitment/candidates/{cand_id}/apply", status_code=201)

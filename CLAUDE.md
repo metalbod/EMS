@@ -60,6 +60,44 @@ wrapper everywhere.
 
 ## Recently added (not yet in README's prose — check git log for detail)
 
+- **Add Candidate → "Extract details with AI"** (`routers/recruitment.py`'s
+  `extract_resume_fields`, `static/js/recruitment.js`) — reads an attached
+  resume and prefills the Add Candidate form, reducing manual entry.
+  Attachments moved from the Education tab to the top of Personal Info
+  (attach-resume-first workflow); once a PDF or image is attached (new
+  candidate only — editing an existing one never shows this), an "✨
+  Extract details with AI" button appears. Reuses the AI assistant
+  chatbot's BYOK-or-platform Anthropic key resolution
+  (`core.anthropic_client.get_client_for_institution`) and model
+  (`claude-haiku-4-5`), but inverted: a single *forced* tool call
+  (`tool_choice`) whose `input_schema` is the candidate-fields schema, so
+  Claude returns structured JSON instead of choosing from read tools —
+  the first use of document/image content blocks or structured-extraction
+  tool use in this codebase (the chatbot is text-only, tools there are
+  zero-arg reads). PDF and image only — Anthropic's API doesn't accept
+  Word natively; a Word resume can still be attached as a file, there's
+  just no AI button for it (`CAND_AI_EXTRACTABLE_MIMES` client-side,
+  `AI_EXTRACTABLE_MIME_PREFIXES` in core/validators.py server-side).
+  Extracted fields only ever fill a *blank* input, never overwrite
+  something HR already typed — including two fields that come pre-filled
+  with a non-empty default in the markup (`candExp` starts at `"0"`,
+  `candNationality` at `"Malaysian"`), which needed an explicit
+  `BLANK_SENTINELS` check in `fillBlankCandidateFields` since a plain
+  "is this field empty" test would otherwise treat the untouched default
+  as something HR had already set and never let extraction override it —
+  worth remembering if another field with a non-empty default needs the
+  same treatment later. Expected Salary/Notice Period/Referral
+  By/Source/requisition are deliberately not AI-filled — a resume doesn't
+  reliably state those, so guessing would create bad data; stays
+  HR-entered. After filling name/email/IC, the existing duplicate-
+  candidate check (`onCandIdentityInput()`) still fires automatically.
+  Own Redis rate limit (`recruitment_extract_resume_rl:`, 5/user/hour —
+  tighter than the chatbot's 30, since each call is a heavier
+  document/vision request), same fail-open-on-Redis-error pattern as
+  `routers/assistant.py`. Nothing persisted and no audit log entry for an
+  extraction call itself (same "ephemeral, not logged" treatment as the
+  read-only assistant chat) — the candidate's eventual save still logs
+  normally.
 - **Hash-based page routing** (`static/js/core.js`'s `showPage()`/
   `bootApp()`) — added 2026-10-01 so a refresh (or Back/Forward) restores
   whichever of the 58 `ALL_PAGES` entries was open instead of always

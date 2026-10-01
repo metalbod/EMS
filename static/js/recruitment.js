@@ -6,6 +6,10 @@ let viewingCandData = null; // full candidate object currently open in detail mo
 let candExistingDocs = [];  // documents already saved for the candidate being edited
 let candPendingFiles = [];  // {file_name,mime_type,data_url} selected but not yet uploaded
 const CAND_FILE_MAX_BYTES = 6 * 1024 * 1024;
+// Mirrors core/validators.py's AI_EXTRACTABLE_MIME_PREFIXES — Anthropic's API only natively
+// accepts PDF or image as a document/vision block, unlike the wider set candPendingFiles itself
+// accepts (Word/text too). A Word resume can still be attached, it just won't show the AI button.
+const CAND_AI_EXTRACTABLE_MIMES = ['application/pdf', 'image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 let candSortBy = 'created_at', candSortDir = 'desc';
 const CAND_SORT_FIELDS = ['full_name','requisition_title','source','created_at','experience_years','last_interview_date','stage'];
 
@@ -418,6 +422,7 @@ function openCandModal(candData=null, presetReqId=null) {
   candExistingDocs=c?.documents||[];
   candPendingFiles=[];
   document.getElementById('candFilesInput').value='';
+  document.getElementById('candExtractAiStatus').className='hidden text-xs mt-1.5';
   renderCandFileList();
   switchCandFormTab('cm-personal');
   dismissCandDupPanel();
@@ -577,6 +582,69 @@ function renderCandFileList() {
       <button type="button" onclick="removeCandPendingFile(${i})" class="text-slate-400 hover:text-red-600 ml-2">✕</button>
     </div>`).join('');
   el.innerHTML=existingHtml+pendingHtml;
+  // Only a brand-new candidate (no candId yet) extracts into a blank form —
+  // editing an existing one already has its real data, extraction has
+  // nothing useful to add there.
+  const isNewCandidate=!document.getElementById('candId').value;
+  const hasExtractableFile=candPendingFiles.some(f=>CAND_AI_EXTRACTABLE_MIMES.includes(f.mime_type));
+  document.getElementById('candExtractAiWrap').classList.toggle('hidden', !(isNewCandidate && hasExtractableFile));
+}
+
+async function extractCandidateResumeWithAI() {
+  const file=candPendingFiles.find(f=>CAND_AI_EXTRACTABLE_MIMES.includes(f.mime_type));
+  if(!file) return;
+  const btn=document.getElementById('candExtractAiBtn');
+  const status=document.getElementById('candExtractAiStatus');
+  btn.disabled=true;
+  status.textContent='Reading resume…';
+  status.className='text-xs mt-1.5 text-slate-500';
+  const res=await api('/api/recruitment/candidates/extract-resume', {method:'POST', body:JSON.stringify({data_url:file.data_url})});
+  btn.disabled=false;
+  if(!res||!res.ok){
+    const d=await res?.json().catch(()=>({}));
+    status.textContent=d?.detail||'Could not extract details from this file — please fill in the fields manually.';
+    status.className='text-xs mt-1.5 text-red-600';
+    return;
+  }
+  const {fields}=await res.json();
+  const filled=fillBlankCandidateFields(fields);
+  status.textContent=filled>0
+    ? `Filled ${filled} field${filled===1?'':'s'} from the resume — please review before saving.`
+    : 'No new details found to fill in — the fields already have values, or none were found in the resume.';
+  status.className='text-xs mt-1.5 text-emerald-600';
+  onCandIdentityInput(); // re-run the duplicate-candidate check now that name/email/IC may be filled
+}
+
+// Only sets a field if it's currently blank — never overwrites something
+// HR already typed, including before attaching the resume. Returns how
+// many fields were actually filled, for the status message above.
+function fillBlankCandidateFields(fields) {
+  const FIELD_TO_INPUT={
+    full_name:'candFullName', email:'candEmail', phone:'candPhone', ic_number:'candIc',
+    nationality:'candNationality', gender:'candGender', date_of_birth:'candDob', address:'candAddress',
+    current_position:'candPosition', current_company:'candCompany', experience_years:'candExp',
+    skills:'candSkills', employment_history:'candEmpHistory', highest_qualification:'candQual',
+    field_of_study:'candField', institution_name:'candInstitution', graduation_year:'candGradYear',
+    certifications:'candCerts', resume_text:'candResume', linkedin_url:'candLinkedin',
+  };
+  // These two inputs start pre-filled with a default (candExp="0",
+  // candNationality="Malaysian" — see the Add Candidate markup), so a plain
+  // "is el.value non-empty" check would treat them as already set by HR
+  // and never let extraction fill in a real value. Counting a value that
+  // still exactly matches the untouched default as blank fixes that
+  // without touching a value HR actually typed over the default.
+  const BLANK_SENTINELS={candExp:'0', candNationality:'Malaysian'};
+  let filled=0;
+  for(const [field, inputId] of Object.entries(FIELD_TO_INPUT)){
+    const value=fields[field];
+    if(value===null||value===undefined||value==='') continue;
+    const el=document.getElementById(inputId);
+    const isBlank=el&&(el.value===''||el.value===BLANK_SENTINELS[inputId]);
+    if(!isBlank) continue; // already blank-checked — skip anything HR already typed over the default
+    el.value=value;
+    filled++;
+  }
+  return filled;
 }
 
 function handleCandFilesSelected(e) {

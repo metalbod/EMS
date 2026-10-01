@@ -116,6 +116,129 @@ describe('Candidate duplicate-detection search query', () => {
   });
 });
 
+// Mirrors recruitment.js's fillBlankCandidateFields — Add Candidate's
+// "Extract with AI" button only fills fields still blank, never overwrites
+// something HR already typed (before or after attaching the resume).
+describe('AI resume extraction — fill-blank-fields-only', () => {
+  const FIELD_TO_INPUT = {
+    full_name: 'candFullName', email: 'candEmail', phone: 'candPhone',
+    nationality: 'candNationality', experience_years: 'candExp', skills: 'candSkills',
+  };
+  // candExp and candNationality start pre-filled with a default in the
+  // real markup (value="0" / value="Malaysian") — a plain "is it non-empty"
+  // check would treat the untouched default as "HR already set this" and
+  // never let extraction fill in a real value, so a value still exactly
+  // matching the default counts as blank too (regression test below).
+  const BLANK_SENTINELS = { candExp: '0', candNationality: 'Malaysian' };
+
+  function fillBlankCandidateFields(fields, inputs) {
+    let filled = 0;
+    for (const [field, inputId] of Object.entries(FIELD_TO_INPUT)) {
+      const value = fields[field];
+      if (value === null || value === undefined || value === '') continue;
+      const isBlank = inputId in inputs && (inputs[inputId] === '' || inputs[inputId] === BLANK_SENTINELS[inputId]);
+      if (!isBlank) continue;
+      inputs[inputId] = value;
+      filled++;
+    }
+    return filled;
+  }
+
+  it('fills every blank field the extraction returned', () => {
+    const inputs = { candFullName: '', candEmail: '', candPhone: '', candNationality: 'Malaysian', candExp: '0', candSkills: '' };
+    const filled = fillBlankCandidateFields(
+      { full_name: 'Ali bin Abu', email: 'ali@example.com', skills: 'Python, SQL' },
+      inputs
+    );
+    expect(filled).toBe(3);
+    expect(inputs.candFullName).toBe('Ali bin Abu');
+    expect(inputs.candEmail).toBe('ali@example.com');
+    expect(inputs.candSkills).toBe('Python, SQL');
+  });
+
+  it('never overwrites a field HR already typed', () => {
+    const inputs = { candFullName: 'Already Typed Name', candEmail: '', candPhone: '', candNationality: 'Malaysian', candExp: '0', candSkills: '' };
+    const filled = fillBlankCandidateFields(
+      { full_name: 'Extracted Name From Resume', email: 'extracted@example.com' },
+      inputs
+    );
+    expect(filled).toBe(1); // only email, full_name was already set
+    expect(inputs.candFullName).toBe('Already Typed Name');
+    expect(inputs.candEmail).toBe('extracted@example.com');
+  });
+
+  it('skips a field the AI omitted (null/undefined), leaving it blank', () => {
+    const inputs = { candFullName: '', candEmail: '', candPhone: '', candNationality: 'Malaysian', candExp: '0', candSkills: '' };
+    const filled = fillBlankCandidateFields({ full_name: 'Ali', phone: null, skills: undefined }, inputs);
+    expect(filled).toBe(1);
+    expect(inputs.candPhone).toBe('');
+    expect(inputs.candSkills).toBe('');
+  });
+
+  it('fills experience_years even though candExp defaults to "0" (regression)', () => {
+    const inputs = { candFullName: '', candEmail: '', candPhone: '', candNationality: 'Malaysian', candExp: '0', candSkills: '' };
+    fillBlankCandidateFields({ experience_years: 5 }, inputs);
+    expect(inputs.candExp).toBe(5);
+  });
+
+  it('fills nationality even though candNationality defaults to "Malaysian" (regression)', () => {
+    const inputs = { candFullName: '', candEmail: '', candPhone: '', candNationality: 'Malaysian', candExp: '0', candSkills: '' };
+    fillBlankCandidateFields({ nationality: 'Indonesian' }, inputs);
+    expect(inputs.candNationality).toBe('Indonesian');
+  });
+
+  it('does not touch candExp/candNationality once HR has changed them from the default', () => {
+    const inputs = { candFullName: '', candEmail: '', candPhone: '', candNationality: 'Singaporean', candExp: '3', candSkills: '' };
+    const filled = fillBlankCandidateFields({ nationality: 'Indonesian', experience_years: 7 }, inputs);
+    expect(filled).toBe(0);
+    expect(inputs.candNationality).toBe('Singaporean');
+    expect(inputs.candExp).toBe('3');
+  });
+
+  it('returns 0 when every field is either blank-extraction or already filled', () => {
+    const inputs = { candFullName: 'Set', candEmail: 'set@example.com', candPhone: 'set', candNationality: 'Set', candExp: '1', candSkills: 'set' };
+    const filled = fillBlankCandidateFields({ full_name: 'New Name' }, inputs);
+    expect(filled).toBe(0);
+  });
+});
+
+// Mirrors recruitment.js's CAND_AI_EXTRACTABLE_MIMES gate on the "Extract
+// with AI" button — only a brand-new candidate (no candId yet) with at
+// least one PDF/image pending file shows it; Word/text files and editing
+// an existing candidate never do.
+describe('AI resume extraction — Extract button visibility', () => {
+  const CAND_AI_EXTRACTABLE_MIMES = ['application/pdf', 'image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+
+  function shouldShowExtractButton(isNewCandidate, pendingFiles) {
+    const hasExtractableFile = pendingFiles.some(f => CAND_AI_EXTRACTABLE_MIMES.includes(f.mime_type));
+    return isNewCandidate && hasExtractableFile;
+  }
+
+  it('shows the button for a new candidate with a PDF attached', () => {
+    expect(shouldShowExtractButton(true, [{ mime_type: 'application/pdf' }])).toBe(true);
+  });
+
+  it('shows the button for a new candidate with an image attached', () => {
+    expect(shouldShowExtractButton(true, [{ mime_type: 'image/png' }])).toBe(true);
+  });
+
+  it('hides the button when only a Word document is attached', () => {
+    expect(shouldShowExtractButton(true, [{ mime_type: 'application/msword' }])).toBe(false);
+  });
+
+  it('hides the button with no files attached yet', () => {
+    expect(shouldShowExtractButton(true, [])).toBe(false);
+  });
+
+  it('hides the button when editing an existing candidate, even with a PDF attached', () => {
+    expect(shouldShowExtractButton(false, [{ mime_type: 'application/pdf' }])).toBe(false);
+  });
+
+  it('shows the button if at least one of several files is extractable', () => {
+    expect(shouldShowExtractButton(true, [{ mime_type: 'application/msword' }, { mime_type: 'application/pdf' }])).toBe(true);
+  });
+});
+
 describe('Candidate Detail — single vs. per-application stage controls', () => {
   function shouldShowPerApplicationStages(applications) {
     return (applications || []).length > 1;
