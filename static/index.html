@@ -3560,12 +3560,12 @@
 
 <!-- Add/Edit Notification Modal -->
 <div id="notificationModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 id="notificationModalTitle" class="text-base font-semibold">Add Notification</h2>
       <button onclick="closeNotificationModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <div class="p-6 space-y-4">
+    <div class="p-6 space-y-4 overflow-y-auto flex-1">
       <input type="hidden" id="notificationId"/>
       <div>
         <label class="lbl">Message <span class="text-red-500">*</span></label>
@@ -3595,22 +3595,22 @@
         </div>
         <p class="text-xs text-slate-400 mt-1">"All under" reaches the selected people plus everyone who reports up to them, at any depth.</p>
       </div>
-      <div class="flex gap-2">
-        <button type="button" onclick="submitNotification()" class="btn-primary">Save</button>
-        <button type="button" onclick="closeNotificationModal()" class="btn-ghost">Cancel</button>
-      </div>
+    </div>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="button" onclick="submitNotification()" class="btn-primary">Save</button>
+      <button type="button" onclick="closeNotificationModal()" class="btn-ghost">Cancel</button>
     </div>
   </div>
 </div>
 
 <!-- Add/Edit System-Wide Notification Modal (superadmin) -->
 <div id="systemNotificationModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-red-200 bg-red-50 rounded-t-2xl">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-red-200 bg-red-50 rounded-t-2xl shrink-0">
       <h2 id="systemNotificationModalTitle" class="text-base font-semibold text-red-700">Add System Notification</h2>
       <button onclick="closeSystemNotificationModal()" class="text-red-400 hover:text-red-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <div class="p-6 space-y-4">
+    <div class="p-6 space-y-4 overflow-y-auto flex-1">
       <input type="hidden" id="systemNotificationId"/>
       <div>
         <label class="lbl">Message <span class="text-red-500">*</span></label>
@@ -3621,10 +3621,10 @@
         <div><label class="lbl">Start</label><input id="systemNotificationStart" type="datetime-local" class="inp"/></div>
         <div><label class="lbl">End</label><input id="systemNotificationEnd" type="datetime-local" class="inp"/></div>
       </div>
-      <div class="flex gap-2">
-        <button type="button" onclick="submitSystemNotification()" class="btn-primary" style="background:#dc2626">Save</button>
-        <button type="button" onclick="closeSystemNotificationModal()" class="btn-ghost">Cancel</button>
-      </div>
+    </div>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="button" onclick="submitSystemNotification()" class="btn-primary" style="background:#dc2626">Save</button>
+      <button type="button" onclick="closeSystemNotificationModal()" class="btn-ghost">Cancel</button>
     </div>
   </div>
 </div>
@@ -3652,15 +3652,15 @@
 
 <!-- Payroll Run Detail Modal -->
 <div id="payrollRunDetailModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-4xl">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-4xl flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <div>
         <h2 id="prDetailTitle" class="text-base font-semibold">Payroll Run</h2>
         <p id="prDetailMeta" class="text-xs text-slate-400 mt-0.5">—</p>
       </div>
       <button onclick="closePayrollRunDetailModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <div class="p-6">
+    <div class="p-6 overflow-y-auto flex-1">
       <div class="bg-white rounded-xl border border-slate-200 table-scroll">
         <table class="w-full text-sm">
           <thead class="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
@@ -3680,8 +3680,8 @@
           <tbody id="payrollRunDetailList"></tbody>
         </table>
       </div>
-      <div id="payrollRunDetailActions" class="flex gap-2 mt-5"></div>
     </div>
+    <div id="payrollRunDetailActions" class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0"></div>
   </div>
 </div>
 
@@ -3726,12 +3726,12 @@
 
 <!-- Add/Edit Goal Modal (KPI or OKR) -->
 <div id="goalModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 id="goalModalTitle" class="text-base font-semibold">Add Goal</h2>
       <button onclick="closeGoalModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <div class="p-6 space-y-4">
+    <div class="p-6 space-y-4 overflow-y-auto flex-1">
       <input type="hidden" id="goalId"/>
       <input type="hidden" id="goalCycleId"/>
       <input type="hidden" id="goalEmployeeId"/>
@@ -3763,25 +3763,25 @@
         <p id="goalOkrHint" class="text-xs text-slate-400 mt-2 hidden">Save the goal first, then add key results.</p>
       </div>
 
-      <div class="flex gap-2 pt-2">
-        <button type="button" onclick="submitGoal()" class="btn-primary">Save Goal</button>
-        <button type="button" onclick="closeGoalModal()" class="btn-ghost">Cancel</button>
-      </div>
+    </div>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="button" onclick="submitGoal()" class="btn-primary">Save Goal</button>
+      <button type="button" onclick="closeGoalModal()" class="btn-ghost">Cancel</button>
     </div>
   </div>
 </div>
 
 <!-- Manager Review Modal -->
 <div id="managerReviewModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <div>
         <h2 id="mrModalTitle" class="text-base font-semibold">Manager Review</h2>
         <p id="mrModalMeta" class="text-xs text-slate-400 mt-0.5">—</p>
       </div>
       <button onclick="closeManagerReviewModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <div class="p-6">
+    <div class="p-6 overflow-y-auto flex-1">
       <div id="mrGoalsList" class="space-y-2 mb-4"></div>
       <div class="bg-slate-50 rounded-lg p-3 mb-4 text-sm text-slate-600" id="mrSelfComments"></div>
       <div class="mb-3">
@@ -3793,10 +3793,10 @@
         <textarea id="mrComments" class="inp" rows="3"></textarea>
       </div>
       <input type="hidden" id="mrAppraisalId"/>
-      <div class="flex gap-2">
-        <button type="button" onclick="submitManagerReview()" class="btn-primary">Submit Manager Review</button>
-        <button type="button" onclick="closeManagerReviewModal()" class="btn-ghost">Close</button>
-      </div>
+    </div>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="button" onclick="submitManagerReview()" class="btn-primary">Submit Manager Review</button>
+      <button type="button" onclick="closeManagerReviewModal()" class="btn-ghost">Close</button>
     </div>
   </div>
 </div>
@@ -3829,12 +3829,12 @@
 
 <!-- Propose PIP Modal -->
 <div id="pipProposeModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 class="text-base font-semibold">Propose Performance Improvement Plan</h2>
       <button onclick="closePipProposeModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <div class="p-6 space-y-4">
+    <div class="p-6 space-y-4 overflow-y-auto flex-1">
       <p id="pipProposeErr" class="hidden text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2"></p>
       <div><label class="lbl">Employee</label><select id="pipEmpId" class="inp"></select></div>
       <div><label class="lbl">Reason</label><textarea id="pipReason" class="inp" rows="3" placeholder="Describe the performance gap this plan addresses"></textarea></div>
@@ -3850,10 +3850,10 @@
         <div id="pipGoalRows" class="space-y-2"></div>
       </div>
       <p class="text-xs text-slate-400">Routed to HR for approval before it takes effect.</p>
-      <div class="flex gap-2 pt-2">
-        <button type="button" onclick="submitPipPropose()" class="btn-primary">Submit for HR Approval</button>
-        <button type="button" onclick="closePipProposeModal()" class="btn-ghost">Cancel</button>
-      </div>
+    </div>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="button" onclick="submitPipPropose()" class="btn-primary">Submit for HR Approval</button>
+      <button type="button" onclick="closePipProposeModal()" class="btn-ghost">Cancel</button>
     </div>
   </div>
 </div>
@@ -3874,14 +3874,14 @@
 
 <!-- Institution Modal -->
 <div id="instModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-xl">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-xl flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 id="instModalTitle" class="text-base font-semibold">Add Institution</h2>
       <button onclick="closeInstModal()" class="text-slate-400 hover:text-slate-600">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
       </button>
     </div>
-    <form onsubmit="submitInstForm(event)" class="p-6 space-y-4">
+    <form id="instForm" onsubmit="submitInstForm(event)" class="p-6 space-y-4 overflow-y-auto flex-1">
       <input type="hidden" id="instId"/>
       <div class="grid grid-cols-2 gap-4">
         <div class="col-span-2">
@@ -3960,30 +3960,30 @@
         </div>
       </div>
       <p id="instFormErr" class="hidden text-sm text-red-600"></p>
-      <div class="flex justify-end gap-2 pt-1">
-        <button type="button" onclick="closeInstModal()" class="btn-ghost">Cancel</button>
-        <button type="submit" id="instSubmitBtn" class="btn-primary">Create Institution</button>
-      </div>
     </form>
+    <div class="flex justify-end gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="button" onclick="closeInstModal()" class="btn-ghost">Cancel</button>
+      <button type="submit" form="instForm" id="instSubmitBtn" class="btn-primary">Create Institution</button>
+    </div>
   </div>
 </div>
 
 <!-- Employee Add/Edit Modal -->
 <div id="empModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-3xl">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-3xl flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 id="empModalTitle" class="text-base font-semibold">Add Employee</h2>
       <button onclick="closeEmpModal()" class="text-slate-400 hover:text-slate-600">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
       </button>
     </div>
-    <div class="flex border-b border-slate-200 px-6 gap-1">
+    <div class="flex border-b border-slate-200 px-6 gap-1 shrink-0">
       <button class="tab-btn tab-active px-4 py-3 text-sm" data-tab="personal" onclick="switchTab('personal')">Personal Info</button>
       <button class="tab-btn px-4 py-3 text-sm text-slate-500" data-tab="employment" onclick="switchTab('employment')">Employment</button>
       <button class="tab-btn px-4 py-3 text-sm text-slate-500" data-tab="statutory" onclick="switchTab('statutory')">Statutory &amp; Payroll</button>
       <button id="empDependentsTabBtn" class="hidden tab-btn px-4 py-3 text-sm text-slate-500" data-tab="dependents" onclick="switchTab('dependents')">Dependents</button>
     </div>
-    <form id="empForm" onsubmit="submitEmpForm(event)" class="p-6">
+    <form id="empForm" onsubmit="submitEmpForm(event)" class="p-6 overflow-y-auto flex-1">
       <div id="tab-personal" class="tab-panel grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label class="block text-sm font-medium text-slate-700 mb-1">Employee ID</label>
@@ -4074,24 +4074,24 @@
         </div>
       </div>
       <p id="empFormErr" class="hidden text-sm text-red-600 mt-3"></p>
-      <div class="flex justify-between items-center pt-4 mt-2 border-t border-slate-100">
-        <div class="flex gap-2">
-          <button type="button" id="prevTabBtn" onclick="prevTab()" class="btn-ghost hidden">← Previous</button>
-          <button type="button" id="nextTabBtn" onclick="nextTab()" class="btn-primary">Next →</button>
-        </div>
-        <div class="flex gap-2">
-          <button type="button" onclick="closeEmpModal()" class="btn-ghost">Cancel</button>
-          <button type="submit" id="empSubmitBtn" class="btn-primary hidden">Save Employee</button>
-        </div>
-      </div>
     </form>
+    <div class="flex justify-between items-center px-6 py-4 border-t border-slate-200 shrink-0">
+      <div class="flex gap-2">
+        <button type="button" id="prevTabBtn" onclick="prevTab()" class="btn-ghost hidden">← Previous</button>
+        <button type="button" id="nextTabBtn" onclick="nextTab()" class="btn-primary">Next →</button>
+      </div>
+      <div class="flex gap-2">
+        <button type="button" onclick="closeEmpModal()" class="btn-ghost">Cancel</button>
+        <button type="submit" form="empForm" id="empSubmitBtn" class="btn-primary hidden">Save Employee</button>
+      </div>
+    </div>
   </div>
 </div>
 
 <!-- Employee View Modal -->
 <div id="viewModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-4xl">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-4xl flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <div class="flex items-center gap-3 min-w-0">
         <!-- Sections menu toggle — mobile/narrow only; the sidebar to the
              left is always visible at sm: and up (see viewTabDrawer below). -->
@@ -4117,8 +4117,8 @@
          this modal card's own auto height. -->
     <div id="viewTabOverlay" class="hidden fixed inset-0 bg-slate-900/30 z-[60] sm:hidden" onclick="closeViewTabMenu()"></div>
 
-    <div class="flex flex-col sm:flex-row">
-      <nav id="viewTabDrawer" class="fixed inset-y-0 left-0 z-[61] w-64 bg-white flex flex-col gap-0.5 py-3 px-3 -translate-x-full transition-transform duration-200 ease-out shadow-xl overflow-y-auto sm:shadow-none sm:static sm:translate-x-0 sm:z-auto sm:w-44 sm:shrink-0 sm:border-r sm:border-slate-200">
+    <div class="flex flex-col sm:flex-row flex-1 overflow-y-auto">
+      <nav id="viewTabDrawer" class="fixed inset-y-0 left-0 z-[61] w-64 bg-white flex flex-col gap-0.5 py-3 px-3 -translate-x-full transition-transform duration-200 ease-out shadow-xl overflow-y-auto sm:shadow-none sm:static sm:translate-x-0 sm:z-auto sm:w-44 sm:shrink-0 sm:border-r sm:border-slate-200 sm:self-start sm:sticky sm:top-0">
         <button class="nav-sub-item active w-full text-left" data-vtab="vt-personal" onclick="switchViewTab('vt-personal')">Personal Info</button>
         <button class="nav-sub-item w-full text-left" data-vtab="vt-employment" onclick="switchViewTab('vt-employment')">Employment</button>
         <button class="nav-sub-item w-full text-left" data-vtab="vt-locations" onclick="switchViewTab('vt-locations')">Locations</button>
@@ -4167,7 +4167,7 @@
       </div>
     </div>
 
-    <div class="flex gap-2 px-6 py-4 border-t border-slate-200">
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
       <button id="viewEditBtn" onclick="editFromView()" class="btn-primary hidden">Edit</button>
       <button id="viewToggleBtn" onclick="toggleStatusFromView()" class="btn-ghost hidden"></button>
       <button id="viewConfirmProbationBtn" onclick="confirmProbationFromView()" class="btn-ghost hidden">Confirm Probation</button>
@@ -4179,13 +4179,13 @@
 </div>
 
 <!-- Add/Edit Employee Document Modal -->
-<div id="employeeDocumentModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-center justify-center px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-sm">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+<div id="employeeDocumentModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-sm flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 id="employeeDocumentModalTitle" class="text-base font-semibold">Add Document</h2>
       <button onclick="closeEmployeeDocumentModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <form onsubmit="submitEmployeeDocument(event)" class="p-6 space-y-4">
+    <form id="employeeDocumentForm" onsubmit="submitEmployeeDocument(event)" class="p-6 space-y-4 overflow-y-auto flex-1">
       <input type="hidden" id="employeeDocumentId"/>
       <div><label class="lbl">Document Type <span class="text-red-500">*</span></label>
         <select id="employeeDocumentTypeId" class="inp" required></select>
@@ -4202,22 +4202,22 @@
         <p id="employeeDocumentAttachName" class="text-xs text-slate-400 mt-1">Optional — max ~6MB.</p>
       </div>
       <p id="employeeDocumentErr" class="hidden text-xs text-red-600"></p>
-      <div class="flex gap-2 pt-2">
-        <button type="submit" class="btn-primary">Save</button>
-        <button type="button" onclick="closeEmployeeDocumentModal()" class="btn-ghost">Cancel</button>
-      </div>
     </form>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="submit" form="employeeDocumentForm" class="btn-primary">Save</button>
+      <button type="button" onclick="closeEmployeeDocumentModal()" class="btn-ghost">Cancel</button>
+    </div>
   </div>
 </div>
 
 <!-- Location Modal (Add/Edit) -->
 <div id="locModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 id="locModalTitle" class="text-base font-semibold">Add Location</h2>
       <button onclick="closeLocationModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <form onsubmit="submitLocationForm(event)" class="p-6 space-y-4">
+    <form id="locForm" onsubmit="submitLocationForm(event)" class="p-6 space-y-4 overflow-y-auto flex-1">
       <div class="grid grid-cols-2 gap-4">
         <div>
           <label class="lbl">Location Name <span class="text-red-500">*</span></label>
@@ -4279,22 +4279,22 @@
         </div>
       </div>
       <p id="locFormErr" class="hidden text-sm text-red-600"></p>
-      <div class="flex justify-end gap-2 pt-4">
-        <button type="button" onclick="closeLocationModal()" class="btn-ghost">Cancel</button>
-        <button type="submit" class="btn-primary">Save Location</button>
-      </div>
     </form>
+    <div class="flex justify-end gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="button" onclick="closeLocationModal()" class="btn-ghost">Cancel</button>
+      <button type="submit" form="locForm" class="btn-primary">Save Location</button>
+    </div>
   </div>
 </div>
 
 <!-- Start Onboarding/Offboarding Modal -->
-<div id="startObModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-center justify-center px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-md">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+<div id="startObModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 id="startObTitle" class="text-base font-semibold">Start Onboarding</h2>
       <button onclick="closeStartObModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <form onsubmit="submitStartOb(event)" class="p-6 space-y-4">
+    <form id="startObForm" onsubmit="submitStartOb(event)" class="p-6 space-y-4 overflow-y-auto flex-1">
       <input type="hidden" id="startObType"/>
       <div><label class="lbl">Employee <span class="text-red-500">*</span></label><select id="startObEmpId" class="inp" required></select></div>
       <div><label class="lbl">Template</label><select id="startObTemplateSet" class="inp"></select></div>
@@ -4307,8 +4307,8 @@
         <p class="text-xs text-slate-400 mt-1">Not every employee goes through probation — only check this if it applies. Creates three linked Performance reviews (self-assessment, manager rating, HR sign-off), dated from this checklist's start date.</p>
       </div>
       <p id="startObErr" class="hidden text-sm text-red-600"></p>
-      <div class="flex justify-end gap-2"><button type="button" onclick="closeStartObModal()" class="btn-ghost">Cancel</button><button type="submit" class="btn-primary" id="startObSubmitBtn">Start</button></div>
     </form>
+    <div class="flex justify-end gap-2 px-6 py-4 border-t border-slate-200 shrink-0"><button type="button" onclick="closeStartObModal()" class="btn-ghost">Cancel</button><button type="submit" form="startObForm" class="btn-primary" id="startObSubmitBtn">Start</button></div>
   </div>
 </div>
 
@@ -4335,13 +4335,13 @@
 </div>
 
 <!-- OB Template Item Detail Modal (view/edit role, description, linked course) -->
-<div id="obTmplItemModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-60 flex items-center justify-center px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-md">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+<div id="obTmplItemModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-60 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 class="text-base font-semibold">Checklist Item</h2>
       <button onclick="closeObTmplItemModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <div class="p-6 space-y-4">
+    <div class="p-6 space-y-4 overflow-y-auto flex-1">
       <input type="hidden" id="obTmplItemId"/>
       <div><label class="lbl">Title <span class="text-red-500">*</span></label><input id="obTmplItemTitle" class="inp"/></div>
       <div><label class="lbl">Description</label><textarea id="obTmplItemDesc" class="inp" rows="2" placeholder="Optional description…"></textarea></div>
@@ -4370,22 +4370,22 @@
         </select>
         <p class="text-xs text-slate-400 mt-1">Resolved into an actual date per employee when their checklist starts; HR can still adjust it afterwards.</p>
       </div>
-      <div class="flex justify-end gap-2 pt-2">
-        <button onclick="closeObTmplItemModal()" class="btn-ghost">Cancel</button>
-        <button onclick="saveObTmplItemDetail()" class="btn-primary">Save</button>
-      </div>
+    </div>
+    <div class="flex justify-end gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button onclick="closeObTmplItemModal()" class="btn-ghost">Cancel</button>
+      <button onclick="saveObTmplItemDetail()" class="btn-primary">Save</button>
     </div>
   </div>
 </div>
 
 <!-- LD Course Modal -->
-<div id="ldCourseModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-center justify-center px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-md">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+<div id="ldCourseModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 id="ldCourseModalTitle" class="text-base font-semibold">Add Course</h2>
       <button onclick="closeLdCourseModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <form onsubmit="submitLdCourse(event)" class="p-6 space-y-4">
+    <form id="ldCourseForm" onsubmit="submitLdCourse(event)" class="p-6 space-y-4 overflow-y-auto flex-1">
       <input type="hidden" id="ldCourseId"/>
       <div><label class="lbl">Title <span class="text-red-500">*</span></label><input id="ldCourseTitle" class="inp" required/></div>
       <div><label class="lbl">Category <span class="text-red-500">*</span></label>
@@ -4399,22 +4399,22 @@
       <div><label class="lbl">Cost (RM)</label><input id="ldCourseCost" type="number" step="0.01" min="0" class="inp" value="0"/>
         <p class="text-xs text-slate-400 mt-1">Courses with a cost above 0 require manager/HR approval before an employee can start.</p>
       </div>
-      <div class="flex gap-2 pt-2">
-        <button type="submit" class="btn-primary">Save</button>
-        <button type="button" onclick="closeLdCourseModal()" class="btn-ghost">Cancel</button>
-      </div>
     </form>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="submit" form="ldCourseForm" class="btn-primary">Save</button>
+      <button type="button" onclick="closeLdCourseModal()" class="btn-ghost">Cancel</button>
+    </div>
   </div>
 </div>
 
 <!-- LD Enroll Modal -->
-<div id="ldEnrollModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-center justify-center px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-md">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+<div id="ldEnrollModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 id="ldEnrollModalTitle" class="text-base font-semibold">Enroll in Course</h2>
       <button onclick="closeLdEnrollModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <form onsubmit="submitLdEnroll(event)" class="p-6 space-y-4">
+    <form id="ldEnrollForm" onsubmit="submitLdEnroll(event)" class="p-6 space-y-4 overflow-y-auto flex-1">
       <input type="hidden" id="ldEnrollCourseId"/>
       <div id="ldEnrollEmpWrap" class="hidden">
         <label class="lbl">Employee <span class="text-red-500">*</span></label>
@@ -4422,22 +4422,22 @@
       </div>
       <div><label class="lbl">Notes</label><textarea id="ldEnrollNotes" class="inp" rows="2" placeholder="Optional notes…"></textarea></div>
       <p id="ldEnrollCostNote" class="hidden text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2"></p>
-      <div class="flex gap-2 pt-2">
-        <button type="submit" class="btn-primary">Enroll</button>
-        <button type="button" onclick="closeLdEnrollModal()" class="btn-ghost">Cancel</button>
-      </div>
     </form>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="submit" form="ldEnrollForm" class="btn-primary">Enroll</button>
+      <button type="button" onclick="closeLdEnrollModal()" class="btn-ghost">Cancel</button>
+    </div>
   </div>
 </div>
 
 <!-- LD Quiz Builder Modal -->
 <div id="ldQuizModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 id="ldQuizModalTitle" class="text-base font-semibold">Quiz for Course</h2>
       <button onclick="closeLdQuizModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <div class="p-6">
+    <div class="p-6 overflow-y-auto flex-1">
       <input type="hidden" id="ldQuizCourseId"/>
       <div class="grid grid-cols-3 gap-3 mb-4">
         <div class="col-span-3"><label class="lbl">Quiz Title <span class="text-red-500">*</span></label><input id="ldQuizTitle" class="inp" placeholder="e.g. Workplace Safety Quiz"/></div>
@@ -4454,69 +4454,69 @@
       </div>
       <div id="ldQuizQuestions" class="space-y-4 mb-4"></div>
       <button type="button" onclick="addLdQuizQuestion()" class="btn-ghost text-sm">+ Add Question</button>
-      <div class="flex gap-2 pt-4 border-t border-slate-200 mt-4">
-        <button type="button" onclick="submitLdQuiz()" class="btn-primary">Save Quiz</button>
-        <button type="button" onclick="closeLdQuizModal()" class="btn-ghost">Cancel</button>
-        <div class="flex-1"></div>
-        <button id="ldQuizDeleteBtn" type="button" onclick="deleteLdQuiz()" class="hidden text-sm text-red-600 hover:text-red-700 px-3">Remove Quiz</button>
-      </div>
+    </div>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="button" onclick="submitLdQuiz()" class="btn-primary">Save Quiz</button>
+      <button type="button" onclick="closeLdQuizModal()" class="btn-ghost">Cancel</button>
+      <div class="flex-1"></div>
+      <button id="ldQuizDeleteBtn" type="button" onclick="deleteLdQuiz()" class="hidden text-sm text-red-600 hover:text-red-700 px-3">Remove Quiz</button>
     </div>
   </div>
 </div>
 
 <!-- LD Take Quiz Modal -->
 <div id="ldTakeQuizModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 id="ldTakeQuizTitle" class="text-base font-semibold">Quiz</h2>
       <button onclick="closeLdTakeQuizModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <div class="p-6">
+    <div class="p-6 overflow-y-auto flex-1">
       <input type="hidden" id="ldTakeQuizId"/>
       <input type="hidden" id="ldTakeQuizEnrollId"/>
       <div id="ldTakeQuizResult" class="hidden mb-4 rounded-xl p-4 text-sm"></div>
       <div id="ldTakeQuizQuestions" class="space-y-5"></div>
-      <div class="flex gap-2 pt-4 border-t border-slate-200 mt-4">
-        <button id="ldTakeQuizSubmitBtn" type="button" onclick="submitLdQuizAttempt()" class="btn-primary">Submit Answers</button>
-        <button type="button" onclick="closeLdTakeQuizModal()" class="btn-ghost">Close</button>
-      </div>
+    </div>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button id="ldTakeQuizSubmitBtn" type="button" onclick="submitLdQuizAttempt()" class="btn-primary">Submit Answers</button>
+      <button type="button" onclick="closeLdTakeQuizModal()" class="btn-ghost">Close</button>
     </div>
   </div>
 </div>
 
 <!-- LD Course Preview Modal (HR — content + quiz, nothing recorded) -->
 <div id="ldPreviewQuizModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <div>
         <h2 id="ldPreviewQuizTitle" class="text-base font-semibold">Course Preview</h2>
         <span class="badge text-xs bg-amber-100 text-amber-700 mt-1">Preview mode — nothing is recorded</span>
       </div>
       <button onclick="closeLdPreviewQuizModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <div class="p-6 max-h-[75vh] overflow-y-auto">
+    <div class="p-6 overflow-y-auto flex-1">
       <h3 class="text-sm font-semibold text-slate-700 mb-3">Course Content</h3>
       <div id="ldPreviewContent" class="space-y-4 mb-6"></div>
       <h3 class="text-sm font-semibold text-slate-700 mb-3">Quiz</h3>
       <div id="ldPreviewQuizResult" class="hidden mb-4 rounded-xl p-4 text-sm"></div>
       <div id="ldPreviewQuizQuestions" class="space-y-5"></div>
-      <div class="flex gap-2 pt-4 border-t border-slate-200 mt-4">
-        <button id="ldPreviewQuizSubmitBtn" type="button" onclick="submitLdQuizPreview()" class="btn-primary">Check Answers</button>
-        <button id="ldPreviewQuizRetryBtn" type="button" onclick="openLdPreviewQuizModal(window.ldPreviewCourseId)" class="btn-ghost hidden">Try Again</button>
-        <button type="button" onclick="closeLdPreviewQuizModal()" class="btn-ghost">Close</button>
-      </div>
+    </div>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button id="ldPreviewQuizSubmitBtn" type="button" onclick="submitLdQuizPreview()" class="btn-primary">Check Answers</button>
+      <button id="ldPreviewQuizRetryBtn" type="button" onclick="openLdPreviewQuizModal(window.ldPreviewCourseId)" class="btn-ghost hidden">Try Again</button>
+      <button type="button" onclick="closeLdPreviewQuizModal()" class="btn-ghost">Close</button>
     </div>
   </div>
 </div>
 
 <!-- Apply for Leave Modal -->
-<div id="leaveApplyModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-center justify-center px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-md">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+<div id="leaveApplyModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 class="text-base font-semibold">Apply for Leave</h2>
       <button onclick="closeLeaveApplyModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <form onsubmit="submitLeaveApplication(event)" class="p-6 space-y-4">
+    <form id="leaveApplyForm" onsubmit="submitLeaveApplication(event)" class="p-6 space-y-4 overflow-y-auto flex-1">
       <div id="leaveApplyEmpWrap" class="hidden">
         <label class="lbl">Employee <span class="text-red-500">*</span></label>
         <select id="leaveApplyEmpId" class="inp" required></select>
@@ -4558,22 +4558,22 @@
         <p class="text-xs text-slate-400 mt-1">Required for this leave type (e.g. medical certificate). Max ~500KB.</p>
       </div>
       <p id="leaveApplyErr" class="hidden text-xs text-red-600"></p>
-      <div class="flex gap-2 pt-2">
-        <button type="submit" class="btn-primary">Submit Application</button>
-        <button type="button" onclick="closeLeaveApplyModal()" class="btn-ghost">Cancel</button>
-      </div>
     </form>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="submit" form="leaveApplyForm" class="btn-primary">Submit Application</button>
+      <button type="button" onclick="closeLeaveApplyModal()" class="btn-ghost">Cancel</button>
+    </div>
   </div>
 </div>
 
 <!-- Resign Modal (self-service, and HR-on-behalf from Employee detail) -->
-<div id="resignModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-center justify-center px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-md">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+<div id="resignModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 id="resignModalTitle" class="text-base font-semibold">Submit Resignation</h2>
       <button onclick="closeResignModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <form onsubmit="submitResignation(event)" class="p-6 space-y-4">
+    <form id="resignForm" onsubmit="submitResignation(event)" class="p-6 space-y-4 overflow-y-auto flex-1">
       <input type="hidden" id="resignEmpId"/>
       <p id="resignForEmpName" class="hidden text-sm text-slate-600"></p>
       <div><label class="lbl">Reason <span class="text-red-500">*</span></label><textarea id="resignReason" class="inp" rows="2" required placeholder="Reason for resignation…"></textarea></div>
@@ -4588,22 +4588,22 @@
         <p class="text-xs text-slate-400 mt-1">PDF, Word, text, or image. Max ~6MB.</p>
       </div>
       <p id="resignErr" class="hidden text-xs text-red-600"></p>
-      <div class="flex gap-2 pt-2">
-        <button type="submit" class="btn-primary">Submit Resignation</button>
-        <button type="button" onclick="closeResignModal()" class="btn-ghost">Cancel</button>
-      </div>
     </form>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="submit" form="resignForm" class="btn-primary">Submit Resignation</button>
+      <button type="button" onclick="closeResignModal()" class="btn-ghost">Cancel</button>
+    </div>
   </div>
 </div>
 
 <!-- Add Holiday Modal -->
-<div id="holidayModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-center justify-center px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-sm">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+<div id="holidayModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-sm flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 class="text-base font-semibold">Add Public Holiday</h2>
       <button onclick="closeHolidayModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <form onsubmit="submitHoliday(event)" class="p-6 space-y-4">
+    <form onsubmit="submitHoliday(event)" class="p-6 space-y-4 overflow-y-auto flex-1">
       <div><label class="lbl">Holiday Name <span class="text-red-500">*</span></label><input id="holidayName" class="inp" required placeholder="e.g. Merdeka Day"/></div>
       <div><label class="lbl">Date <span class="text-red-500">*</span></label><input id="holidayDate" type="date" class="inp" required/></div>
       <div class="flex gap-2 pt-2">
@@ -4640,12 +4640,12 @@
 
 <!-- Add/Edit Leave Type Modal -->
 <div id="leaveTypeModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-sm">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-sm flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 id="leaveTypeModalTitle" class="text-base font-semibold">Add Leave Type</h2>
       <button onclick="closeLeaveTypeModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <form onsubmit="submitLeaveType(event)" class="p-6 space-y-4">
+    <form id="leaveTypeForm" onsubmit="submitLeaveType(event)" class="p-6 space-y-4 overflow-y-auto flex-1">
       <input type="hidden" id="leaveTypeId"/>
       <div><label class="lbl">Name <span class="text-red-500">*</span></label><input id="leaveTypeName" class="inp" required placeholder="e.g. Annual Leave"/></div>
       <div>
@@ -4720,22 +4720,22 @@
       <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
         <input type="checkbox" id="leaveTypeAllowHalfDay" class="w-4 h-4" checked/> Allow half-day (AM/PM) applications
       </label>
-      <div class="flex gap-2 pt-2">
-        <button type="submit" class="btn-primary">Save</button>
-        <button type="button" onclick="closeLeaveTypeModal()" class="btn-ghost">Cancel</button>
-      </div>
     </form>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="submit" form="leaveTypeForm" class="btn-primary">Save</button>
+      <button type="button" onclick="closeLeaveTypeModal()" class="btn-ghost">Cancel</button>
+    </div>
   </div>
 </div>
 
 <!-- Add/Edit Employee Document Type Modal -->
-<div id="employeeDocTypeModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-center justify-center px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-sm">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+<div id="employeeDocTypeModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-sm flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 id="employeeDocTypeModalTitle" class="text-base font-semibold">Add Document Type</h2>
       <button onclick="closeEmployeeDocTypeModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <form onsubmit="submitEmployeeDocType(event)" class="p-6 space-y-4">
+    <form id="employeeDocTypeForm" onsubmit="submitEmployeeDocType(event)" class="p-6 space-y-4 overflow-y-auto flex-1">
       <input type="hidden" id="employeeDocTypeId"/>
       <div><label class="lbl">Name <span class="text-red-500">*</span></label><input id="employeeDocTypeName" class="inp" required placeholder="e.g. Work Permit"/></div>
       <div>
@@ -4746,11 +4746,11 @@
       <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
         <input type="checkbox" id="employeeDocTypeActive" class="w-4 h-4" checked/> Active
       </label>
-      <div class="flex gap-2 pt-2">
-        <button type="submit" class="btn-primary">Save</button>
-        <button type="button" onclick="closeEmployeeDocTypeModal()" class="btn-ghost">Cancel</button>
-      </div>
     </form>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="submit" form="employeeDocTypeForm" class="btn-primary">Save</button>
+      <button type="button" onclick="closeEmployeeDocTypeModal()" class="btn-ghost">Cancel</button>
+    </div>
   </div>
 </div>
 
@@ -4868,12 +4868,12 @@
 
 <!-- Duplicate Project Modal -->
 <div id="dupProjectModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 class="text-base font-semibold">Duplicate Project</h2>
       <button onclick="closeDuplicateProjectModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <div class="p-6 space-y-4">
+    <div class="p-6 space-y-4 overflow-y-auto flex-1">
       <p class="text-sm text-slate-500">Duplicating <span id="dupProjectSourceName" class="font-medium text-slate-700"></span></p>
       <div>
         <label class="lbl">New Project Name <span class="text-red-500">*</span></label>
@@ -4894,25 +4894,25 @@
         </div>
         <p class="text-xs text-slate-400 mt-1.5">"Members" includes both Project Manager(s) and Team Members. The new project always starts as Active, with copied tasks reset to Not Started and no dates.</p>
       </div>
-      <div class="flex gap-2">
-        <button type="button" onclick="submitDuplicateProject()" class="btn-primary">Duplicate</button>
-        <button type="button" onclick="closeDuplicateProjectModal()" class="btn-ghost">Cancel</button>
-      </div>
+    </div>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="button" onclick="submitDuplicateProject()" class="btn-primary">Duplicate</button>
+      <button type="button" onclick="closeDuplicateProjectModal()" class="btn-ghost">Cancel</button>
     </div>
   </div>
 </div>
 
 <!-- Timesheet Detail Viewer Modal (approvals) -->
 <div id="timesheetDetailModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <div>
         <h2 id="timesheetDetailTitle" class="text-base font-semibold">Timesheet</h2>
         <p id="timesheetDetailMeta" class="text-xs text-slate-500 mt-0.5"></p>
       </div>
       <button onclick="closeTimesheetDetailModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <div class="p-6">
+    <div class="p-6 overflow-y-auto flex-1">
       <div class="table-scroll mb-4">
         <table class="w-full text-sm">
           <thead class="bg-white text-slate-500 text-xs uppercase border-b border-slate-200 sticky top-0 z-10">
@@ -4922,12 +4922,12 @@
         </table>
       </div>
       <p id="timesheetDetailTotal" class="text-sm font-medium text-slate-700 mb-4"></p>
-      <div id="timesheetDetailActions" class="flex gap-2 mb-4"></div>
       <div id="timesheetDetailOvertimeWrap" class="hidden border-t border-slate-200 pt-4">
         <p class="text-sm font-semibold text-slate-700 mb-2">Overtime</p>
         <div id="timesheetDetailOvertimeList" class="space-y-2"></div>
       </div>
     </div>
+    <div id="timesheetDetailActions" class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0"></div>
   </div>
 </div>
 
@@ -4969,14 +4969,14 @@
 
 <!-- User Modal -->
 <div id="userModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 id="userModalTitle" class="text-base font-semibold">Add User</h2>
       <button onclick="closeUserModal()" class="text-slate-400 hover:text-slate-600">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
       </button>
     </div>
-    <form onsubmit="submitUserForm(event)" class="p-6 space-y-4">
+    <form id="userForm" onsubmit="submitUserForm(event)" class="p-6 space-y-4 overflow-y-auto flex-1">
       <input type="hidden" id="editingUserId"/>
       <div class="grid grid-cols-2 gap-4">
         <div><label class="block text-sm font-medium text-slate-700 mb-1">Username <span class="text-red-500">*</span></label><input id="uUsername" type="text" class="inp" required/></div>
@@ -4998,22 +4998,22 @@
         </div>
       </div>
       <p id="userFormErr" class="hidden text-sm text-red-600"></p>
-      <div class="flex justify-end gap-2">
-        <button type="button" onclick="closeUserModal()" class="btn-ghost">Cancel</button>
-        <button type="submit" class="btn-primary">Save User</button>
-      </div>
     </form>
+    <div class="flex justify-end gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="button" onclick="closeUserModal()" class="btn-ghost">Cancel</button>
+      <button type="submit" form="userForm" class="btn-primary">Save User</button>
+    </div>
   </div>
 </div>
 
 <!-- Requisition Modal -->
 <div id="reqModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 id="reqModalTitle" class="text-base font-semibold">New Job Requisition</h2>
       <button onclick="closeReqModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <form onsubmit="submitReqForm(event)" class="p-6 space-y-4">
+    <form id="reqForm" onsubmit="submitReqForm(event)" class="p-6 space-y-4 overflow-y-auto flex-1">
       <input type="hidden" id="reqId"/>
       <div class="grid grid-cols-2 gap-4">
         <div class="col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1">Position Title <span class="text-red-500">*</span></label><input id="reqTitle" type="text" class="inp" required placeholder="Senior Software Engineer"/></div>
@@ -5027,11 +5027,11 @@
         <div class="col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1">Requirements</label><textarea id="reqRequirements" class="inp" style="height:5rem;resize:none" placeholder="Required qualifications, skills, experience…"></textarea></div>
       </div>
       <p id="reqFormErr" class="hidden text-sm text-red-600"></p>
-      <div class="flex justify-end gap-2">
-        <button type="button" onclick="closeReqModal()" class="btn-ghost">Cancel</button>
-        <button type="submit" id="reqSubmitBtn" class="btn-primary">Save Draft</button>
-      </div>
     </form>
+    <div class="flex justify-end gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="button" onclick="closeReqModal()" class="btn-ghost">Cancel</button>
+      <button type="submit" form="reqForm" id="reqSubmitBtn" class="btn-primary">Save Draft</button>
+    </div>
   </div>
 </div>
 
@@ -5063,11 +5063,12 @@
 
 <!-- Requisition Detail / Approval Modal -->
 <div id="reqDetailModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <div><h2 id="rdTitle" class="text-base font-semibold">—</h2><p id="rdMeta" class="text-xs text-slate-500 mt-0.5">—</p></div>
       <div class="flex items-center gap-2"><span id="rdBadge" class="badge"></span><button onclick="closeReqDetailModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></div>
     </div>
+    <div class="overflow-y-auto flex-1">
     <div id="rdBody" class="p-6 space-y-4 text-sm"></div>
     <div class="px-6 pb-4 border-t border-slate-100 pt-4">
       <button onclick="toggleReqHistory()" class="flex items-center gap-1.5 text-sm font-medium text-slate-700">
@@ -5099,7 +5100,8 @@
         </div>
       </div>
     </div>
-    <div class="flex gap-2 px-6 py-4 border-t border-slate-200">
+    </div>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
       <button id="rdEditBtn" onclick="editReqFromDetail()" class="btn-primary hidden">Edit</button>
       <button id="rdSubmitBtn" onclick="submitReqForApproval()" class="btn-primary hidden" style="background:#7c3aed">Submit for Approval</button>
       <button id="rdCloseBtn" onclick="closeReqAction()" class="btn-ghost hidden" style="color:#dc2626">Close Requisition</button>
@@ -5111,19 +5113,19 @@
 
 <!-- Candidate Modal (Add/Edit) -->
 <div id="candModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 id="candModalTitle" class="text-base font-semibold">Add Candidate</h2>
       <button onclick="closeCandModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
     <!-- Tab bar -->
-    <div class="flex border-b border-slate-200 px-6">
+    <div class="flex border-b border-slate-200 px-6 shrink-0">
       <button type="button" data-cmtab="cm-personal"  onclick="switchCandFormTab('cm-personal')"  class="cand-form-tab view-tab-active  py-3 px-4 text-sm font-medium border-b-2 border-blue-600 text-blue-600 -mb-px">Personal Info</button>
       <button type="button" data-cmtab="cm-employment" onclick="switchCandFormTab('cm-employment')" class="cand-form-tab text-slate-500 py-3 px-4 text-sm font-medium border-b-2 border-transparent -mb-px hover:text-slate-700">Employment</button>
       <button type="button" data-cmtab="cm-education"  onclick="switchCandFormTab('cm-education')"  class="cand-form-tab text-slate-500 py-3 px-4 text-sm font-medium border-b-2 border-transparent -mb-px hover:text-slate-700">Education</button>
       <button type="button" data-cmtab="cm-others"     onclick="switchCandFormTab('cm-others')"     class="cand-form-tab text-slate-500 py-3 px-4 text-sm font-medium border-b-2 border-transparent -mb-px hover:text-slate-700">Others</button>
     </div>
-    <form onsubmit="submitCandForm(event)">
+    <form id="candForm" onsubmit="submitCandForm(event)" class="overflow-y-auto flex-1">
       <input type="hidden" id="candId"/>
 
       <!-- Tab: Personal Info -->
@@ -5189,37 +5191,37 @@
         <div class="col-span-2"><label class="lbl">HR Notes <span class="text-xs text-slate-400">(internal only)</span></label><textarea id="candNotes" class="inp" style="height:5rem;resize:none" placeholder="Internal notes, observations, concerns…"></textarea></div>
       </div>
 
-      <div class="px-6 pb-6 flex items-center justify-between">
-        <p id="candFormErr" class="text-sm text-red-600 hidden"></p>
-        <div class="flex gap-2 ml-auto">
-          <button type="button" onclick="closeCandModal()" class="btn-ghost">Cancel</button>
-          <button type="submit" class="btn-primary">Save Candidate</button>
-        </div>
-      </div>
+      <p id="candFormErr" class="px-6 text-sm text-red-600 hidden"></p>
     </form>
+    <div class="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="button" onclick="closeCandModal()" class="btn-ghost">Cancel</button>
+      <button type="submit" form="candForm" class="btn-primary">Save Candidate</button>
+    </div>
   </div>
 </div>
 
 <!-- Candidate Detail Modal -->
 <div id="candDetailModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-3xl">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-3xl flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <div><h2 id="cdName" class="text-base font-semibold">—</h2><p id="cdMeta" class="text-xs text-slate-500 mt-0.5">—</p></div>
       <div class="flex items-center gap-2"><span id="cdStageBadge" class="badge"></span><button onclick="closeCandDetailModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></div>
     </div>
-    <div class="flex border-b border-slate-200 px-6 gap-1">
+    <div class="flex border-b border-slate-200 px-6 gap-1 shrink-0">
       <button class="view-tab-btn view-tab-active px-4 py-3 text-sm" data-cdtab="cdt-profile" onclick="switchCandTab('cdt-profile')">Profile</button>
       <button class="view-tab-btn px-4 py-3 text-sm text-slate-500" data-cdtab="cdt-interviews" onclick="switchCandTab('cdt-interviews')">Interviews &amp; Scores</button>
       <button class="view-tab-btn px-4 py-3 text-sm text-slate-500" data-cdtab="cdt-resume" onclick="switchCandTab('cdt-resume')">Resume</button>
       <button id="cdStageTimeTab" class="view-tab-btn px-4 py-3 text-sm text-slate-500 hidden" data-cdtab="cdt-stagetime" onclick="switchCandTab('cdt-stagetime')">Time in Stage</button>
       <button id="cdHistoryTab" class="view-tab-btn px-4 py-3 text-sm text-slate-500 hidden" data-cdtab="cdt-history" onclick="switchCandTab('cdt-history')">History</button>
     </div>
-    <div id="cdt-profile" class="p-6"></div>
-    <div id="cdt-interviews" class="p-6 hidden"></div>
-    <div id="cdt-resume" class="p-6 hidden"></div>
-    <div id="cdt-stagetime" class="p-6 hidden"></div>
-    <div id="cdt-history" class="p-6 hidden"></div>
-    <div class="flex gap-2 px-6 py-4 border-t border-slate-200">
+    <div class="overflow-y-auto flex-1">
+      <div id="cdt-profile" class="p-6"></div>
+      <div id="cdt-interviews" class="p-6 hidden"></div>
+      <div id="cdt-resume" class="p-6 hidden"></div>
+      <div id="cdt-stagetime" class="p-6 hidden"></div>
+      <div id="cdt-history" class="p-6 hidden"></div>
+    </div>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
       <select id="cdStageSelect" class="inp w-40" onchange="moveCandStage()"></select>
       <button onclick="openIntModal(viewingCandId)" class="btn-ghost hidden" id="cdScheduleBtn">+ Schedule Interview</button>
       <button onclick="openOfferModal(null,viewingCandId)" class="btn-primary hidden" id="cdOfferBtn">Generate Letter</button>
@@ -5255,12 +5257,12 @@
 
 <!-- Interview Modal (Schedule/Edit) -->
 <div id="intModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 id="intModalTitle" class="text-base font-semibold">Schedule Interview</h2>
       <button onclick="closeIntModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <form onsubmit="submitIntForm(event)" class="p-6 space-y-4">
+    <form id="intForm" onsubmit="submitIntForm(event)" class="p-6 space-y-4 overflow-y-auto flex-1">
       <input type="hidden" id="intId"/>
       <div class="grid grid-cols-2 gap-4">
         <div class="col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1">Candidate <span class="text-red-500">*</span></label><select id="intCandId" class="inp" required></select></div>
@@ -5273,22 +5275,22 @@
         <div class="col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1">Notes</label><textarea id="intNotes" class="inp" style="height:4rem;resize:none"></textarea></div>
       </div>
       <p id="intFormErr" class="hidden text-sm text-red-600"></p>
-      <div class="flex justify-end gap-2">
-        <button type="button" onclick="closeIntModal()" class="btn-ghost">Cancel</button>
-        <button type="submit" class="btn-primary">Save Interview</button>
-      </div>
     </form>
+    <div class="flex justify-end gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="button" onclick="closeIntModal()" class="btn-ghost">Cancel</button>
+      <button type="submit" form="intForm" class="btn-primary">Save Interview</button>
+    </div>
   </div>
 </div>
 
 <!-- Score Modal -->
 <div id="scoreModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 class="text-base font-semibold">Interview Scorecard</h2>
       <button onclick="closeScoreModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <form onsubmit="submitScore(event)" class="p-6 space-y-4">
+    <form id="scoreForm" onsubmit="submitScore(event)" class="p-6 space-y-4 overflow-y-auto flex-1">
       <input type="hidden" id="scoreIntId"/>
       <p id="scoreInterviewMeta" class="text-sm text-slate-500 mb-2"></p>
       <div class="grid grid-cols-2 gap-4">
@@ -5303,22 +5305,22 @@
         <div class="col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1">Comments</label><textarea id="scoreComments" class="inp" style="height:4rem;resize:none"></textarea></div>
       </div>
       <p id="scoreFormErr" class="hidden text-sm text-red-600"></p>
-      <div class="flex justify-end gap-2">
-        <button type="button" onclick="closeScoreModal()" class="btn-ghost">Cancel</button>
-        <button type="submit" class="btn-primary">Submit Scorecard</button>
-      </div>
     </form>
+    <div class="flex justify-end gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="button" onclick="closeScoreModal()" class="btn-ghost">Cancel</button>
+      <button type="submit" form="scoreForm" class="btn-primary">Submit Scorecard</button>
+    </div>
   </div>
 </div>
 
 <!-- Offer / Decline Letter Modal -->
 <div id="offerModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 id="offerModalTitle" class="text-base font-semibold">Generate Letter</h2>
       <button onclick="closeOfferModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <form onsubmit="submitOfferForm(event)" class="p-6 space-y-4">
+    <form id="offerForm" onsubmit="submitOfferForm(event)" class="p-6 space-y-4 overflow-y-auto flex-1">
       <input type="hidden" id="offerId"/>
       <div class="grid grid-cols-2 gap-4">
         <div id="offerCandWrap" class="col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1">Candidate <span class="text-red-500">*</span></label><select id="offerCandId" class="inp" required onchange="onOfferCandChange()"></select></div>
@@ -5344,11 +5346,11 @@
         <textarea id="offerLetterContent" class="inp font-mono text-xs" style="height:16rem;resize:vertical"></textarea>
       </div>
       <p id="offerFormErr" class="hidden text-sm text-red-600"></p>
-      <div class="flex justify-end gap-2">
-        <button type="button" onclick="closeOfferModal()" class="btn-ghost">Cancel</button>
-        <button type="submit" class="btn-primary">Save Letter</button>
-      </div>
     </form>
+    <div class="flex justify-end gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="button" onclick="closeOfferModal()" class="btn-ghost">Cancel</button>
+      <button type="submit" form="offerForm" class="btn-primary">Save Letter</button>
+    </div>
   </div>
 </div>
 
@@ -5379,12 +5381,12 @@
 
 <!-- Offer Letter Template Modal (add/edit) -->
 <div id="offerTemplateModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 id="offerTemplateModalTitle" class="text-base font-semibold">Add Letter Template</h2>
       <button onclick="closeOfferTemplateModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <form onsubmit="submitOfferTemplateForm(event)" class="p-6 space-y-4">
+    <form id="offerTemplateForm" onsubmit="submitOfferTemplateForm(event)" class="p-6 space-y-4 overflow-y-auto flex-1">
       <input type="hidden" id="offerTemplateId"/>
       <div class="grid grid-cols-2 gap-4">
         <div><label class="block text-sm font-medium text-slate-700 mb-1">Letter Type <span class="text-red-500">*</span></label>
@@ -5405,11 +5407,11 @@
         <input type="checkbox" id="offerTemplateDefault"/> Make this the default template for this letter type
       </label>
       <p id="offerTemplateFormErr" class="hidden text-sm text-red-600"></p>
-      <div class="flex justify-end gap-2">
-        <button type="button" onclick="closeOfferTemplateModal()" class="btn-ghost">Cancel</button>
-        <button type="submit" class="btn-primary">Save Template</button>
-      </div>
     </form>
+    <div class="flex justify-end gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="button" onclick="closeOfferTemplateModal()" class="btn-ghost">Cancel</button>
+      <button type="submit" form="offerTemplateForm" class="btn-primary">Save Template</button>
+    </div>
   </div>
 </div>
 
@@ -5440,12 +5442,12 @@
 
 <!-- Compensation: Pay Grade Modal -->
 <div id="compensationPayGradeModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 id="payGradeFormTitle" class="text-base font-semibold">Create New Pay Grade</h2>
       <button onclick="closePayGradeModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <form id="payGradeForm" onsubmit="submitPayGradeForm(event)" class="p-6 space-y-4">
+    <form id="payGradeForm" onsubmit="submitPayGradeForm(event)" class="p-6 space-y-4 overflow-y-auto flex-1">
       <input type="hidden" id="payGradeId"/>
       <div class="grid grid-cols-2 gap-4">
         <div><label class="lbl">Code</label><input id="pgCode" type="text" class="inp" placeholder="A1" required/></div>
@@ -5458,11 +5460,11 @@
         <div><label class="lbl">Max</label><input id="pgMax" type="number" class="inp" step="0.01" placeholder="3500" required/></div>
       </div>
       <div><label class="lbl">Description</label><textarea id="pgDesc" class="inp" rows="3"></textarea></div>
-      <div class="flex gap-2">
-        <button type="submit" class="btn-primary">Save Pay Grade</button>
-        <button type="button" onclick="closePayGradeModal()" class="btn-ghost">Cancel</button>
-      </div>
     </form>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="submit" form="payGradeForm" class="btn-primary">Save Pay Grade</button>
+      <button type="button" onclick="closePayGradeModal()" class="btn-ghost">Cancel</button>
+    </div>
   </div>
 </div>
 
@@ -5490,12 +5492,12 @@
 
 <!-- Compensation: Job Role Modal -->
 <div id="compensationJobRoleModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 class="text-base font-semibold">Create New Job Role</h2>
       <button onclick="closeJobRoleModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <form id="jobRoleForm" onsubmit="submitJobRoleForm(event)" class="p-6 space-y-4">
+    <form id="jobRoleForm" onsubmit="submitJobRoleForm(event)" class="p-6 space-y-4 overflow-y-auto flex-1">
       <div class="grid grid-cols-2 gap-4">
         <div><label class="lbl">Code</label><input id="jrCode" type="text" class="inp" placeholder="ENG_2" required/></div>
         <div><label class="lbl">Job Level</label><select id="jrLevel" class="inp" required></select></div>
@@ -5510,22 +5512,22 @@
         <label class="lbl">Pay Grades <span class="text-slate-400 font-normal">(check to assign, select one as primary)</span></label>
         <div id="jrGradesList" class="border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-40 overflow-y-auto"></div>
       </div>
-      <div class="flex gap-2">
-        <button type="submit" class="btn-primary">Save Job Role</button>
-        <button type="button" onclick="closeJobRoleModal()" class="btn-ghost">Cancel</button>
-      </div>
     </form>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="submit" form="jobRoleForm" class="btn-primary">Save Job Role</button>
+      <button type="button" onclick="closeJobRoleModal()" class="btn-ghost">Cancel</button>
+    </div>
   </div>
 </div>
 
 <!-- Compensation: Assign Employee Compensation Modal -->
 <div id="assignCompModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 class="text-base font-semibold">Assign Compensation</h2>
       <button onclick="closeAssignCompModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <form id="assignCompForm" onsubmit="submitAssignCompForm(event)" class="p-6 space-y-4">
+    <form id="assignCompForm" onsubmit="submitAssignCompForm(event)" class="p-6 space-y-4 overflow-y-auto flex-1">
       <input id="acEmployeeId" type="hidden"/>
       <div>
         <label class="lbl">Job Role</label>
@@ -5546,11 +5548,11 @@
       <div><label class="lbl">Effective Date <span class="text-red-500">*</span></label><input id="acEffectiveDate" type="date" class="inp" required/></div>
       <p class="text-xs text-slate-500">Salary itself is set on the employee's own record (Edit Employee → Statutory tab → Basic Salary) — that's the figure payroll uses, so it isn't edited here. Saving this supersedes the employee's current compensation record; the previous one is kept as history, not deleted. If the employee's Basic Salary falls outside the selected pay grade's range, saving it there will be blocked until the role/level/grade or the salary is reconciled.</p>
       <p id="assignCompErr" class="hidden text-xs text-red-600"></p>
-      <div class="flex gap-2">
-        <button type="submit" class="btn-primary">Save Compensation</button>
-        <button type="button" onclick="closeAssignCompModal()" class="btn-ghost">Cancel</button>
-      </div>
     </form>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="submit" form="assignCompForm" class="btn-primary">Save Compensation</button>
+      <button type="button" onclick="closeAssignCompModal()" class="btn-ghost">Cancel</button>
+    </div>
   </div>
 </div>
 
@@ -5652,12 +5654,12 @@
 
 <!-- Compensation: Bonus Plan Modal -->
 <div id="compensationBonusPlanModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 class="text-base font-semibold">Create New Bonus Plan</h2>
       <button onclick="closeBonusPlanModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <form id="bonusPlanForm" onsubmit="submitBonusPlanForm(event)" class="p-6 space-y-4">
+    <form id="bonusPlanForm" onsubmit="submitBonusPlanForm(event)" class="p-6 space-y-4 overflow-y-auto flex-1">
       <div><label class="lbl">Plan Name</label><input id="bpName" type="text" class="inp" placeholder="2026 Annual Performance Bonus" required/></div>
       <div class="grid grid-cols-2 gap-3">
         <div>
@@ -5679,11 +5681,11 @@
       </div>
       <div><label class="lbl">Budget Pool (RM)</label><input id="bpBudget" type="number" class="inp" step="0.01" placeholder="500000"/></div>
       <div><label class="lbl">Description</label><textarea id="bpDesc" class="inp" rows="3"></textarea></div>
-      <div class="flex gap-2">
-        <button type="submit" class="btn-primary">Create Plan</button>
-        <button type="button" onclick="closeBonusPlanModal()" class="btn-ghost">Cancel</button>
-      </div>
     </form>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="submit" form="bonusPlanForm" class="btn-primary">Create Plan</button>
+      <button type="button" onclick="closeBonusPlanModal()" class="btn-ghost">Cancel</button>
+    </div>
   </div>
 </div>
 
@@ -5760,12 +5762,12 @@
 
 <!-- Compensation: New Commission Plan Modal -->
 <div id="compensationCommissionPlanModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 class="text-base font-semibold">Create New Commission Plan</h2>
       <button onclick="closeCommissionPlanModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <form id="commissionPlanForm" onsubmit="submitCommissionPlanForm(event)" class="p-6 space-y-4">
+    <form id="commissionPlanForm" onsubmit="submitCommissionPlanForm(event)" class="p-6 space-y-4 overflow-y-auto flex-1">
       <div><label class="lbl">Plan Name</label><input id="cpName" type="text" class="inp" placeholder="2026 Sales Commission Plan" required/></div>
       <div class="grid grid-cols-2 gap-3">
         <div>
@@ -5787,11 +5789,11 @@
         <div><label class="lbl">Period End</label><input id="cpEnd" type="date" class="inp"/></div>
       </div>
       <div><label class="lbl">Description</label><textarea id="cpDesc" class="inp" rows="3"></textarea></div>
-      <div class="flex gap-2">
-        <button type="submit" class="btn-primary">Create Plan</button>
-        <button type="button" onclick="closeCommissionPlanModal()" class="btn-ghost">Cancel</button>
-      </div>
     </form>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="submit" form="commissionPlanForm" class="btn-primary">Create Plan</button>
+      <button type="button" onclick="closeCommissionPlanModal()" class="btn-ghost">Cancel</button>
+    </div>
   </div>
 </div>
 
@@ -5873,12 +5875,12 @@
 
 <!-- Compensation: New Equity Grant Modal -->
 <div id="compensationEquityGrantModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 class="text-base font-semibold">New Equity Grant</h2>
       <button onclick="closeEquityGrantModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <form id="equityGrantForm" onsubmit="submitEquityGrantForm(event)" class="p-6 space-y-4">
+    <form id="equityGrantForm" onsubmit="submitEquityGrantForm(event)" class="p-6 space-y-4 overflow-y-auto flex-1">
       <div><label class="lbl">Employee</label><select id="egEmployee" class="inp" required></select></div>
       <div class="grid grid-cols-2 gap-3">
         <div>
@@ -5904,11 +5906,11 @@
         <div><label class="lbl">Cliff (months)</label><input id="egCliff" type="number" class="inp" value="12" min="0" max="48" required/></div>
       </div>
       <div><label class="lbl">Notes</label><textarea id="egNotes" class="inp" rows="2"></textarea></div>
-      <div class="flex gap-2">
-        <button type="submit" class="btn-primary">Create Grant</button>
-        <button type="button" onclick="closeEquityGrantModal()" class="btn-ghost">Cancel</button>
-      </div>
     </form>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="submit" form="equityGrantForm" class="btn-primary">Create Grant</button>
+      <button type="button" onclick="closeEquityGrantModal()" class="btn-ghost">Cancel</button>
+    </div>
   </div>
 </div>
 
@@ -5996,11 +5998,12 @@
 
 <!-- Benefits: New/Edit Benefit Plan Modal -->
 <div id="benefitPlanModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 id="benefitPlanModalTitle" class="text-base font-semibold">New Benefit Plan</h2>
       <button onclick="closeBenefitPlanModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
+    <div class="overflow-y-auto flex-1">
     <form id="benefitPlanForm" onsubmit="submitBenefitPlanForm(event)" class="p-6 space-y-4">
       <input type="hidden" id="benPlanId"/>
       <div><label class="lbl">Plan Name</label><input id="benPlanName" type="text" class="inp" placeholder="Premier Medical Plan" required/></div>
@@ -6053,10 +6056,6 @@
           <option value="Closed">Closed</option>
         </select>
       </div>
-      <div class="flex gap-2">
-        <button type="submit" class="btn-primary">Save Plan</button>
-        <button type="button" onclick="closeBenefitPlanModal()" class="btn-ghost">Cancel</button>
-      </div>
     </form>
     <div id="benPlanEligibilitySection" class="hidden border-t border-slate-200 p-6 space-y-3">
       <h3 class="text-sm font-semibold text-slate-700">Eligibility</h3>
@@ -6078,6 +6077,11 @@
       <h3 class="text-sm font-semibold text-slate-700">Auto-Enroll</h3>
       <p class="text-xs text-slate-500">Enrolls every currently active employee into this plan right now (status: Enrolled). Employees already enrolled are left as-is.</p>
       <button type="button" onclick="autoEnrollAllActiveEmployees()" class="btn-ghost text-sm">Auto-Enroll All Active Employees</button>
+    </div>
+    </div>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="submit" form="benefitPlanForm" class="btn-primary">Save Plan</button>
+      <button type="button" onclick="closeBenefitPlanModal()" class="btn-ghost">Cancel</button>
     </div>
   </div>
 </div>
@@ -6106,12 +6110,12 @@
 
 <!-- Benefits: Submit Life Event Modal -->
 <div id="lifeEventModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-md">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 class="text-base font-semibold">Submit Life Event</h2>
       <button onclick="closeLifeEventModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <form id="lifeEventForm" onsubmit="submitLifeEventForm(event)" class="p-6 space-y-4">
+    <form id="lifeEventForm" onsubmit="submitLifeEventForm(event)" class="p-6 space-y-4 overflow-y-auto flex-1">
       <div>
         <label class="lbl">Event Type</label>
         <select id="leType" class="inp" required>
@@ -6127,22 +6131,22 @@
       <div><label class="lbl">Event Date</label><input id="leDate" type="date" class="inp" required/></div>
       <div><label class="lbl">Notes</label><textarea id="leNotes" class="inp" rows="3"></textarea></div>
       <p class="text-xs text-slate-500">HR will review this event. If approved, you'll get a 30-day window to change your benefit elections.</p>
-      <div class="flex gap-2">
-        <button type="submit" class="btn-primary">Submit</button>
-        <button type="button" onclick="closeLifeEventModal()" class="btn-ghost">Cancel</button>
-      </div>
     </form>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="submit" form="lifeEventForm" class="btn-primary">Submit</button>
+      <button type="button" onclick="closeLifeEventModal()" class="btn-ghost">Cancel</button>
+    </div>
   </div>
 </div>
 
 <!-- Benefits: Add/Edit Dependent Modal -->
 <div id="dependentModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-md">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 id="dependentModalTitle" class="text-base font-semibold">Add Dependent</h2>
       <button onclick="closeDependentModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <form id="dependentForm" onsubmit="submitDependentForm(event)" class="p-6 space-y-4">
+    <form id="dependentForm" onsubmit="submitDependentForm(event)" class="p-6 space-y-4 overflow-y-auto flex-1">
       <input type="hidden" id="depId"/>
       <div><label class="lbl">Full Name</label><input id="depName" type="text" class="inp" required/></div>
       <div class="grid grid-cols-2 gap-3">
@@ -6168,22 +6172,22 @@
         <input id="depBeneficiaryPercent" type="number" class="inp" step="1" min="0" max="100" placeholder="100"/>
       </div>
       <div><label class="lbl">Notes</label><textarea id="depNotes" class="inp" rows="2"></textarea></div>
-      <div class="flex gap-2">
-        <button type="submit" class="btn-primary">Save Dependent</button>
-        <button type="button" onclick="closeDependentModal()" class="btn-ghost">Cancel</button>
-      </div>
     </form>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="submit" form="dependentForm" class="btn-primary">Save Dependent</button>
+      <button type="button" onclick="closeDependentModal()" class="btn-ghost">Cancel</button>
+    </div>
   </div>
 </div>
 
 <!-- Benefits: Submit Claim Modal -->
 <div id="claimModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-md">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 class="text-base font-semibold">Submit Benefit Claim</h2>
       <button onclick="closeClaimModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <form id="claimForm" onsubmit="submitClaimForm(event)" class="p-6 space-y-4">
+    <form id="claimForm" onsubmit="submitClaimForm(event)" class="p-6 space-y-4 overflow-y-auto flex-1">
       <div><label class="lbl">Plan</label><select id="claimPlan" class="inp" required></select></div>
       <div class="grid grid-cols-2 gap-3">
         <div><label class="lbl">Claim Date</label><input id="claimDate" type="date" class="inp" required/></div>
@@ -6195,11 +6199,11 @@
         <select id="claimProjectId" class="inp"></select>
         <p class="text-xs text-slate-400 mt-1">This approval requires sign-off from the project's manager.</p>
       </div>
-      <div class="flex gap-2">
-        <button type="submit" class="btn-primary">Submit Claim</button>
-        <button type="button" onclick="closeClaimModal()" class="btn-ghost">Cancel</button>
-      </div>
     </form>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="submit" form="claimForm" class="btn-primary">Submit Claim</button>
+      <button type="button" onclick="closeClaimModal()" class="btn-ghost">Cancel</button>
+    </div>
   </div>
 </div>
 
@@ -6226,12 +6230,12 @@
 
 <!-- Attendance: Shift Modal -->
 <div id="shiftModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-sm">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-sm flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 id="shiftModalTitle" class="text-base font-semibold">Add Shift</h2>
       <button onclick="closeShiftModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <form id="shiftForm" onsubmit="submitShiftForm(event)" class="p-6 space-y-4">
+    <form id="shiftForm" onsubmit="submitShiftForm(event)" class="p-6 space-y-4 overflow-y-auto flex-1">
       <input type="hidden" id="shiftId"/>
       <div>
         <label class="lbl">Name</label>
@@ -6252,22 +6256,22 @@
         <label class="lbl">Grace Period (minutes)</label>
         <input id="shiftGrace" type="number" class="inp" min="0" max="480" value="0" required/>
       </div>
-      <div class="flex gap-2">
-        <button type="submit" class="btn-primary text-sm">Save</button>
-        <button type="button" onclick="closeShiftModal()" class="btn-ghost text-sm">Cancel</button>
-      </div>
     </form>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="submit" form="shiftForm" class="btn-primary text-sm">Save</button>
+      <button type="button" onclick="closeShiftModal()" class="btn-ghost text-sm">Cancel</button>
+    </div>
   </div>
 </div>
 
 <!-- Attendance: Rule Modal -->
 <div id="attRuleModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-sm">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-sm flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 class="text-base font-semibold">Add Attendance Rule</h2>
       <button onclick="closeAttRuleModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <form id="attRuleForm" onsubmit="submitAttRuleForm(event)" class="p-6 space-y-4">
+    <form id="attRuleForm" onsubmit="submitAttRuleForm(event)" class="p-6 space-y-4 overflow-y-auto flex-1">
       <div>
         <label class="lbl">Scope</label>
         <select id="attRuleScopeType" class="inp" onchange="toggleAttRuleScopeInput()">
@@ -6296,22 +6300,22 @@
       <label class="flex items-center gap-2 text-sm">
         <input id="attRuleRequired" type="checkbox" checked/> Clock-in required
       </label>
-      <div class="flex gap-2">
-        <button type="submit" class="btn-primary text-sm">Save</button>
-        <button type="button" onclick="closeAttRuleModal()" class="btn-ghost text-sm">Cancel</button>
-      </div>
     </form>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="submit" form="attRuleForm" class="btn-primary text-sm">Save</button>
+      <button type="button" onclick="closeAttRuleModal()" class="btn-ghost text-sm">Cancel</button>
+    </div>
   </div>
 </div>
 
 <!-- Attendance: Shift Assignment Modal -->
 <div id="assignmentModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-sm">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-sm flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 class="text-base font-semibold">Assign Shift</h2>
       <button onclick="closeAssignmentModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <form id="assignmentForm" onsubmit="submitAssignmentForm(event)" class="p-6 space-y-4">
+    <form id="assignmentForm" onsubmit="submitAssignmentForm(event)" class="p-6 space-y-4 overflow-y-auto flex-1">
       <div>
         <label class="lbl">Employee ID</label>
         <select id="assignEmp" class="inp" required>
@@ -6334,11 +6338,11 @@
           <input id="assignTo" type="date" class="inp"/>
         </div>
       </div>
-      <div class="flex gap-2">
-        <button type="submit" class="btn-primary text-sm">Save</button>
-        <button type="button" onclick="closeAssignmentModal()" class="btn-ghost text-sm">Cancel</button>
-      </div>
     </form>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="submit" form="assignmentForm" class="btn-primary text-sm">Save</button>
+      <button type="button" onclick="closeAssignmentModal()" class="btn-ghost text-sm">Cancel</button>
+    </div>
   </div>
 </div>
 
@@ -6381,12 +6385,12 @@
 
 <!-- Attendance: Resolve Review Modal -->
 <div id="attResolveModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-sm">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-sm flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
       <h2 class="text-base font-semibold">Resolve Attendance</h2>
       <button onclick="closeAttResolveModal()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>
-    <form id="attResolveForm" onsubmit="submitAttResolveForm(event)" class="p-6 space-y-4">
+    <form id="attResolveForm" onsubmit="submitAttResolveForm(event)" class="p-6 space-y-4 overflow-y-auto flex-1">
       <p id="attResolveInfo" class="text-sm text-slate-500"></p>
       <div>
         <label class="lbl">Action</label>
@@ -6411,11 +6415,11 @@
         <label class="lbl">Notes</label>
         <textarea id="attResolveNotes" class="inp" rows="2"></textarea>
       </div>
-      <div class="flex gap-2">
-        <button type="submit" class="btn-primary text-sm">Confirm</button>
-        <button type="button" onclick="closeAttResolveModal()" class="btn-ghost text-sm">Cancel</button>
-      </div>
     </form>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="submit" form="attResolveForm" class="btn-primary text-sm">Confirm</button>
+      <button type="button" onclick="closeAttResolveModal()" class="btn-ghost text-sm">Cancel</button>
+    </div>
   </div>
 </div>
 

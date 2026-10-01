@@ -61,26 +61,46 @@ wrapper everywhere.
 ## Recently added (not yet in README's prose — check git log for detail)
 
 - **Sticky modal footers (Save/Cancel always visible, no scroll needed)**
-  — only `#projectModal` (Timesheet → Projects' Add/Edit, both the Details
-  and Tasks tabs) has this so far, fixed 2026-10-01 after it was reported
-  live. The pattern: the modal's outer panel is `flex flex-col` with a
-  fixed `style="max-height:85vh"`; header and tab bar are `shrink-0`;
-  the scrollable body is `.p-6.overflow-y-auto.flex-1`; and the action
-  buttons live in their own `shrink-0` bar *outside* that scrollable
-  div, not inside it — `#populateHolidaysModal` already did this
-  correctly and was the template copied here. For a tabbed modal, use
-  one footer div per tab (toggled alongside the tab panes themselves,
-  e.g. `switchProjectTab()`'s `projectModalFooter-${t}` toggle) rather
-  than one shared footer, since different tabs can need different
-  buttons. A survey done the same day found **40+ other modals with
-  the same scroll-to-save problem** (buttons sitting inside scrolling
-  content with no sticky footer) — notably the biggest forms in the
-  app: Employee (`empModal`, 4 tabs), Candidate (`candModal`, 4 tabs),
-  Institution (`instModal`), Employee View (`viewModal`), Leave Type,
-  Benefit Plan, Location, several Compensation detail modals, Leave
-  Apply. Deliberately left unfixed for now (scoped to Projects/Tasks
-  only, per instruction) — if asked to fix another one, apply the same
-  pattern rather than re-deriving it.
+  — rolled out 2026-10-01 to ~45 modals across the app (started with just
+  `#projectModal` after it was reported live, then swept the rest the
+  same day). The pattern: the modal's outer panel is `flex flex-col`
+  with a fixed `style="max-height:85vh"`; header and tab bar are
+  `shrink-0`; the scrollable body is `.overflow-y-auto.flex-1`; and the
+  action buttons live in their own `shrink-0` bar *outside* that
+  scrollable div, not inside it — `#populateHolidaysModal` already did
+  this correctly and was the template copied everywhere else. Where the
+  buttons used to sit inside a `<form>`, the form itself became the
+  scrollable element (`id="xForm"` added where missing) and its submit
+  button moved into the external footer bar via `<button type="submit"
+  form="xForm">` (HTML5 form association — works regardless of DOM
+  nesting, confirmed no JS in this codebase relies on
+  `event.target`/`FormData` assuming the button is a form descendant).
+  For a tabbed modal where **each tab needs different buttons**
+  (Projects' Details vs. Tasks), use one footer div per tab, toggled
+  alongside the tab panes themselves (e.g. `switchProjectTab()`'s
+  `projectModalFooter-${t}` toggle). For a tabbed modal that shares
+  **one** footer across all tabs regardless of which is active (Add
+  Employee's wizard Next/Previous/Save, Add Candidate's 4 tabs), a
+  single footer with `form="xForm"` is simpler and is what most tabbed
+  modals here actually need. Also fixed in the same pass: a handful of
+  modals (`leaveApplyModal`, `resignModal`, `holidayModal`,
+  `employeeDocumentModal`, `startObModal`, `ldCourseModal`,
+  `ldEnrollModal`, `employeeDocTypeModal`, `obTmplItemModal`) used a
+  *different*, worse backdrop pattern (`items-center justify-center`
+  with no `overflow-y-auto` at all) — tall content there didn't just
+  need scrolling, it was **clipped with no way to reach it**; all were
+  switched to the same `items-start overflow-y-auto py-8` backdrop every
+  other modal uses. Left unfixed (checked and judged low-risk — short,
+  static, no dynamically-growing content): `deviceModal`, `payoutModal`,
+  `probGoalTemplateModal`, `offerViewModal` (already caps its content at
+  `max-h-96`), `compensationMeritModal`, `ldModulesModal`,
+  `equitySettleModal`, `enrollmentPeriodModal`, `cycleModal`,
+  `compensationJobLevelModal`, `payrollRunModal`, `claimDecideModal`,
+  `changePasswordModal`, `applyModal`, `payslipViewModal` (print-layout,
+  deliberately left alone), `pipDetailModal`. If one of these grows a
+  dynamically-expanding list later (like the LD quiz builder questions
+  did), it needs the same fix — don't assume "already checked" stays
+  true forever.
 - **Fixed: `has_permission()` silently never enforced overrides for
   per-institution custom roles** (`core/permission_matrix.py`,
   `routers/roles.py`). Found live in institution 4: HR granted the custom
