@@ -4,6 +4,7 @@
 let currentUser = null, meta = {}, employees = [], orgData = [], users = [], institutions = [], rolesCache = [];
 let currentInstitution = null;
 let currentEmpId = null, viewingId = null, editingUserId = null, personalEditMode = false;
+let currentPage = null;
 let currentTab = 'personal';
 let openGroups = new Set(['empMgmt']);
 const TABS = ['personal','employment','statutory','dependents'];
@@ -597,7 +598,15 @@ async function bootApp() {
     await loadInstitutions();
     showPage('institutions');
   } else {
-    showPage('dashboard');
+    // Restores whichever page was open before a refresh (or a Back/Forward
+    // navigation that reloaded the document) instead of always landing on
+    // Home — see showPage()'s own hash-sync. Only the page itself, not any
+    // in-page state (open tab, modal, filters) — none of that is persisted
+    // anywhere else in the app either. A superadmin viewing a specific
+    // institution isn't covered: currentInstitution is in-memory only and
+    // always resets to null on a fresh load, same as before this change.
+    const hashPage = location.hash.slice(1);
+    showPage(ALL_PAGES.includes(hashPage) ? hashPage : 'dashboard');
   }
   if (currentUser.must_change_password) openChangePasswordModal(true);
 }
@@ -917,6 +926,14 @@ function clearInstitutionContext() {
 // `opts.focus` deep-links to one record (see deep-link.js): the destination page
 // opens it or scrolls to and highlights its row.
 async function showPage(page, opts = {}) {
+  currentPage = page;
+  // Reflects the page in the URL so a refresh (or Back/Forward) can restore
+  // it — see the hashchange listener below. Skipped when the hash already
+  // matches: that's the case when this call is itself the result of a
+  // hashchange (Back/Forward already moved location.hash before calling
+  // us), so re-setting it here would be a no-op at best and, if it weren't
+  // guarded, would risk fighting the browser's own navigation.
+  if (location.hash.slice(1) !== page) location.hash = page;
   setPendingFocus(page, opts.focus);
   clearPageNotice(page);
   ALL_PAGES.forEach(p => {
@@ -1032,5 +1049,18 @@ async function showPage(page, opts = {}) {
   if (page === 'settings-ai-assistant') loadAiAssistantSettingsPage();
   if (focusOpensModal(page)) openFocusedRecord(page);
 }
+
+// Back/Forward (and a manually-edited hash) land here — the browser has
+// already moved location.hash by the time this fires, so showPage()'s own
+// hash-sync above is a no-op for this call; we're just catching up the UI
+// to a URL that already changed. Ignored before bootApp() has run (no
+// currentUser yet, e.g. the very first hashchange some browsers fire for
+// an initial '#' on page load) and for a hash that doesn't name a real
+// page (stale/hand-edited) or already matches what's showing.
+window.addEventListener('hashchange', () => {
+  const page = location.hash.slice(1);
+  if (!currentUser || !page || page === currentPage || !ALL_PAGES.includes(page)) return;
+  showPage(page);
+});
 
 // ---------------------------------------------------------------------------

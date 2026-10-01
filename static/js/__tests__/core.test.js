@@ -103,6 +103,61 @@ describe('Page Navigation', () => {
   });
 });
 
+// Mirrors showPage()'s hash-sync and the bootApp() landing-page logic
+// (static/js/core.js) — refresh (and Back/Forward) restoring the page the
+// user was on instead of always landing on Home/dashboard.
+describe('Page hash routing', () => {
+  const ALL_PAGES = ['dashboard', 'employees', 'users', 'institutions'];
+
+  function landingPage(hashFragment) {
+    return ALL_PAGES.includes(hashFragment) ? hashFragment : 'dashboard';
+  }
+
+  it('restores the page named in the hash on boot', () => {
+    expect(landingPage('employees')).toBe('employees');
+  });
+
+  it('falls back to dashboard for an empty hash (fresh login, no prior page)', () => {
+    expect(landingPage('')).toBe('dashboard');
+  });
+
+  it('falls back to dashboard for a stale or hand-edited hash naming no real page', () => {
+    expect(landingPage('not-a-real-page')).toBe('dashboard');
+  });
+
+  function syncHash(page, currentHash) {
+    return currentHash !== page ? page : currentHash;
+  }
+
+  it('updates the hash when showPage navigates to a different page', () => {
+    expect(syncHash('users', 'dashboard')).toBe('users');
+  });
+
+  it('leaves the hash alone when it already matches (avoids fighting Back/Forward)', () => {
+    expect(syncHash('users', 'users')).toBe('users');
+  });
+
+  function shouldHandleHashChange({ hasUser, page, currentPage, allPages }) {
+    return !!hasUser && !!page && page !== currentPage && allPages.includes(page);
+  }
+
+  it('ignores a hashchange before login (no currentUser yet)', () => {
+    expect(shouldHandleHashChange({ hasUser: false, page: 'employees', currentPage: null, allPages: ALL_PAGES })).toBe(false);
+  });
+
+  it('ignores a hashchange to the page already showing (avoids a redundant re-render loop)', () => {
+    expect(shouldHandleHashChange({ hasUser: true, page: 'employees', currentPage: 'employees', allPages: ALL_PAGES })).toBe(false);
+  });
+
+  it('ignores a hashchange to an unknown page', () => {
+    expect(shouldHandleHashChange({ hasUser: true, page: 'bogus', currentPage: 'employees', allPages: ALL_PAGES })).toBe(false);
+  });
+
+  it('handles a hashchange to a different known page (Back/Forward)', () => {
+    expect(shouldHandleHashChange({ hasUser: true, page: 'users', currentPage: 'employees', allPages: ALL_PAGES })).toBe(true);
+  });
+});
+
 describe('Menu Item Click Handling', () => {
   beforeEach(() => {
     document.body.innerHTML = `

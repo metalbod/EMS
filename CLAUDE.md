@@ -60,6 +60,30 @@ wrapper everywhere.
 
 ## Recently added (not yet in README's prose — check git log for detail)
 
+- **Hash-based page routing** (`static/js/core.js`'s `showPage()`/
+  `bootApp()`) — added 2026-10-01 so a refresh (or Back/Forward) restores
+  whichever of the 58 `ALL_PAGES` entries was open instead of always
+  landing on Home/dashboard. `showPage()` syncs `location.hash` to the
+  page it's showing (skipped when the hash already matches, so it never
+  fights the browser's own Back/Forward navigation); a `hashchange`
+  listener calls `showPage()` for Back/Forward and hand-edited hashes;
+  `bootApp()` reads `location.hash` on login instead of hardcoding
+  `showPage('dashboard')`. Scoped to the top-level page only — no other
+  UI state is persisted anywhere in this app (open tab, open modal, list
+  filters/sort/pagination all stay in-memory-only, reset on reload), so
+  restoring page-only state matches what the rest of the app already
+  does rather than being a partial version of something deeper. Doesn't
+  cover a superadmin viewing a specific institution:
+  `currentInstitution` is in-memory only and always resets to `null` on
+  a fresh load (same as before this change) — unrelated to the hash, a
+  superadmin always lands back on the institution picker regardless of
+  which page they were on. No backend change needed —
+  `routers/frontend.py`'s catch-all already serves `index.html` for any
+  path and never even sees the hash (fragments aren't sent to the
+  server). Doesn't touch or conflict with `public_careers.js`'s
+  path-based routing for the unauthenticated `/careers/...` pages —
+  different mechanism (`location.pathname`, checked before login) and
+  different URL namespace (path vs. hash) entirely.
 - **Sticky modal footers (Save/Cancel always visible, no scroll needed)**
   — rolled out 2026-10-01 to ~45 modals across the app (started with just
   `#projectModal` after it was reported live, then swept the rest the
