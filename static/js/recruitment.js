@@ -71,6 +71,7 @@ async function loadRequisitions() {
   const rows=await res.json();
   const canManage=HR_MANAGE_ROLES.includes(currentUser?.role);
   document.getElementById('addReqBtn')?.classList.toggle('hidden',!canManage);
+  document.getElementById('viewCareersPageBtn')?.classList.toggle('hidden',!canManage);
   const body=document.getElementById('reqTableBody');
   const empty=document.getElementById('reqEmpty');
   if(!rows.length){body.innerHTML='';empty?.classList.remove('hidden');return;}
@@ -161,6 +162,15 @@ async function openReqDetail(reqId) {
   document.getElementById('rdEditBtn').classList.toggle('hidden',r.status!=='Draft');
   document.getElementById('rdSubmitBtn').classList.toggle('hidden',r.status!=='Draft');
   document.getElementById('rdCloseBtn').classList.toggle('hidden',!['Approved'].includes(r.status));
+  // Public Applications — only ever possible once Approved (see
+  // enable_public_link in routers/recruitment.py); the HR-manage-only gate
+  // matches every other write action on this modal.
+  const canManagePublicLink=HR_MANAGE_ROLES.includes(currentUser?.role);
+  const linkSection=document.getElementById('rdPublicLinkSection');
+  linkSection.classList.toggle('hidden',!(canManagePublicLink&&r.status==='Approved'));
+  document.getElementById('rdPublicLinkOff').classList.toggle('hidden',!!r.public_token);
+  document.getElementById('rdPublicLinkOn').classList.toggle('hidden',!r.public_token);
+  if(r.public_token) document.getElementById('rdPublicLinkUrl').value=`${window.location.origin}/careers/apply/${r.public_token}`;
   const historyWrap=document.getElementById('rdHistoryWrap');
   historyWrap.classList.add('hidden'); historyWrap.innerHTML='';
   document.getElementById('rdHistoryChevron').classList.remove('rotate-90');
@@ -227,6 +237,32 @@ async function closeReqAction() {
   const res=await api(`/api/recruitment/requisitions/${viewingReqId}/close`,{method:'PATCH',body:JSON.stringify({})});
   if(!res||!res.ok) return;
   closeReqDetailModal(); loadRequisitions();
+}
+
+// Public Applications (routers/public_careers.py) — enable/disable the
+// shareable, unauthenticated apply link for the requisition currently open
+// in the detail modal. See openReqDetail for the section this toggles.
+async function enablePublicLink() {
+  if(!viewingReqId) return;
+  const res=await api(`/api/recruitment/requisitions/${viewingReqId}/public-link`,{method:'POST',body:JSON.stringify({})});
+  if(!res||!res.ok){const d=await res?.json().catch(()=>({}));alert(d?.detail||'Failed to enable public applications');return;}
+  await openReqDetail(viewingReqId);
+}
+async function disablePublicLink() {
+  if(!viewingReqId||!confirm('Disable public applications? The current link will stop working immediately.')) return;
+  const res=await api(`/api/recruitment/requisitions/${viewingReqId}/public-link`,{method:'DELETE'});
+  if(!res||!res.ok) return;
+  await openReqDetail(viewingReqId);
+}
+function copyPublicLink() {
+  const input=document.getElementById('rdPublicLinkUrl');
+  input.select();
+  navigator.clipboard?.writeText(input.value);
+}
+function openCareersPage() {
+  const inst=currentUser?.role==='superadmin'?currentInstitution:currentUser?.institution;
+  if(!inst?.code) return;
+  window.open(`/careers/${inst.code}`, '_blank');
 }
 
 // ---------------------------------------------------------------------------

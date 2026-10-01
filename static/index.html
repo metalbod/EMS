@@ -63,6 +63,55 @@
   </div>
 </div>
 
+<!-- PUBLIC CAREERS — no login required. Shown instead of loginScreen/appShell
+     when the URL is /careers/<institution-code> (listing) or
+     /careers/apply/<token> (a single job's application form) — see
+     static/js/public_careers.js's maybeShowPublicCareers(), called from
+     app-init.js's boot IIFE before it decides whether to show the login
+     screen. Serves both anonymous visitors and logged-in employees
+     identically (see routers/public_careers.py's module docstring) —
+     loadPublicApplyForm() just prefills from the session when one exists. -->
+<div id="publicCareersScreen" class="hidden min-h-screen bg-slate-50">
+  <div class="max-w-2xl mx-auto px-4 py-10 sm:py-16">
+    <div id="careersListingView" class="hidden">
+      <h1 id="careersInstName" class="text-2xl font-bold text-slate-800 mb-1">—</h1>
+      <p class="text-slate-500 mb-6">Open Positions</p>
+      <div id="careersPositionsList" class="space-y-3"></div>
+      <p id="careersListingEmpty" class="hidden text-slate-400 text-sm">No open positions right now. Please check back later.</p>
+    </div>
+
+    <div id="careersApplyView" class="hidden">
+      <div id="careersApplyNotFound" class="hidden text-center py-20">
+        <h1 class="text-xl font-semibold text-slate-800 mb-2">This job posting is no longer available.</h1>
+      </div>
+      <div id="careersApplyForm" class="hidden">
+        <h1 id="careersJobTitle" class="text-2xl font-bold text-slate-800 mb-1">—</h1>
+        <p id="careersJobMeta" class="text-slate-500 mb-6">—</p>
+        <p id="careersJobDescription" class="text-sm text-slate-600 whitespace-pre-wrap mb-8"></p>
+        <form onsubmit="submitPublicApplication(event)" class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-4">
+          <div><label class="lbl">Full Name <span class="text-red-500">*</span></label><input id="careersFullName" type="text" class="inp" required/></div>
+          <div><label class="lbl">Email <span class="text-red-500">*</span></label><input id="careersEmail" type="email" class="inp" required/></div>
+          <div><label class="lbl">Phone</label><input id="careersPhone" type="tel" class="inp" placeholder="012-3456789"/></div>
+          <div><label class="lbl">IC Number</label><input id="careersIc" type="text" class="inp" placeholder="900101-14-1234"/></div>
+          <div>
+            <label class="lbl">Resume <span class="text-xs text-slate-400">(PDF or Word, max ~6MB)</span></label>
+            <input id="careersResumeInput" type="file" accept=".pdf,.doc,.docx" onchange="handleCareersResumeSelected(event)" class="block w-full text-sm text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
+            <p id="careersResumeName" class="text-xs text-slate-500 mt-1"></p>
+          </div>
+          <div><label class="lbl">Cover Note</label><textarea id="careersCoverNote" class="inp" style="height:5rem;resize:none" placeholder="Anything you'd like us to know…"></textarea></div>
+          <div id="careersTurnstileWidget" class="cf-turnstile"></div>
+          <p id="careersApplyErr" class="hidden text-sm text-red-600"></p>
+          <button type="submit" class="btn-primary w-full py-2.5">Submit Application</button>
+        </form>
+      </div>
+      <div id="careersApplySuccess" class="hidden text-center py-20">
+        <h1 class="text-xl font-semibold text-slate-800 mb-2">Application received!</h1>
+        <p class="text-slate-500">Thank you for applying — we'll be in touch if there's a match.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- MAIN APP -->
 <div id="appShell" class="hidden h-screen flex flex-col overflow-hidden">
 
@@ -1301,6 +1350,7 @@
             <option value="Filled">Filled</option>
           </select>
           <div class="flex-1"></div>
+          <button id="viewCareersPageBtn" onclick="openCareersPage()" class="btn-ghost hidden">View Careers Page</button>
           <button id="addReqBtn" onclick="openReqModal()" class="btn-primary hidden flex items-center gap-2">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
             New Requisition
@@ -5012,6 +5062,21 @@
       <div class="flex gap-2">
         <button onclick="approveReq('approve')" class="btn-primary" style="background:#059669">Approve</button>
         <button onclick="approveReq('reject')" class="btn-ghost" style="color:#dc2626">Reject</button>
+      </div>
+    </div>
+    <div id="rdPublicLinkSection" class="hidden px-6 pb-4 border-t border-slate-100 pt-4">
+      <p class="text-sm font-medium text-slate-700 mb-2">Public Applications</p>
+      <div id="rdPublicLinkOff">
+        <p class="text-xs text-slate-500 mb-2">Let external candidates (and logged-in employees) apply to this role from a public link — no account needed.</p>
+        <button onclick="enablePublicLink()" class="btn-ghost text-sm">Enable Public Applications</button>
+      </div>
+      <div id="rdPublicLinkOn" class="hidden">
+        <p class="text-xs text-slate-500 mb-2">Anyone with this link can apply:</p>
+        <div class="flex gap-2">
+          <input id="rdPublicLinkUrl" type="text" class="inp text-xs" readonly/>
+          <button onclick="copyPublicLink()" class="btn-ghost text-sm whitespace-nowrap">Copy Link</button>
+          <button onclick="disablePublicLink()" class="btn-ghost text-sm whitespace-nowrap" style="color:#dc2626">Disable</button>
+        </div>
       </div>
     </div>
     <div class="flex gap-2 px-6 py-4 border-t border-slate-200">

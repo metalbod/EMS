@@ -90,6 +90,7 @@ document.querySelectorAll('[data-page]').forEach(el => {
 // Init
 // ---------------------------------------------------------------------------
 (async()=>{
+  if(maybeShowPublicCareers()) return;
   const token=localStorage.getItem('token');
   if(!token) return;
   showGlobalLoading();

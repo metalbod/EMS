@@ -1,4 +1,5 @@
 """Recruitment module: Job Requisitions, Candidates/ATS, Interviews, and Offers."""
+import uuid
 from datetime import datetime
 from string import Template
 from typing import Any, Dict, List, Optional
@@ -709,6 +710,47 @@ def close_requisition(conn, req_id: int, user: dict = Depends(get_current_user))
     conn.commit()
     row = conn.execute("SELECT * FROM job_requisitions WHERE id=?", (req_id,)).fetchone()
     return dict(row)
+
+
+@router.post("/api/recruitment/requisitions/{req_id}/public-link")
+@db_session
+def enable_public_link(conn, req_id: int, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    """Generates (or returns the existing) public application token for this
+    requisition — see 20261001_0002_add_requisition_public_token and
+    routers/public_careers.py, the only place this token is ever read by an
+    unauthenticated caller. Only an Approved requisition can be made public
+    — that's already this app's "open for hiring" signal (the same status
+    static/js/dashboard.js's Open Roles KPI counts) — but routers/
+    public_careers.py re-checks status live on every request too, so a
+    requisition closed afterward stops accepting applications immediately
+    without needing to also revoke the token here."""
+    require_permission(conn, user, "recruitment.create_edit_requisition_candidate_interview_offer")
+    inst_id = need_inst(user)
+    req = _get_req(conn, inst_id, req_id)
+    if req["status"] != "Approved":
+        raise HTTPException(400, "Only an Approved requisition can accept public applications")
+    token = req.get("public_token")
+    if not token:
+        token = str(uuid.uuid4())
+        conn.execute("UPDATE job_requisitions SET public_token=? WHERE id=? AND institution_id=?", (token, req_id, inst_id))
+        _log_requisition(conn, inst_id, req_id, "Public Applications Enabled", "Public application link generated", user)
+        conn.commit()
+    return {"public_token": token}
+
+
+@router.delete("/api/recruitment/requisitions/{req_id}/public-link")
+@db_session
+def disable_public_link(conn, req_id: int, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    """Revokes the public application link — any previously-shared URL
+    stops working immediately and permanently; re-enabling issues a brand
+    new token, never reuses the old one."""
+    require_permission(conn, user, "recruitment.create_edit_requisition_candidate_interview_offer")
+    inst_id = need_inst(user)
+    _get_req(conn, inst_id, req_id)
+    conn.execute("UPDATE job_requisitions SET public_token=NULL WHERE id=? AND institution_id=?", (req_id, inst_id))
+    _log_requisition(conn, inst_id, req_id, "Public Applications Disabled", "Public application link revoked", user)
+    conn.commit()
+    return {"ok": True}
 
 
 @router.get("/api/recruitment/requisitions/{req_id}/audit-log")

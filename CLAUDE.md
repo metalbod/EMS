@@ -60,6 +60,53 @@ wrapper everywhere.
 
 ## Recently added (not yet in README's prose — check git log for detail)
 
+- **Public (no-login) job applications** (`routers/public_careers.py`,
+  `static/js/public_careers.js`, `20261001_0002_add_requisition_public_token`):
+  the only unauthenticated, no-pre-shared-secret write path anywhere in this
+  app — everything else is gated by `core/deps.py`'s `get_current_user` (JWT)
+  or `routers/attendance.py`'s `get_device` (a provisioned device API key).
+  HR enables it per requisition (`POST/DELETE .../requisitions/{id}/
+  public-link`, only while `Approved`), which mints/clears a random UUID
+  `job_requisitions.public_token` — deliberately not the requisition's own
+  sequential `id` (shared across every institution; would let someone
+  enumerate other companies' postings) and not institution code + id. Two
+  public routes read it: `GET /api/public/careers/{institution_code}` (a
+  listing of that institution's Approved + public-enabled roles) and `GET`/
+  `POST /api/public/careers/apply/{token}` (one job's details / the
+  application itself) — both re-check the requisition's status live on
+  every request, so closing it takes effect immediately without HR needing
+  to separately revoke the link. Institution/tenant RLS scoping is resolved
+  from the token (or institution code) rather than from a logged-in user —
+  `resolve_public_requisition` must stay `async def` with its DB calls made
+  directly (not `asyncio.to_thread`, not `@db_session`), the same
+  constraint `get_device`'s own docstring documents: `set_rls_context`'s
+  ContextVar only propagates to this request's later `get_db()` calls if
+  the mutation happens on the request's own asyncio task. The same two
+  endpoints serve a logged-in employee too (no separate "internal" flow) —
+  `static/index.html`'s `#publicCareersScreen` is shown instead of the
+  login screen when the URL matches `/careers/...`, checked first in
+  `app-init.js`'s boot IIFE, regardless of whether a session token exists;
+  `loadPublicApplyForm` prefills from `/api/auth/me` when one does, and the
+  submit tags `source="Internal"` only when that session's own
+  `institution_id` matches the requisition's (never for an employee of a
+  *different* institution applying to this one). Deliberately has **no**
+  "is this an existing candidate?" prompt back to the caller (unlike the
+  HR-facing duplicate-detection panel in Add Candidate) — telling an
+  anonymous visitor "we already have a candidate with this email" would
+  leak who else is in the system; the match-by-email-and-reuse-or-create
+  in `submit_public_application` is silent, and the response is identical
+  either way, including when the same email re-submits to the same job.
+  Resume uploads here use a tighter allowlist than HR's own
+  `candidate_documents` upload (`validate_public_resume_data_url` — PDF/
+  Word only, no plain text or images), since this is the one truly public
+  upload surface in the app. Abuse protection is new, not reused: an
+  in-memory per-IP rate limit (same deliberate single-process tradeoff as
+  `routers/auth.py`'s login limiter — move to Redis if this ever runs as
+  multiple workers/machines) and optional Cloudflare Turnstile (`TURNSTILE_
+  SITE_KEY`/`TURNSTILE_SECRET_KEY` in `.env` — verification is skipped
+  entirely, not failed, when unset, so local dev/tests need no Cloudflare
+  account).
+
 - **Approval workflow** now also covers **Timesheet** and **Overtime**,
   supports a **Project Manager** approver type (resolved via the
   request's own project(s) — direct on Leave/Claims/Timesheet, via the

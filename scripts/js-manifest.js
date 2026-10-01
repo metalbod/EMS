@@ -41,5 +41,6 @@ module.exports = [
   'performance.js',
   'pip.js',
   'assistant.js',
+  'public_careers.js',
   'app-init.js',
 ];
