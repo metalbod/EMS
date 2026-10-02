@@ -464,6 +464,45 @@ wrapper everywhere.
   to whichever day it actually fires on, not the week ending on that
   day. Same "compute it, don't schedule it"
   philosophy as everything else in this bullet.
+  - **The three beat-scheduled reminder sweeps silently never ran at
+    all, for ~10 days** (2026-09-22, when beat replaced the old
+    Fly-native schedule, through 2026-10-02, when it was reported and
+    fixed) — found after a user noticed no timesheet reminder email
+    that week. Each sweep did `from db import get_db, set_rls_context`
+    *inside* the function body instead of at module top level; the
+    "reminders" process runs `celery -A core.tasks beat` as an
+    installed console-script executable, which never puts this file's
+    own directory on `sys.path` the way the "app" process's `uvicorn
+    main:app` does — Celery's own `-A core.tasks` loader works around
+    that, but only for the instant it's actively importing
+    `core/tasks.py` itself; any import inside that module's own
+    top-level body rides along in that same window and resolves fine,
+    but a *deferred* import inside a function body runs later, after
+    Celery's loader has already restored `sys.path`, and fails with
+    `ModuleNotFoundError: No module named 'db'` — every single time,
+    not intermittently. Confirmed and fixed by reproducing the exact
+    failure against the live "reminders" machine over SSH (replicating
+    console-script sys.path behavior + Celery's `import_from_cwd`),
+    then verifying the fix the same way before deploying. Fix: `from
+    db import get_db, set_rls_context, IntegrityError` moved to
+    `core/tasks.py`'s own top level — once `core.tasks` itself loads
+    successfully (which it always did), `db` is cached in
+    `sys.modules` and every later reference anywhere in the process,
+    deferred or not, resolves from that cache regardless of
+    `sys.path`. `generate_payroll_run`/`bulk_upload_employees_task`
+    further down still defer their own `from db import` and were
+    never affected by this — they only ever run via `.apply_async()`
+    from the "app" process (eager mode), which already has `db`
+    cached from `main.py`'s own startup import; they'd hit this exact
+    same failure mode if this app ever moves off
+    `CELERY_TASK_ALWAYS_EAGER` onto a real separate Celery worker
+    process, worth applying the same top-level-import fix there too
+    if that ever happens. General lesson: a module-local/deferred
+    import anywhere that might run as (or be loaded by) a
+    console-script entry point — not just `python script.py` — cannot
+    assume its own directory is on `sys.path`; only an import that's
+    part of the target module's own top-level body, loaded via that
+    entry point's own app-loading mechanism, is safe.
 - **Tests run against a local Postgres, not prod** —
   `TEST_DATABASE_URL`/`TEST_ADMIN_DATABASE_URL` in `.env`,
   `tests/conftest.py` swaps them in for `DATABASE_URL`/`ADMIN_DATABASE_URL`

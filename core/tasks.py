@@ -9,6 +9,29 @@ from celery.result import AsyncResult
 from celery.schedules import crontab
 import psycopg2
 
+# Must be a top-level import, not deferred inside each task function below
+# (as it used to be) — the "reminders" process runs `celery -A core.tasks
+# beat` as a console-script executable, which never puts this file's own
+# directory on sys.path the way `python script.py` or the "app" process's
+# `uvicorn main:app` does. Celery's own app-loading (`-A core.tasks`)
+# works around that by temporarily adding the cwd to sys.path only for the
+# duration of importing this module — any import statement that's part of
+# this module's own top-level body (like this one) runs inside that same
+# window and resolves fine, but a deferred import inside a function body
+# runs later, after Celery's loader has already restored sys.path, and
+# fails with "No module named 'db'". That silently broke every
+# beat-scheduled task below (all three reminder sweeps) from the day
+# Celery beat replaced the old Fly-native schedule (commit 771763c) until
+# this fix — confirmed by reproducing the exact failure against the live
+# "reminders" machine. generate_payroll_run/bulk_upload_employees_task
+# further down still defer their own `from db import` — those run via
+# .apply_async() from the "app" process, which already has `db` cached in
+# sys.modules from main.py's own import, so the same failure mode can't
+# reach them unless this app ever moves off CELERY_TASK_ALWAYS_EAGER onto
+# a real separate worker — worth revisiting this same fix there if that
+# ever happens.
+from db import get_db, set_rls_context, IntegrityError
+
 logger = logging.getLogger("ems")
 
 BULK_UPLOAD_DATE_COLUMNS = ("date_of_birth", "start_date", "probation_end_date", "contract_end_date")
@@ -238,8 +261,6 @@ def reminder_sweep_checklists(self):
     own reminder_onboarding_hour/reminder_offboarding_hour matches the
     current local hour there — the two are gated independently since
     they're separately-configurable rows on the Reminders tab."""
-    from db import get_db, set_rls_context
-
     sr = _send_reminders_module()
     set_rls_context(None, bypass_rls=True)
     conn = get_db()
@@ -266,8 +287,6 @@ def reminder_sweep_holidays(self):
     """Beat-scheduled (see beat_schedule above): "holiday is tomorrow" emails,
     for every notifications_email_enabled institution whose own
     reminder_holidays_hour matches the current local hour there."""
-    from db import get_db, set_rls_context
-
     sr = _send_reminders_module()
     set_rls_context(None, bypass_rls=True)
     conn = get_db()
@@ -300,8 +319,6 @@ def reminder_sweep_timesheets(self):
     means "you didn't submit last week's timesheet," not "the week
     ending this Wednesday," since the current week isn't over yet."""
     from datetime import timedelta
-
-    from db import get_db, set_rls_context
 
     sr = _send_reminders_module()
     set_rls_context(None, bypass_rls=True)
