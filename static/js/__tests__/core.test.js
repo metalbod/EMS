@@ -158,6 +158,61 @@ describe('Page hash routing', () => {
   });
 });
 
+// Mirrors core.js's isPageReachableFromNav — a URL hash (stale after a
+// session expiry + re-login as a different/default role, hand-edited, or
+// reached via Back) must not open a page this role's nav doesn't offer.
+describe('Page hash routing — role reachability', () => {
+  function isPageReachableFromNav(page) {
+    const roleHidden = el => {
+      for (let n = el; n && n !== document.body; n = n.parentElement) {
+        if (n.classList.contains('hidden') && !n.classList.contains('nav-submenu')) return true;
+      }
+      return false;
+    };
+    return [...document.querySelectorAll(`[data-page="${page}"]`)].some(el => !roleHidden(el));
+  }
+
+  function landing(hashPage, allPages) {
+    return allPages.includes(hashPage) && isPageReachableFromNav(hashPage) ? hashPage : 'dashboard';
+  }
+
+  const PAGES = ['dashboard', 'requisitions', 'leave-my'];
+
+  function renderNav({ recruitHidden }) {
+    document.body.innerHTML = `
+      <div id="nav-recruit-group" class="${recruitHidden ? 'hidden' : ''}">
+        <div id="submenu-recruit" class="nav-submenu hidden">
+          <div class="nav-sub-item" data-page="requisitions"></div>
+        </div>
+      </div>
+      <div id="nav-leave-group">
+        <div class="nav-submenu hidden"><div class="nav-sub-item" data-page="leave-my"></div></div>
+      </div>
+      <div data-page="dashboard"></div>`;
+  }
+
+  it('lets a role that sees the group restore its page, even inside a collapsed submenu', () => {
+    renderNav({ recruitHidden: false });
+    expect(landing('requisitions', PAGES)).toBe('requisitions');
+    expect(landing('leave-my', PAGES)).toBe('leave-my');
+  });
+
+  it('falls back to Home when the role-hidden group contains the hash page (the reported bug)', () => {
+    renderNav({ recruitHidden: true });
+    expect(landing('requisitions', PAGES)).toBe('dashboard');
+  });
+
+  it('still allows other pages the role can see', () => {
+    renderNav({ recruitHidden: true });
+    expect(landing('leave-my', PAGES)).toBe('leave-my');
+  });
+
+  it('falls back to Home for an unknown hash', () => {
+    renderNav({ recruitHidden: false });
+    expect(landing('bogus', PAGES)).toBe('dashboard');
+  });
+});
+
 describe('Menu Item Click Handling', () => {
   beforeEach(() => {
     document.body.innerHTML = `

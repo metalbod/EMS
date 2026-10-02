@@ -567,6 +567,23 @@ async function loadRolesCache() {
 // ---------------------------------------------------------------------------
 // Boot
 // ---------------------------------------------------------------------------
+// Whether the current user's nav actually offers this page — applyRoleUI()
+// hides nav items/groups with the `hidden` class per role, so "has a visible
+// nav entry" is the same check the sidebar itself applies. A collapsed
+// submenu (`.nav-submenu.hidden`) is just folded shut, not role-hidden, so
+// it's skipped when walking up. Used to keep a URL hash (stale after a
+// session expiry + re-login as a different/default role, hand-edited, or
+// reached via Back) from opening a page this role can't see.
+function isPageReachableFromNav(page) {
+  const roleHidden = el => {
+    for (let n = el; n && n !== document.body; n = n.parentElement) {
+      if (n.classList.contains('hidden') && !n.classList.contains('nav-submenu')) return true;
+    }
+    return false;
+  };
+  return [...document.querySelectorAll(`[data-page="${page}"]`)].some(el => !roleHidden(el));
+}
+
 async function bootApp() {
   document.getElementById('loginScreen').classList.add('hidden');
   document.getElementById('appShell').classList.remove('hidden');
@@ -606,7 +623,11 @@ async function bootApp() {
     // institution isn't covered: currentInstitution is in-memory only and
     // always resets to null on a fresh load, same as before this change.
     const hashPage = location.hash.slice(1);
-    showPage(ALL_PAGES.includes(hashPage) ? hashPage : 'dashboard');
+    // Must also be a page this role's nav actually offers — a stale hash
+    // from a previous session as a different role (e.g. an hr_manager's
+    // #requisitions, then the next login lands as plain manager) falls back
+    // to Home instead of opening a screen they shouldn't be on.
+    showPage(ALL_PAGES.includes(hashPage) && isPageReachableFromNav(hashPage) ? hashPage : 'dashboard');
   }
   if (currentUser.must_change_password) openChangePasswordModal(true);
 }
@@ -1060,7 +1081,7 @@ async function showPage(page, opts = {}) {
 window.addEventListener('hashchange', () => {
   const page = location.hash.slice(1);
   if (!currentUser || !page || page === currentPage || !ALL_PAGES.includes(page)) return;
-  showPage(page);
+  showPage(isPageReachableFromNav(page) ? page : 'dashboard');
 });
 
 // ---------------------------------------------------------------------------

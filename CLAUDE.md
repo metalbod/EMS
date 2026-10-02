@@ -106,7 +106,16 @@ wrapper everywhere.
   fights the browser's own Back/Forward navigation); a `hashchange`
   listener calls `showPage()` for Back/Forward and hand-edited hashes;
   `bootApp()` reads `location.hash` on login instead of hardcoding
-  `showPage('dashboard')`. Scoped to the top-level page only — no other
+  `showPage('dashboard')`. A hash is only honored if
+  `isPageReachableFromNav()` — the page has a nav entry not role-hidden by
+  `applyRoleUI()` (skipping `.nav-submenu.hidden`, which is just a
+  collapsed fold, not role-hiding) — otherwise it falls back to Home, both
+  at boot and in the `hashchange` listener. Added after a live report: an
+  hr_manager on #requisitions hit F5, the session had expired, and
+  re-login came back as the default `manager` role still on the (now
+  empty, shouldn't-be-visible) Job Requisitions page. Backend access was
+  never affected — this is purely about not opening a screen the sidebar
+  itself wouldn't show. Scoped to the top-level page only — no other
   UI state is persisted anywhere in this app (open tab, open modal, list
   filters/sort/pagination all stay in-memory-only, reset on reload), so
   restoring page-only state matches what the rest of the app already
