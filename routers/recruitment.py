@@ -21,6 +21,8 @@ from core.approval_workflow import start_workflow, advance_or_finalize
 
 from core.anthropic_client import get_client_for_institution
 
+from core.ai_usage import FEATURE_RESUME_EXTRACTION, log_ai_usage, tokens_from_response
+
 from db import get_db, IntegrityError
 
 from core.db_session import db_session
@@ -1066,6 +1068,10 @@ async def extract_resume_fields(body: ExtractResumeIn, user: dict = Depends(get_
     except (anthropic.RateLimitError, anthropic.APIStatusError, anthropic.APIConnectionError) as e:
         logger.warning(f"resume extraction: Anthropic API error: {e}")
         raise HTTPException(502, "Couldn't reach the AI extraction service right now — please try again shortly, or fill in the fields manually.")
+
+    # Tokens were spent whether or not the response below turns out usable.
+    in_tok, out_tok = tokens_from_response(resp)
+    log_ai_usage(inst_id, user, FEATURE_RESUME_EXTRACTION, EXTRACT_RESUME_MODEL, in_tok, out_tok)
 
     tool_use = next((b for b in resp.content if b.type == "tool_use"), None)
     if not tool_use:

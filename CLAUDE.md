@@ -60,6 +60,31 @@ wrapper everywhere.
 
 ## Recently added (not yet in README's prose — check git log for detail)
 
+- **AI usage report** (Settings → AI Assistant → **Usage** tab,
+  `ai_usage_log` via `20261004_0001_add_ai_usage_log`, `core/ai_usage.py`,
+  `GET /api/assistant/usage` in `routers/assistant.py`,
+  `static/js/ai-assistant-settings.js`) — token counts (input + output) per
+  person, split into AI chat vs. resume extraction, for This month / Last
+  30 / Last 90 days / All time. **hr_manager only**, same gate as the API
+  key tab (`ASSISTANT_SETTINGS_ROLES`) — hr_admin deliberately gets
+  nothing here (asked explicitly; the page also holds the billing key).
+  Tokens only, no dollar estimate (would mean hardcoding a price that goes
+  stale). Recording is `log_ai_usage()` after each successful Claude call:
+  one row per chat *message* (the tool loop's several Claude calls are
+  summed via `_run_tool_loop`'s `usage` accumulator) and one per resume
+  extraction — logged even if the extraction's response then turns out
+  unusable (502), since the tokens were spent anyway. Best-effort: a
+  logging failure is swallowed, never fails the chat/extraction itself.
+  Rate-limited, canned-reply and failed-API requests spend no tokens and
+  log nothing. **Nothing was recorded before 2026-10-04**, so earlier
+  usage can't be recovered. `user_id` has no FK on purpose (deleting a
+  user must not erase or be blocked by their history); `username` is a
+  snapshot so a deleted account still shows up labelled. The report names
+  people by linked employee name → user full name → username. Date range
+  is applied in the institution's own timezone (`created_at` is UTC text),
+  but the Usage tab computes "today"/"this month" from the *browser's*
+  local date — fine when the viewer is in the org's timezone. The table
+  is per-institution (RLS `tenant_isolation`).
 - **Add Candidate → "Extract details with AI"** (`routers/recruitment.py`'s
   `extract_resume_fields`, `static/js/recruitment.js`) — reads an attached
   resume and prefills the Add Candidate form, reducing manual entry.

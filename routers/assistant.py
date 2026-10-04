@@ -29,6 +29,8 @@ from core.secrets_encryption import encrypt_secret
 
 from core.audit import write_entity_audit
 
+from core.ai_usage import FEATURE_CHAT, log_ai_usage, tokens_from_response
+
 from core.db_session import db_session
 
 from db import get_db
@@ -219,7 +221,12 @@ def _build_messages(history: List[AssistantTurn], message: str) -> List[Dict[str
     return messages
 
 
-async def _run_tool_loop(anthropic_client: anthropic.Anthropic, messages: List[Dict[str, Any]], user: dict) -> str:
+async def _run_tool_loop(anthropic_client: anthropic.Anthropic, messages: List[Dict[str, Any]], user: dict,
+                         usage: Optional[Dict[str, int]] = None) -> str:
+    """`usage`, if given, is filled in place with the summed input/output
+    token counts of every Claude call this turn made (a turn with tool use
+    makes several) so the caller can record one usage row per chat message
+    even when the loop returns early on an error."""
     tools = SELF_TOOLS + TEAM_TOOLS if user.get("role") == "manager" else SELF_TOOLS
 
     for _ in range(MAX_TOOL_ROUNDS):
@@ -234,6 +241,11 @@ async def _run_tool_loop(anthropic_client: anthropic.Anthropic, messages: List[D
         except (anthropic.RateLimitError, anthropic.APIStatusError, anthropic.APIConnectionError) as e:
             logger.warning(f"assistant chat: Anthropic API error: {e}")
             return "I'm having trouble reaching the assistant right now — please try again shortly."
+
+        if usage is not None:
+            in_tok, out_tok = tokens_from_response(resp)
+            usage["input_tokens"] += in_tok
+            usage["output_tokens"] += out_tok
 
         if resp.stop_reason == "refusal":
             return "I'm not able to help with that request."
@@ -300,7 +312,9 @@ async def assistant_chat(body: AssistantChatIn, user: dict = Depends(get_current
         ))
 
     messages = _build_messages(body.history, body.message)
-    reply = await _run_tool_loop(anthropic_client, messages, user)
+    usage = {"input_tokens": 0, "output_tokens": 0}
+    reply = await _run_tool_loop(anthropic_client, messages, user, usage)
+    log_ai_usage(inst_id, user, FEATURE_CHAT, MODEL, usage["input_tokens"], usage["output_tokens"])
     return AssistantChatOut(reply=reply)
 
 
@@ -383,3 +397,98 @@ def delete_assistant_settings(conn, user: dict = Depends(require_roles(*ASSISTAN
                        detail="Institution AI assistant API key removed", entity_label="AI assistant API key")
     conn.commit()
     return AssistantSettingsOut(configured=False)
+
+
+# ---------------------------------------------------------------------------
+# Usage report (Settings -> AI Assistant -> Usage tab). Same hr_manager-only
+# gate as the key settings above, by product decision. Counts only what
+# core/ai_usage.py recorded — nothing exists before that table shipped.
+# Date range is evaluated in the institution's own timezone (created_at is
+# stored in UTC) so "this month" matches the HR user's calendar.
+# ---------------------------------------------------------------------------
+
+class AiUsageCell(BaseModel):
+    requests: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+
+
+class AiUsageUserRow(BaseModel):
+    user_id: Optional[int] = None
+    name: str
+    chat_requests: int = 0
+    chat_tokens: int = 0
+    resume_requests: int = 0
+    resume_tokens: int = 0
+    total_tokens: int = 0
+
+
+class AiUsageOut(BaseModel):
+    date_from: str
+    date_to: str
+    timezone: str
+    chat: AiUsageCell
+    resume_extraction: AiUsageCell
+    total: AiUsageCell
+    by_user: List[AiUsageUserRow]
+
+
+def _valid_date(value: str, field: str) -> str:
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").strftime("%Y-%m-%d")
+    except (TypeError, ValueError):
+        raise HTTPException(400, f"{field} must be a YYYY-MM-DD date")
+
+
+@router.get("/api/assistant/usage")
+@db_session
+def get_assistant_usage(conn, date_from: str, date_to: str,
+                        user: dict = Depends(require_roles(*ASSISTANT_SETTINGS_ROLES))) -> AiUsageOut:
+    inst_id = need_inst(user)
+    date_from = _valid_date(date_from, "date_from")
+    date_to = _valid_date(date_to, "date_to")
+    if date_from > date_to:
+        raise HTTPException(400, "date_from must not be after date_to")
+
+    inst = conn.execute("SELECT timezone FROM institutions WHERE id=?", (inst_id,)).fetchone()
+    tz = (inst["timezone"] if inst and inst["timezone"] else "UTC")
+
+    local_day = "((l.created_at::timestamp AT TIME ZONE 'UTC') AT TIME ZONE ?)::date"
+    rows = conn.execute(f"""
+        SELECT l.user_id, l.feature,
+               COALESCE(MAX(e.full_name), MAX(u.full_name), MAX(l.username), 'Unknown') AS name,
+               COUNT(*) AS requests,
+               COALESCE(SUM(l.input_tokens),0) AS input_tokens,
+               COALESCE(SUM(l.output_tokens),0) AS output_tokens
+        FROM ai_usage_log l
+        LEFT JOIN users u ON u.id = l.user_id
+        LEFT JOIN employees e ON e.employee_id = u.employee_id AND e.institution_id = l.institution_id
+        WHERE l.institution_id=? AND {local_day} BETWEEN ?::date AND ?::date
+        GROUP BY l.user_id, l.feature
+    """, (inst_id, tz, date_from, date_to)).fetchall()
+
+    cells = {"chat": AiUsageCell(), "resume_extraction": AiUsageCell(), "total": AiUsageCell()}
+    people: Dict[Any, AiUsageUserRow] = {}
+    for r in rows:
+        tokens = int(r["input_tokens"]) + int(r["output_tokens"])
+        for cell in (cells[r["feature"]], cells["total"]):
+            cell.requests += int(r["requests"])
+            cell.input_tokens += int(r["input_tokens"])
+            cell.output_tokens += int(r["output_tokens"])
+            cell.total_tokens += tokens
+        row = people.setdefault(r["user_id"], AiUsageUserRow(user_id=r["user_id"], name=r["name"]))
+        if r["feature"] == "chat":
+            row.chat_requests += int(r["requests"])
+            row.chat_tokens += tokens
+        else:
+            row.resume_requests += int(r["requests"])
+            row.resume_tokens += tokens
+        row.total_tokens += tokens
+
+    by_user = sorted(people.values(), key=lambda p: (-p.total_tokens, p.name.lower()))
+    return AiUsageOut(
+        date_from=date_from, date_to=date_to, timezone=tz,
+        chat=cells["chat"], resume_extraction=cells["resume_extraction"], total=cells["total"],
+        by_user=by_user,
+    )
