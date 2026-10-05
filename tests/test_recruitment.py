@@ -356,6 +356,36 @@ def test_list_candidates_includes_requisition_status_and_sorts_by_it(client, hr_
     assert by_id[general["id"]]["requisition_status"] is None
 
 
+def test_list_candidates_filters_by_requisition_status(client, hr_manager_auth):
+    """Candidate Bank's requisition-status filter: repeated req_status values
+    are OR-ed, "No Requisition" matches general-interest applications, and an
+    empty/unknown selection matches nothing."""
+    req = client.post("/api/recruitment/requisitions", headers=hr_manager_auth,
+                       json={"title": _unique_title(), "department": "Engineering"}).json()
+    with_req = client.post("/api/recruitment/candidates", headers=hr_manager_auth, json={
+        "full_name": "ZZ ReqFilter WithReq", "email": "zzpytest.reqfilter1@example.com", "requisition_id": req["id"],
+    }).json()
+    general = client.post("/api/recruitment/candidates", headers=hr_manager_auth, json={
+        "full_name": "ZZ ReqFilter General", "email": "zzpytest.reqfilter2@example.com",
+    }).json()
+
+    def ids(statuses):
+        res = client.get("/api/recruitment/candidates", headers=hr_manager_auth,
+                          params={"search": "ZZ ReqFilter", "req_status": statuses})
+        assert res.status_code == 200, res.text
+        return {c["id"] for c in res.json()}
+
+    assert ids([req["status"]]) == {with_req["id"]}
+    assert ids(["No Requisition"]) == {general["id"]}
+    assert ids([req["status"], "No Requisition"]) == {with_req["id"], general["id"]}
+    other = "Closed" if req["status"] != "Closed" else "Filled"
+    assert ids([other]) == set()
+    assert ids(["__none__"]) == set()
+    # Omitting the parameter keeps today's unfiltered behaviour.
+    unfiltered = client.get("/api/recruitment/candidates", headers=hr_manager_auth, params={"search": "ZZ ReqFilter"})
+    assert {c["id"] for c in unfiltered.json()} == {with_req["id"], general["id"]}
+
+
 # ---------------------------------------------------------------------------
 # Pagination (Speed Audit item 8) — opt-in via limit/offset, so the
 # Interview/Offer "select candidate" pickers (openIntModal/openOfferModal

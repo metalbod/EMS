@@ -284,6 +284,15 @@ function onCandStageCbChange() {
   document.getElementById('candStageAll').checked = boxes.every(cb=>cb.checked);
   candPage=1; loadCandidates();
 }
+function toggleAllCandReqStatuses(checked) {
+  document.querySelectorAll('.cand-reqstatus-cb').forEach(cb=>cb.checked=checked);
+  candPage=1; loadCandidates();
+}
+function onCandReqStatusCbChange() {
+  const boxes=[...document.querySelectorAll('.cand-reqstatus-cb')];
+  document.getElementById('candReqStatusAll').checked = boxes.every(cb=>cb.checked);
+  candPage=1; loadCandidates();
+}
 function setCandSort(field) {
   if (candSortBy === field) { candSortDir = candSortDir==='asc' ? 'desc' : 'asc'; }
   else { candSortBy = field; candSortDir = 'asc'; }
@@ -324,6 +333,12 @@ async function loadCandidates() {
   if(stages.length < allStages.length) {
     if(!stages.length) url+=`&stage=__none__`; // empty selection: force zero results
     else stages.forEach(s=>{ url+=`&stage=${encodeURIComponent(s)}`; });
+  }
+  const reqStatuses=[...document.querySelectorAll('.cand-reqstatus-cb:checked')].map(cb=>cb.value);
+  const allReqStatuses=document.querySelectorAll('.cand-reqstatus-cb').length;
+  if(reqStatuses.length < allReqStatuses) {
+    if(!reqStatuses.length) url+=`&req_status=__none__`; // empty selection: force zero results
+    else reqStatuses.forEach(s=>{ url+=`&req_status=${encodeURIComponent(s)}`; });
   }
   url+=`&sort_by=${candSortBy}&sort_dir=${candSortDir}`;
   updateCandSortIcons();

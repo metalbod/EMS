@@ -1408,6 +1408,17 @@
           <label class="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" class="cand-stage-cb" value="Rejected by Company" checked onchange="onCandStageCbChange()"/> Rejected by Company</label>
           <label class="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" class="cand-stage-cb" value="Withdrawn" checked onchange="onCandStageCbChange()"/> Withdrawn</label>
         </div>
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-2 mb-3 text-sm bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
+          <span class="font-medium text-slate-600">Filter by Requisition Status:</span>
+          <label class="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" id="candReqStatusAll" onchange="toggleAllCandReqStatuses(this.checked)"/> All</label>
+          <label class="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" class="cand-reqstatus-cb" value="Draft" onchange="onCandReqStatusCbChange()"/> Draft</label>
+          <label class="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" class="cand-reqstatus-cb" value="Pending Approval" onchange="onCandReqStatusCbChange()"/> Pending Approval</label>
+          <label class="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" class="cand-reqstatus-cb" value="Approved" checked onchange="onCandReqStatusCbChange()"/> Approved</label>
+          <label class="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" class="cand-reqstatus-cb" value="Rejected" onchange="onCandReqStatusCbChange()"/> Rejected</label>
+          <label class="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" class="cand-reqstatus-cb" value="Closed" onchange="onCandReqStatusCbChange()"/> Closed</label>
+          <label class="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" class="cand-reqstatus-cb" value="Filled" onchange="onCandReqStatusCbChange()"/> Filled</label>
+          <label class="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" class="cand-reqstatus-cb" value="No Requisition" checked onchange="onCandReqStatusCbChange()"/> No requisition (general)</label>
+        </div>
         <div class="flex flex-col sm:flex-row gap-3 mb-5">
           <input id="candSearch" type="text" placeholder="Search name, email, company, skills…" class="inp flex-1" oninput="onCandSearchInput()"/>
           <button id="addCandBtn" onclick="openCandModal()" class="btn-primary hidden flex items-center gap-2">

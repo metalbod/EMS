@@ -40,6 +40,7 @@ OFFER_TYPES       = ["Offer","Decline","Confirmation"]
 OFFER_STATUSES    = ["Draft","Sent","Accepted","Rejected","Withdrawn"]
 INTERVIEW_STATUSES= ["Scheduled","Completed","Cancelled","No-Show"]
 REQ_STATUSES      = ["Draft","Pending Approval","Approved","Rejected","Closed","Filled"]
+NO_REQUISITION_FILTER = "No Requisition"  # list_candidates req_status value for general-interest applications
 PRIORITIES        = ["Low","Normal","High","Urgent"]
 SOURCES           = ["Direct","JobStreet","LinkedIn","Indeed","Referral","Agency","Walk-In","Other"]
 QUALIFICATIONS    = ["SPM","STPM","Diploma","Bachelor's Degree","Master's Degree","PhD","Professional Cert","Other"]
@@ -931,6 +932,7 @@ CANDIDATE_SORT_COLUMNS = {
 def list_candidates(conn, response: Response,
     requisition_id: Optional[int] = None,
     stage: Optional[List[str]] = Query(None),
+    req_status: Optional[List[str]] = Query(None),
     search: Optional[str] = None,
     sort_by: str = "created_at",
     sort_dir: str = "desc",
@@ -969,6 +971,19 @@ def list_candidates(conn, response: Response,
         else:
             q += f" AND cr.stage IN ({','.join('?' for _ in stage)})"
             p.extend(stage)
+    if req_status is not None:
+        # Filter on the application's requisition status. NO_REQUISITION_FILTER
+        # stands for general-interest applications (requisition_id IS NULL),
+        # which have no status of their own to match against. An empty or
+        # unrecognised selection matches nothing, same as `stage` above.
+        wanted = [s for s in req_status if s in REQ_STATUSES]
+        conds = []
+        if wanted:
+            conds.append(f"r.status IN ({','.join('?' for _ in wanted)})")
+            p.extend(wanted)
+        if NO_REQUISITION_FILTER in req_status:
+            conds.append("cr.requisition_id IS NULL")
+        q += f" AND ({' OR '.join(conds)})" if conds else " AND FALSE"
     if search:
         like = f"%{search}%"
         q += " AND (c.full_name ILIKE ? OR c.email ILIKE ? OR c.current_company ILIKE ? OR c.skills ILIKE ?)"
