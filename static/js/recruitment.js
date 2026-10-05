@@ -11,7 +11,7 @@ const CAND_FILE_MAX_BYTES = 6 * 1024 * 1024;
 // accepts (Word/text too). A Word resume can still be attached, it just won't show the AI button.
 const CAND_AI_EXTRACTABLE_MIMES = ['application/pdf', 'image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 let candSortBy = 'created_at', candSortDir = 'desc';
-const CAND_SORT_FIELDS = ['full_name','requisition_title','source','created_at','experience_years','last_interview_date','stage'];
+const CAND_SORT_FIELDS = ['full_name','requisition_title','requisition_status','source','created_at','experience_years','last_interview_date','stage'];
 
 // Candidate Bank — server-paginated (routers/recruitment.py's optional
 // limit/offset + X-Total-Count header; sort_by/sort_dir were already
@@ -351,8 +351,9 @@ async function loadCandidates() {
         <p class="font-medium text-slate-800">${esc(c.full_name)}</p>
         <p class="text-xs text-slate-400">${esc(c.email||'')} ${c.phone?'· '+esc(c.phone):''}</p>
       </td>
-      <td class="px-4 py-3 text-slate-600 hidden md:table-cell">${esc(c.requisition_title||'—')}</td>
-      <td class="px-4 py-3 hidden lg:table-cell text-slate-500 text-xs">${esc(c.source||'')}</td>
+      <td class="px-4 py-3 text-slate-600">${esc(c.requisition_title||'—')}</td>
+      <td class="px-4 py-3">${c.requisition_status?`<span class="badge ${reqStatusBadge(c.requisition_status)}">${esc(c.requisition_status)}</span>`:'<span class="text-slate-400">—</span>'}</td>
+      <td class="px-4 py-3 text-slate-500 text-xs">${esc(c.source||'')}</td>
       <td class="px-4 py-3 text-slate-500 text-xs">${fmtDateOnly(c.created_at)}</td>
       <td class="px-4 py-3 text-center text-slate-700">${c.experience_years||0}</td>
       <td class="px-4 py-3 text-slate-500 text-xs">${fmtDateOnly(c.last_interview_date)}</td>

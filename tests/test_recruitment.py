@@ -335,6 +335,27 @@ def test_create_candidate_success_and_appears_in_list(client, hr_manager_auth):
     assert any(c["id"] == cand["id"] for c in listing.json())
 
 
+def test_list_candidates_includes_requisition_status_and_sorts_by_it(client, hr_manager_auth):
+    """Candidate Bank's "Requisition Status" column: the application's
+    requisition status (Draft here, since it was never submitted), and None
+    for a general-interest application with no requisition."""
+    req = client.post("/api/recruitment/requisitions", headers=hr_manager_auth,
+                       json={"title": _unique_title(), "department": "Engineering"}).json()
+    with_req = client.post("/api/recruitment/candidates", headers=hr_manager_auth, json={
+        "full_name": "ZZ ReqStatus WithReq", "email": "zzpytest.reqstatus1@example.com", "requisition_id": req["id"],
+    }).json()
+    general = client.post("/api/recruitment/candidates", headers=hr_manager_auth, json={
+        "full_name": "ZZ ReqStatus General", "email": "zzpytest.reqstatus2@example.com",
+    }).json()
+
+    rows = client.get("/api/recruitment/candidates", headers=hr_manager_auth,
+                       params={"search": "ZZ ReqStatus", "sort_by": "requisition_status", "sort_dir": "asc"})
+    assert rows.status_code == 200, rows.text
+    by_id = {c["id"]: c for c in rows.json()}
+    assert by_id[with_req["id"]]["requisition_status"] == req["status"]
+    assert by_id[general["id"]]["requisition_status"] is None
+
+
 # ---------------------------------------------------------------------------
 # Pagination (Speed Audit item 8) — opt-in via limit/offset, so the
 # Interview/Offer "select candidate" pickers (openIntModal/openOfferModal

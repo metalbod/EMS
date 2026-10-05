@@ -917,6 +917,7 @@ def get_requisition_audit_log(conn, req_id: int, user: dict = Depends(get_curren
 CANDIDATE_SORT_COLUMNS = {
     "full_name": "c.full_name",
     "requisition_title": "r.title",
+    "requisition_status": "r.status",
     "source": "cr.source",
     "created_at": "cr.created_at",
     "experience_years": "c.experience_years",
@@ -952,7 +953,7 @@ def list_candidates(conn, response: Response,
     # shows both.
     require_permission(conn, user, "recruitment.view_requisitions_candidates_interviews_offers")
     inst_id = need_inst(user)
-    q = """SELECT c.*, r.title AS requisition_title, cr.requisition_id AS requisition_id,
+    q = """SELECT c.*, r.title AS requisition_title, r.status AS requisition_status, cr.requisition_id AS requisition_id,
                cr.stage AS stage, cr.source AS source, cr.created_at AS created_at,
                (SELECT MAX(i.scheduled_date) FROM interviews i
                  WHERE i.candidate_id=c.id AND i.requisition_id IS NOT DISTINCT FROM cr.requisition_id) AS last_interview_date
