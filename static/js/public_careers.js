@@ -39,9 +39,8 @@ async function loadPublicCareersListing(code) {
   let res;
   try { res = await fetch(`/api/public/careers/${encodeURIComponent(code)}`); }
   finally { hideGlobalLoading(); }
-  if (!res.ok) { document.getElementById('careersInstName').textContent = 'Not found'; return; }
+  if (!res.ok) { document.getElementById('careersListingNotFound').classList.remove('hidden'); return; }
   const data = await res.json();
-  document.getElementById('careersInstName').textContent = data.institution_name;
   const list = document.getElementById('careersPositionsList');
   if (!data.positions.length) {
     document.getElementById('careersListingEmpty').classList.remove('hidden');
@@ -121,7 +120,6 @@ async function submitPublicApplication(e) {
     full_name: document.getElementById('careersFullName').value.trim(),
     email: document.getElementById('careersEmail').value.trim(),
     phone: document.getElementById('careersPhone').value || null,
-    ic_number: document.getElementById('careersIc').value || null,
     cover_note: document.getElementById('careersCoverNote').value || null,
     turnstile_token: window.turnstile ? window.turnstile.getResponse() : null,
   };
