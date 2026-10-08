@@ -488,6 +488,14 @@ wrapper everywhere.
   **nobody** by email (generic 401, no hint) and those people sign in by
   username. Rate limiting and the login audit still key on whatever was typed.
 
+- **Onboarding/offboarding progress + auto-complete** (`routers/onboarding.py`):
+  the list's `done_items` counts Done **and** N/A (same rule as the detail
+  modal and auto-complete), computed live from `ob_checklist_items`, and the
+  screen refreshes the list after adding/removing an item. Removing the last
+  unfinished item now completes an In Progress checklist, exactly like ticking
+  it would (`_auto_complete_if_all_done`, shared by both paths); a checklist
+  with zero items left is never auto-completed.
+
 - **API docs/schema are opt-in** (`core/api_docs.py`, `ENABLE_API_DOCS` env
   var) — `/api/docs`, `/api/redoc` and `/api/openapi.json` are served only
   when it's truthy. Local `.env`/`.env.example` set it; production never does

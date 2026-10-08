@@ -622,3 +622,90 @@ def test_ob_calendar_superadmin_gets_empty_list(client, superadmin_headers):
     res = client.get("/api/ob/calendar", headers=superadmin_headers, params={"year": 2026, "month": 11})
     assert res.status_code == 200
     assert res.json() == []
+
+
+def test_checklist_list_progress_tracks_removed_items_and_counts_na_as_done(
+        client, hr_manager_auth, make_test_employee, make_test_ob_checklist):
+    """The list's progress column (total_items/done_items) is computed live,
+    so removing items from a checklist shrinks it, and an N/A item counts as
+    done — matching the detail modal and the auto-complete rule."""
+    emp = make_test_employee()
+    checklist = make_test_ob_checklist(employee_id=emp["employee_id"])
+    cl_id = checklist["id"]
+    added = []
+    for n in range(3):
+        res = client.post(f"/api/ob/checklists/{cl_id}/items", headers=hr_manager_auth,
+                          json={"title": f"ZZ progress item {n}", "assigned_role": "hr_manager"})
+        assert res.status_code in (200, 201), res.text
+        added.append(res.json()["id"])
+
+    def row():
+        rows = client.get("/api/ob/checklists", headers=hr_manager_auth, params={"type": "onboarding"}).json()
+        return next(r for r in rows if r["id"] == cl_id)
+
+    before = row()
+    assert client.patch(f"/api/ob/checklists/{cl_id}/items/{added[0]}", headers=hr_manager_auth,
+                        json={"status": "N/A"}).status_code == 200
+    assert client.patch(f"/api/ob/checklists/{cl_id}/items/{added[1]}", headers=hr_manager_auth,
+                        json={"status": "Done"}).status_code == 200
+    mid = row()
+    assert mid["total_items"] == before["total_items"]
+    assert mid["done_items"] == before["done_items"] + 2  # N/A counted, not just Done
+
+    assert client.delete(f"/api/ob/checklists/{cl_id}/items/{added[0]}", headers=hr_manager_auth).status_code == 204
+    assert client.delete(f"/api/ob/checklists/{cl_id}/items/{added[2]}", headers=hr_manager_auth).status_code == 204
+    after = row()
+    assert after["total_items"] == mid["total_items"] - 2
+    assert after["done_items"] == mid["done_items"] - 1  # the removed N/A item no longer counts
+
+
+def _complete_all_but_one_new_item(client, headers, cl_id):
+    """Adds one fresh item, marks every other item Done, returns the new
+    (still Pending) item's id."""
+    res = client.post(f"/api/ob/checklists/{cl_id}/items", headers=headers,
+                      json={"title": "ZZ last pending item", "assigned_role": "hr_manager"})
+    assert res.status_code in (200, 201), res.text
+    new_id = res.json()["id"]
+    for it in client.get(f"/api/ob/checklists/{cl_id}", headers=headers).json()["items"]:
+        if it["id"] != new_id:
+            assert client.patch(f"/api/ob/checklists/{cl_id}/items/{it['id']}", headers=headers,
+                                json={"status": "Done"}).status_code == 200
+    return new_id
+
+
+def _checklist_status(client, headers, cl_id):
+    return client.get(f"/api/ob/checklists/{cl_id}", headers=headers).json()["status"]
+
+
+def test_removing_last_unfinished_item_completes_the_checklist(
+        client, hr_manager_auth, make_test_employee, make_test_ob_checklist):
+    emp = make_test_employee()
+    cl_id = make_test_ob_checklist(employee_id=emp["employee_id"])["id"]
+    pending_id = _complete_all_but_one_new_item(client, hr_manager_auth, cl_id)
+    assert _checklist_status(client, hr_manager_auth, cl_id) == "In Progress"
+
+    assert client.delete(f"/api/ob/checklists/{cl_id}/items/{pending_id}", headers=hr_manager_auth).status_code == 204
+    assert _checklist_status(client, hr_manager_auth, cl_id) == "Completed"
+    history = client.get(f"/api/employees/{emp['employee_id']}/ob-history", headers=hr_manager_auth).json()
+    assert any(h["action"] == "Checklist Completed" and "removed" in h["detail"] for h in history)
+
+
+def test_removing_an_item_does_not_complete_a_checklist_that_still_has_pending_items(
+        client, hr_manager_auth, make_test_employee, make_test_ob_checklist):
+    emp = make_test_employee()
+    cl_id = make_test_ob_checklist(employee_id=emp["employee_id"])["id"]
+    pending_id = _complete_all_but_one_new_item(client, hr_manager_auth, cl_id)
+    other = client.post(f"/api/ob/checklists/{cl_id}/items", headers=hr_manager_auth,
+                        json={"title": "ZZ another pending item", "assigned_role": "hr_manager"}).json()["id"]
+    assert client.delete(f"/api/ob/checklists/{cl_id}/items/{pending_id}", headers=hr_manager_auth).status_code == 204
+    assert _checklist_status(client, hr_manager_auth, cl_id) == "In Progress"
+    assert other  # still pending
+
+
+def test_removing_every_item_does_not_complete_an_empty_checklist(
+        client, hr_manager_auth, make_test_employee, make_test_ob_checklist):
+    emp = make_test_employee()
+    cl_id = make_test_ob_checklist(employee_id=emp["employee_id"])["id"]
+    for it in client.get(f"/api/ob/checklists/{cl_id}", headers=hr_manager_auth).json()["items"]:
+        assert client.delete(f"/api/ob/checklists/{cl_id}/items/{it['id']}", headers=hr_manager_auth).status_code == 204
+    assert _checklist_status(client, hr_manager_auth, cl_id) == "In Progress"

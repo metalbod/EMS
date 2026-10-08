@@ -478,11 +478,13 @@ def move_ob_template(conn, tmpl_id: int, body: OBTemplateMoveIn, user: dict = De
 def list_ob_checklists(conn, type: Optional[str] = None, status: Optional[str] = None,
                        user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
+    # done_items counts N/A as done — the same rule update_ob_item uses to
+    # auto-complete a checklist, and the detail modal's own progress bar.
     q = """
         SELECT c.*, e.full_name AS employee_name, e.preferred_name AS employee_preferred_name, e.department, e.designation,
                e.start_date, e.probation_end_date, e.phone, e.work_email,
                COUNT(i.id) AS total_items,
-               SUM(CASE WHEN i.status='Done' THEN 1 ELSE 0 END) AS done_items,
+               SUM(CASE WHEN i.status IN ('Done','N/A') THEN 1 ELSE 0 END) AS done_items,
                SUM(CASE WHEN i.status='Pending' AND i.assigned_role=? THEN 1 ELSE 0 END) AS my_pending
         FROM ob_checklists c
         JOIN employees e ON e.employee_id=c.employee_id AND e.institution_id=c.institution_id
@@ -723,13 +725,7 @@ def update_ob_item(conn, cl_id: int, item_id: int, body: OBItemUpdateIn, user: d
         "UPDATE ob_checklist_items SET status=?,notes=?,completed_by=?,completed_at=? WHERE id=?",
         (body.status, body.notes, completed_by, completed_at, item_id)
     )
-    # Auto-complete checklist if all items done/na
-    total = conn.execute("SELECT COUNT(*) FROM ob_checklist_items WHERE checklist_id=?", (cl_id,)).fetchone()[0]
-    done  = conn.execute("SELECT COUNT(*) FROM ob_checklist_items WHERE checklist_id=? AND status IN ('Done','N/A')", (cl_id,)).fetchone()[0]
-    auto_completed = False
-    if total > 0 and done == total:
-        conn.execute("UPDATE ob_checklists SET status='Completed',completed_at=to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS') WHERE id=?", (cl_id,))
-        auto_completed = True
+    auto_completed, total = _auto_complete_if_all_done(conn, cl_id)
     prev_status = item["status"]
     log_ob(conn, inst_id, cl_id, cl["employee_id"], cl["type"],
            "Item Updated",
@@ -743,6 +739,20 @@ def update_ob_item(conn, cl_id: int, item_id: int, body: OBItemUpdateIn, user: d
                user)
     conn.commit()
     return {"ok": True}
+
+
+def _auto_complete_if_all_done(conn, cl_id: int):
+    """Marks the checklist Completed when it has at least one item and every
+    item is Done or N/A. Returns (auto_completed, total_items). Called after
+    an item's status changes and after an item is removed — removing the last
+    unfinished item leaves everything done, which must complete the checklist
+    just as ticking it would. Caller logs and commits."""
+    total = conn.execute("SELECT COUNT(*) FROM ob_checklist_items WHERE checklist_id=?", (cl_id,)).fetchone()[0]
+    done  = conn.execute("SELECT COUNT(*) FROM ob_checklist_items WHERE checklist_id=? AND status IN ('Done','N/A')", (cl_id,)).fetchone()[0]
+    if total > 0 and done == total:
+        conn.execute("UPDATE ob_checklists SET status='Completed',completed_at=to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS') WHERE id=?", (cl_id,))
+        return True, total
+    return False, total
 
 
 def _get_owned_item(conn, inst_id: int, cl_id: int, item_id: int):
@@ -919,6 +929,15 @@ def delete_ob_item(conn, cl_id: int, item_id: int,
                "Item Removed", f"Item '{item['title']}' removed from checklist", user)
         conn.commit()
     conn.execute("DELETE FROM ob_checklist_items WHERE id=? AND checklist_id=?", (item_id, cl_id))
+    # Removing the last unfinished item can leave everything done — complete
+    # the checklist the same way ticking that item would have.
+    if item and cl["status"] == "In Progress":
+        auto_completed, total = _auto_complete_if_all_done(conn, cl_id)
+        if auto_completed:
+            log_ob(conn, inst_id, cl_id, cl["employee_id"], cl["type"],
+                   "Checklist Completed",
+                   f"All {total} remaining items completed after an item was removed — checklist auto-closed",
+                   user)
     conn.commit()
 
 

@@ -399,7 +399,8 @@ const saveObItemEdit = guardAsync(async function(clId,itemId) {
 async function deleteObItem(clId,itemId) {
   if(!confirm('Remove this item from the checklist?')) return;
   await api(`/api/ob/checklists/${clId}/items/${itemId}`,{method:'DELETE'});
-  openObDetail(clId);
+  await openObDetail(clId);
+  loadObChecklists(obCurrentType); // the list's progress column counts items live — refresh it behind the modal
 }
 
 const addObItem = guardAsync(async function(clId) {
@@ -408,7 +409,8 @@ const addObItem = guardAsync(async function(clId) {
   const dueDate=document.getElementById('obAddDueDate')?.value||null;
   if(!title){alert('Title is required');return;}
   await api(`/api/ob/checklists/${clId}/items`,{method:'POST',body:JSON.stringify({title,assigned_role:role,due_date:dueDate})});
-  openObDetail(clId);
+  await openObDetail(clId);
+  loadObChecklists(obCurrentType);
 });
 
 async function deleteObChecklist(clId,type) {
