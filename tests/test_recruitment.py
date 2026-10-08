@@ -360,18 +360,19 @@ def test_list_candidates_filters_by_requisition_status(client, hr_manager_auth):
     """Candidate Bank's requisition-status filter: repeated req_status values
     are OR-ed, "No Requisition" matches general-interest applications, and an
     empty/unknown selection matches nothing."""
+    tag = os.urandom(4).hex()  # unique per run: earlier runs' candidates must not match this search
     req = client.post("/api/recruitment/requisitions", headers=hr_manager_auth,
                        json={"title": _unique_title(), "department": "Engineering"}).json()
     with_req = client.post("/api/recruitment/candidates", headers=hr_manager_auth, json={
-        "full_name": "ZZ ReqFilter WithReq", "email": "zzpytest.reqfilter1@example.com", "requisition_id": req["id"],
+        "full_name": f"ZZ ReqFilter{tag} WithReq", "email": f"zzpytest.reqfilter1.{tag}@example.com", "requisition_id": req["id"],
     }).json()
     general = client.post("/api/recruitment/candidates", headers=hr_manager_auth, json={
-        "full_name": "ZZ ReqFilter General", "email": "zzpytest.reqfilter2@example.com",
+        "full_name": f"ZZ ReqFilter{tag} General", "email": f"zzpytest.reqfilter2.{tag}@example.com",
     }).json()
 
     def ids(statuses):
         res = client.get("/api/recruitment/candidates", headers=hr_manager_auth,
-                          params={"search": "ZZ ReqFilter", "req_status": statuses})
+                          params={"search": f"ZZ ReqFilter{tag}", "req_status": statuses})
         assert res.status_code == 200, res.text
         return {c["id"] for c in res.json()}
 
@@ -382,7 +383,7 @@ def test_list_candidates_filters_by_requisition_status(client, hr_manager_auth):
     assert ids([other]) == set()
     assert ids(["__none__"]) == set()
     # Omitting the parameter keeps today's unfiltered behaviour.
-    unfiltered = client.get("/api/recruitment/candidates", headers=hr_manager_auth, params={"search": "ZZ ReqFilter"})
+    unfiltered = client.get("/api/recruitment/candidates", headers=hr_manager_auth, params={"search": f"ZZ ReqFilter{tag}"})
     assert {c["id"] for c in unfiltered.json()} == {with_req["id"], general["id"]}
 
 

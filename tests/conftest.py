@@ -45,6 +45,10 @@ if os.environ.get("TEST_ADMIN_DATABASE_URL"):
     os.environ["ADMIN_DATABASE_URL"] = os.environ["TEST_ADMIN_DATABASE_URL"]
 
 # Configure Celery to execute tasks synchronously during tests (no Redis/worker needed)
+# Approval emails are normally sent from a background pool after the request
+# commits (core/email_engine.py's queue_email); tests assert on email_log right
+# after the request, so run them inline instead.
+os.environ.setdefault("EMAIL_DISPATCH", "inline")
 os.environ.setdefault("CELERY_TASK_ALWAYS_EAGER", "true")
 os.environ.setdefault("CELERY_TASK_EAGER_PROPAGATES", "true")
 

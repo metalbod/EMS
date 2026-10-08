@@ -5,6 +5,11 @@ encrypted-credential pattern as the AI assistant's Anthropic BYOK key,
 see core/secrets_encryption.py) rather than a shared platform sender, so
 emails come from that company's own domain/identity, not "EMS Platform."
 
+Two entry points: send_email() sends synchronously and tells the caller how
+it went; queue_email() (bottom of this file) defers the send until the
+caller's transaction commits and runs it in the background — used for approval
+notifications so a user's click doesn't wait on the mail server.
+
 send_email() never raises: an SMTP failure (bad credentials, server
 down, network blip, malformed recipient) must never break the
 approval/application action that triggered it — every caller treats
@@ -16,14 +21,18 @@ _log_leave/_log_timesheet's own audit-log helpers) — it rides the
 caller's own eventual commit, so a log row only persists if whatever
 triggered it does too.
 """
+import contextvars
 import json
 import logging
+import os
 import smtplib
+from concurrent.futures import ThreadPoolExecutor
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import Optional
+from typing import List, Optional
 
 from core.secrets_encryption import decrypt_secret
+from db import get_db, set_rls_context
 
 logger = logging.getLogger("ems")
 
@@ -60,53 +69,148 @@ def _log(conn, inst_id, module, category, recipient_email, subject, status, erro
         logger.exception("email_engine: failed to write email_log row")
 
 
-def send_email(conn, inst_id: int, to_email: str, subject: str, html_body: str,
-               category: str, module: Optional[str] = None, dedupe_key: Optional[str] = None,
-               cc: Optional[str] = None) -> bool:
-    """Best-effort send — returns True/False for callers that want to know,
-    but NEVER raises. No-ops (logged as 'skipped') if the institution has
-    email notifications disabled, has no SMTP configured, or `to_email`
-    is empty/obviously invalid. `dedupe_key` identifies the specific item
-    this email is about (e.g. 'item:123') for callers that need to check
-    "have I already sent this" before calling — see
-    scripts/send_reminders.py; Phase 1's approval-workflow emails leave
-    it unset, since each of those is inherently a one-shot event. `cc` adds
-    one visible Cc recipient (same SMTP transaction, so a failure to reach
-    either address fails the whole send)."""
-    to_email = (to_email or "").strip()
-    if not to_email or "@" not in to_email:
-        _log(conn, inst_id, module, category, to_email or "(none)", subject, "skipped", "no usable recipient address", dedupe_key)
-        return False
+def _deliver(conn, inst_id: int, messages: List[dict]) -> List[bool]:
+    """Delivers `messages` — dicts with to/subject/html/category/module/
+    dedupe_key/cc — over ONE SMTP session (connect, TLS and login once, then
+    one sendmail per message) and writes an email_log row for each. Never
+    raises. Returns a per-message success list. The log rows are inserted on
+    `conn` and not committed here (see the module docstring)."""
+    results = [False] * len(messages)
+    todo = []  # (index, to_email) for messages that have a usable recipient
+    for n, m in enumerate(messages):
+        to = (m["to"] or "").strip()
+        if not to or "@" not in to:
+            _log(conn, inst_id, m.get("module"), m["category"], to or "(none)", m["subject"], "skipped",
+                 "no usable recipient address", m.get("dedupe_key"))
+        else:
+            todo.append((n, to))
+    if not todo:
+        return results
 
     settings = _smtp_settings(conn, inst_id)
     if not settings:
-        _log(conn, inst_id, module, category, to_email, subject, "skipped", "email notifications disabled or not configured", dedupe_key)
-        return False
+        for n, to in todo:
+            m = messages[n]
+            _log(conn, inst_id, m.get("module"), m["category"], to, m["subject"], "skipped",
+                 "email notifications disabled or not configured", m.get("dedupe_key"))
+        return results
 
+    sender = f'{settings["from_name"]} <{settings["from_address"]}>' if settings["from_name"] else settings["from_address"]
+    logged = set()  # indices that already have their sent/failed log row
     try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = f'{settings["from_name"]} <{settings["from_address"]}>' if settings["from_name"] else settings["from_address"]
-        msg["To"] = to_email
-        recipients = [to_email]
-        cc = (cc or "").strip()
-        if cc and "@" in cc and cc.lower() != to_email.lower():
-            msg["Cc"] = cc
-            recipients.append(cc)
-        msg.attach(MIMEText(html_body, "html"))
-
         with smtplib.SMTP(settings["host"], settings["port"], timeout=10) as server:
             if settings["use_tls"]:
                 server.starttls()
             server.login(settings["username"], settings["password"])
-            server.sendmail(settings["from_address"], recipients, msg.as_string())
-
-        _log(conn, inst_id, module, category, to_email, subject, "sent", dedupe_key=dedupe_key)
-        return True
+            for n, to in todo:
+                m = messages[n]
+                try:
+                    msg = MIMEMultipart("alternative")
+                    msg["Subject"] = m["subject"]
+                    msg["From"] = sender
+                    msg["To"] = to
+                    recipients = [to]
+                    cc = (m.get("cc") or "").strip()
+                    if cc and "@" in cc and cc.lower() != to.lower():
+                        msg["Cc"] = cc
+                        recipients.append(cc)
+                    msg.attach(MIMEText(m["html"], "html"))
+                    server.sendmail(settings["from_address"], recipients, msg.as_string())
+                    results[n] = True
+                    logged.add(n)
+                    _log(conn, inst_id, m.get("module"), m["category"], to, m["subject"], "sent",
+                         dedupe_key=m.get("dedupe_key"))
+                except Exception as e:
+                    logger.warning(f"email_engine: send failed for institution {inst_id} category {m['category']}: {e}")
+                    logged.add(n)
+                    _log(conn, inst_id, m.get("module"), m["category"], to, m["subject"], "failed", str(e), m.get("dedupe_key"))
     except Exception as e:
-        logger.warning(f"email_engine: send failed for institution {inst_id} category {category}: {e}")
-        _log(conn, inst_id, module, category, to_email, subject, "failed", str(e), dedupe_key)
-        return False
+        # Couldn't connect / start TLS / log in: nothing was sent, so every
+        # message without a log row yet fails with this error.
+        logger.warning(f"email_engine: send failed for institution {inst_id}: {e}")
+        for n, to in todo:
+            if n not in logged:
+                m = messages[n]
+                _log(conn, inst_id, m.get("module"), m["category"], to, m["subject"], "failed", str(e), m.get("dedupe_key"))
+    return results
+
+
+def send_email(conn, inst_id: int, to_email: str, subject: str, html_body: str,
+               category: str, module: Optional[str] = None, dedupe_key: Optional[str] = None,
+               cc: Optional[str] = None) -> bool:
+    """Best-effort, SYNCHRONOUS send — returns True/False for callers that
+    want to know, but NEVER raises. No-ops (logged as 'skipped') if the
+    institution has email notifications disabled, has no SMTP configured, or
+    `to_email` is empty/obviously invalid. `dedupe_key` identifies the
+    specific item this email is about (e.g. 'item:123') for callers that need
+    to check "have I already sent this" before calling — see
+    scripts/send_reminders.py. `cc` adds one visible Cc recipient (same SMTP
+    transaction, so a failure to reach either address fails the whole send).
+
+    Use queue_email() instead when the caller must not wait for the mail
+    server (approval notifications)."""
+    return _deliver(conn, inst_id, [{
+        "to": to_email, "subject": subject, "html": html_body, "category": category,
+        "module": module, "dedupe_key": dedupe_key, "cc": cc,
+    }])[0]
+
+
+# ---------------------------------------------------------------------------
+# Deferred sending — approval notifications.
+#
+# Talking to the mail server costs ~3 s per email (a fresh connection, TLS and
+# login each time), and an approval step can notify several people, so doing it
+# inside the request made "Resign" / "Approve" take several seconds. queue_email()
+# only remembers the message on the request's connection; the moment that
+# connection COMMITS (never on a rollback, so an email can't announce a change
+# that didn't persist) the whole batch is handed to a small background pool,
+# which sends it over a single SMTP session on its own DB connection and writes
+# the email_log rows there. A failure there is logged, never shown to the user.
+#
+# EMAIL_DISPATCH=inline runs the batch right in the committing thread instead
+# (tests set this so they can assert on email_log straight after the request).
+# ---------------------------------------------------------------------------
+_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="ems-email")
+
+
+def queue_email(conn, inst_id: int, to_email: str, subject: str, html_body: str,
+                category: str, module: Optional[str] = None, dedupe_key: Optional[str] = None,
+                cc: Optional[str] = None) -> None:
+    queue = getattr(conn, "_queued_emails", None)
+    if queue is None:
+        queue = conn._queued_emails = {}
+        # One hook per connection; it drains whatever is queued at commit time.
+        conn.after_commit(lambda: _flush_queued_emails(conn))
+    queue.setdefault(inst_id, []).append({
+        "to": to_email, "subject": subject, "html": html_body, "category": category,
+        "module": module, "dedupe_key": dedupe_key, "cc": cc,
+    })
+
+
+def _flush_queued_emails(conn) -> None:
+    queue, conn._queued_emails = getattr(conn, "_queued_emails", None) or {}, None
+    for inst_id, messages in queue.items():
+        # copy_context(): the sender sets its own RLS context, which must not
+        # leak into the request that is still running (inline mode) — and a pool
+        # thread otherwise starts with none.
+        ctx = contextvars.copy_context()
+        if os.environ.get("EMAIL_DISPATCH") == "inline":
+            ctx.run(_send_queued, inst_id, messages)
+        else:
+            _executor.submit(ctx.run, _send_queued, inst_id, messages)
+
+
+def _send_queued(inst_id: int, messages: List[dict]) -> None:
+    try:
+        set_rls_context(inst_id, False)
+        conn = get_db()
+        try:
+            _deliver(conn, inst_id, messages)
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        logger.exception("email_engine: background send failed for institution %s", inst_id)
 
 
 def already_sent_recently(conn, inst_id: int, category: str, dedupe_key: str, cooldown_days: float) -> bool:

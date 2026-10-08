@@ -566,6 +566,25 @@ wrapper everywhere.
   `px-4 py-3 text-slate-500` on a tab button are ignored) — change the CSS, not the
   utility classes. Icon-only row buttons (trash/edit icons) are deliberately left as icons.
 
+- **Approval emails are sent in the background** (`queue_email`/`_deliver` in
+  `core/email_engine.py`, `Conn.after_commit` in `db.py`; used by
+  `core/approval_workflow.py`'s two notification helpers) — added after Resign/Approve
+  took several seconds: each email costs ~3 s (fresh SMTP connection + TLS + login) and
+  a resignation filing notifies ~3 approvers inside the request. `queue_email()` only
+  remembers the message on the request's `Conn`; when that connection **commits** the
+  batch goes to a 2-thread pool that sends it over **one** SMTP session on its own DB
+  connection and writes the `email_log` rows there (so those rows now appear a moment
+  after the request). A rollback or `close()` without a commit drops the queue, so an
+  email never announces a change that didn't persist; a send failure is logged
+  (`status='failed'`), never shown. A queued email needs the request to commit afterwards
+  — true for every approval path today. **Synchronous on purpose**: `send_email()` (the
+  Settings test email, the new-user / re-send-password emails, which must know the send
+  worked, and the reminder sweeps). `EMAIL_DISPATCH=inline` runs the batch in the
+  committing thread — `tests/conftest.py` sets it so existing tests can assert on
+  `email_log` right after a request; `tests/test_email_async.py` covers the real
+  background path by stubbing the pool. The batch runs in a copied `contextvars` context
+  so setting its own RLS scope can't leak into the request.
+
 - **API docs/schema are opt-in** (`core/api_docs.py`, `ENABLE_API_DOCS` env
   var) — `/api/docs`, `/api/redoc` and `/api/openapi.json` are served only
   when it's truthy. Local `.env`/`.env.example` set it; production never does

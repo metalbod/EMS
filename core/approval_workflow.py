@@ -22,7 +22,7 @@ import logging
 import os
 from typing import Any, Dict, FrozenSet, List, Optional, Set, Tuple
 
-from core.email_engine import send_email
+from core.email_engine import queue_email
 
 logger = logging.getLogger("ems")
 
@@ -417,7 +417,7 @@ def _notify_step_recipients(conn, inst_id: int, module: str, employee_id: str, s
             f"<p>A {label} from {requester_name or 'an employee'} is awaiting your approval.</p>"
             f'<p><a href="{APP_BASE_URL}">Open EMS</a> to review it.</p>'
         )
-        send_email(conn, inst_id, email, subject, body, "approval_needed", module)
+        queue_email(conn, inst_id, email, subject, body, "approval_needed", module)
 
 
 def _notify_requester_outcome(conn, inst_id: int, module: str, employee_id: str, outcome: str) -> None:
@@ -432,7 +432,7 @@ def _notify_requester_outcome(conn, inst_id: int, module: str, employee_id: str,
         f"<p>Your {label} has been <strong>{decision}</strong>.</p>"
         f'<p><a href="{APP_BASE_URL}">Open EMS</a> to view details.</p>'
     )
-    send_email(conn, inst_id, email, subject, body, "approval_decided", module)
+    queue_email(conn, inst_id, email, subject, body, "approval_decided", module)
 
 
 def _safe_notify(fn, *args, **kwargs) -> None:

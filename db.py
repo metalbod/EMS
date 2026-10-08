@@ -205,6 +205,10 @@ class Conn:
         self._admin = admin
         self._last_id = None
         self._closed = False
+        # Callbacks to run once, right after the NEXT successful commit() —
+        # dropped by rollback()/close() if that never happens. See
+        # after_commit() below.
+        self._after_commit = []
         # Safety net: if calling code forgets to call .close() (e.g. an
         # exception raised between get_db() and the endpoint's close() call),
         # this returns the connection to the pool once the Conn is garbage
@@ -235,6 +239,13 @@ class Conn:
         cur.execute(sql)
         return CursorResult(cur)
 
+    def after_commit(self, fn):
+        """Run `fn()` once, right after this connection's next commit() — and
+        never if the transaction is rolled back or the connection is closed
+        first. Used to send emails only for changes that really persisted
+        (core/email_engine.py's queue_email)."""
+        self._after_commit.append(fn)
+
     def commit(self):
         self._raw.commit()
         # set_config(..., is_local=true) (like SET LOCAL) only lasts for the
@@ -246,8 +257,15 @@ class Conn:
         # would silently run with no RLS scoping at all (falling back to
         # bypass=True) unless reapplied here for the new transaction.
         _apply_rls_context(self._raw)
+        callbacks, self._after_commit = self._after_commit, []
+        for fn in callbacks:
+            try:
+                fn()
+            except Exception:
+                logger.exception("after_commit callback failed")
 
     def rollback(self):
+        self._after_commit = []
         self._raw.rollback()
         # Same reasoning as commit() above — a rollback also ends the
         # transaction the context was scoped to.
@@ -257,6 +275,7 @@ class Conn:
         if self._closed:
             return
         self._closed = True
+        self._after_commit = []
         self._finalizer.detach()
         # psycopg2 connections are not autocommit, so every .execute() call
         # implicitly opens a transaction that stays open until explicitly
