@@ -196,3 +196,23 @@ describe('Template board — loop detection', () => {
     expect(obStartsAfter(items, 3, 4)).toBe(false);  // from=3,to=4
   });
 });
+
+// Mirrors static/js/onboarding.js's obWaitingForLabel.
+const obRoleLabel = r => ({ manager: 'Manager', hr_admin: 'HR Admin' }[r] || r);
+function obWaitingForLabel(list) {
+  return (list || []).map(w => w.title || `a ${obRoleLabel(w.assigned_role)} task`).join(', ');
+}
+
+describe('Checklist detail — waiting-for label', () => {
+  it('names the unfinished prerequisites', () => {
+    expect(obWaitingForLabel([{ title: 'Return laptop', assigned_role: 'hr_admin' }, { title: 'Exit interview', assigned_role: 'manager' }]))
+      .toBe('Return laptop, Exit interview');
+  });
+  it('hides a title the server withheld, naming only the role', () => {
+    expect(obWaitingForLabel([{ title: null, assigned_role: 'manager' }])).toBe('a Manager task');
+  });
+  it('is empty when nothing is outstanding', () => {
+    expect(obWaitingForLabel([])).toBe('');
+    expect(obWaitingForLabel(undefined)).toBe('');
+  });
+});

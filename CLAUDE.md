@@ -527,6 +527,22 @@ wrapper everywhere.
   enforce links. Decided for "2b" (not built): checklists snapshot the links; a blocked
   item can't be ticked by anyone but HR Manager/HR Admin until every prerequisite is
   Done or N/A; blocked items stay out of the To-Do list.
+  **Phase 2b — built** (`ob_checklist_item_dependencies`, migration `20261008_0002`):
+  `_create_ob_checklist` copies the template's links onto the new items (snapshot; manually
+  added items have none). `GET /api/ob/checklists/{id}` annotates each item with
+  `depends_on`, `waiting_for` (unfinished prerequisites: id/title/role) and `blocked`
+  (Pending with something unfinished); an employee viewer gets `title: null` for other
+  roles' prerequisites (their tasks stay hidden). `update_ob_item` returns 403 "waiting
+  for: …" when a non-HR role (anyone but superadmin/hr_manager/hr_admin,
+  `BLOCK_OVERRIDE_ROLES`) marks a blocked item Done or N/A — un-ticking back to Pending
+  is never blocked. A prerequisite counts as satisfied when Done **or** N/A. Blocked
+  items are excluded from the dashboard To-Do list, the list's "Action Required"
+  (`my_pending`) and the overdue-checklist reminder emails
+  (`scripts/send_reminders.py`) until unblocked. Not affected: the L&D course
+  auto-complete path (`core/ob_ld_shared.py`, a course finishing is a fact), the
+  checklist calendar, and auto-completing a checklist. Removing a prerequisite item from
+  a running checklist unblocks its dependents (FK `ON DELETE CASCADE`). The checklist
+  window shows "⏳ Waiting for: …" (with "(HR can override)" for HR).
 
 - **API docs/schema are opt-in** (`core/api_docs.py`, `ENABLE_API_DOCS` env
   var) — `/api/docs`, `/api/redoc` and `/api/openapi.json` are served only

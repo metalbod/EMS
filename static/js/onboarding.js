@@ -25,6 +25,11 @@ function obGroupItemsByRole(items){
   items.forEach(i=>grouped[i.assigned_role].push(i));
   return {roles,grouped};
 }
+// "Waiting for" text for a blocked checklist item. An employee isn't shown the
+// titles of other roles' items (the server sends title:null for those).
+function obWaitingForLabel(list){
+  return (list||[]).map(w=>w.title||`a ${obRoleLabel(w.assigned_role)} task`).join(', ');
+}
 function obRoleColor(role){ return statusColor(ROLE_BADGE_COLORS, role); }
 function obRoleLabel(role){ return OB_ROLE_LABELS[role]||rolesCache.find(r=>r.role_key===role)?.display_name||role; }
 
@@ -208,7 +213,8 @@ async function openObDetail(clId) {
         const isDone=item.status==='Done'||item.status==='N/A';
         const isHR=HR_MANAGE_ROLES.includes(currentUser?.role);
         const isLinked=!!item.linked_ld_course_id;
-        const canAct=canComplete(role)&&cl.status==='In Progress'&&!(isLinked&&!isHR);
+        const isBlocked=!!item.blocked;
+        const canAct=canComplete(role)&&cl.status==='In Progress'&&!(isLinked&&!isHR)&&!(isBlocked&&!isHR);
         return `<div class="flex items-start gap-3 py-2.5 border-b border-slate-100 last:border-0" id="obitem-${item.id}">
           <div class="mt-0.5 shrink-0">
             ${canAct?`<input type="checkbox" class="w-4 h-4 cursor-pointer" ${isDone?'checked':''} onchange="toggleObItem(${clId},${item.id},this.checked)"/>`
@@ -219,6 +225,7 @@ async function openObDetail(clId) {
               <p class="text-sm ${isDone?'line-through text-slate-400':'text-slate-700'}">${esc(item.title)}</p>
               ${isLinked?`<span class="badge text-xs bg-green-100 text-green-700" title="Auto-completes via linked L&D course">🎓 Linked course</span>`:''}
             </div>
+            ${isBlocked?`<p class="text-xs text-amber-600 mt-0.5" title="${isHR?'HR can still tick this item.':'Available once these are done.'}">⏳ Waiting for: ${esc(obWaitingForLabel(item.waiting_for))}${isHR?' (HR can override)':''}</p>`:''}
             ${item.description?`<p class="text-xs text-slate-400 mt-0.5">${esc(item.description)}</p>`:''}
             ${item.due_date?`<p class="text-xs text-indigo-600 mt-0.5">📅 Due ${fmtDate(item.due_date)}, ${esc(item.due_date.slice(11,16))}</p>`:''}
             ${isLinked&&!isDone&&!isHR?`<p class="text-xs text-blue-600 mt-0.5">Complete this in <a href="#" onclick="closeObDetail();document.querySelector('[data-page=\\'ld-trainings\\']')?.click();return false;" class="underline">My Trainings</a> to auto-complete this item.</p>`:''}
@@ -259,7 +266,14 @@ async function openObDetail(clId) {
 
 async function toggleObItem(clId,itemId,done) {
   const res=await api(`/api/ob/checklists/${clId}/items/${itemId}`,{method:'PATCH',body:JSON.stringify({status:done?'Done':'Pending'})});
-  if(!res||!res.ok) return;
+  if(!res) return;
+  if(!res.ok){
+    // e.g. 403 "waiting for: …" when someone else finished/undid a prerequisite meanwhile.
+    const d=await res.json().catch(()=>null);
+    if(d?.detail) alert(apiErrorText(d.detail));
+    await openObDetail(clId);
+    return;
+  }
   await openObDetail(clId);
   loadObChecklists(obCurrentType);
 }

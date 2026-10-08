@@ -400,3 +400,41 @@ def test_holiday_reminder_not_sent_when_no_holiday_tomorrow(
     with patch("core.email_engine.smtplib.SMTP"):
         sent = send_reminders.sweep_holiday_eve_emails(reminder_conn, inst_id, dry_run=False)
     assert sent == 0
+
+
+def test_overdue_reminder_skips_item_blocked_by_an_unfinished_prerequisite(
+    client, hr_manager_auth, manager_with_report_and_emails_for_reminders,
+    configured_email_settings, reminder_conn, capsys
+):
+    """An item still waiting on a prerequisite can't be acted on, so the
+    overdue sweep must not nag its owner — until the prerequisite is done."""
+    report_emp, mgr_emp, mgr_email, report_email = manager_with_report_and_emails_for_reminders
+    tset = client.post("/api/ob/template-sets", headers=hr_manager_auth,
+                       json={"name": f"ZZ Reminder Set {os.urandom(3).hex()}", "type": "offboarding", "is_default": False}).json()
+    first = client.post("/api/ob/templates", headers=hr_manager_auth, json={
+        "type": "offboarding", "template_set_id": tset["id"], "title": "ZZ Remind Prereq", "assigned_role": "hr_admin"}).json()
+    second = client.post("/api/ob/templates", headers=hr_manager_auth, json={
+        "type": "offboarding", "template_set_id": tset["id"], "title": "ZZ Remind Blocked", "assigned_role": "manager"}).json()
+    assert client.put(f"/api/ob/templates/{second['id']}/dependencies", headers=hr_manager_auth,
+                      json={"depends_on": [first["id"]]}).status_code == 200
+    checklist = client.post("/api/ob/checklists", headers=hr_manager_auth, json={
+        "employee_id": report_emp["employee_id"], "type": "offboarding", "template_set_id": tset["id"]}).json()
+    items = {i["title"]: i for i in client.get(f"/api/ob/checklists/{checklist['id']}", headers=hr_manager_auth).json()["items"]}
+    reminder_conn.execute("UPDATE ob_checklist_items SET due_date=? WHERE id=?", (PAST_DUE_DATE, items["ZZ Remind Blocked"]["id"]))
+    reminder_conn.commit()
+
+    inst_id = report_emp["institution_id"]
+    today_str = datetime.now(timezone.utc).date().isoformat()
+    try:
+        send_reminders.sweep_overdue_checklists(reminder_conn, inst_id, today_str, "offboarding", dry_run=True)
+        assert "ZZ Remind Blocked" not in capsys.readouterr().out
+
+        assert client.patch(f"/api/ob/checklists/{checklist['id']}/items/{items['ZZ Remind Prereq']['id']}",
+                            headers=hr_manager_auth, json={"status": "Done"}).status_code == 200
+        send_reminders.sweep_overdue_checklists(reminder_conn, inst_id, today_str, "offboarding", dry_run=True)
+        assert "ZZ Remind Blocked" in capsys.readouterr().out
+    finally:
+        client.delete(f"/api/ob/checklists/{checklist['id']}", headers=hr_manager_auth)
+        for t in (first, second):
+            client.delete(f"/api/ob/templates/{t['id']}", headers=hr_manager_auth)
+        client.delete(f"/api/ob/template-sets/{tset['id']}", headers=hr_manager_auth)

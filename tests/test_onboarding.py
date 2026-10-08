@@ -908,3 +908,168 @@ def test_template_dependencies_do_not_change_started_checklists(client, hr_manag
     finally:
         client.delete(f"/api/ob/checklists/{cl['id']}", headers=hr_manager_auth)
         _cleanup_set(client, hr_manager_auth, set_id, (a, b))
+
+
+# ---------------------------------------------------------------------------
+# Phase 2b — dependencies on a running checklist
+# ---------------------------------------------------------------------------
+def _linked_set(client, headers, spec, links):
+    """A fresh offboarding template set. `spec` = [(title, role), ...];
+    `links` = [(index_of_item, index_it_starts_after), ...]. Returns
+    (set_id, [template ids])."""
+    set_id, ids = _new_set_with_items(client, headers, [r for _, r in spec])
+    for n, (title, _) in enumerate(spec):
+        client.put(f"/api/ob/templates/{ids[n]}", headers=headers, json={
+            "type": "offboarding", "title": title, "assigned_role": spec[n][1], "template_set_id": set_id})
+    for item, after in links:
+        res = _put_deps(client, headers, ids[item], [ids[after]] + [ids[a] for i, a in links if i == item and a != after])
+        assert res.status_code == 200, res.text
+    return set_id, ids
+
+
+def _start(client, headers, emp, set_id):
+    res = client.post("/api/ob/checklists", headers=headers, json={
+        "employee_id": emp["employee_id"], "type": "offboarding", "template_set_id": set_id})
+    assert res.status_code in (200, 201), res.text
+    return res.json()["id"]
+
+
+def _items_by_title(client, headers, cl_id):
+    return {i["title"]: i for i in client.get(f"/api/ob/checklists/{cl_id}", headers=headers).json()["items"]}
+
+
+def _tick(client, headers, cl_id, item_id, status="Done"):
+    return client.patch(f"/api/ob/checklists/{cl_id}/items/{item_id}", headers=headers, json={"status": status})
+
+
+def test_started_checklist_snapshots_links_and_reports_blocked_items(client, hr_manager_auth, make_test_employee):
+    set_id, tids = _linked_set(client, hr_manager_auth,
+                               [("ZZ 2b first", "hr_admin"), ("ZZ 2b second", "manager"), ("ZZ 2b third", "hr_manager")],
+                               [(1, 0), (2, 1)])
+    emp = make_test_employee()
+    cl_id = _start(client, hr_manager_auth, emp, set_id)
+    try:
+        it = _items_by_title(client, hr_manager_auth, cl_id)
+        first, second, third = it["ZZ 2b first"], it["ZZ 2b second"], it["ZZ 2b third"]
+        assert (first["blocked"], second["blocked"], third["blocked"]) == (False, True, True)
+        assert second["depends_on"] == [first["id"]] and third["depends_on"] == [second["id"]]
+        assert [w["title"] for w in second["waiting_for"]] == ["ZZ 2b first"]
+        # Editing the template afterwards never reaches the running checklist.
+        _put_deps(client, hr_manager_auth, tids[1], [])
+        assert _items_by_title(client, hr_manager_auth, cl_id)["ZZ 2b second"]["blocked"] is True
+        # A manually added item has no prerequisites.
+        added = client.post(f"/api/ob/checklists/{cl_id}/items", headers=hr_manager_auth,
+                            json={"title": "ZZ 2b manual", "assigned_role": "manager"}).json()
+        assert _items_by_title(client, hr_manager_auth, cl_id)["ZZ 2b manual"]["depends_on"] == []
+    finally:
+        client.delete(f"/api/ob/checklists/{cl_id}", headers=hr_manager_auth)
+        _cleanup_set(client, hr_manager_auth, set_id, tids)
+
+
+def test_blocked_item_can_only_be_completed_by_hr_until_prerequisite_is_done(
+        client, hr_manager_auth, make_test_user, test_institution, make_test_employee):
+    set_id, tids = _linked_set(client, hr_manager_auth,
+                               [("ZZ 2b step A", "hr_admin"), ("ZZ 2b step B", "manager"), ("ZZ 2b step C", "manager")],
+                               [(1, 0), (2, 1)])
+    emp = make_test_employee()
+    cl_id = _start(client, hr_manager_auth, emp, set_id)
+    token, _ = make_test_user(role="manager")
+    mgr = {"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}
+    try:
+        it = _items_by_title(client, hr_manager_auth, cl_id)
+        a, b, c = it["ZZ 2b step A"], it["ZZ 2b step B"], it["ZZ 2b step C"]
+        blocked = _tick(client, mgr, cl_id, b["id"])
+        assert blocked.status_code == 403 and "waiting for" in blocked.json()["detail"] and "ZZ 2b step A" in blocked.json()["detail"]
+        assert _tick(client, mgr, cl_id, b["id"], "N/A").status_code == 403           # N/A is completing too
+        # HR may override: tick C although B is unfinished.
+        assert _tick(client, hr_manager_auth, cl_id, c["id"]).status_code == 200
+        # Once A is Done, the manager can do B.
+        assert _tick(client, hr_manager_auth, cl_id, a["id"]).status_code == 200
+        assert _tick(client, mgr, cl_id, b["id"]).status_code == 200
+        assert _items_by_title(client, hr_manager_auth, cl_id)["ZZ 2b step B"]["blocked"] is False
+    finally:
+        client.delete(f"/api/ob/checklists/{cl_id}", headers=hr_manager_auth)
+        _cleanup_set(client, hr_manager_auth, set_id, tids)
+
+
+def test_na_prerequisite_unblocks_and_untick_is_never_blocked(
+        client, hr_manager_auth, make_test_user, test_institution, make_test_employee):
+    set_id, tids = _linked_set(client, hr_manager_auth,
+                               [("ZZ 2b N/A pre", "hr_admin"), ("ZZ 2b N/A after", "manager")], [(1, 0)])
+    emp = make_test_employee()
+    cl_id = _start(client, hr_manager_auth, emp, set_id)
+    token, _ = make_test_user(role="manager")
+    mgr = {"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}
+    try:
+        it = _items_by_title(client, hr_manager_auth, cl_id)
+        pre, after = it["ZZ 2b N/A pre"], it["ZZ 2b N/A after"]
+        assert _tick(client, mgr, cl_id, after["id"]).status_code == 403
+        assert _tick(client, hr_manager_auth, cl_id, pre["id"], "N/A").status_code == 200   # N/A satisfies it
+        assert _tick(client, mgr, cl_id, after["id"]).status_code == 200
+        # Undoing a prerequisite doesn't un-tick or block the finished dependent, and Pending is always allowed.
+        assert _tick(client, hr_manager_auth, cl_id, pre["id"], "Pending").status_code == 200
+        assert _tick(client, mgr, cl_id, after["id"], "Pending").status_code == 200
+        assert _items_by_title(client, hr_manager_auth, cl_id)["ZZ 2b N/A after"]["blocked"] is True
+    finally:
+        client.delete(f"/api/ob/checklists/{cl_id}", headers=hr_manager_auth)
+        _cleanup_set(client, hr_manager_auth, set_id, tids)
+
+
+def test_employee_view_hides_other_roles_item_titles_in_waiting_for(
+        client, employee_with_login, hr_manager_auth):
+    set_id, tids = _linked_set(client, hr_manager_auth,
+                               [("ZZ 2b mgr task", "manager"), ("ZZ 2b my task", "employee")], [(1, 0)])
+    emp, headers = employee_with_login(full_name="ZZ 2b Employee")
+    cl_id = _start(client, hr_manager_auth, emp, set_id)
+    try:
+        items = client.get(f"/api/ob/checklists/{cl_id}", headers=headers).json()["items"]
+        assert [i["title"] for i in items] == ["ZZ 2b my task"]       # the manager's task is hidden
+        mine = items[0]
+        assert mine["blocked"] is True
+        assert mine["waiting_for"] == [{"id": mine["waiting_for"][0]["id"], "title": None, "assigned_role": "manager"}]
+        assert _tick(client, headers, cl_id, mine["id"]).status_code == 403
+    finally:
+        client.delete(f"/api/ob/checklists/{cl_id}", headers=hr_manager_auth)
+        _cleanup_set(client, hr_manager_auth, set_id, tids)
+
+
+def test_blocked_items_stay_out_of_action_required_count_and_todo_list(client, hr_manager_auth, make_test_employee):
+    set_id, tids = _linked_set(client, hr_manager_auth,
+                               [("ZZ 2b todo first", "hr_manager"), ("ZZ 2b todo second", "hr_manager")], [(1, 0)])
+    emp = make_test_employee()
+    cl_id = _start(client, hr_manager_auth, emp, set_id)
+    try:
+        it = _items_by_title(client, hr_manager_auth, cl_id)
+        first, second = it["ZZ 2b todo first"], it["ZZ 2b todo second"]
+
+        def my_pending():
+            rows = client.get("/api/ob/checklists", headers=hr_manager_auth, params={"type": "offboarding"}).json()
+            return next(r for r in rows if r["id"] == cl_id)["my_pending"]
+
+        def todo_keys():
+            return {t["key"] for t in client.get("/api/todos", headers=hr_manager_auth).json()}
+
+        assert my_pending() == 1
+        assert f"ob-item-{first['id']}" in todo_keys() and f"ob-item-{second['id']}" not in todo_keys()
+        assert _tick(client, hr_manager_auth, cl_id, first["id"]).status_code == 200
+        assert my_pending() == 1
+        assert f"ob-item-{second['id']}" in todo_keys()
+    finally:
+        client.delete(f"/api/ob/checklists/{cl_id}", headers=hr_manager_auth)
+        _cleanup_set(client, hr_manager_auth, set_id, tids)
+
+
+def test_removing_a_prerequisite_item_unblocks_its_dependents(client, hr_manager_auth, make_test_employee):
+    set_id, tids = _linked_set(client, hr_manager_auth,
+                               [("ZZ 2b rm pre", "hr_admin"), ("ZZ 2b rm after", "manager")], [(1, 0)])
+    emp = make_test_employee()
+    cl_id = _start(client, hr_manager_auth, emp, set_id)
+    try:
+        it = _items_by_title(client, hr_manager_auth, cl_id)
+        assert it["ZZ 2b rm after"]["blocked"] is True
+        assert client.delete(f"/api/ob/checklists/{cl_id}/items/{it['ZZ 2b rm pre']['id']}", headers=hr_manager_auth).status_code == 204
+        after = _items_by_title(client, hr_manager_auth, cl_id)["ZZ 2b rm after"]
+        assert after["blocked"] is False and after["depends_on"] == []
+    finally:
+        client.delete(f"/api/ob/checklists/{cl_id}", headers=hr_manager_auth)
+        _cleanup_set(client, hr_manager_auth, set_id, tids)

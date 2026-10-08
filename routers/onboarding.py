@@ -639,7 +639,7 @@ def list_ob_checklists(conn, type: Optional[str] = None, status: Optional[str] =
                e.start_date, e.probation_end_date, e.phone, e.work_email,
                COUNT(i.id) AS total_items,
                SUM(CASE WHEN i.status IN ('Done','N/A') THEN 1 ELSE 0 END) AS done_items,
-               SUM(CASE WHEN i.status='Pending' AND i.assigned_role=? THEN 1 ELSE 0 END) AS my_pending
+               SUM(CASE WHEN i.status='Pending' AND i.assigned_role=? AND NOT EXISTS (SELECT 1 FROM ob_checklist_item_dependencies d JOIN ob_checklist_items p ON p.id=d.depends_on_item_id WHERE d.item_id=i.id AND p.status NOT IN ('Done','N/A')) THEN 1 ELSE 0 END) AS my_pending
         FROM ob_checklists c
         JOIN employees e ON e.employee_id=c.employee_id AND e.institution_id=c.institution_id
         LEFT JOIN ob_checklist_items i ON i.checklist_id=c.id
@@ -734,6 +734,7 @@ def _create_ob_checklist(conn, inst_id: int, emp, ob_type: str, template_set_id:
         (inst_id, ob_type, template_set_id)
     ).fetchall()
     checklist_start = date.today()
+    item_id_for_template: Dict[int, int] = {}
     for t in templates:
         enrollment_id = None
         if t["linked_ld_course_id"]:
@@ -744,6 +745,17 @@ def _create_ob_checklist(conn, inst_id: int, emp, ob_type: str, template_set_id:
             (cl_id, inst_id, t["id"], t["title"], t["description"], t["assigned_role"], t["order_index"],
              t["linked_ld_course_id"], enrollment_id, due_date)
         )
+        item_id_for_template[t["id"]] = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    # Copy the template's "starts after" links onto the new items (snapshot —
+    # later template edits never reach a running checklist).
+    for r in conn.execute(
+        "SELECT template_id, depends_on_template_id FROM ob_template_dependencies WHERE institution_id=? ORDER BY id",
+        (inst_id,)
+    ).fetchall():
+        item, pre = item_id_for_template.get(r["template_id"]), item_id_for_template.get(r["depends_on_template_id"])
+        if item and pre:
+            conn.execute("INSERT INTO ob_checklist_item_dependencies (institution_id,item_id,depends_on_item_id) VALUES (?,?,?)",
+                         (inst_id, item, pre))
     log_ob(conn, inst_id, cl_id, emp["employee_id"], ob_type,
            "Checklist Started",
            f"{ob_type.capitalize()} checklist started for {emp['full_name']} with {len(templates)} items",
@@ -835,6 +847,49 @@ def get_probation_reviews(conn, cl_id: int, user: dict = Depends(get_current_use
     return [dict(r) for r in rows]
 
 
+# Roles that may tick an item even though a prerequisite isn't finished
+# (same set _can_act_on_item already lets act on any item).
+BLOCK_OVERRIDE_ROLES = ("superadmin", "hr_manager", "hr_admin")
+
+
+def _unmet_prerequisites(conn, item_ids: List[int]) -> Dict[int, List[Dict[str, Any]]]:
+    """item id -> its prerequisites that are not yet Done/N/A (id, title,
+    assigned_role), for the given checklist items. Items with none are
+    absent from the result."""
+    if not item_ids:
+        return {}
+    marks = ",".join("?" * len(item_ids))
+    rows = conn.execute(
+        f"SELECT d.item_id, p.id, p.title, p.assigned_role FROM ob_checklist_item_dependencies d "
+        f"JOIN ob_checklist_items p ON p.id=d.depends_on_item_id "
+        f"WHERE d.item_id IN ({marks}) AND p.status NOT IN ('Done','N/A') ORDER BY d.id",
+        tuple(item_ids)
+    ).fetchall()
+    out: Dict[int, List[Dict[str, Any]]] = {}
+    for r in rows:
+        out.setdefault(r["item_id"], []).append({"id": r["id"], "title": r["title"], "assigned_role": r["assigned_role"]})
+    return out
+
+
+def _annotate_blocking(conn, cl_id: int, items: List[Dict[str, Any]]) -> None:
+    """Adds `depends_on` (prerequisite item ids), `waiting_for` (the unfinished
+    ones) and `blocked` (still Pending with something unfinished before it)."""
+    ids = [i["id"] for i in items]
+    deps: Dict[int, List[int]] = {i: [] for i in ids}
+    if ids:
+        marks = ",".join("?" * len(ids))
+        for r in conn.execute(
+            f"SELECT item_id, depends_on_item_id FROM ob_checklist_item_dependencies WHERE item_id IN ({marks}) ORDER BY id",
+            tuple(ids)
+        ).fetchall():
+            deps[r["item_id"]].append(r["depends_on_item_id"])
+    unmet = _unmet_prerequisites(conn, ids)
+    for i in items:
+        i["depends_on"] = deps.get(i["id"], [])
+        i["waiting_for"] = unmet.get(i["id"], [])
+        i["blocked"] = i["status"] == "Pending" and bool(i["waiting_for"])
+
+
 @router.get("/api/ob/checklists/{cl_id}")
 @db_session
 def get_ob_checklist(conn, cl_id: int, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
@@ -857,10 +912,19 @@ def get_ob_checklist(conn, cl_id: int, user: dict = Depends(get_current_user)) -
         (cl_id,)
     ).fetchall()
     result = dict(cl)
+    # `depends_on` / `waiting_for` / `blocked` are computed from ALL of the
+    # checklist's items, before the employee-role filter below hides some.
+    all_items = [dict(i) for i in items]
+    _annotate_blocking(conn, cl_id, all_items)
     # Employees only see items assigned to their own role — hide other roles' tasks/notes
     if user["role"] == "employee":
-        items = [i for i in items if i["assigned_role"] == "employee"]
-    result["items"] = [dict(i) for i in items]
+        all_items = [i for i in all_items if i["assigned_role"] == "employee"]
+        for i in all_items:
+            # The titles of other roles' items stay hidden from an employee too.
+            for w in i["waiting_for"]:
+                if w["assigned_role"] != "employee":
+                    w["title"] = None
+    result["items"] = all_items
     return result
 
 
@@ -873,6 +937,10 @@ def update_ob_item(conn, cl_id: int, item_id: int, body: OBItemUpdateIn, user: d
     cl, item = _get_owned_item(conn, inst_id, cl_id, item_id)
     if not _can_act_on_item(item, user):
         raise HTTPException(403, f"This item is assigned to {item['assigned_role']}")
+    if body.status in ("Done", "N/A") and user["role"] not in BLOCK_OVERRIDE_ROLES:
+        waiting = _unmet_prerequisites(conn, [item_id]).get(item_id)
+        if waiting:
+            raise HTTPException(403, "This item is waiting for: " + ", ".join(f"'{w['title']}'" for w in waiting))
     completed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S") if body.status in ("Done","N/A") else None
     completed_by = user["username"] if body.status in ("Done","N/A") else None
     conn.execute(

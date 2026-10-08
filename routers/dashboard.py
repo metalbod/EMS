@@ -366,7 +366,8 @@ def get_todos(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, An
     # To-Do card shows what the task actually is (title), not just a
     # count. An employee only sees their own checklist's items, a manager
     # only their subordinates', HR sees institution-wide — matching that
-    # endpoint's existing role scoping exactly.
+    # endpoint's existing role scoping exactly. An item still waiting on an
+    # unfinished prerequisite isn't actionable yet, so it stays out until then.
     ob_q = """
         SELECT i.id, i.title, i.due_date, c.id AS checklist_id, c.type, c.employee_id,
                e.full_name AS employee_name, e.last_working_day
@@ -374,6 +375,9 @@ def get_todos(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, An
         JOIN ob_checklists c ON c.id = i.checklist_id
         JOIN employees e ON e.employee_id = c.employee_id AND e.institution_id = c.institution_id
         WHERE c.institution_id=? AND i.status='Pending' AND i.assigned_role=?
+          AND NOT EXISTS (SELECT 1 FROM ob_checklist_item_dependencies d
+                          JOIN ob_checklist_items p ON p.id = d.depends_on_item_id
+                          WHERE d.item_id = i.id AND p.status NOT IN ('Done','N/A'))
     """
     ob_params: list = [inst_id, role]
     if role == "manager":

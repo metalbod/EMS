@@ -166,7 +166,10 @@ def sweep_overdue_checklists(conn, inst_id, today_str, checklist_type, dry_run):
     items = conn.execute(
         "SELECT i.*, c.employee_id AS checklist_employee_id FROM ob_checklist_items i "
         "JOIN ob_checklists c ON c.id = i.checklist_id "
-        "WHERE i.institution_id=? AND c.type=? AND i.status='Pending' AND i.due_date IS NOT NULL AND i.due_date < ?",
+        "WHERE i.institution_id=? AND c.type=? AND i.status='Pending' AND i.due_date IS NOT NULL AND i.due_date < ? "
+        # An item still waiting on an unfinished prerequisite can't be acted on yet — don't nag about it.
+        "AND NOT EXISTS (SELECT 1 FROM ob_checklist_item_dependencies d JOIN ob_checklist_items p ON p.id=d.depends_on_item_id "
+        "WHERE d.item_id=i.id AND p.status NOT IN ('Done','N/A'))",
         (inst_id, checklist_type, today_str)
     ).fetchall()
     sent = 0
