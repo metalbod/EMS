@@ -828,7 +828,8 @@ def resolve_attendance_record(
             (rec["employee_id"], payload.leave_type_id, year),
         ).fetchone()
         if balance:
-            _consume_balance(conn, balance, days)
+            from_carry = _consume_balance(conn, balance, days, rec["work_date"])
+            conn.execute("UPDATE leave_applications SET carried_days_used=? WHERE id=?", (from_carry, leave_application_id))
 
         new_status = "Reclassified as Leave"
     else:

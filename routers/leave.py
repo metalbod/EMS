@@ -15,7 +15,7 @@ from core.org_queries import subordinates_in_clause
 from core.validators import validate_logo_url
 
 from core.leave_balance_ops import (
-    _get_or_create_leave_balance, _consume_balance, _release_balance,
+    _get_or_create_leave_balance, _consume_balance, _release_balance, _available_for,
     _sweep_expired_carry_forward,
 )
 
@@ -260,7 +260,10 @@ def sweep_holiday_leave_adjustments(conn, inst_id: int, holiday_date: str, holid
             lt = conn.execute("SELECT * FROM leave_types WHERE id=?", (app["leave_type_id"],)).fetchone()
             year = datetime.strptime(app["start_date"], "%Y-%m-%d").year
             balance = _get_or_create_leave_balance(conn, inst_id, app["employee_id"], _balance_leave_type_id(lt), year)
-            _release_balance(conn, balance, delta)
+            released = _release_balance(conn, balance, delta, app["carried_days_used"])
+            if app["carried_days_used"] is not None:
+                conn.execute("UPDATE leave_applications SET carried_days_used=? WHERE id=?",
+                             (max(0.0, app["carried_days_used"] - released), app["id"]))
         _log_leave(conn, inst_id, app["id"], app["employee_id"], "Auto-adjusted for new holiday",
                    f"{holiday_date} is now a public holiday ({holiday_name}) — days_count reduced by {delta} "
                    f"(was {app['days_count']}, now {new_days})", user)
@@ -580,6 +583,9 @@ def list_leave_balances(conn, employee_id: Optional[str] = None, year: Optional[
             _sweep_expired_carry_forward(conn, r)
             d["carried_forward_forfeited_days"] += remaining
             d["carried_forward_days"] = d["carried_forward_used_days"]
+        # What is left of the carried-forward bucket (after any expiry sweep above),
+        # for screens that show it separately from this year's entitlement.
+        d["carried_forward_remaining"] = max(0.0, d["carried_forward_days"] - d["carried_forward_used_days"])
         d["accrued_days"] = (
             _accrued_days(d["entitled_days"], d["employee_start_date"], today)
             if d["accrual_mode"] == "monthly" else d["entitled_days"]
@@ -774,7 +780,9 @@ def create_leave_application(conn, body: LeaveApplicationIn, user: dict = Depend
         entitled_for_check = _accrued_days(balance["entitled_days"], emp["start_date"], body.start_date)
     else:
         entitled_for_check = balance["entitled_days"]
-    available = entitled_for_check + balance["carried_forward_days"] - balance["used_days"]
+    # Judged on the leave's start date: carried-forward days only count if the
+    # leave starts on/before their expiry (see core/leave_balance_ops.py).
+    available = _available_for(balance, entitled_for_check, body.start_date)
     if days > available:
         raise HTTPException(400, f"Insufficient balance: requesting {days} day(s), only {available} available")
 
@@ -795,7 +803,8 @@ def create_leave_application(conn, body: LeaveApplicationIn, user: dict = Depend
     app_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
     if status == "Approved":
-        _consume_balance(conn, balance, days)
+        from_carry = _consume_balance(conn, balance, days, body.start_date)
+        conn.execute("UPDATE leave_applications SET carried_days_used=? WHERE id=?", (from_carry, app_id))
 
     half_day_note = ""
     if body.start_day_period: half_day_note += f", start day={body.start_day_period}"
@@ -853,7 +862,8 @@ def update_leave_status(conn, app_id: int, body: LeaveStatusIn, user: dict = Dep
             year = datetime.strptime(application["start_date"], "%Y-%m-%d").year
             lt = conn.execute("SELECT * FROM leave_types WHERE id=?", (application["leave_type_id"],)).fetchone()
             balance = _get_or_create_leave_balance(conn, inst_id, application["employee_id"], _balance_leave_type_id(lt), year)
-            _consume_balance(conn, balance, application["days_count"])
+            from_carry = _consume_balance(conn, balance, application["days_count"], application["start_date"])
+            conn.execute("UPDATE leave_applications SET carried_days_used=? WHERE id=?", (from_carry, app_id))
         approved_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S") if final_status == "Approved" else None
         conn.execute("UPDATE leave_applications SET status=?,approved_by=?,approved_at=?,notes=?,approval_step=NULL WHERE id=?",
                      (final_status, user["username"], approved_at, body.notes, app_id))
@@ -866,7 +876,7 @@ def update_leave_status(conn, app_id: int, body: LeaveStatusIn, user: dict = Dep
             year = datetime.strptime(application["start_date"], "%Y-%m-%d").year
             lt = conn.execute("SELECT * FROM leave_types WHERE id=?", (application["leave_type_id"],)).fetchone()
             balance = _get_or_create_leave_balance(conn, inst_id, application["employee_id"], _balance_leave_type_id(lt), year)
-            _release_balance(conn, balance, application["days_count"])
+            _release_balance(conn, balance, application["days_count"], application["carried_days_used"])
         conn.execute("UPDATE leave_applications SET status='Cancelled',notes=? WHERE id=?", (body.notes, app_id))
 
     _log_leave(conn, inst_id, app_id, application["employee_id"], f"Status changed to {body.status}",

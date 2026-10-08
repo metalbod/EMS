@@ -110,17 +110,47 @@ def _get_or_create_leave_balance(conn, inst_id: int, employee_id: str, leave_typ
     ).fetchone()
 
 
-def _consume_balance(conn, bal, days: float):
+def _carry_usable_for(bal, start_date) -> float:
+    """Carried-forward days that leave STARTING on `start_date` may draw on.
+    Judged on the leave's own start date, not on today: leave that starts on
+    or before the carry's expiry date may use it even if it is approved after
+    the expiry (the lazy sweep may already have forfeited it — those days
+    count as usable again for such leave), and leave that starts after the
+    expiry never can, even if approved before it. start_date=None (an old
+    caller that doesn't know the date) means "ignore expiry"."""
+    expires_on = bal["carried_forward_expires_on"]
+    if start_date and expires_on and start_date > expires_on:
+        return 0.0
+    remaining = max(0.0, bal["carried_forward_days"] - bal["carried_forward_used_days"])
+    return remaining + (bal["carried_forward_forfeited_days"] or 0.0)
+
+
+def _available_for(bal, entitled_for_check: float, start_date) -> float:
+    """Days an employee can still book for leave starting on `start_date`:
+    the carried days usable for that date plus what is left of this year's
+    entitlement (`entitled_for_check` is the full or monthly-accrued figure).
+    Without any expiry this equals entitled + carried_forward - used."""
+    regular_used = bal["used_days"] - bal["carried_forward_used_days"]
+    return _carry_usable_for(bal, start_date) + entitled_for_check - regular_used
+
+
+def _consume_balance(conn, bal, days: float, start_date=None) -> float:
     """Deducts `days` from a balance, drawing down the carried-forward
     bucket first — used_days stays the combined total; carried_forward_used_days
     tracks just the carry-forward portion, which is what _sweep_expired_
-    carry_forward needs to know how much is left to expire."""
-    carry_remaining = max(0.0, bal["carried_forward_days"] - bal["carried_forward_used_days"])
-    from_carry = min(days, carry_remaining)
+    carry_forward needs to know how much is left to expire. `start_date` is
+    the leave's start (see _carry_usable_for). Returns how many of the days
+    came from carried-forward, which callers record on the application so a
+    cancellation can give back exactly that split."""
+    from_carry = min(days, _carry_usable_for(bal, start_date))
+    remaining = max(0.0, bal["carried_forward_days"] - bal["carried_forward_used_days"])
+    revived = max(0.0, from_carry - remaining)   # drawn from days the sweep had already forfeited
     conn.execute(
-        "UPDATE leave_balances SET used_days=used_days+?,carried_forward_used_days=carried_forward_used_days+? WHERE id=?",
-        (days, from_carry, bal["id"])
+        "UPDATE leave_balances SET used_days=used_days+?,carried_forward_used_days=carried_forward_used_days+?,"
+        "carried_forward_days=carried_forward_days+?,carried_forward_forfeited_days=carried_forward_forfeited_days-? WHERE id=?",
+        (days, from_carry, revived, revived, bal["id"])
     )
+    return from_carry
 
 
 def _credit_balance(conn, bal, days: float):
@@ -131,12 +161,30 @@ def _credit_balance(conn, bal, days: float):
     conn.execute("UPDATE leave_balances SET entitled_days=entitled_days+? WHERE id=?", (days, bal["id"]))
 
 
-def _release_balance(conn, bal, days: float):
-    """Reverses _consume_balance (cancellation/rejection-after-approval),
-    giving back to the carried-forward bucket first — mirroring consumption
-    order so carried_forward_used_days can't go negative."""
-    from_carry = min(days, bal["carried_forward_used_days"])
-    conn.execute(
-        "UPDATE leave_balances SET used_days=used_days-?,carried_forward_used_days=carried_forward_used_days-? WHERE id=?",
-        (days, from_carry, bal["id"])
-    )
+def _release_balance(conn, bal, days: float, carried_used=None) -> float:
+    """Reverses _consume_balance (cancellation/rejection-after-approval, or a
+    holiday shortening approved leave). `carried_used` is how many of the
+    application's days were recorded as taken from carried-forward (None for
+    an application approved before that was recorded: fall back to giving back
+    to the carried bucket first, capped at what was used). Those days go back
+    to the carried bucket — unless it has expired by now, in which case they
+    lapse (counted as forfeited) rather than coming back to life. Returns how
+    many carried-forward days were released, for the caller to take off the
+    application's own record."""
+    if carried_used is None:
+        from_carry = min(days, bal["carried_forward_used_days"])
+    else:
+        from_carry = min(carried_used, days, bal["carried_forward_used_days"])
+    expires_on = bal["carried_forward_expires_on"]
+    if from_carry > 0 and expires_on and expires_on <= datetime.now().strftime("%Y-%m-%d"):
+        conn.execute(
+            "UPDATE leave_balances SET used_days=used_days-?,carried_forward_used_days=carried_forward_used_days-?,"
+            "carried_forward_days=carried_forward_days-?,carried_forward_forfeited_days=carried_forward_forfeited_days+? WHERE id=?",
+            (days, from_carry, from_carry, from_carry, bal["id"])
+        )
+    else:
+        conn.execute(
+            "UPDATE leave_balances SET used_days=used_days-?,carried_forward_used_days=carried_forward_used_days-? WHERE id=?",
+            (days, from_carry, bal["id"])
+        )
+    return from_carry

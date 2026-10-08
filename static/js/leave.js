@@ -34,6 +34,47 @@ async function loadLeavePage() {
   await loadLeaveApplications();
 }
 
+// ---------------------------------------------------------------------------
+// Carried-forward balance display. A leave type with carry-forward gives each
+// employee a "carried forward" bucket that is used BEFORE this year's
+// entitlement and expires on carried_forward_expires_on; whether it can pay
+// for a given booking depends on the booking's START date (mirrors
+// core/leave_balance_ops.py's _carry_usable_for).
+// ---------------------------------------------------------------------------
+function leaveCarryRemaining(b) { return Math.max(0, b.carried_forward_remaining ?? ((b.carried_forward_days||0)-(b.carried_forward_used_days||0))); }
+function leaveCarryUsableFor(b, startDate) {
+  const exp=b.carried_forward_expires_on;
+  if(startDate && exp && startDate>exp) return 0;
+  return leaveCarryRemaining(b)+(b.carried_forward_forfeited_days||0);
+}
+// Days left to book for leave starting on `startDate` (null = ignore the expiry).
+function leaveAvailableFor(b, startDate) {
+  const entitled=b.accrued_days ?? b.entitled_days;
+  const regularUsed=(b.used_days||0)-(b.carried_forward_used_days||0);
+  return leaveCarryUsableFor(b, startDate)+entitled-regularUsed;
+}
+function leaveDaysUntil(dateStr) {
+  const today=new Date(); today.setHours(0,0,0,0);
+  return Math.round((new Date(dateStr+'T00:00:00')-today)/86400000);
+}
+// One-line carried-forward note for a balance, or null when there is none:
+// {text, urgent} — urgent in the last 30 days before the carry expires.
+function leaveCarryNote(b) {
+  const left=leaveCarryRemaining(b);
+  const exp=b.carried_forward_expires_on;
+  if(left>0) {
+    const urgent=!!exp && leaveDaysUntil(exp)<=30;
+    return {text:`${left} carried forward${exp?` · use by ${fmtDate(exp)}`:''}`, urgent};
+  }
+  const lost=b.carried_forward_forfeited_days||0;
+  if(lost>0) return {text:`${lost} carried-forward day(s) forfeited`, urgent:false};
+  return null;
+}
+// " (2 carried fwd)" after an application's day count, once its split is recorded.
+function leaveCarrySplitSuffix(a) {
+  return a.carried_days_used>0?` <span class="text-xs text-amber-700">(${a.carried_days_used} carried fwd)</span>`:'';
+}
+
 async function renderLeaveBalanceCards() {
   const wrap=document.getElementById('leaveBalanceCards');
   // These are the caller's OWN balance (GET /api/leave/balances with no
@@ -51,10 +92,12 @@ async function renderLeaveBalanceCards() {
   wrap.innerHTML=balances.map(b=>{
     const entitled=b.accrued_days ?? b.entitled_days;
     const available=entitled+b.carried_forward_days-b.used_days;
+    const carry=leaveCarryNote(b);
     return `<div class="bg-white border border-slate-200 rounded-xl p-4">
       <p class="text-xs text-slate-400 uppercase tracking-wide mb-1">${esc(b.leave_type_name)}</p>
       <p class="text-2xl font-semibold text-slate-800">${available}</p>
       <p class="text-xs text-slate-400 mt-1">of ${entitled+b.carried_forward_days} day(s) left</p>
+      ${carry?`<p class="text-xs mt-1 ${carry.urgent?'text-amber-700 font-medium':'text-slate-500'}">${esc(carry.text)}</p>`:''}
     </div>`;
   }).join('');
 }
@@ -113,7 +156,7 @@ function renderLeaveAppTable() {
       </td>
       <td class="px-4 py-3">${esc(a.leave_type_name)}</td>
       <td class="px-4 py-3 text-slate-600">${fmtDate(a.start_date)} → ${fmtDate(a.end_date)}</td>
-      <td class="px-4 py-3 text-right text-slate-600">${a.days_count}${ldHalfDaySuffix(a)}</td>
+      <td class="px-4 py-3 text-right text-slate-600">${a.days_count}${ldHalfDaySuffix(a)}${leaveCarrySplitSuffix(a)}</td>
       <td class="px-4 py-3"><span class="badge ${statusColor(LEAVE_STATUS_COLORS, a.status)} text-xs">${a.status}</span></td>
       <td class="px-4 py-3">
         ${a.reason?`<p class="text-xs text-slate-500 italic">${esc(a.reason)}</p>`:''}
@@ -157,7 +200,7 @@ async function loadLeaveApplications() {
               <p class="font-medium text-slate-800">${esc(a.leave_type_name)}</p>
               <span class="badge ${statusColor(LEAVE_STATUS_COLORS, a.status)} text-xs">${a.status}</span>
             </div>
-            <p class="text-xs text-slate-500">${fmtDate(a.start_date)} → ${fmtDate(a.end_date)} · ${a.days_count} working day(s)${ldHalfDaySuffix(a)}</p>
+            <p class="text-xs text-slate-500">${fmtDate(a.start_date)} → ${fmtDate(a.end_date)} · ${a.days_count} working day(s)${ldHalfDaySuffix(a)}${leaveCarrySplitSuffix(a)}</p>
             ${a.reason?`<p class="text-xs text-slate-400 italic mt-1">${esc(a.reason)}</p>`:''}
             ${a.notes?`<p class="text-xs text-slate-500 mt-1">Note: ${esc(a.notes)}</p>`:''}
             ${a.attachment?`<a href="${a.attachment}" target="_blank" class="text-xs text-blue-600 hover:underline mt-1 inline-block">View attachment</a>`:''}
@@ -272,8 +315,15 @@ function updateLeaveApplyBalanceNote() {
     // accrued_days already resolves to the full annual figure for
     // full_year types, and to the pro-rated earned-so-far figure for
     // monthly ones — see _accrued_days in routers/leave.py.
-    const available=bal.accrued_days+bal.carried_forward_days-bal.used_days;
-    note.textContent=`${available} day(s) available ${period}${sharedSuffix}`;
+    // Judged on the chosen start date: carried-forward days only count for leave that starts on/before their expiry.
+    const startDate=document.getElementById('leaveApplyStart')?.value||null;
+    const available=leaveAvailableFor(bal, startDate);
+    const usableCarry=leaveCarryUsableFor(bal, startDate);
+    const left=leaveCarryRemaining(bal), exp=bal.carried_forward_expires_on;
+    let carryText='';
+    if(usableCarry>0) carryText=` — ${usableCarry} of them carried forward${exp?` (use by ${fmtDate(exp)})`:''}, used first`;
+    else if(left>0 && startDate && exp && startDate>exp) carryText=` — ${left} carried-forward day(s) can't be used for leave starting after ${fmtDate(exp)}`;
+    note.textContent=`${available} day(s) available ${period}${sharedSuffix}${carryText}`;
   } else if(sharedType){
     note.textContent=`${sharedType.annual_entitlement} day(s) available this year (new balance)${sharedSuffix}`;
   } else if(type){
@@ -357,6 +407,7 @@ function updateLeaveApplyDaysPreview() {
   const start=document.getElementById('leaveApplyStart').value;
   const end=document.getElementById('leaveApplyEnd').value;
   const preview=document.getElementById('leaveApplyDaysPreview');
+  updateLeaveApplyBalanceNote();   // the balance depends on the start date (carried-forward expiry)
   if(!start||!end){ preview.textContent=''; return; }
   const typeId=parseInt(document.getElementById('leaveApplyTypeId').value);
   const type=leaveTypesCache.find(t=>t.id===typeId);
@@ -367,9 +418,13 @@ function updateLeaveApplyDaysPreview() {
     const endPeriod=document.getElementById('leaveApplyEndPeriod').value;
     days-=ldLeaveHalfDayDeduction(start,end,startPeriod,endPeriod);
   }
-  preview.textContent=isCalendar
+  const balTypeId=type?.shares_entitlement_with_id||typeId;
+  const bal=leaveApplyBalancesCache.find(b=>b.leave_type_id===balTypeId);
+  const fromCarry=bal?Math.min(Math.max(days,0), leaveCarryUsableFor(bal, start)):0;
+  const carryNote=fromCarry>0?` — ${fromCarry} of them from carried forward`:'';
+  preview.textContent=(isCalendar
     ?`≈ ${days} calendar day(s) will be deducted (weekends & public holidays included)`
-    :`≈ ${days} working day(s) will be deducted (weekends & public holidays excluded)`;
+    :`≈ ${days} working day(s) will be deducted (weekends & public holidays excluded)`)+carryNote;
 }
 
 function handleLeaveAttachFile(e) {
@@ -485,7 +540,7 @@ function renderLeaveApprovalTable() {
         ${a.attachment?`<a href="${a.attachment}" target="_blank" class="text-xs text-blue-600 hover:underline">View attachment</a>`:''}
       </td>
       <td class="px-4 py-3 text-slate-600">${fmtDate(a.start_date)} → ${fmtDate(a.end_date)}</td>
-      <td class="px-4 py-3 text-right text-slate-600">${a.days_count}${ldHalfDaySuffix(a)}</td>
+      <td class="px-4 py-3 text-right text-slate-600">${a.days_count}${ldHalfDaySuffix(a)}${leaveCarrySplitSuffix(a)}</td>
       <td class="px-4 py-3"><span class="badge ${statusColor(LEAVE_STATUS_COLORS, a.status)} text-xs">${a.status}</span></td>
       <td class="px-4 py-3 text-slate-500">${fmtDate(a.created_at)}</td>
       <td class="px-4 py-3 text-right">

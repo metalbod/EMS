@@ -1284,6 +1284,7 @@ function loadMyLeaveDash() {
       const usable = b.accrued_days + b.carried_forward_days;
       const remaining = usable - b.used_days;
       const pct = usable ? Math.round(b.used_days / usable * 100) : 0;
+      const carryNote = leaveCarryNote(b);
       return `
       <tr class="border-t border-slate-100">
         <td class="py-1.5 text-sm text-slate-700">${esc(b.leave_type_name)}</td>
@@ -1291,6 +1292,10 @@ function loadMyLeaveDash() {
         <td class="py-1.5 text-sm text-right">${b.accrued_days}</td>
         <td class="py-1.5 text-sm text-right">${b.used_days}</td>
         <td class="py-1.5 text-sm text-right font-medium">${remaining}</td>
+        <td class="py-1.5 text-sm text-right" ${carryNote?`title="${esc(carryNote.text)}"`:''}>${
+          b.carried_forward_days||b.carried_forward_forfeited_days
+            ? `<span class="${carryNote?.urgent?'text-amber-700 font-medium':''}">${leaveCarryRemaining(b)}</span>${b.carried_forward_forfeited_days?` <span class="text-xs text-slate-400">(${b.carried_forward_forfeited_days} lapsed)</span>`:''}`
+            : '<span class="text-slate-300">—</span>'}</td>
         <td class="py-1.5 text-sm text-right">${pct}%</td>
       </tr>`;
     }).join('');

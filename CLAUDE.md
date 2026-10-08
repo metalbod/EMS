@@ -600,6 +600,28 @@ wrapper everywhere.
   when an employee's new-year balance row is first created, so changing a type's rules
   never touches balances that already exist.
 
+- **Carried-forward leave: used first, judged on the leave's START date, split recorded**
+  (`core/leave_balance_ops.py`: `_carry_usable_for`/`_available_for`/`_consume_balance`/
+  `_release_balance`; `leave_applications.carried_days_used`, migration `20261009_0002`).
+  Carry-forward was already drawn down before the year's entitlement; what changed:
+  carried days are only usable for leave that **starts on or before**
+  `carried_forward_expires_on` — judged on the leave's own start date, not on the day
+  it is booked/approved (so a late approval of earlier leave can still use them, even
+  after the lazy sweep forfeited them: `_consume_balance` revives them from
+  `carried_forward_forfeited_days`; and leave starting after the expiry never uses them,
+  nor does the availability check count them). `_consume_balance` returns how many days
+  came from carry and callers store that on the application; `_release_balance` (cancel,
+  holiday shortening) gives back exactly that split — and if the carry has expired by
+  then those days **lapse** (forfeited) instead of coming back to life. `NULL` =
+  approved before the migration → old "carried bucket first" fallback. Availability
+  (`_available_for`) = usable carry + entitlement − regular (non-carry) used.
+  UI: `GET /api/leave/balances` adds `carried_forward_remaining`; My Leave cards show
+  "N carried forward · use by <date>" (amber in the last 30 days, "N forfeited" after),
+  the Apply Leave dialog judges availability on the chosen start date and says how many
+  days will come from carry, the Home leave table has a "Carried Fwd Left" column, and
+  application lists show "(n carried fwd)". Helpers: `leaveCarry*`/`leaveAvailableFor`
+  in `static/js/leave.js`.
+
 - **API docs/schema are opt-in** (`core/api_docs.py`, `ENABLE_API_DOCS` env
   var) — `/api/docs`, `/api/redoc` and `/api/openapi.json` are served only
   when it's truthy. Local `.env`/`.env.example` set it; production never does
