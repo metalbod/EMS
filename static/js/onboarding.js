@@ -407,7 +407,7 @@ async function showObItemEdit(clId,itemId,title,description,assignedRole,dueDate
       </div>
       <div class="flex gap-2">
         <button onclick="saveObItemEdit(${clId},${itemId})" class="btn-primary text-xs px-3 py-1">Save</button>
-        <button onclick="openObDetail(${clId})" class="text-xs text-slate-500 hover:text-slate-700 px-2">Cancel</button>
+        <button onclick="openObDetail(${clId})" class="btn-ghost text-xs">Cancel</button>
       </div>
     </div>`;
 }

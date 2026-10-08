@@ -158,23 +158,38 @@ body:has(#assistantFab:not(.hidden)) main.content-shell{ padding-bottom:88px; }
 :where(button,a[href],[role="tab"],[tabindex]):focus-visible{outline:2px solid var(--accent-ink);outline-offset:2px}
 .btn-primary{background:var(--accent-ink);color:white;font-size:.875rem;font-weight:600;padding:.375rem 1rem;border-radius:var(--radius-pill);transition:background .15s;cursor:pointer}
 .btn-primary:hover{background:var(--accent-deep)}
-.btn-ghost{color:var(--ink-2);font-size:.875rem;padding:.375rem 1rem;border-radius:var(--radius-pill);transition:background .15s;cursor:pointer}
+/* ---------------------------------------------------------------------
+   Button convention (Oct 2026) — one look for every control that offers a
+   choice or dismisses something:
+     - "clear pill": transparent pill, 1px --line-strong border, --ink text,
+       light fill on hover. Used by Cancel/Close/secondary buttons, table row
+       actions, inactive filter chips and inactive tabs.
+     - active option: --accent-tint pill with an --accent border and bold
+       accent text (the *-active classes below; every option group toggles its
+       own class from JS, so the look is defined here in one place).
+     - primary actions stay solid (.btn-primary / .pill-btn-primary).
+     - close X: .btn-close, a round clear pill.
+   --line-strong is ~3:1 against white (WCAG non-text contrast); the softer
+   --line stays for dividers and card borders.
+--------------------------------------------------------------------- */
+:root{--line-strong:#8C979E}
+.btn-ghost{color:var(--ink);font-size:.875rem;font-weight:500;padding:.375rem 1rem;border:1px solid var(--line-strong);background:transparent;border-radius:var(--radius-pill);transition:background .15s,border-color .15s;cursor:pointer}
 .btn-ghost:hover{background:var(--surface-2)}
-.view-tab-active{border-bottom:2px solid var(--accent);color:var(--accent-ink);font-weight:600}
-.view-tab-btn{border-bottom:2px solid transparent;transition:color .15s,border-color .15s}
-.project-tab-btn{border-bottom:2px solid transparent;transition:color .15s,border-color .15s;color:var(--muted);cursor:pointer}
-.project-tab-active{border-bottom:2px solid var(--accent);color:var(--accent-ink)!important;font-weight:600}
-.tab-active{border-bottom:2px solid var(--accent);color:var(--accent-ink);font-weight:600}
-.ob-filter-active{background:var(--accent-tint);color:var(--accent-ink);border-color:var(--accent-tint)}
-.ld-cat-filter-active{background:var(--accent-tint);color:var(--accent-ink);border-color:var(--accent-tint)}
-.ld-enr-filter-active{background:var(--accent-tint);color:var(--accent-ink);border-color:var(--accent-tint)}
-.leave-filter-active{background:var(--accent-tint);color:var(--accent-ink);border-color:var(--accent-tint)}
-.leave-appr-filter-active{background:var(--accent-tint);color:var(--accent-ink);border-color:var(--accent-tint)}
-.resign-appr-filter-active{background:var(--accent-tint);color:var(--accent-ink);border-color:var(--accent-tint)}
-.project-filter-active{background:var(--accent-tint);color:var(--accent-ink);border-color:var(--accent-tint)}
-.ts-appr-filter-active{background:var(--accent-tint);color:var(--accent-ink);border-color:var(--accent-tint)}
-.att-tab-active{background:var(--accent-tint);color:var(--accent-ink);border-color:var(--accent-tint)}
-.tab-btn{border-bottom:2px solid transparent;transition:color .15s,border-color .15s}
+/* Tabs of every older style (underline tabs, the Add Candidate / Add Employee
+   / Project modal tabs) are pills now; the bar's old bottom divider goes. */
+.view-tab-btn,.tab-btn,.project-tab-btn,.cand-form-tab{color:var(--ink);font-size:.875rem;font-weight:500;padding:.35rem .95rem;margin:0;border:1px solid var(--line-strong);background:transparent;border-radius:var(--radius-pill);white-space:nowrap;cursor:pointer;transition:background .15s,border-color .15s,color .15s}
+.view-tab-btn:hover,.tab-btn:hover,.project-tab-btn:hover,.cand-form-tab:hover{background:var(--surface-2)}
+.view-tab-active,.tab-active,.project-tab-active{background:var(--accent-tint)!important;border-color:var(--accent)!important;color:var(--accent-ink)!important;font-weight:600}
+:is(div,nav):has(> :is(.view-tab-btn,.tab-btn,.project-tab-btn,.cand-form-tab)){border-bottom-width:0;gap:.4rem;flex-wrap:wrap;padding-block:.4rem}
+.ob-filter-active{background:var(--accent-tint);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+.ld-cat-filter-active{background:var(--accent-tint);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+.ld-enr-filter-active{background:var(--accent-tint);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+.leave-filter-active{background:var(--accent-tint);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+.leave-appr-filter-active{background:var(--accent-tint);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+.resign-appr-filter-active{background:var(--accent-tint);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+.project-filter-active{background:var(--accent-tint);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+.ts-appr-filter-active{background:var(--accent-tint);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+.att-tab-active{background:var(--accent-tint);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
 .note-type-general{background:#f1f5f9;color:#475569}
 .note-type-disciplinary{background:#fee2e2;color:#b91c1c}
 .note-type-performance{background:#dbeafe;color:#1e40af}
@@ -247,12 +262,12 @@ body:has(#assistantFab:not(.hidden)) main.content-shell{ padding-bottom:88px; }
 .section-heading{font-family:var(--font-serif);font-weight:600;font-size:22px;color:var(--ink)}
 .kpi-number{font-family:var(--font-serif);font-weight:500;font-size:32px;line-height:1.1;color:var(--ink)}
 
-.pill-tab{font-family:var(--font-sans);font-size:13.5px;font-weight:600;padding:8px 16px;border-radius:var(--radius-pill);color:var(--muted);cursor:pointer;transition:background .15s,color .15s;white-space:nowrap}
-.pill-tab:hover{color:var(--ink-2)}
-.pill-tab.pill-tab-active{background:var(--accent-tint);color:var(--accent-ink);font-weight:700}
+.pill-tab{font-family:var(--font-sans);font-size:13.5px;font-weight:600;padding:8px 16px;border-radius:var(--radius-pill);color:var(--ink);border:1px solid var(--line-strong);cursor:pointer;transition:background .15s,color .15s,border-color .15s;white-space:nowrap}
+.pill-tab:hover{background:var(--surface-2)}
+.pill-tab.pill-tab-active{background:var(--accent-tint);color:var(--accent-ink);border-color:var(--accent);font-weight:700}
 
 .pill-btn{font-family:var(--font-sans);font-size:13.5px;font-weight:600;padding:8px 18px;border-radius:var(--radius-pill);cursor:pointer;transition:background .15s,color .15s;display:inline-flex;align-items:center;gap:6px}
-.pill-btn-outline{background:transparent;border:1px solid var(--line);color:var(--ink-2)}
+.pill-btn-outline{background:transparent;border:1px solid var(--line-strong);color:var(--ink)}
 .pill-btn-outline:hover{background:var(--surface-2)}
 /* Primary fill is --accent-ink, not --accent: white on --accent is 3.35:1, under AA for button-sized text; on --accent-ink it is 5.47:1. */
 .pill-btn-primary{background:var(--accent-ink);border:1px solid var(--accent-ink);color:#fff}
@@ -372,7 +387,8 @@ tr.todo-row-urgent:hover,.todo-group.todo-row-urgent .todo-group-head:hover{back
 .page-notice{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px;padding:10px 14px;border-radius:var(--radius);background:var(--surface-2);color:var(--ink-2);font-size:14px}
 .page-notice > span{flex:1 1 16rem}
 .page-notice-action{padding:6px 14px;font-size:12.5px}
-.page-notice-dismiss{flex:none;display:inline-flex;padding:8px;border-radius:6px;color:var(--muted);background:none;border:0;cursor:pointer}
+.page-notice-dismiss{flex:none;display:inline-flex;align-items:center;justify-content:center;width:1.75rem;height:1.75rem;padding:0;border-radius:50%;color:var(--ink-2);background:none;border:1px solid var(--line-strong);cursor:pointer}
+.page-notice-dismiss:hover{background:var(--surface-2);color:var(--ink)}
 
 /* Inline Approve / Reject on the Home to-do (todo-decisions.js) */
 .todo-decision-actions{display:inline-flex;align-items:center;gap:8px}
@@ -398,3 +414,29 @@ tr.todo-row-urgent:hover,.todo-group.todo-row-urgent .todo-group-head:hover{back
 .compliance-main{display:flex;flex-direction:column;gap:2px;min-width:0}
 .compliance-title{font-size:14px;font-weight:600;color:var(--ink)}
 .compliance-meta{font-size:13px;color:var(--muted)}
+
+
+/* ---------------------------------------------------------------------
+   Pointer — Tailwind 4 stopped setting cursor:pointer on buttons, so only
+   controls whose own class happened to include it showed the hand. One rule
+   for every clickable control, including ones the page scripts generate.
+   Disabled controls keep their own not-allowed cursor (rule near .btn-primary).
+--------------------------------------------------------------------- */
+button:not(:disabled),[role="button"]:not([aria-disabled="true"]),[role="tab"],summary,select,
+input[type="checkbox"]:not(:disabled),input[type="radio"]:not(:disabled),input[type="file"],label[for],[onclick]{cursor:pointer}
+
+/* Close X — a round clear pill (replaces the bare grey icon). */
+.btn-close{display:inline-flex;align-items:center;justify-content:center;flex:none;width:2rem;height:2rem;padding:0;border:1px solid var(--line-strong);border-radius:50%;background:transparent;color:var(--ink-2);transition:background .15s,color .15s}
+.btn-close:hover{background:var(--surface-2);color:var(--ink)}
+.btn-close svg{width:1rem;height:1rem}
+.btn-close-sm{width:1.625rem;height:1.625rem}
+.btn-close-sm svg{width:.8rem;height:.8rem}
+/* on a dark/teal header (the AI assistant panel) */
+.btn-close-on-dark{border-color:rgba(255,255,255,.7);color:#fff}
+.btn-close-on-dark:hover{background:rgba(255,255,255,.18);color:#fff}
+
+/* Table/row actions written as small coloured text links (Edit, Delete,
+   Approve, Reject, ...) become compact clear pills. The text colour is left
+   alone so Delete/Reject stay red and Approve stays green. */
+button[class~="text-xs"][class*="hover:underline"]{padding:.15rem .7rem;border:1px solid var(--line-strong);border-radius:var(--radius-pill);background:transparent;font-weight:500;line-height:1.4;transition:background .15s}
+button[class~="text-xs"][class*="hover:underline"]:hover{background:var(--surface-2);text-decoration:none}

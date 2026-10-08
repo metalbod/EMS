@@ -544,6 +544,28 @@ wrapper everywhere.
   a running checklist unblocks its dependents (FK `ON DELETE CASCADE`). The checklist
   window shows "⏳ Waiting for: …" (with "(HR can override)" for HR).
 
+- **Button convention** (Oct 2026; `static/css/styles.css`, block starting "Button
+  convention", plus "Pointer" and "Close X" at the end) — **clear pill** = transparent,
+  1px `--line-strong` (#8C979E, ~3:1 on white; `--line` stays for dividers) border,
+  `--ink` text, light fill on hover: `.btn-ghost` (Cancel, Close, Prev/Next, secondary
+  buttons, filter chips), `.pill-btn-outline`, inactive tabs/chips. **Active option** =
+  `--accent-tint` fill + `--accent` border + bold `--accent-ink` text; every option group
+  toggles its own class from JS (`ob-filter-active`, `leave-filter-active`, `tab-active`,
+  `view-tab-active`, `pill-tab-active`, ...), so the look is defined once in CSS and the JS
+  was left alone — a new group just needs its `*-active` class added to that list.
+  **Primary** stays solid `--accent-ink`. **Tabs of every style are pills now**
+  (`.view-tab-btn/.tab-btn/.project-tab-btn/.cand-form-tab`); the bar's old bottom
+  divider is removed by a `:has(> tab-button)` rule, so new tab bars need no extra markup.
+  **Close X** = `.btn-close` (round clear pill; `-sm`, `-on-dark` variants; the 74 modal X
+  buttons were converted by markup). **Row actions** written as small coloured text links
+  (`text-xs … hover:underline` buttons: Edit/Delete/Approve/Reject…) become compact clear
+  pills via an attribute selector, text colour kept (Delete/Reject red). **Pointer**:
+  Tailwind 4 no longer gives buttons `cursor:pointer`, so one global rule covers every
+  clickable control (buttons, tabs, selects, `[onclick]`, file/checkbox inputs). Gotcha:
+  styles.css is *unlayered* so it beats Tailwind utilities on the same element (e.g.
+  `px-4 py-3 text-slate-500` on a tab button are ignored) — change the CSS, not the
+  utility classes. Icon-only row buttons (trash/edit icons) are deliberately left as icons.
+
 - **API docs/schema are opt-in** (`core/api_docs.py`, `ENABLE_API_DOCS` env
   var) — `/api/docs`, `/api/redoc` and `/api/openapi.json` are served only
   when it's truthy. Local `.env`/`.env.example` set it; production never does
