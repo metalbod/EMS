@@ -189,6 +189,7 @@ body:has(#assistantFab:not(.hidden)) main.content-shell{ padding-bottom:88px; }
 .resign-appr-filter-active{background:var(--accent-tint);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
 .project-filter-active{background:var(--accent-tint);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
 .ts-appr-filter-active{background:var(--accent-tint);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+.leave-carry-opt-active{background:var(--accent-tint);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
 .att-tab-active{background:var(--accent-tint);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
 .note-type-general{background:#f1f5f9;color:#475569}
 .note-type-disciplinary{background:#fee2e2;color:#b91c1c}

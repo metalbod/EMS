@@ -33,21 +33,36 @@ def _sweep_expired_carry_forward(conn, bal):
 
 
 def _compute_carry_forward(lt, prior_bal) -> float:
-    """How much of a prior year's unused balance rolls into the new year,
-    per the leave type's policy: min(unused, max_days if set, unused *
-    max_percent/100 if set) — whichever cap is lowest, never more than what
-    was actually unused. Rounded to the nearest half-day, matching every
-    other day-count in this module (see _accrued_days in routers/leave.py)."""
+    """How much of a prior year's unused balance rolls into the new year, per
+    the leave type's policy. Two optional limits, each skipped when 0:
+      - max days:    carry_forward_max_days
+      - max percent: carry_forward_max_percent of EITHER the unused balance
+                     (carry_forward_percent_basis='balance') or that
+                     employee's own entitlement for the year being carried
+                     from (='entitlement', prior_bal["entitled_days"] — so a
+                     pro-rated first year is respected)
+    With both set, carry_forward_cap_rule picks the 'lower' or the 'higher' of
+    the two; with one set, that one applies. Whatever the rule says, never
+    more than what was actually unused. Rounded to the nearest half-day,
+    matching every other day-count in this module (see _accrued_days in
+    routers/leave.py)."""
     if not lt or not prior_bal or not lt["carry_forward_enabled"]:
         return 0.0
     unused = prior_bal["entitled_days"] + prior_bal["carried_forward_days"] - prior_bal["used_days"]
     if unused <= 0:
         return 0.0
-    cap = unused
+    limits = []
     if lt["carry_forward_max_days"]:
-        cap = min(cap, lt["carry_forward_max_days"])
+        limits.append(lt["carry_forward_max_days"])
     if lt["carry_forward_max_percent"]:
-        cap = min(cap, unused * lt["carry_forward_max_percent"] / 100)
+        basis = prior_bal["entitled_days"] if lt["carry_forward_percent_basis"] == "entitlement" else unused
+        limits.append(basis * lt["carry_forward_max_percent"] / 100)
+    if not limits:
+        cap = unused
+    elif lt["carry_forward_cap_rule"] == "higher":
+        cap = min(unused, max(limits))
+    else:
+        cap = min(unused, min(limits))
     return round(cap * 2) / 2
 
 

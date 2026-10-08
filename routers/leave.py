@@ -70,6 +70,22 @@ class LeaveTypeIn(BaseModel):
     carry_forward_max_days: float = 0  # 0 = uncapped
     carry_forward_max_percent: float = 0  # 0 = uncapped, else 0-100
     carry_forward_expiry_days: int = 0  # 0 = never expires
+    carry_forward_percent_basis: str = "balance"  # what the % is of: 'balance' (unused) or 'entitlement' (their own annual entitlement)
+    carry_forward_cap_rule: str = "lower"  # with both limits set, carry the 'lower' or the 'higher' of the two
+
+    @field_validator("carry_forward_percent_basis")
+    @classmethod
+    def _validate_carry_forward_percent_basis(cls, v):
+        if v not in ("balance", "entitlement"):
+            raise ValueError("carry_forward_percent_basis must be 'balance' or 'entitlement'")
+        return v
+
+    @field_validator("carry_forward_cap_rule")
+    @classmethod
+    def _validate_carry_forward_cap_rule(cls, v):
+        if v not in ("lower", "higher"):
+            raise ValueError("carry_forward_cap_rule must be 'lower' or 'higher'")
+        return v
 
     @field_validator("accrual_mode")
     @classmethod
@@ -423,6 +439,7 @@ _LEAVE_TYPE_AUDIT_LABELS = {
     "max_days_per_application": "Max days per application", "max_days_per_month": "Max days per month",
     "carry_forward_enabled": "Carry forward", "carry_forward_max_days": "Carry-forward max days",
     "carry_forward_max_percent": "Carry-forward max %", "carry_forward_expiry_days": "Carry-forward expiry days",
+    "carry_forward_percent_basis": "Carry-forward % based on", "carry_forward_cap_rule": "Carry-forward limit rule",
 }
 
 
@@ -433,13 +450,14 @@ def create_leave_type(conn, body: LeaveTypeIn, user: dict = Depends(get_current_
     inst_id = need_inst(user)
     _validate_shares_entitlement(conn, inst_id, None, body.shares_entitlement_with_id, body.name)
     conn.execute(
-        "INSERT INTO leave_types (institution_id,name,annual_entitlement,requires_approval,requires_attachment,is_paid,is_active,shares_entitlement_with_id,count_calendar_days,allow_half_day,accrual_mode,max_days_per_application,max_days_per_month,carry_forward_enabled,carry_forward_max_days,carry_forward_max_percent,carry_forward_expiry_days) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO leave_types (institution_id,name,annual_entitlement,requires_approval,requires_attachment,is_paid,is_active,shares_entitlement_with_id,count_calendar_days,allow_half_day,accrual_mode,max_days_per_application,max_days_per_month,carry_forward_enabled,carry_forward_max_days,carry_forward_max_percent,carry_forward_expiry_days,carry_forward_percent_basis,carry_forward_cap_rule) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (inst_id, body.name, body.annual_entitlement, 1 if body.requires_approval else 0,
          1 if body.requires_attachment else 0, 1 if body.is_paid else 0, 1 if body.is_active else 0,
          body.shares_entitlement_with_id, 1 if body.count_calendar_days else 0, 1 if body.allow_half_day else 0,
          body.accrual_mode, body.max_days_per_application, body.max_days_per_month,
          1 if body.carry_forward_enabled else 0, body.carry_forward_max_days,
-         body.carry_forward_max_percent, body.carry_forward_expiry_days)
+         body.carry_forward_max_percent, body.carry_forward_expiry_days,
+         body.carry_forward_percent_basis, body.carry_forward_cap_rule)
     )
     row = conn.execute("SELECT * FROM leave_types WHERE id=last_insert_rowid()").fetchone()
     write_entity_audit(conn, user, inst_id, "Leave", "leave_type", row["id"], "Created",
@@ -458,13 +476,14 @@ def update_leave_type(conn, type_id: int, body: LeaveTypeIn, user: dict = Depend
         raise HTTPException(404, "Leave type not found")
     _validate_shares_entitlement(conn, inst_id, type_id, body.shares_entitlement_with_id, body.name)
     conn.execute(
-        "UPDATE leave_types SET name=?,annual_entitlement=?,requires_approval=?,requires_attachment=?,is_paid=?,is_active=?,shares_entitlement_with_id=?,count_calendar_days=?,allow_half_day=?,accrual_mode=?,max_days_per_application=?,max_days_per_month=?,carry_forward_enabled=?,carry_forward_max_days=?,carry_forward_max_percent=?,carry_forward_expiry_days=? WHERE id=?",
+        "UPDATE leave_types SET name=?,annual_entitlement=?,requires_approval=?,requires_attachment=?,is_paid=?,is_active=?,shares_entitlement_with_id=?,count_calendar_days=?,allow_half_day=?,accrual_mode=?,max_days_per_application=?,max_days_per_month=?,carry_forward_enabled=?,carry_forward_max_days=?,carry_forward_max_percent=?,carry_forward_expiry_days=?,carry_forward_percent_basis=?,carry_forward_cap_rule=? WHERE id=?",
         (body.name, body.annual_entitlement, 1 if body.requires_approval else 0,
          1 if body.requires_attachment else 0, 1 if body.is_paid else 0, 1 if body.is_active else 0,
          body.shares_entitlement_with_id, 1 if body.count_calendar_days else 0, 1 if body.allow_half_day else 0,
          body.accrual_mode, body.max_days_per_application, body.max_days_per_month,
          1 if body.carry_forward_enabled else 0, body.carry_forward_max_days,
-         body.carry_forward_max_percent, body.carry_forward_expiry_days, type_id)
+         body.carry_forward_max_percent, body.carry_forward_expiry_days,
+         body.carry_forward_percent_basis, body.carry_forward_cap_rule, type_id)
     )
     row = conn.execute("SELECT * FROM leave_types WHERE id=?", (type_id,)).fetchone()
     changes = diff_fields(dict(old_row), dict(row), _LEAVE_TYPE_AUDIT_LABELS)

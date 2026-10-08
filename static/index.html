@@ -4766,11 +4766,26 @@
               <input id="leaveTypeCarryMaxDays" type="number" step="0.5" min="0" class="inp" value="0" placeholder="0 = uncapped"/>
             </div>
             <div>
-              <label class="lbl">Max % of balance</label>
+              <label class="lbl">Max % carried</label>
               <input id="leaveTypeCarryMaxPercent" type="number" step="1" min="0" max="100" class="inp" value="0" placeholder="0 = uncapped"/>
             </div>
           </div>
-          <p class="text-xs text-slate-400 -mt-2">The amount actually carried is whichever cap is lower — leave either at 0 to skip that cap.</p>
+          <div>
+            <p class="text-xs text-slate-500 mb-1">Calculate the percentage on</p>
+            <div class="flex flex-wrap gap-2" data-opt-group="leaveTypeCarryBasis">
+              <button type="button" class="btn-ghost text-sm leave-carry-basis-btn leave-carry-opt-active" data-v="balance" onclick="setLeaveCarryOption('basis','balance')">Leave balance</button>
+              <button type="button" class="btn-ghost text-sm leave-carry-basis-btn" data-v="entitlement" onclick="setLeaveCarryOption('basis','entitlement')">Annual entitlement</button>
+            </div>
+            <p id="leaveTypeCarryBasisHint" class="text-xs text-slate-400 mt-1"></p>
+          </div>
+          <div>
+            <p class="text-xs text-slate-500 mb-1">When both limits are set, carry</p>
+            <div class="flex flex-wrap gap-2" data-opt-group="leaveTypeCarryRule">
+              <button type="button" class="btn-ghost text-sm leave-carry-rule-btn leave-carry-opt-active" data-v="lower" onclick="setLeaveCarryOption('rule','lower')">Lower of the two</button>
+              <button type="button" class="btn-ghost text-sm leave-carry-rule-btn" data-v="higher" onclick="setLeaveCarryOption('rule','higher')">Higher of the two</button>
+            </div>
+          </div>
+          <p class="text-xs text-slate-400 -mt-1">Never more than the unused balance. Leave either limit at 0 to skip it; with only one set, that one applies.</p>
           <div>
             <label class="lbl">Expires after (days into new year)</label>
             <input id="leaveTypeCarryExpiryDays" type="number" step="1" min="0" class="inp" value="0" placeholder="0 = never expires"/>

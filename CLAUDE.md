@@ -585,6 +585,21 @@ wrapper everywhere.
   background path by stubbing the pool. The batch runs in a copied `contextvars` context
   so setting its own RLS scope can't leak into the request.
 
+- **Leave type carry-forward rules** (`leave_types.carry_forward_percent_basis` /
+  `carry_forward_cap_rule`, migration `20261009_0001`; `_compute_carry_forward` in
+  `core/leave_balance_ops.py`; the two option-pill pairs in the Edit Leave Type dialog,
+  `setLeaveCarryOption` in `static/js/leave.js`) — "Max % carried" is a percentage of
+  either the unused **balance** (default; unused = entitlement + carried in - used) or the
+  employee's **own entitlement** for the year being carried from
+  (`prior_bal["entitled_days"]`, so pro-rated years are respected, not the type's
+  current default). With both "Max days" and "Max %" set, the rule carries the **lower**
+  (default) or the **higher** of the two; with one set, that one applies; 0 = skipped.
+  Either way the carry never exceeds the unused balance — and "higher" is deliberately
+  allowed to pass the max-days limit (asked and confirmed 2026-10-09). Defaults reproduce
+  the old behaviour, so existing leave types are unchanged. Carry-forward is computed once,
+  when an employee's new-year balance row is first created, so changing a type's rules
+  never touches balances that already exist.
+
 - **API docs/schema are opt-in** (`core/api_docs.py`, `ENABLE_API_DOCS` env
   var) — `/api/docs`, `/api/redoc` and `/api/openapi.json` are served only
   when it's truthy. Local `.env`/`.env.example` set it; production never does
