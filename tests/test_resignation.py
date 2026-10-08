@@ -247,3 +247,28 @@ def test_resignation_rejection_and_withdrawal_are_audited(client, employee_with_
     }).json()["id"]
     assert client.patch(f"/api/resignations/{withdrawn_req}", headers=headers, json={"status": "Withdrawn"}).status_code == 200
     assert sorted(r["action"] for r in _resignation_trail(client, hr_manager_auth, withdrawn_req)) == ["Filed", "Withdrawn"]
+
+
+def test_list_resignations_can_be_filtered_to_one_employee(client, hr_manager_auth, make_test_employee):
+    """Employee detail's "File Resignation" button looks up just this
+    employee's requests (disabled while one is Pending/Approved)."""
+    a = make_test_employee(full_name="ZZ Resign Filter A")
+    b = make_test_employee(full_name="ZZ Resign Filter B")
+    ids = []
+    for e in (a, b):
+        r = client.post("/api/resignations", headers=hr_manager_auth, json={
+            "employee_id": e["employee_id"], "reason": "filter test",
+            "effective_date": "2027-06-01", "last_working_day": "2027-06-30"})
+        assert r.status_code == 201, r.text
+        ids.append(r.json()["id"])
+
+    rows = client.get("/api/resignations", headers=hr_manager_auth, params={"employee_id": a["employee_id"]}).json()
+    assert [r["id"] for r in rows] == [ids[0]]
+    assert client.get("/api/resignations", headers=hr_manager_auth,
+                      params={"employee_id": "NO-SUCH-EMPLOYEE"}).json() == []
+
+    for rid in ids:
+        client.patch(f"/api/resignations/{rid}", headers=hr_manager_auth, json={"status": "Rejected"})
+    # A rejected request no longer counts as on file, but it is still listed.
+    rows = client.get("/api/resignations", headers=hr_manager_auth, params={"employee_id": a["employee_id"]}).json()
+    assert [r["status"] for r in rows] == ["Rejected"]

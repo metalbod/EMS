@@ -107,7 +107,8 @@ def create_resignation(conn, body: ResignationIn, user: dict = Depends(get_curre
 
 @router.get("/api/resignations")
 @db_session
-def list_resignations(conn, status: Optional[str] = None, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
+def list_resignations(conn, status: Optional[str] = None, employee_id: Optional[str] = None,
+                      user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
     q = """
         SELECT r.*, e.full_name AS employee_name, e.preferred_name AS employee_preferred_name,
@@ -118,6 +119,7 @@ def list_resignations(conn, status: Optional[str] = None, user: dict = Depends(g
     """
     p: list = [inst_id]
     if status: q += " AND r.status=?"; p.append(status)
+    if employee_id: q += " AND r.employee_id=?"; p.append(employee_id)
     if user["role"] == "manager":
         frag, fp = subordinates_in_clause(inst_id, user.get("employee_id", ""))
         q += f" AND e.employee_id IN {frag}"; p.extend(fp)

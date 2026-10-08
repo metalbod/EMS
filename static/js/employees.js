@@ -304,6 +304,7 @@ function viewEmployee(id) {
   document.getElementById('viewEditBtn').classList.toggle('hidden', !canWrite);
   document.getElementById('viewToggleBtn').classList.toggle('hidden', !canToggle);
   document.getElementById('viewFileResignBtn').classList.toggle('hidden', !canWrite || e.status !== 'Active');
+  if (canWrite && e.status === 'Active') refreshFileResignButton(e.employee_id);
   // Shown once a probation end date is on file at all — HR's own signal
   // that this employee is (or was) on probation; not gated on the date
   // having passed, since confirming is an explicit HR decision, not

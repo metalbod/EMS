@@ -31,8 +31,35 @@ function openResignModal(empId, empName) {
 }
 function closeResignModal() { closeModal('resignModal', () => { _resignAttachment = null; }); }
 
+// Why "File Resignation" can't be used for an employee, from that employee's
+// resignation requests (null = it can). A Pending request blocks a second one
+// (the server refuses it too); an Approved one means they are already leaving.
+// Rejected/Withdrawn requests don't block — HR may file again.
+function resignBlockReason(rows) {
+  const pending = rows.find(r => r.status === 'Pending');
+  if (pending) return 'A resignation request is already pending approval for this employee.';
+  const approved = rows.find(r => r.status === 'Approved');
+  if (approved) return `A resignation was already approved for this employee (last working day ${fmtDate(approved.last_working_day)}).`;
+  return null;
+}
+
+// Employee detail's "File Resignation" button: enabled until we know a request
+// is already on file for this employee, then disabled with the reason as its tooltip.
+async function refreshFileResignButton(empId) {
+  const btn = document.getElementById('viewFileResignBtn');
+  if (!btn) return;
+  btn.disabled = false;
+  btn.title = '';
+  const res = await api(`/api/resignations?employee_id=${encodeURIComponent(empId)}`);
+  if (!res?.ok || viewingId !== empId) return;   // viewing someone else by now, or the lookup failed
+  const reason = resignBlockReason(await res.json());
+  if (viewingId !== empId) return;
+  btn.disabled = !!reason;
+  btn.title = reason || '';
+}
+
 function fileResignationFromView() {
-  if (!viewingId) return;
+  if (!viewingId || document.getElementById('viewFileResignBtn')?.disabled) return;
   const e = employees.find(em => em.employee_id === viewingId);
   if (!e) return;
   const empId = viewingId, empName = displayName(e.full_name, e.preferred_name);

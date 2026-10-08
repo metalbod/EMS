@@ -51,3 +51,29 @@ describe('Dashboard Resign button — pending-status toggle', () => {
     expect(view.showStatus).toBe(false);
   });
 });
+
+// Mirrors static/js/resignation.js's resignBlockReason.
+const fmtDate = s => s;
+function resignBlockReason(rows) {
+  const pending = rows.find(r => r.status === 'Pending');
+  if (pending) return 'A resignation request is already pending approval for this employee.';
+  const approved = rows.find(r => r.status === 'Approved');
+  if (approved) return `A resignation was already approved for this employee (last working day ${fmtDate(approved.last_working_day)}).`;
+  return null;
+}
+
+describe('Employee detail — File Resignation button', () => {
+  it('is blocked while a request is pending', () => {
+    expect(resignBlockReason([{ status: 'Pending' }])).toMatch(/pending approval/);
+  });
+  it('is blocked once a resignation has been approved, naming the last working day', () => {
+    expect(resignBlockReason([{ status: 'Approved', last_working_day: '2027-06-30' }])).toMatch(/approved.*2027-06-30/);
+  });
+  it('pending wins over an older approved one', () => {
+    expect(resignBlockReason([{ status: 'Approved', last_working_day: 'x' }, { status: 'Pending' }])).toMatch(/pending/);
+  });
+  it('stays enabled for none, rejected or withdrawn requests', () => {
+    expect(resignBlockReason([])).toBeNull();
+    expect(resignBlockReason([{ status: 'Rejected' }, { status: 'Withdrawn' }])).toBeNull();
+  });
+});
