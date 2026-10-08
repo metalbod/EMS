@@ -7,6 +7,24 @@ const OB_ROLE_LABELS={employee:'Employee',manager:'Manager',hr_admin:'HR Admin',
 // Colors come from core.js's shared ROLE_BADGE_COLORS, not a local map —
 // see its own comment for why role colors specifically are shared across
 // files rather than kept per-module like the other *_COLORS maps.
+// Roles an item can be assigned to: every built-in plus this institution's
+// custom roles (rolesCache), falling back to the 4 classic ones if the cache
+// hasn't loaded.
+function obAssignableRoles(){
+  if(rolesCache.length) return rolesCache.map(r=>({v:r.role_key,l:r.display_name}));
+  return OB_ROLES_ORDER.map(r=>({v:r,l:OB_ROLE_LABELS[r]||r}));
+}
+// The 4 classic roles first, then any other role actually holding an item
+// (a custom role like IT Infra) in the order first seen — otherwise those
+// items were counted in the progress bar but never shown, or tickable.
+function obGroupItemsByRole(items){
+  const roles=[...OB_ROLES_ORDER];
+  items.forEach(i=>{ if(!roles.includes(i.assigned_role)) roles.push(i.assigned_role); });
+  const grouped={};
+  roles.forEach(r=>grouped[r]=[]);
+  items.forEach(i=>grouped[i.assigned_role].push(i));
+  return {roles,grouped};
+}
 function obRoleColor(role){ return statusColor(ROLE_BADGE_COLORS, role); }
 function obRoleLabel(role){ return OB_ROLE_LABELS[role]||rolesCache.find(r=>r.role_key===role)?.display_name||role; }
 
@@ -174,10 +192,7 @@ async function openObDetail(clId) {
   if(type==='onboarding') await renderObProbationPanel(clId, cl);
   else document.getElementById('obProbationPanel').innerHTML='';
   // Group items by role
-  const roles=OB_ROLES_ORDER;
-  const grouped={};
-  roles.forEach(r=>grouped[r]=[]);
-  cl.items.forEach(i=>{ if(grouped[i.assigned_role]) grouped[i.assigned_role].push(i); });
+  const {roles,grouped}=obGroupItemsByRole(cl.items);
   const canComplete=role=>role===currentUser?.role||HR_MANAGE_ROLES.includes(currentUser?.role);
   const canEdit=HR_MANAGE_ROLES.includes(currentUser?.role);
   let html='';
@@ -230,11 +245,8 @@ async function openObDetail(clId) {
       <p class="text-xs font-medium text-slate-500 mb-2">Add Action Item to the Employee</p>
       <div class="flex gap-2 flex-wrap">
         <input id="obAddTitle" class="inp flex-1 text-sm" placeholder="Item title…"/>
-        <select id="obAddRole" class="inp text-sm" style="width:120px">
-          <option value="employee">Employee</option>
-          <option value="manager">Manager</option>
-          <option value="hr_admin" selected>HR Admin</option>
-          <option value="hr_manager">HR Manager</option>
+        <select id="obAddRole" class="inp text-sm" style="width:150px">
+          ${obAssignableRoles().map(r=>`<option value="${esc(r.v)}"${r.v==='hr_admin'?' selected':''}>${esc(r.l)}</option>`).join('')}
         </select>
         <input id="obAddDueDate" type="datetime-local" class="inp text-sm" title="Due date/time (optional) — shows on the assigned role's calendar"/>
         <button onclick="addObItem(${clId})" class="btn-primary text-sm px-3">Add</button>
@@ -359,7 +371,7 @@ async function submitStartOb(e) {
 }
 
 async function showObItemEdit(clId,itemId,title,description,assignedRole,dueDate) {
-  const roles=[{v:'employee',l:'Employee'},{v:'manager',l:'Manager'},{v:'hr_admin',l:'HR Admin'},{v:'hr_manager',l:'HR Manager'}];
+  const roles=obAssignableRoles();
   const el=document.getElementById('obitem-'+itemId);
   if(!el) return;
   // due_date is stored 'YYYY-MM-DD HH:MI:SS' — a datetime-local input wants
@@ -370,8 +382,8 @@ async function showObItemEdit(clId,itemId,title,description,assignedRole,dueDate
       <input id="obedit-title-${itemId}" class="inp text-sm w-full" value="${esc(title)}"/>
       <div class="flex gap-2">
         <input id="obedit-desc-${itemId}" class="inp text-sm flex-1" placeholder="Description…" value="${esc(description)}"/>
-        <select id="obedit-role-${itemId}" class="inp text-sm" style="width:120px">
-          ${roles.map(r=>`<option value="${r.v}" ${r.v===assignedRole?'selected':''}>${r.l}</option>`).join('')}
+        <select id="obedit-role-${itemId}" class="inp text-sm" style="width:150px">
+          ${roles.map(r=>`<option value="${esc(r.v)}" ${r.v===assignedRole?'selected':''}>${esc(r.l)}</option>`).join('')}
         </select>
       </div>
       <div class="flex items-center gap-2">
