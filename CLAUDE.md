@@ -477,6 +477,17 @@ wrapper everywhere.
     which address that is. `send_email(..., cc=)` is the new generic Cc
     support in `core/email_engine.py`.
 
+- **Login by username or email** (`routers/auth.py`'s `_find_login_user`;
+  login box label "Username or Email") — the request field is still named
+  `username`. An exact username match always wins (usernames are unique per
+  institution, and some are themselves email-shaped, e.g. `sarmini.devi@
+  mandrill.com.my`); only if none matches and the text contains `@` is it
+  tried as an email — case-insensitive, trimmed, scoped to the same company
+  code (or platform-level users when no code is given). `users.email` is not
+  unique, so an address shared by two accounts in the institution matches
+  **nobody** by email (generic 401, no hint) and those people sign in by
+  username. Rate limiting and the login audit still key on whatever was typed.
+
 - **API docs/schema are opt-in** (`core/api_docs.py`, `ENABLE_API_DOCS` env
   var) — `/api/docs`, `/api/redoc` and `/api/openapi.json` are served only
   when it's truthy. Local `.env`/`.env.example` set it; production never does

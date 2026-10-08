@@ -94,6 +94,23 @@ def _record_login_audit(conn, request: Request, institution_id, username: str, u
         logger.exception("Failed to record login audit entry for %s", username)
 
 
+def _find_login_user(conn, identifier: str, inst_id: Optional[int]):
+    """The login box accepts a username OR an email address. A username match
+    always wins (usernames are unique per institution, and some are themselves
+    email-shaped); only when none matches is `identifier` tried as an email,
+    case-insensitively. Email isn't unique in `users`, so an address shared by
+    more than one account in the institution matches nobody — that person can
+    still sign in with their username."""
+    scope, params = ("institution_id IS NULL", ()) if inst_id is None else ("institution_id=?", (inst_id,))
+    user = conn.execute(f"SELECT * FROM users WHERE username=? AND {scope}", (identifier,) + params).fetchone()
+    if user or "@" not in identifier:
+        return user
+    rows = conn.execute(
+        f"SELECT * FROM users WHERE LOWER(email)=LOWER(?) AND {scope} LIMIT 2", (identifier.strip(),) + params
+    ).fetchall()
+    return rows[0] if len(rows) == 1 else None
+
+
 @router.post("/api/auth/login", response_model=TokenResponse, tags=["auth"])
 @db_session
 def login(conn, body: LoginIn, request: Request) -> dict:
@@ -111,15 +128,10 @@ def login(conn, body: LoginIn, request: Request) -> dict:
         ).fetchone()
         inst = inst_row
         if inst_row:
-            user = conn.execute(
-                "SELECT * FROM users WHERE username=? AND institution_id=?",
-                (body.username, inst_row["id"])
-            ).fetchone()
+            user = _find_login_user(conn, body.username, inst_row["id"])
     else:
         # Superadmin or platform-level login (no institution)
-        user = conn.execute(
-            "SELECT * FROM users WHERE username=? AND institution_id IS NULL", (body.username,)
-        ).fetchone()
+        user = _find_login_user(conn, body.username, None)
 
     # verify_password_or_dummy runs a real bcrypt comparison even when
     # `user` is None (bad company code or unknown username) — see its own

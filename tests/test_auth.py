@@ -129,3 +129,65 @@ def test_switching_active_role_is_audited(client, make_test_user, hr_manager_aut
     rows = [r for r in res.json() if r["action"] == "Role switched"]
     assert len(rows) == 1, "only a switch that actually changes the role is recorded"
     assert rows[0]["changes"][0]["old"] == "employee" and rows[0]["changes"][0]["new"] == "hr_manager"
+
+
+# ---------------------------------------------------------------------------
+# Login by username OR email (routers/auth.py's _find_login_user)
+# ---------------------------------------------------------------------------
+import os as _os
+
+
+def _mk_user(client, headers, email, password="ZzPytest@123"):
+    res = client.post("/api/users", headers=headers, json={
+        "username": f"zztest_{_os.urandom(4).hex()}", "full_name": "ZZ Email Login",
+        "email": email, "password": password, "role": "employee"})
+    assert res.status_code == 201, res.text
+    return res.json()
+
+
+def _login(client, ident, code, password="ZzPytest@123"):
+    return client.post("/api/auth/login", json={"username": ident, "password": password, "institution_code": code})
+
+
+def test_login_with_email_address_works_case_insensitively(client, hr_manager_auth, test_institution):
+    email = f"zz.login.{_os.urandom(3).hex()}@example.com"
+    created = _mk_user(client, hr_manager_auth, email)
+    try:
+        code = test_institution["code"]
+        assert _login(client, created["username"], code).status_code == 200  # username still works
+        ok = _login(client, email, code)
+        assert ok.status_code == 200 and ok.json()["user"]["username"] == created["username"]
+        assert _login(client, "  " + email.upper() + " ", code).status_code == 200
+        assert _login(client, email, code, password="wrong-password").status_code == 401
+    finally:
+        client.delete(f"/api/users/{created['id']}", headers=hr_manager_auth)
+
+
+def test_login_with_unknown_email_is_rejected(client, test_institution):
+    assert _login(client, "zz.nobody@example.com", test_institution["code"]).status_code == 401
+
+
+def test_login_email_shared_by_two_accounts_is_ambiguous_but_usernames_still_work(client, hr_manager_auth, test_institution):
+    email = f"zz.shared.{_os.urandom(3).hex()}@example.com"
+    a, b = _mk_user(client, hr_manager_auth, email), _mk_user(client, hr_manager_auth, email)
+    try:
+        code = test_institution["code"]
+        assert _login(client, email, code).status_code == 401
+        assert _login(client, a["username"], code).status_code == 200
+        assert _login(client, b["username"], code).status_code == 200
+    finally:
+        for u in (a, b):
+            client.delete(f"/api/users/{u['id']}", headers=hr_manager_auth)
+
+
+def test_login_email_is_scoped_to_the_company_code(client, hr_manager_auth, test_institution, superadmin_headers):
+    email = f"zz.scope.{_os.urandom(3).hex()}@example.com"
+    created = _mk_user(client, hr_manager_auth, email)
+    try:
+        insts = client.get("/api/institutions", headers=superadmin_headers).json()
+        other = next((i for i in insts if i["id"] != test_institution["id"]), None)
+        if other is not None:
+            assert _login(client, email, other["code"]).status_code == 401
+        assert _login(client, email, "").status_code == 401  # platform login never matches an institution user
+    finally:
+        client.delete(f"/api/users/{created['id']}", headers=hr_manager_auth)

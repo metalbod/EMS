@@ -225,7 +225,7 @@ def _email_user_password(conn, inst_id: int, *, full_name: str, username: str, e
         f"<p>{intro}{html_escape(company)}.</p>"
         "<p>Sign in with:</p>"
         f"<ul><li>Company code: <strong>{html_escape(code)}</strong></li>"
-        f"<li>Username: <strong>{html_escape(username)}</strong></li>"
+        f"<li>Username: <strong>{html_escape(username)}</strong> (or this email address)</li>"
         f"<li>Temporary password: <strong>{html_escape(password)}</strong></li></ul>"
         "<p>You'll be asked to choose a new password the first time you sign in.</p>"
         f'<p><a href="{APP_BASE_URL}">Open EMS</a></p>'
