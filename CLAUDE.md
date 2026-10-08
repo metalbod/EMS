@@ -443,6 +443,13 @@ wrapper everywhere.
   endpoint reads `conn._last_id`/`last_insert_rowid()` afterwards, capture it
   *before* the audit insert, which overwrites both).
 
+- **API docs/schema are opt-in** (`core/api_docs.py`, `ENABLE_API_DOCS` env
+  var) — `/api/docs`, `/api/redoc` and `/api/openapi.json` are served only
+  when it's truthy. Local `.env`/`.env.example` set it; production never does
+  (no Fly secret), so they 404 there. Before 2026-10-07 they were always on
+  and the full endpoint/field map was readable without a login. If you need
+  the live API surface, run locally or generate the schema from the code.
+
 ## Recurring gotchas (hit more than once this project's history)
 
 - **RLS fails closed, not open.** A table gets RLS auto-enabled by an

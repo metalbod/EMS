@@ -8,6 +8,7 @@ load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 from fastapi import FastAPI
 from fastapi.middleware.gzip import GZipMiddleware
 
+from core.api_docs import api_docs_urls
 from core.seed import init_db_seed
 from core.middleware import cors_middleware, request_logging_middleware
 from core.tasks import app as celery_app
@@ -105,9 +106,7 @@ app = FastAPI(
     title="EMS Multi-Tenant",
     description="Employee Management System: multi-tenant HR platform with employees, recruitment, L&D, leave, timesheets, payroll, and performance management.",
     version="1.0.0",
-    docs_url="/api/docs",
-    redoc_url="/api/redoc",
-    openapi_url="/api/openapi.json",
+    **api_docs_urls(os.environ),
     lifespan=lifespan,
 )
 

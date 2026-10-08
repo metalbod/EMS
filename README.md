@@ -183,6 +183,7 @@ URL.
 
 The API is documented via OpenAPI 3.0 schemas generated from Pydantic response models. Access the interactive docs while the app is running:
 
+- Served only when `ENABLE_API_DOCS=true` is set (put it in your local `.env`); it is deliberately never set in production.
 - **Swagger UI**: http://localhost:8000/api/docs — full interactive API explorer
 - **ReDoc**: http://localhost:8000/api/redoc — alternative docs view
 - **OpenAPI JSON**: http://localhost:8000/api/openapi.json — raw schema (for code generation)
