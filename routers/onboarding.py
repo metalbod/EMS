@@ -138,6 +138,16 @@ class OBTemplateMoveIn(BaseModel):
     direction: str  # up | down
 
 
+class OBLayoutItemIn(BaseModel):
+    id: int
+    assigned_role: str
+
+
+class OBTemplateLayoutIn(BaseModel):
+    # The template set's complete, ordered item list — position = new order_index.
+    items: List[OBLayoutItemIn]
+
+
 class OBChecklistStartIn(BaseModel):
     employee_id: str
     type: str = "onboarding"
@@ -428,6 +438,56 @@ def delete_ob_template(conn, tmpl_id: int, user: dict = Depends(get_current_user
         write_entity_audit(conn, user, inst_id, "Onboarding", "template_set", tmpl["template_set_id"], "Item removed", detail=f"'{tmpl['title']}' removed",
                            entity_label=f"Template #{tmpl['template_set_id']}")
     conn.commit()
+
+
+@router.put("/api/ob/template-sets/{set_id}/layout")
+@db_session
+def save_ob_template_layout(conn, set_id: int, body: OBTemplateLayoutIn,
+                            user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
+    """Saves a drag-and-drop on the template board: the whole set's new item
+    order plus each item's (possibly changed) role, in one transaction. The
+    client must send every active item of the set exactly once — a stale
+    board (someone else added/removed an item meanwhile) gets a 409 instead
+    of silently dropping or resurrecting items. Already-started checklists
+    are untouched (they snapshot the template when they start)."""
+    require_permission(conn, user, "onboarding_offboarding.manage_template_sets_templates")
+    inst_id = need_inst(user)
+    tset = conn.execute(
+        "SELECT * FROM ob_template_sets WHERE id=? AND institution_id=? AND is_active=1", (set_id, inst_id)
+    ).fetchone()
+    if not tset:
+        raise HTTPException(404, "Template set not found")
+    current = conn.execute(
+        "SELECT * FROM ob_templates WHERE template_set_id=? AND institution_id=? AND is_active=1 ORDER BY order_index, id",
+        (set_id, inst_id)
+    ).fetchall()
+    by_id = {r["id"]: r for r in current}
+    sent_ids = [i.id for i in body.items]
+    if len(set(sent_ids)) != len(sent_ids) or set(sent_ids) != set(by_id):
+        raise HTTPException(409, "This template changed since you opened it. Reload and try again.")
+    valid_roles = get_valid_roles(conn, inst_id)
+    for it in body.items:
+        if it.assigned_role not in valid_roles:
+            raise HTTPException(400, f"assigned_role must be one of: {', '.join(valid_roles)}")
+    handed_over = []
+    for position, it in enumerate(body.items):
+        old = by_id[it.id]
+        if old["order_index"] != position or old["assigned_role"] != it.assigned_role:
+            conn.execute("UPDATE ob_templates SET order_index=?, assigned_role=? WHERE id=?",
+                         (position, it.assigned_role, it.id))
+        if old["assigned_role"] != it.assigned_role:
+            handed_over.append(f"'{old['title']}' {old['assigned_role']} -> {it.assigned_role}")
+    new_order = [i.id for i in body.items]
+    if handed_over or new_order != [r["id"] for r in current]:
+        detail = "Items rearranged" + (f"; role changed: {'; '.join(handed_over)}" if handed_over else "")
+        write_entity_audit(conn, user, inst_id, "Onboarding", "template_set", set_id, "Items rearranged",
+                           detail=detail, entity_label=f"Template #{set_id}")
+    conn.commit()
+    rows = conn.execute(
+        "SELECT * FROM ob_templates WHERE template_set_id=? AND institution_id=? AND is_active=1 ORDER BY order_index, id",
+        (set_id, inst_id)
+    ).fetchall()
+    return [dict(r) for r in rows]
 
 
 @router.post("/api/ob/templates/{tmpl_id}/move")

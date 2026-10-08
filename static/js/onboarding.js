@@ -559,11 +559,6 @@ async function refreshObTemplatesList(type) {
   renderObSwimlane(type);
 }
 
-async function moveObTemplate(type,id,direction) {
-  await api(`/api/ob/templates/${id}/move`,{method:'POST',body:JSON.stringify({direction})});
-  refreshObTemplatesList(type);
-}
-
 const addObTemplate = guardAsync(async function(type) {
   const title=oel(type,'obTmplTitle').value.trim();
   if(!title) return;
@@ -628,100 +623,180 @@ const saveObTmplItemDetail = guardAsync(async function() {
 });
 
 // ---------------------------------------------------------------------------
-// Swimlane visualization — 4 role rows, steps placed left-to-right in
-// checklist order (order_index), with elbow-connector arrows tracing the
-// full sequence across lanes so a role handoff is visible at a glance
-// (see the reference HR-workflow diagram this was modeled after).
+// Template board — one column per role (every role is always shown, even
+// with no items), each holding that role's checklist items top to bottom in
+// order. Cards drag within a column (re-order) or onto another column (hand
+// the item to that role); every change is saved on drop through one
+// PUT .../template-sets/{id}/layout call carrying the whole set's order.
+// There are no arrows: nothing in the data says one item depends on another
+// (order_index is just a list order), so none are drawn until real
+// dependencies exist.
 // ---------------------------------------------------------------------------
+let obDragId=null;
+
+// Columns: the 4 classic roles first, then every other role this institution
+// has (rolesCache), then any role an item still holds that is no longer in
+// the cache (e.g. a deleted custom role) so its cards never vanish.
+function obBoardRoles(items){
+  const roles=[...OB_ROLES_ORDER];
+  rolesCache.forEach(r=>{ if(!roles.includes(r.role_key)) roles.push(r.role_key); });
+  items.forEach(i=>{ if(!roles.includes(i.assigned_role)) roles.push(i.assigned_role); });
+  return roles;
+}
+
+// Pure: the set's new ordered [{id, assigned_role}] after dragging `dragId`
+// into `targetRole`, just before card `beforeId` (null = bottom of that
+// column). Other items keep their relative order.
+function obApplyDrop(items, dragId, targetRole, beforeId){
+  const moved=items.find(i=>i.id===dragId);
+  if(!moved) return items.map(i=>({id:i.id,assigned_role:i.assigned_role}));
+  const rest=items.filter(i=>i.id!==dragId).map(i=>({id:i.id,assigned_role:i.assigned_role}));
+  const entry={id:dragId,assigned_role:targetRole};
+  let at=beforeId==null?-1:rest.findIndex(i=>i.id===beforeId);
+  if(at<0){
+    let last=-1;
+    rest.forEach((i,n)=>{ if(i.assigned_role===targetRole) last=n; });
+    at=last>=0?last+1:rest.length;
+  }
+  rest.splice(at,0,entry);
+  return rest;
+}
+
+function obLayoutChanged(items, layout){
+  return layout.some((l,n)=>items[n].id!==l.id||items[n].assigned_role!==l.assigned_role);
+}
+
+async function obSaveLayout(type, layout){
+  const items=obTmplItemsCache[type];
+  if(!obLayoutChanged(items,layout)) return;
+  const setId=obCurrentSetId[type];
+  const before=items;
+  // Optimistic: show the new arrangement immediately, roll back on failure.
+  const byId=new Map(items.map(i=>[i.id,i]));
+  obTmplItemsCache[type]=layout.map(l=>({...byId.get(l.id),assigned_role:l.assigned_role}));
+  renderObSwimlane(type);
+  const res=await api(`/api/ob/template-sets/${setId}/layout`,{method:'PUT',body:JSON.stringify({items:layout})});
+  if(res&&res.ok){ obTmplItemsCache[type]=await res.json(); renderObSwimlane(type); return; }
+  const d=await res?.json().catch(()=>null);
+  alert(d?.detail?apiErrorText(d.detail):'Could not save the new arrangement.');
+  if(res&&res.status===409) await refreshObTemplatesList(type);
+  else { obTmplItemsCache[type]=before; renderObSwimlane(type); }
+}
+
+// Move a card one place up/down inside its own column (touch/keyboard
+// alternative to dragging).
+function moveObTemplateInColumn(type,id,direction){
+  const items=obTmplItemsCache[type];
+  const me=items.find(i=>i.id===id); if(!me) return;
+  const col=items.filter(i=>i.assigned_role===me.assigned_role);
+  const idx=col.findIndex(i=>i.id===id);
+  let beforeId;
+  if(direction==='up'){ if(idx<=0) return; beforeId=col[idx-1].id; }
+  else { if(idx>=col.length-1) return; beforeId=idx+2<col.length?col[idx+2].id:null; }
+  obSaveLayout(type,obApplyDrop(items,id,me.assigned_role,beforeId));
+}
+
+function addObTemplateForRole(type,role){
+  const sel=oel(type,'obTmplRole');
+  if(sel) sel.value=role;
+  const title=oel(type,'obTmplTitle');
+  title?.scrollIntoView({behavior:'smooth',block:'center'});
+  title?.focus();
+}
+
 function renderObSwimlane(type) {
   const items=obTmplItemsCache[type]||[];
   const wrap=oel(type,'obSwimlaneWrap');
   const grid=oel(type,'obSwimlaneGrid');
-  const svg=oel(type,'obSwimlaneSvg');
   const emptyEl=oel(type,'obSwimlaneEmpty');
-  if(!items.length){
-    wrap.classList.add('hidden');
-    emptyEl.classList.remove('hidden');
-    grid.innerHTML='';
-    svg.innerHTML='';
+  // No template selected/created yet: nothing to arrange.
+  if(!obCurrentSetId[type]){
+    wrap.classList.add('hidden'); emptyEl.classList.add('hidden'); grid.innerHTML='';
     return;
   }
   wrap.classList.remove('hidden');
   emptyEl.classList.add('hidden');
 
-  // Base 4 built-in roles, plus any custom role actually assigned to one
-  // of this set's items (appended in the order first seen) — so an
-  // "IT Infra" item still gets its own swimlane row instead of vanishing.
-  const rolesOrder=[...OB_ROLES_ORDER];
-  items.forEach(item=>{ if(!rolesOrder.includes(item.assigned_role)) rolesOrder.push(item.assigned_role); });
-
-  const colWidth=190, labelWidth=120, gap=12;
-  grid.style.display='grid';
-  grid.style.gridTemplateColumns=`${labelWidth}px repeat(${items.length}, ${colWidth}px)`;
-  grid.style.gridTemplateRows=`repeat(${rolesOrder.length}, minmax(80px,auto))`;
-  grid.style.gap=`${gap}px`;
-
   const canManage=HR_MANAGE_ROLES.includes(currentUser?.role);
-  let html='';
-  rolesOrder.forEach((role,rIdx)=>{
-    html+=`<div style="grid-column:1;grid-row:${rIdx+1}" class="flex items-center">
-      <span class="badge ${obRoleColor(role)} text-xs whitespace-nowrap">${esc(obRoleLabel(role))}</span>
-    </div>`;
-  });
-  items.forEach((item,cIdx)=>{
-    const rIdx=rolesOrder.indexOf(item.assigned_role);
-    const linkedCourse=obTmplCoursesCache[type].find(c=>c.id===item.linked_ld_course_id);
-    html+=`<div style="grid-column:${cIdx+2};grid-row:${rIdx+1}">
-      <div id="${oid(type,'obSwimStep')}_${item.id}" class="${obRoleColor(item.assigned_role)} rounded-lg p-2 h-full flex flex-col shadow-xs border border-black/5">
-        <div class="flex items-center justify-between gap-1 mb-1">
-          <button onclick="moveObTemplate('${type}',${item.id},'up')" ${cIdx===0?'disabled':''} class="opacity-60 hover:opacity-100 disabled:opacity-20" title="Move earlier"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/></svg></button>
-          <span class="text-[10px] font-semibold opacity-60">${cIdx+1}</span>
-          <button onclick="moveObTemplate('${type}',${item.id},'down')" ${cIdx===items.length-1?'disabled':''} class="opacity-60 hover:opacity-100 disabled:opacity-20" title="Move later"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg></button>
+  const arrow=(d)=>`<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${d}"/></svg>`;
+  grid.innerHTML=obBoardRoles(items).map(role=>{
+    const mine=items.filter(i=>i.assigned_role===role);
+    const cards=mine.map((item,n)=>{
+      const linkedCourse=obTmplCoursesCache[type].find(c=>c.id===item.linked_ld_course_id);
+      const dueLabel=item.due_date_rule?(OB_DUE_DATE_RULE_LABELS[item.due_date_rule]||item.due_date_rule):'';
+      return `<div draggable="${canManage}" data-ob-card="${item.id}" id="${oid(type,'obSwimStep')}_${item.id}" class="${obRoleColor(role)} rounded-lg p-2 flex flex-col shadow-xs border border-black/5 ${canManage?'cursor-grab':''}">
+        <div class="flex items-start gap-1.5">
+          <span class="text-[10px] font-semibold opacity-60 mt-0.5 min-w-3">${n+1}</span>
+          <div class="flex-1 cursor-pointer min-w-0" onclick="openObTmplItemModal('${type}',${item.id})">
+            <p class="text-xs font-semibold leading-tight break-words">${esc(item.title)}</p>
+            ${linkedCourse?`<p class="text-[10px] mt-1 opacity-80 truncate" title="${esc(linkedCourse.title)}">🎓 ${esc(linkedCourse.title)}</p>`:''}
+            ${dueLabel?`<p class="text-[10px] mt-1 opacity-80 truncate" title="${esc(dueLabel)}">📅 ${esc(dueLabel)}</p>`:''}
+          </div>
         </div>
-        <div class="flex-1 cursor-pointer" onclick="openObTmplItemModal('${type}',${item.id})">
-          <p class="text-xs font-semibold leading-tight">${esc(item.title)}</p>
-          ${linkedCourse?`<p class="text-[10px] mt-1 opacity-80 truncate" title="${esc(linkedCourse.title)}">🎓 ${esc(linkedCourse.title)}</p>`:''}
-          ${item.due_date_rule?`<p class="text-[10px] mt-1 opacity-80 truncate" title="${esc(OB_DUE_DATE_RULE_LABELS[item.due_date_rule]||item.due_date_rule)}">📅 ${esc(OB_DUE_DATE_RULE_LABELS[item.due_date_rule]||item.due_date_rule)}</p>`:''}
-        </div>
-        ${canManage?`<div class="flex justify-end mt-1">
-          <button onclick="deleteObTemplate('${type}',${item.id})" class="opacity-50 hover:opacity-100 hover:text-red-600" title="Remove"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg></button>
+        ${canManage?`<div class="flex items-center justify-between mt-1.5">
+          <div class="flex gap-1">
+            <button onclick="moveObTemplateInColumn('${type}',${item.id},'up')" ${n===0?'disabled':''} class="opacity-60 hover:opacity-100 disabled:opacity-20" title="Move up">${arrow('M5 15l7-7 7 7')}</button>
+            <button onclick="moveObTemplateInColumn('${type}',${item.id},'down')" ${n===mine.length-1?'disabled':''} class="opacity-60 hover:opacity-100 disabled:opacity-20" title="Move down">${arrow('M19 9l-7 7-7-7')}</button>
+          </div>
+          <button onclick="deleteObTemplate('${type}',${item.id})" class="opacity-50 hover:opacity-100 hover:text-red-600" title="Remove"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>
         </div>`:''}
+      </div>`;
+    }).join('');
+    return `<div data-ob-col="${esc(role)}" class="w-44 shrink-0 flex flex-col gap-2 p-1.5 rounded-lg border border-dashed border-slate-200 min-h-32">
+      <div class="text-center mb-0.5">
+        <span class="badge ${obRoleColor(role)} text-xs whitespace-nowrap">${esc(obRoleLabel(role))}</span>
+        <p class="text-[10px] text-slate-400 mt-0.5">${mine.length} item${mine.length===1?'':'s'}</p>
       </div>
+      ${cards}
+      ${canManage?`<button type="button" onclick="addObTemplateForRole('${type}','${esc(role)}')" data-ob-add class="mt-auto text-xs text-slate-500 hover:text-blue-600 border border-dashed border-slate-300 rounded-lg py-1.5">+ Add item${mine.length?'':'<span class="block text-[10px] text-slate-400">or drop a card here</span>'}</button>`:''}
     </div>`;
-  });
-  grid.innerHTML=html;
-
-  requestAnimationFrame(()=>drawObSwimlaneArrows(type,items));
+  }).join('');
+  grid.className='relative flex gap-3 items-stretch';
+  grid.style.minWidth='max-content';
+  bindObBoardDnD(type,grid);
 }
 
-function drawObSwimlaneArrows(type,items) {
-  const svg=oel(type,'obSwimlaneSvg');
-  const grid=oel(type,'obSwimlaneGrid');
-  if(!svg||!grid||items.length<2) { if(svg) svg.innerHTML=''; return; }
-  const gridRect=grid.getBoundingClientRect();
-  const originRect=svg.getBoundingClientRect();
-  svg.style.width=gridRect.width+'px';
-  svg.style.height=gridRect.height+'px';
-  svg.setAttribute('viewBox',`0 0 ${gridRect.width} ${gridRect.height}`);
+// Insertion point for a drop at pointer height `y` inside column `col`: the
+// first card whose midpoint is below the pointer (null = after the last).
+function obCardAfter(col,y,dragId){
+  return [...col.querySelectorAll('[data-ob-card]')]
+    .filter(c=>+c.dataset.obCard!==dragId)
+    .find(c=>{const b=c.getBoundingClientRect(); return y<b.top+b.height/2;})||null;
+}
 
-  const markerId=`obArrowHead_${type}`;
-  let defs=`<defs><marker id="${markerId}" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#334155"/></marker></defs>`;
-  let paths='';
-  for(let i=0;i<items.length-1;i++){
-    const a=document.getElementById(`${oid(type,'obSwimStep')}_${items[i].id}`);
-    const b=document.getElementById(`${oid(type,'obSwimStep')}_${items[i+1].id}`);
-    if(!a||!b) continue;
-    const ra=a.getBoundingClientRect(), rb=b.getBoundingClientRect();
-    const x1=ra.right-originRect.left, y1=ra.top+ra.height/2-originRect.top;
-    const x2=rb.left-originRect.left, y2=rb.top+rb.height/2-originRect.top;
-    let d;
-    if(Math.abs(y1-y2)<2){
-      d=`M${x1},${y1} L${x2-4},${y2}`;
-    } else {
-      const midX=x1+(x2-x1)/2;
-      d=`M${x1},${y1} H${midX} V${y2} H${x2-4}`;
-    }
-    paths+=`<path d="${d}" stroke="#334155" stroke-width="1.5" fill="none" marker-end="url(#${markerId})"/>`;
-  }
-  svg.innerHTML=defs+paths;
+function bindObBoardDnD(type,grid){
+  if(!HR_MANAGE_ROLES.includes(currentUser?.role)) return;
+  const clearMarks=()=>{
+    grid.querySelectorAll('.ob-drop-ind').forEach(x=>x.remove());
+    grid.querySelectorAll('[data-ob-col]').forEach(c=>c.classList.remove('bg-blue-50'));
+  };
+  grid.ondragstart=e=>{
+    const card=e.target.closest?.('[data-ob-card]'); if(!card) return;
+    obDragId=+card.dataset.obCard;
+    e.dataTransfer.effectAllowed='move';
+    e.dataTransfer.setData('text/plain',String(obDragId));
+    setTimeout(()=>card.classList.add('opacity-40'),0);
+  };
+  grid.ondragend=()=>{ obDragId=null; clearMarks(); grid.querySelectorAll('[data-ob-card]').forEach(c=>c.classList.remove('opacity-40')); };
+  grid.ondragover=e=>{
+    const col=e.target.closest?.('[data-ob-col]');
+    if(obDragId==null||!col) return;
+    e.preventDefault();
+    clearMarks();
+    col.classList.add('bg-blue-50');
+    const ind=document.createElement('div');
+    ind.className='ob-drop-ind h-1 rounded bg-blue-500';
+    const before=obCardAfter(col,e.clientY,obDragId);
+    col.insertBefore(ind, before||col.querySelector('[data-ob-add]'));
+  };
+  grid.ondragleave=e=>{ if(!grid.contains(e.relatedTarget)) clearMarks(); };
+  grid.ondrop=e=>{
+    const col=e.target.closest?.('[data-ob-col]');
+    if(obDragId==null||!col) return;
+    e.preventDefault();
+    const dragId=obDragId, role=col.dataset.obCol;
+    const before=obCardAfter(col,e.clientY,dragId);
+    obDragId=null; clearMarks();
+    obSaveLayout(type,obApplyDrop(obTmplItemsCache[type],dragId,role,before?+before.dataset.obCard:null));
+  };
 }

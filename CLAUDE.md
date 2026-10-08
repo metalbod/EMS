@@ -496,6 +496,25 @@ wrapper everywhere.
   it would (`_auto_complete_if_all_done`, shared by both paths); a checklist
   with zero items left is never auto-completed.
 
+- **Onboarding/offboarding template board** (Settings → Workforce → Onboarding/
+  Offboarding → Manage Templates; `renderObSwimlane` in `static/js/onboarding.js`,
+  `PUT /api/ob/template-sets/{id}/layout` in `routers/onboarding.py`) — replaced the
+  old horizontal swimlane (roles as rows, items left-to-right with sequence arrows).
+  Now one **column per role, always shown** (classic 4 first, then every other
+  `rolesCache` role, then any orphaned role an item still holds), each stacking that
+  role's items from the top; cards drag within a column (re-order) or to another
+  column (hand to that role), saved on drop as the whole set's ordered
+  `[{id, assigned_role}]` in one transaction (409 if the set changed under you,
+  optimistic UI with rollback). Up/down buttons per card are the touch/keyboard
+  alternative (HTML5 drag-and-drop doesn't work on touch). **No arrows**: nothing in
+  the data says one item depends on another — `ob_templates.order_index` is only list
+  order (kept as one global sequence; a role's column order is the relative order of
+  its items), and checklists don't enforce order at runtime, so none are drawn until
+  real dependencies exist (planned "Phase 2": a prerequisites table copied onto
+  checklist items at start). Reordering a template never touches already-started
+  checklists (they snapshot at start). The old `POST /api/ob/templates/{id}/move`
+  (swap with the global neighbour) is no longer used by the UI.
+
 - **API docs/schema are opt-in** (`core/api_docs.py`, `ENABLE_API_DOCS` env
   var) — `/api/docs`, `/api/redoc` and `/api/openapi.json` are served only
   when it's truthy. Local `.env`/`.env.example` set it; production never does

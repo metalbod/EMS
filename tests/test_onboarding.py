@@ -709,3 +709,99 @@ def test_removing_every_item_does_not_complete_an_empty_checklist(
     for it in client.get(f"/api/ob/checklists/{cl_id}", headers=hr_manager_auth).json()["items"]:
         assert client.delete(f"/api/ob/checklists/{cl_id}/items/{it['id']}", headers=hr_manager_auth).status_code == 204
     assert _checklist_status(client, hr_manager_auth, cl_id) == "In Progress"
+
+
+# ---------------------------------------------------------------------------
+# Template board drag-and-drop save (PUT /api/ob/template-sets/{id}/layout)
+# ---------------------------------------------------------------------------
+def _new_set_with_items(client, headers, roles):
+    """A fresh offboarding template set holding one item per entry in `roles`."""
+    tset = client.post("/api/ob/template-sets", headers=headers,
+                       json={"name": f"ZZ Layout Set {_unique_title()}", "type": "offboarding", "is_default": False})
+    assert tset.status_code in (200, 201), tset.text
+    set_id = tset.json()["id"]
+    ids = []
+    for n, role in enumerate(roles):
+        res = client.post("/api/ob/templates", headers=headers, json={
+            "type": "offboarding", "template_set_id": set_id, "title": f"ZZ layout item {n}", "assigned_role": role})
+        assert res.status_code == 201, res.text
+        ids.append(res.json()["id"])
+    return set_id, ids
+
+
+def _set_items(client, headers, set_id):
+    return client.get("/api/ob/templates", headers=headers, params={"template_set_id": set_id}).json()
+
+
+def test_template_layout_reorders_and_hands_item_to_another_role(client, hr_manager_auth):
+    set_id, (a, b, c) = _new_set_with_items(client, hr_manager_auth, ["hr_admin", "hr_admin", "manager"])
+    try:
+        # c -> first, and b handed to hr_manager
+        res = client.put(f"/api/ob/template-sets/{set_id}/layout", headers=hr_manager_auth, json={"items": [
+            {"id": c, "assigned_role": "manager"}, {"id": a, "assigned_role": "hr_admin"},
+            {"id": b, "assigned_role": "hr_manager"}]})
+        assert res.status_code == 200, res.text
+        got = res.json()
+        assert [i["id"] for i in got] == [c, a, b]
+        assert [i["order_index"] for i in got] == [0, 1, 2]
+        assert {i["id"]: i["assigned_role"] for i in got}[b] == "hr_manager"
+        assert [i["id"] for i in _set_items(client, hr_manager_auth, set_id)] == [c, a, b]
+    finally:
+        for i in (a, b, c):
+            client.delete(f"/api/ob/templates/{i}", headers=hr_manager_auth)
+        client.delete(f"/api/ob/template-sets/{set_id}", headers=hr_manager_auth)
+
+
+def test_template_layout_rejects_stale_incomplete_or_duplicate_lists_and_bad_roles(client, hr_manager_auth):
+    set_id, (a, b) = _new_set_with_items(client, hr_manager_auth, ["hr_admin", "manager"])
+    url = f"/api/ob/template-sets/{set_id}/layout"
+    try:
+        missing = client.put(url, headers=hr_manager_auth, json={"items": [{"id": a, "assigned_role": "hr_admin"}]})
+        extra = client.put(url, headers=hr_manager_auth, json={"items": [
+            {"id": a, "assigned_role": "hr_admin"}, {"id": b, "assigned_role": "manager"}, {"id": 999999999, "assigned_role": "manager"}]})
+        dup = client.put(url, headers=hr_manager_auth, json={"items": [
+            {"id": a, "assigned_role": "hr_admin"}, {"id": a, "assigned_role": "hr_admin"}]})
+        assert (missing.status_code, extra.status_code, dup.status_code) == (409, 409, 409)
+        bad_role = client.put(url, headers=hr_manager_auth, json={"items": [
+            {"id": a, "assigned_role": "no_such_role"}, {"id": b, "assigned_role": "manager"}]})
+        assert bad_role.status_code == 400
+        assert [i["id"] for i in _set_items(client, hr_manager_auth, set_id)] == [a, b]  # nothing changed
+    finally:
+        for i in (a, b):
+            client.delete(f"/api/ob/templates/{i}", headers=hr_manager_auth)
+        client.delete(f"/api/ob/template-sets/{set_id}", headers=hr_manager_auth)
+
+
+def test_template_layout_requires_template_manage_permission_and_own_institution(client, make_test_user, hr_manager_auth, test_institution):
+    set_id, (a,) = _new_set_with_items(client, hr_manager_auth, ["hr_admin"])
+    try:
+        token, _ = make_test_user(role="employee")
+        headers = {"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}
+        res = client.put(f"/api/ob/template-sets/{set_id}/layout", headers=headers,
+                         json={"items": [{"id": a, "assigned_role": "hr_admin"}]})
+        assert res.status_code == 403
+        assert client.put("/api/ob/template-sets/999999999/layout", headers=hr_manager_auth,
+                          json={"items": []}).status_code == 404
+    finally:
+        client.delete(f"/api/ob/templates/{a}", headers=hr_manager_auth)
+        client.delete(f"/api/ob/template-sets/{set_id}", headers=hr_manager_auth)
+
+
+def test_started_checklist_snapshot_is_unaffected_by_later_template_layout_change(
+        client, hr_manager_auth, make_test_employee):
+    set_id, (a, b) = _new_set_with_items(client, hr_manager_auth, ["hr_admin", "manager"])
+    emp = make_test_employee()
+    cl = client.post("/api/ob/checklists", headers=hr_manager_auth, json={
+        "employee_id": emp["employee_id"], "type": "offboarding", "template_set_id": set_id})
+    assert cl.status_code in (200, 201), cl.text
+    cl_id = cl.json()["id"]
+    try:
+        client.put(f"/api/ob/template-sets/{set_id}/layout", headers=hr_manager_auth, json={"items": [
+            {"id": b, "assigned_role": "hr_manager"}, {"id": a, "assigned_role": "hr_manager"}]})
+        items = client.get(f"/api/ob/checklists/{cl_id}", headers=hr_manager_auth).json()["items"]
+        assert {i["title"]: i["assigned_role"] for i in items} == {"ZZ layout item 0": "hr_admin", "ZZ layout item 1": "manager"}
+    finally:
+        client.delete(f"/api/ob/checklists/{cl_id}", headers=hr_manager_auth)
+        for i in (a, b):
+            client.delete(f"/api/ob/templates/{i}", headers=hr_manager_auth)
+        client.delete(f"/api/ob/template-sets/{set_id}", headers=hr_manager_auth)
