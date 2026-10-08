@@ -460,6 +460,23 @@ wrapper everywhere.
   one) and stays optional on Edit so older accounts without an email can
   still be saved. The checkbox only exists on Add. The modal is a single
   column and the role checkboxes stack vertically.
+  - **Re-send password + Cc** (added after a live report that the emailed
+    password never arrived — the email log showed `sent`, i.e. Gmail
+    accepted it; most likely spam-filtered): Edit User has a "Re-send
+    password" button → `POST /api/users/{id}/resend-password` generates a
+    *new* random password (the old one can't be recovered, only hashed),
+    forces change at first sign-in, audits it, and emails it; if the email
+    fails the password is **not** changed (rollback, 502). Refuses an
+    inactive user, one with no stored email, or an institution with email
+    not set up. Note a password *typed* by HR in Edit still clears
+    `must_change_password` (existing `update_user` behavior) — only the
+    emailed paths force a change. The "CC <address>" checkbox (Add, once
+    "send password" is ticked, and Edit) copies the institution's own sender
+    mailbox (`institutions.smtp_from_address`), not a hardcoded address;
+    `GET /api/users/email-options` tells the form whether email is ready and
+    which address that is. `send_email(..., cc=)` is the new generic Cc
+    support in `core/email_engine.py`.
+
 - **API docs/schema are opt-in** (`core/api_docs.py`, `ENABLE_API_DOCS` env
   var) — `/api/docs`, `/api/redoc` and `/api/openapi.json` are served only
   when it's truthy. Local `.env`/`.env.example` set it; production never does

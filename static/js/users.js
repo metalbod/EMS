@@ -54,6 +54,16 @@ function openUserModal(uData=null) {
   document.getElementById('uEmail').required=!u;
   document.getElementById('uEmailStar').classList.toggle('hidden',!!u);
   onSendPasswordToggle();
+  // Edit: a "Re-send password" button replaces the add-time checkbox.
+  document.getElementById('uCcSender').checked=false;
+  document.getElementById('uResendWrap').classList.toggle('hidden',!u);
+  document.getElementById('uResendMsg').classList.add('hidden');
+  const resendBtn=document.getElementById('uResendBtn');
+  resendBtn.disabled=!(u&&u.email);
+  document.getElementById('uResendHint').textContent=u&&u.email
+    ?`Sets a new random password and emails it to ${u.email}. Their current password stops working.`
+    :'This user has no email address. Add one and save first.';
+  loadUserEmailOptions(!!u);
   document.getElementById('uIsActive').checked=u?!!u.is_active:true;
   populateMetaSelects();
   // Set role checkboxes
@@ -80,6 +90,44 @@ function openUserModal(uData=null) {
   document.getElementById('userModal').classList.remove('hidden');
 }
 
+let userEmailOptions=null;
+// What the form can offer depends on the institution: can it send email at
+// all, and which sender mailbox would the Cc box copy.
+async function loadUserEmailOptions(isEdit) {
+  const wrap=document.getElementById('uCcWrap');
+  document.getElementById('uEmailNotReady').classList.add('hidden');
+  const res=await api('/api/users/email-options');
+  if(!res||!res.ok) return;
+  userEmailOptions=await res.json();
+  document.getElementById('uCcLabel').textContent=userEmailOptions.cc_address?`CC ${userEmailOptions.cc_address}`:'CC the HR mailbox';
+  const ready=userEmailOptions.email_ready;
+  document.getElementById('uEmailNotReady').classList.toggle('hidden',ready);
+  document.getElementById('uSendPassword').disabled=!ready;
+  if(!ready){ document.getElementById('uSendPassword').checked=false; onSendPasswordToggle(); document.getElementById('uResendBtn').disabled=true; }
+  wrap.dataset.available=userEmailOptions.cc_address?'1':'';
+  syncCcVisibility();
+}
+function syncCcVisibility() {
+  const wrap=document.getElementById('uCcWrap');
+  const show=wrap.dataset.available==='1'&&(editingUserId||document.getElementById('uSendPassword').checked);
+  wrap.classList.toggle('hidden',!show);
+  if(!show) document.getElementById('uCcSender').checked=false;
+}
+
+async function resendUserPassword() {
+  const u=users.find(x=>x.id===editingUserId);
+  if(!u) return;
+  if(!confirm(`Generate a new random password for ${u.username} and email it to ${u.email}? Their current password will stop working.`)) return;
+  const btn=document.getElementById('uResendBtn'), msg=document.getElementById('uResendMsg');
+  btn.disabled=true; msg.classList.add('hidden');
+  const res=await api(`/api/users/${editingUserId}/resend-password`,{method:'POST',body:JSON.stringify({cc_sender:document.getElementById('uCcSender').checked})});
+  btn.disabled=false;
+  if(!res) return;
+  const d=await res.json().catch(()=>({}));
+  msg.textContent=res.ok?`Sent to ${d.sent_to}. They'll be asked to change it at first sign-in.`:apiErrorText(d.detail);
+  msg.className=`text-sm mt-1 ${res.ok?'text-emerald-600':'text-red-600'}`;
+}
+
 function onSendPasswordToggle() {
   const send=document.getElementById('uSendPassword').checked;
   const pw=document.getElementById('uPassword');
@@ -89,6 +137,7 @@ function onSendPasswordToggle() {
   pw.required=!editingUserId&&!send;
   document.getElementById('uPasswordStar').classList.toggle('hidden',send||!!editingUserId);
   document.getElementById('uSendPasswordHint').classList.toggle('hidden',!send);
+  syncCcVisibility();
 }
 
 function closeUserModal() { closeModal('userModal', () => editingUserId=null); }
@@ -105,13 +154,14 @@ async function submitUserForm(e) {
     email:document.getElementById('uEmail').value.trim()||null,
     password:sendPassword?undefined:(document.getElementById('uPassword').value||undefined),
     send_password:sendPassword,
+    cc_sender:sendPassword&&document.getElementById('uCcSender').checked,
     role:document.getElementById('uRole').value,
     roles:[...document.querySelectorAll('.uRoleCheck:checked')].map(c=>c.value),
     employee_id:document.getElementById('uEmployeeId').value||null,
     is_active:document.getElementById('uIsActive').checked,
   };
   if(!isEdit) delete body.is_active;
-  else delete body.send_password;
+  else { delete body.send_password; delete body.cc_sender; }
   if(currentUser.role==='superadmin'&&!currentInstitution){
     const v=document.getElementById('uInstitution').value;
     body.institution_id=v?parseInt(v):null;

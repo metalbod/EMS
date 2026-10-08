@@ -61,7 +61,8 @@ def _log(conn, inst_id, module, category, recipient_email, subject, status, erro
 
 
 def send_email(conn, inst_id: int, to_email: str, subject: str, html_body: str,
-               category: str, module: Optional[str] = None, dedupe_key: Optional[str] = None) -> bool:
+               category: str, module: Optional[str] = None, dedupe_key: Optional[str] = None,
+               cc: Optional[str] = None) -> bool:
     """Best-effort send — returns True/False for callers that want to know,
     but NEVER raises. No-ops (logged as 'skipped') if the institution has
     email notifications disabled, has no SMTP configured, or `to_email`
@@ -69,7 +70,9 @@ def send_email(conn, inst_id: int, to_email: str, subject: str, html_body: str,
     this email is about (e.g. 'item:123') for callers that need to check
     "have I already sent this" before calling — see
     scripts/send_reminders.py; Phase 1's approval-workflow emails leave
-    it unset, since each of those is inherently a one-shot event."""
+    it unset, since each of those is inherently a one-shot event. `cc` adds
+    one visible Cc recipient (same SMTP transaction, so a failure to reach
+    either address fails the whole send)."""
     to_email = (to_email or "").strip()
     if not to_email or "@" not in to_email:
         _log(conn, inst_id, module, category, to_email or "(none)", subject, "skipped", "no usable recipient address", dedupe_key)
@@ -85,13 +88,18 @@ def send_email(conn, inst_id: int, to_email: str, subject: str, html_body: str,
         msg["Subject"] = subject
         msg["From"] = f'{settings["from_name"]} <{settings["from_address"]}>' if settings["from_name"] else settings["from_address"]
         msg["To"] = to_email
+        recipients = [to_email]
+        cc = (cc or "").strip()
+        if cc and "@" in cc and cc.lower() != to_email.lower():
+            msg["Cc"] = cc
+            recipients.append(cc)
         msg.attach(MIMEText(html_body, "html"))
 
         with smtplib.SMTP(settings["host"], settings["port"], timeout=10) as server:
             if settings["use_tls"]:
                 server.starttls()
             server.login(settings["username"], settings["password"])
-            server.sendmail(settings["from_address"], [to_email], msg.as_string())
+            server.sendmail(settings["from_address"], recipients, msg.as_string())
 
         _log(conn, inst_id, module, category, to_email, subject, "sent", dedupe_key=dedupe_key)
         return True

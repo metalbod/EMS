@@ -465,3 +465,132 @@ def test_send_password_requires_an_email_address(client, hr_manager_auth):
 def test_create_user_needs_a_password_unless_send_password(client, hr_manager_auth):
     res = client.post("/api/users", headers=hr_manager_auth, json=_new_user_payload(send_password=False))
     assert res.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Re-send password + Cc sender (resend_user_password, email-options)
+# ---------------------------------------------------------------------------
+def _make_emailable_user(client, headers, monkeypatch, email="zz.resend@example.com"):
+    monkeypatch.setattr(users_module, "_smtp_settings", lambda conn, inst_id: {"host": "x"})
+    res = client.post("/api/users", headers=headers, json={
+        "username": f"zztest_{os.urandom(4).hex()}", "full_name": "ZZ Resend Person",
+        "email": email, "password": "ZzPytest@123", "role": "employee"})
+    assert res.status_code == 201, res.text
+    return res.json()
+
+
+def test_resend_password_replaces_password_emails_it_and_forces_change(client, hr_manager_auth, test_institution, monkeypatch):
+    created = _make_emailable_user(client, hr_manager_auth, monkeypatch)
+    known = "Zz9&resendQ?k"
+    mails = []
+    monkeypatch.setattr(users_module, "generate_random_password", lambda: known)
+    monkeypatch.setattr(users_module, "send_email", lambda conn, inst_id, to, subject, body, category, module=None, **kw: mails.append((to, subject, body, kw)) or True)
+    try:
+        res = client.post(f"/api/users/{created['id']}/resend-password", headers=hr_manager_auth, json={})
+        assert res.status_code == 200, res.text
+        assert res.json()["sent_to"] == "zz.resend@example.com"
+        (to, subject, body, kw), = mails
+        assert to == "zz.resend@example.com" and "reset" in subject and known in body.replace("&amp;", "&")
+        assert kw.get("cc") is None
+        old = client.post("/api/auth/login", json={"username": created["username"], "password": "ZzPytest@123", "institution_code": test_institution["code"]})
+        assert old.status_code == 401
+        new = client.post("/api/auth/login", json={"username": created["username"], "password": known, "institution_code": test_institution["code"]})
+        assert new.status_code == 200 and new.json()["user"]["must_change_password"] is True
+    finally:
+        client.delete(f"/api/users/{created['id']}", headers=hr_manager_auth)
+
+
+def test_resend_password_cc_sender_copies_institution_sender_address(client, hr_manager_auth, monkeypatch):
+    created = _make_emailable_user(client, hr_manager_auth, monkeypatch)
+    seen = []
+    monkeypatch.setattr(users_module, "send_email", lambda conn, inst_id, to, subject, body, category, module=None, **kw: seen.append(kw) or True)
+    try:
+        conn = get_db()
+        try:
+            conn.execute("UPDATE institutions SET smtp_from_address='zz.hr@example.com' WHERE id=?", (created["institution_id"],))
+            conn.commit()
+        finally:
+            conn.close()
+        client.post(f"/api/users/{created['id']}/resend-password", headers=hr_manager_auth, json={"cc_sender": False})
+        client.post(f"/api/users/{created['id']}/resend-password", headers=hr_manager_auth, json={"cc_sender": True})
+        assert [k.get("cc") for k in seen] == [None, "zz.hr@example.com"]
+    finally:
+        conn = get_db()
+        try:
+            conn.execute("UPDATE institutions SET smtp_from_address=NULL WHERE id=?", (created["institution_id"],))
+            conn.commit()
+        finally:
+            conn.close()
+        client.delete(f"/api/users/{created['id']}", headers=hr_manager_auth)
+
+
+def test_resend_password_email_failure_keeps_old_password(client, hr_manager_auth, test_institution, monkeypatch):
+    created = _make_emailable_user(client, hr_manager_auth, monkeypatch)
+    monkeypatch.setattr(users_module, "send_email", lambda *a, **kw: False)
+    try:
+        res = client.post(f"/api/users/{created['id']}/resend-password", headers=hr_manager_auth, json={})
+        assert res.status_code == 502, res.text
+        login = client.post("/api/auth/login", json={"username": created["username"], "password": "ZzPytest@123", "institution_code": test_institution["code"]})
+        assert login.status_code == 200
+    finally:
+        client.delete(f"/api/users/{created['id']}", headers=hr_manager_auth)
+
+
+def test_resend_password_rejects_missing_email_inactive_and_unconfigured(client, hr_manager_auth, monkeypatch):
+    monkeypatch.setattr(users_module, "send_email", lambda *a, **kw: True)
+    no_email = _make_emailable_user(client, hr_manager_auth, monkeypatch, email=None)
+    inactive = _make_emailable_user(client, hr_manager_auth, monkeypatch)
+    try:
+        assert client.post(f"/api/users/{no_email['id']}/resend-password", headers=hr_manager_auth, json={}).status_code == 400
+        client.put(f"/api/users/{inactive['id']}", headers=hr_manager_auth, json={
+            "full_name": "ZZ Resend Person", "email": "zz.resend@example.com", "role": "employee", "is_active": False})
+        assert client.post(f"/api/users/{inactive['id']}/resend-password", headers=hr_manager_auth, json={}).status_code == 400
+        monkeypatch.setattr(users_module, "_smtp_settings", lambda conn, inst_id: None)
+        assert client.post(f"/api/users/{inactive['id']}/resend-password", headers=hr_manager_auth, json={}).status_code == 400
+    finally:
+        for u in (no_email, inactive):
+            client.delete(f"/api/users/{u['id']}", headers=hr_manager_auth)
+
+
+def test_resend_password_requires_manage_permission(client, make_test_user, hr_manager_auth, test_institution, monkeypatch):
+    created = _make_emailable_user(client, hr_manager_auth, monkeypatch)
+    token, _ = make_test_user(role="employee")
+    headers = {"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}
+    try:
+        assert client.post(f"/api/users/{created['id']}/resend-password", headers=headers, json={}).status_code == 403
+        assert client.get("/api/users/email-options", headers=headers).status_code == 403
+    finally:
+        client.delete(f"/api/users/{created['id']}", headers=hr_manager_auth)
+
+
+def test_email_options_reports_readiness_and_sender(client, hr_manager_auth, monkeypatch):
+    monkeypatch.setattr(users_module, "_smtp_settings", lambda conn, inst_id: None)
+    assert client.get("/api/users/email-options", headers=hr_manager_auth).json()["email_ready"] is False
+    monkeypatch.setattr(users_module, "_smtp_settings", lambda conn, inst_id: {"host": "x"})
+    assert client.get("/api/users/email-options", headers=hr_manager_auth).json()["email_ready"] is True
+
+
+def test_send_email_adds_cc_to_header_and_recipients(monkeypatch):
+    import core.email_engine as ee
+    captured = {}
+
+    class FakeSMTP:
+        def __init__(self, *a, **kw): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def starttls(self): pass
+        def login(self, *a): pass
+        def sendmail(self, frm, to, msg): captured.update(to=to, msg=msg)
+
+    class FakeConn:
+        def execute(self, *a, **kw): return self
+
+    monkeypatch.setattr(ee, "_smtp_settings", lambda conn, inst_id: {
+        "host": "h", "port": 25, "use_tls": False, "from_address": "hr@example.com", "from_name": None,
+        "username": "u", "password": "p"})
+    monkeypatch.setattr(ee.smtplib, "SMTP", FakeSMTP)
+    assert ee.send_email(FakeConn(), 1, "a@example.com", "s", "<p>x</p>", "test", cc="hr@example.com") is True
+    assert captured["to"] == ["a@example.com", "hr@example.com"] and "Cc: hr@example.com" in captured["msg"]
+    captured.clear()
+    ee.send_email(FakeConn(), 1, "a@example.com", "s", "<p>x</p>", "test")
+    assert captured["to"] == ["a@example.com"] and "Cc:" not in captured["msg"]

@@ -41,6 +41,8 @@ class UserIn(BaseModel):
     # True: ignore `password`, generate a random one and email it to `email`
     # (see create_user). The account is only created if the email goes out.
     send_password: bool = False
+    # Also Cc the institution's own sender mailbox (smtp_from_address) on the password email.
+    cc_sender: bool = False
     role: str
     roles: Optional[List[str]] = None  # multi-role list; defaults to [role]
     employee_id: Optional[str] = None
@@ -149,21 +151,88 @@ def list_users(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, A
     return result
 
 
-def _email_new_user_password(conn, inst_id: int, body: "UserIn", password: str) -> bool:
-    code_row = conn.execute("SELECT code, name FROM institutions WHERE id=?", (inst_id,)).fetchone()
-    company = code_row["name"] if code_row else "EMS"
-    code = code_row["code"] if code_row else ""
+@router.get("/api/users/email-options")
+@db_session
+def get_user_email_options(conn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    """What the Add/Edit User form needs to offer the emailed-password options:
+    whether this institution can send email at all, and the sender mailbox the
+    "Cc" box would copy."""
+    require_permission(conn, user, "users.list_create_update_user")
+    inst_id = user["institution_id"] if user["role"] != "superadmin" else user.get("active_institution_id")
+    if not inst_id:
+        return {"email_ready": False, "cc_address": None}
+    row = conn.execute("SELECT smtp_from_address FROM institutions WHERE id=?", (inst_id,)).fetchone()
+    return {"email_ready": bool(_smtp_settings(conn, inst_id)),
+            "cc_address": row["smtp_from_address"] if row else None}
+
+
+class ResendPasswordIn(BaseModel):
+    cc_sender: bool = False
+
+
+@router.post("/api/users/{user_id}/resend-password")
+@db_session
+def resend_user_password(conn, user_id: int, body: ResendPasswordIn,
+                         user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    """Set a fresh random password and email it. The old password can't be
+    recovered (only its hash is stored), so "re-send" always means "replace and
+    send". The old password stays valid unless the email goes out."""
+    require_permission(conn, user, "users.list_create_update_user")
+    target = conn.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+    if not target:
+        raise HTTPException(404, "User not found")
+    if user["role"] != "superadmin":
+        if target["role"] == "superadmin":
+            raise HTTPException(403, "Cannot edit Platform Admin")
+        if target["institution_id"] != user["institution_id"]:
+            raise HTTPException(403, "Access denied to this user")
+    inst_id = target["institution_id"]
+    if inst_id is None or not _smtp_settings(conn, inst_id):
+        raise HTTPException(
+            400,
+            "Email isn't set up for this institution, so the password can't be sent. "
+            "Configure it under Settings > Notifications, or set a password by typing one.")
+    if not target["is_active"]:
+        raise HTTPException(400, "This user is inactive. Activate the account before sending a password.")
+    if not (target["email"] and "@" in target["email"]):
+        raise HTTPException(400, "This user has no email address. Add one and save first.")
+    password = generate_random_password()
+    conn.execute("UPDATE users SET password_hash=?, must_change_password=1 WHERE id=?",
+                 (hash_password(password), user_id))
+    write_entity_audit(conn, user, inst_id, "Users", "user", user_id, "Updated",
+                       detail="Password reset by admin and emailed to the user",
+                       entity_label=target["username"])
+    if not _email_user_password(conn, inst_id, full_name=target["full_name"], username=target["username"],
+                                email=target["email"], password=password, resend=True, cc_sender=body.cc_sender):
+        conn.rollback()
+        raise HTTPException(
+            502,
+            "The password email could not be sent, so the password was not changed. "
+            "Check the email settings under Settings > Notifications and try again.")
+    conn.commit()
+    return {"ok": True, "sent_to": target["email"]}
+
+
+def _email_user_password(conn, inst_id: int, *, full_name: str, username: str, email: str,
+                         password: str, resend: bool, cc_sender: bool) -> bool:
+    inst = conn.execute("SELECT code, name, smtp_from_address FROM institutions WHERE id=?", (inst_id,)).fetchone()
+    company = inst["name"] if inst else "EMS"
+    code = inst["code"] if inst else ""
+    intro = ("A new temporary password has been set for your EMS account for "
+             if resend else "An account has been created for you on EMS for ")
     html = (
-        f"<p>Hi {html_escape(body.full_name)},</p>"
-        f"<p>An account has been created for you on EMS for {html_escape(company)}.</p>"
+        f"<p>Hi {html_escape(full_name)},</p>"
+        f"<p>{intro}{html_escape(company)}.</p>"
         "<p>Sign in with:</p>"
         f"<ul><li>Company code: <strong>{html_escape(code)}</strong></li>"
-        f"<li>Username: <strong>{html_escape(body.username)}</strong></li>"
+        f"<li>Username: <strong>{html_escape(username)}</strong></li>"
         f"<li>Temporary password: <strong>{html_escape(password)}</strong></li></ul>"
         "<p>You'll be asked to choose a new password the first time you sign in.</p>"
         f'<p><a href="{APP_BASE_URL}">Open EMS</a></p>'
     )
-    return send_email(conn, inst_id, body.email, "Your EMS account", html, "new_user_password", "Users")
+    subject = "Your EMS password has been reset" if resend else "Your EMS account"
+    return send_email(conn, inst_id, email, subject, html, "new_user_password", "Users",
+                      cc=(inst["smtp_from_address"] if inst and cc_sender else None))
 
 
 @router.post("/api/users", status_code=201)
@@ -217,7 +286,9 @@ def create_user(conn, body: UserIn, user: dict = Depends(get_current_user)) -> D
         write_entity_audit(conn, user, inst_id, "Users", "user", row["id"], "Created",
                            detail=f"User '{body.username}' created with role {body.role}",
                            entity_label=body.username)
-        if body.send_password and not _email_new_user_password(conn, inst_id, body, password):
+        if body.send_password and not _email_user_password(
+                conn, inst_id, full_name=body.full_name, username=body.username, email=body.email,
+                password=password, resend=False, cc_sender=body.cc_sender):
             conn.rollback()
             raise HTTPException(
                 502,
