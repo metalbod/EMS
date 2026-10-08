@@ -1,8 +1,11 @@
 """User management routes."""
+import secrets
+from html import escape as html_escape
+import string
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 from core.deps import MIN_PASSWORD_LENGTH, get_current_user, hash_password
 
@@ -15,6 +18,8 @@ from core.audit import diff_fields, write_entity_audit
 from db import get_db, IntegrityError
 
 from core.db_session import db_session
+from core.email_engine import send_email, _smtp_settings
+from core.approval_workflow import APP_BASE_URL
 
 router = APIRouter()
 
@@ -30,7 +35,12 @@ class UserIn(BaseModel):
     username: str
     full_name: str
     email: Optional[str] = None
-    password: str
+    # Optional only because send_password=True replaces it — see the
+    # _password_or_send check below.
+    password: Optional[str] = None
+    # True: ignore `password`, generate a random one and email it to `email`
+    # (see create_user). The account is only created if the email goes out.
+    send_password: bool = False
     role: str
     roles: Optional[List[str]] = None  # multi-role list; defaults to [role]
     employee_id: Optional[str] = None
@@ -49,9 +59,37 @@ class UserIn(BaseModel):
     @field_validator("password")
     @classmethod
     def _password_min_length(cls, v):
-        if len(v) < MIN_PASSWORD_LENGTH:
+        if v is not None and len(v) < MIN_PASSWORD_LENGTH:
             raise ValueError(f"Password must be at least {MIN_PASSWORD_LENGTH} characters")
         return v
+
+    @model_validator(mode="after")
+    def _password_or_send(self):
+        if self.send_password:
+            if not (self.email and "@" in self.email):
+                raise ValueError("A valid email address is required to send the password")
+        elif not self.password:
+            raise ValueError("Password is required (or tick 'send a random password to the user's email')")
+        return self
+
+
+_PASSWORD_ALPHABET = {
+    # No look-alike characters (0/O, 1/l/I) since the user types this in by hand.
+    "upper": "ABCDEFGHJKLMNPQRSTUVWXYZ",
+    "lower": "abcdefghijkmnopqrstuvwxyz",
+    "digit": "23456789",
+    "symbol": "@#$%&*?",
+}
+
+
+def generate_random_password(length: int = 12) -> str:
+    """Random password with at least one of each character class, drawn from
+    the OS CSPRNG (`secrets`)."""
+    chars = [secrets.choice(group) for group in _PASSWORD_ALPHABET.values()]
+    pool = "".join(_PASSWORD_ALPHABET.values())
+    chars += [secrets.choice(pool) for _ in range(length - len(chars))]
+    secrets.SystemRandom().shuffle(chars)
+    return "".join(chars)
 
 
 class UserUpdate(BaseModel):
@@ -111,6 +149,23 @@ def list_users(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, A
     return result
 
 
+def _email_new_user_password(conn, inst_id: int, body: "UserIn", password: str) -> bool:
+    code_row = conn.execute("SELECT code, name FROM institutions WHERE id=?", (inst_id,)).fetchone()
+    company = code_row["name"] if code_row else "EMS"
+    code = code_row["code"] if code_row else ""
+    html = (
+        f"<p>Hi {html_escape(body.full_name)},</p>"
+        f"<p>An account has been created for you on EMS for {html_escape(company)}.</p>"
+        "<p>Sign in with:</p>"
+        f"<ul><li>Company code: <strong>{html_escape(code)}</strong></li>"
+        f"<li>Username: <strong>{html_escape(body.username)}</strong></li>"
+        f"<li>Temporary password: <strong>{html_escape(password)}</strong></li></ul>"
+        "<p>You'll be asked to choose a new password the first time you sign in.</p>"
+        f'<p><a href="{APP_BASE_URL}">Open EMS</a></p>'
+    )
+    return send_email(conn, inst_id, body.email, "Your EMS account", html, "new_user_password", "Users")
+
+
 @router.post("/api/users", status_code=201)
 @db_session
 def create_user(conn, body: UserIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
@@ -137,12 +192,24 @@ def create_user(conn, body: UserIn, user: dict = Depends(get_current_user)) -> D
     # Manager/HR Admin — those two are trusted to pick their own password
     # at creation time (e.g. the initial institution HR Manager account).
     must_change_password = 0 if body.role in ("hr_manager", "hr_admin") else 1
+    password = body.password
+    if body.send_password:
+        # A password that travels by email must be changed on first login,
+        # whatever the role — and nobody (not even HR) ever sees it, so if
+        # the email can't be sent the account must not be created at all.
+        if inst_id is None or not _smtp_settings(conn, inst_id):
+            raise HTTPException(
+                400,
+                "Email isn't set up for this institution, so the password can't be sent. "
+                "Configure it under Settings > Notifications, or type a password instead.")
+        password = generate_random_password()
+        must_change_password = 1
     try:
         conn.execute("""
             INSERT INTO users (institution_id, username, full_name, email, password_hash, role, roles, employee_id, must_change_password)
             VALUES (?,?,?,?,?,?,?,?,?)
         """, (inst_id, body.username, body.full_name, body.email,
-              hash_password(body.password), body.role, roles_str, body.employee_id, must_change_password))
+              hash_password(password), body.role, roles_str, body.employee_id, must_change_password))
         row = conn.execute(
             "SELECT id,institution_id,username,full_name,email,role,roles,employee_id,is_active,created_at "
             "FROM users WHERE id=last_insert_rowid()"
@@ -150,6 +217,12 @@ def create_user(conn, body: UserIn, user: dict = Depends(get_current_user)) -> D
         write_entity_audit(conn, user, inst_id, "Users", "user", row["id"], "Created",
                            detail=f"User '{body.username}' created with role {body.role}",
                            entity_label=body.username)
+        if body.send_password and not _email_new_user_password(conn, inst_id, body, password):
+            conn.rollback()
+            raise HTTPException(
+                502,
+                "The password email could not be sent, so the user was not created. "
+                "Check the email settings under Settings > Notifications and try again.")
         conn.commit()
         return dict(row)
     except IntegrityError:

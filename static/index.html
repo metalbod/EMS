@@ -5041,21 +5041,29 @@
     </div>
     <form id="userForm" onsubmit="submitUserForm(event)" class="p-6 space-y-4 overflow-y-auto flex-1">
       <input type="hidden" id="editingUserId"/>
-      <div class="grid grid-cols-2 gap-4">
+      <div class="grid grid-cols-1 gap-4">
         <div><label class="block text-sm font-medium text-slate-700 mb-1">Username <span class="text-red-500">*</span></label><input id="uUsername" type="text" class="inp" required/></div>
         <div><label class="block text-sm font-medium text-slate-700 mb-1">Full Name <span class="text-red-500">*</span></label><input id="uFullName" type="text" class="inp" required/></div>
-        <div><label class="block text-sm font-medium text-slate-700 mb-1">Email</label><input id="uEmail" type="email" class="inp"/></div>
-        <div><label class="block text-sm font-medium text-slate-700 mb-1">Password</label><input id="uPassword" type="password" class="inp"/></div>
-        <div class="col-span-2">
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Email <span id="uEmailStar" class="text-red-500">*</span></label><input id="uEmail" type="email" class="inp"/></div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Password <span id="uPasswordStar" class="text-red-500">*</span></label>
+          <input id="uPassword" type="password" class="inp" autocomplete="new-password"/>
+          <label id="uSendPasswordWrap" class="flex items-center gap-2 mt-2 text-sm text-slate-700 cursor-pointer">
+            <input id="uSendPassword" type="checkbox" class="w-4 h-4" onchange="onSendPasswordToggle()"/>
+            Send random-generated password to email
+          </label>
+          <p id="uSendPasswordHint" class="hidden text-xs text-slate-400 mt-1">A random password will be generated and emailed to the address above when you save. The user must change it at first sign-in.</p>
+        </div>
+        <div>
           <label class="block text-sm font-medium text-slate-700 mb-1">Roles <span class="text-red-500">*</span></label>
-          <div id="uRolesWrap" class="flex flex-wrap gap-3 mb-2"></div>
+          <div id="uRolesWrap" class="flex flex-col gap-2 mb-3"></div>
           <label class="block text-xs text-slate-500 mb-1">Active / Primary Role</label>
           <select id="uRole" class="inp" required></select>
         </div>
-        <div class="col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1">Linked Employee</label><select id="uEmployeeId" class="inp"><option value="">Not linked</option></select></div>
-        <p class="col-span-2 text-xs text-slate-400 -mt-2">Department for manager-scoped approvals is taken automatically from the linked employee record above.</p>
-        <div id="uInstWrap" class="col-span-2 hidden"><label class="block text-sm font-medium text-slate-700 mb-1">Institution</label><select id="uInstitution" class="inp"><option value="">Platform Admin (no institution)</option></select></div>
-        <div class="flex items-center gap-2 col-span-2">
+        <div><label class="block text-sm font-medium text-slate-700 mb-1">Linked Employee</label><select id="uEmployeeId" class="inp"><option value="">Not linked</option></select></div>
+        <p class="text-xs text-slate-400 -mt-2">Department for manager-scoped approvals is taken automatically from the linked employee record above.</p>
+        <div id="uInstWrap" class="hidden"><label class="block text-sm font-medium text-slate-700 mb-1">Institution</label><select id="uInstitution" class="inp"><option value="">Platform Admin (no institution)</option></select></div>
+        <div class="flex items-center gap-2">
           <input id="uIsActive" type="checkbox" class="w-4 h-4" checked/>
           <label class="text-sm font-medium text-slate-700">Active</label>
         </div>

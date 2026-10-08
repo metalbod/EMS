@@ -46,6 +46,14 @@ function openUserModal(uData=null) {
   document.getElementById('uFullName').value=u?.full_name||'';
   document.getElementById('uEmail').value=u?.email||'';
   document.getElementById('uPassword').value='';
+  // Add-user only: tick to have the server generate + email the password.
+  // Email is mandatory when adding; on edit it stays optional so accounts
+  // that never had one (older users, platform admins) can still be saved.
+  document.getElementById('uSendPassword').checked=false;
+  document.getElementById('uSendPasswordWrap').classList.toggle('hidden',!!u);
+  document.getElementById('uEmail').required=!u;
+  document.getElementById('uEmailStar').classList.toggle('hidden',!!u);
+  onSendPasswordToggle();
   document.getElementById('uIsActive').checked=u?!!u.is_active:true;
   populateMetaSelects();
   // Set role checkboxes
@@ -72,6 +80,17 @@ function openUserModal(uData=null) {
   document.getElementById('userModal').classList.remove('hidden');
 }
 
+function onSendPasswordToggle() {
+  const send=document.getElementById('uSendPassword').checked;
+  const pw=document.getElementById('uPassword');
+  if(send) pw.value='';
+  pw.disabled=send;
+  // Password is only required when adding a user and not asking the system to generate one.
+  pw.required=!editingUserId&&!send;
+  document.getElementById('uPasswordStar').classList.toggle('hidden',send||!!editingUserId);
+  document.getElementById('uSendPasswordHint').classList.toggle('hidden',!send);
+}
+
 function closeUserModal() { closeModal('userModal', () => editingUserId=null); }
 
 async function submitUserForm(e) {
@@ -79,17 +98,20 @@ async function submitUserForm(e) {
   const err=document.getElementById('userFormErr');
   err.classList.add('hidden');
   const isEdit=!!editingUserId;
+  const sendPassword=!isEdit&&document.getElementById('uSendPassword').checked;
   const body={
     username:document.getElementById('uUsername').value.trim(),
     full_name:document.getElementById('uFullName').value.trim(),
     email:document.getElementById('uEmail').value.trim()||null,
-    password:document.getElementById('uPassword').value||undefined,
+    password:sendPassword?undefined:(document.getElementById('uPassword').value||undefined),
+    send_password:sendPassword,
     role:document.getElementById('uRole').value,
     roles:[...document.querySelectorAll('.uRoleCheck:checked')].map(c=>c.value),
     employee_id:document.getElementById('uEmployeeId').value||null,
     is_active:document.getElementById('uIsActive').checked,
   };
   if(!isEdit) delete body.is_active;
+  else delete body.send_password;
   if(currentUser.role==='superadmin'&&!currentInstitution){
     const v=document.getElementById('uInstitution').value;
     body.institution_id=v?parseInt(v):null;

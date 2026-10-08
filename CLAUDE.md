@@ -443,6 +443,23 @@ wrapper everywhere.
   endpoint reads `conn._last_id`/`last_insert_rowid()` afterwards, capture it
   *before* the audit insert, which overwrites both).
 
+- **Add User: "Send random-generated password to email"** (`routers/users.py`'s
+  `create_user`/`generate_random_password`, `static/js/users.js`'s
+  `onSendPasswordToggle`) — `send_password: true` on `POST /api/users`
+  ignores any typed password, generates a 12-char one (no look-alike chars,
+  all four character classes), emails it via the institution's own SMTP
+  (`core/email_engine.send_email`, category `new_user_password`) with the
+  company code + username, and forces `must_change_password` for every role
+  (including hr_manager/hr_admin, who are otherwise exempt). Nobody — not
+  even HR — ever sees the password, so the account is **only created if the
+  email goes out**: no SMTP configured / email notifications off / platform
+  admin with no institution → 400 before anything is inserted; SMTP send
+  fails → rollback and 502. Email is mandatory in the Add form and, server
+  side, whenever `send_password` is set; it is *not* enforced server-side
+  for plain typed-password creates (53 test call sites create users without
+  one) and stays optional on Edit so older accounts without an email can
+  still be saved. The checkbox only exists on Add. The modal is a single
+  column and the role checkboxes stack vertically.
 - **API docs/schema are opt-in** (`core/api_docs.py`, `ENABLE_API_DOCS` env
   var) — `/api/docs`, `/api/redoc` and `/api/openapi.json` are served only
   when it's truthy. Local `.env`/`.env.example` set it; production never does

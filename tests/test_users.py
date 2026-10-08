@@ -365,3 +365,103 @@ def test_change_password_success_clears_forced_flag_and_updates_login(client, ma
     })
     assert new_login.status_code == 200
     assert new_login.json()["user"]["must_change_password"] is False
+
+
+# ---------------------------------------------------------------------------
+# "Send random-generated password to email" (create_user's send_password)
+# ---------------------------------------------------------------------------
+import routers.users as users_module
+
+
+def _new_user_payload(**over):
+    p = {"username": f"zztest_{os.urandom(4).hex()}", "full_name": "ZZ Mailed Password",
+         "email": "zz.mailed@example.com", "role": "employee", "send_password": True}
+    p.update(over)
+    return p
+
+
+def _delete_user(client, headers, res):
+    if res.status_code == 201:
+        client.delete(f"/api/users/{res.json()['id']}", headers=headers)
+
+
+def test_generate_random_password_has_every_character_class_and_is_random():
+    pws = {users_module.generate_random_password() for _ in range(50)}
+    assert len(pws) == 50
+    for pw in pws:
+        assert len(pw) == 12
+        assert any(c.isupper() for c in pw) and any(c.islower() for c in pw)
+        assert any(c.isdigit() for c in pw) and any(not c.isalnum() for c in pw)
+
+
+def test_send_password_emails_generated_password_that_logs_in(client, hr_manager_auth, test_institution, monkeypatch):
+    sent = []
+    monkeypatch.setattr(users_module, "_smtp_settings", lambda conn, inst_id: {"host": "x"})
+    monkeypatch.setattr(users_module, "send_email",
+                        lambda conn, inst_id, to, subject, body, category, module=None, **kw: sent.append((to, body, category)) or True)
+    known_password = "Ab3&xyzQ9?kM"  # contains '&' — must survive HTML escaping in the email
+    monkeypatch.setattr(users_module, "generate_random_password", lambda: known_password)
+    payload = _new_user_payload()
+    res = client.post("/api/users", headers=hr_manager_auth, json=payload)
+    try:
+        assert res.status_code == 201, res.text
+        assert "password" not in res.text  # never echoed back to HR
+        (to, body, category), = sent
+        assert to == payload["email"] and category == "new_user_password"
+        assert payload["username"] in body and test_institution["code"] in body
+        assert known_password in body.replace("&amp;", "&")
+        password = known_password
+        login = client.post("/api/auth/login", json={
+            "username": payload["username"], "password": password, "institution_code": test_institution["code"]})
+        assert login.status_code == 200, login.text
+        assert login.json()["user"]["must_change_password"] is True
+    finally:
+        _delete_user(client, hr_manager_auth, res)
+
+
+def test_send_password_forces_password_change_even_for_hr_manager_role(client, hr_manager_auth, test_institution, monkeypatch):
+    mails = []
+    monkeypatch.setattr(users_module, "_smtp_settings", lambda conn, inst_id: {"host": "x"})
+    monkeypatch.setattr(users_module, "send_email", lambda conn, inst_id, to, subject, body, *a, **kw: mails.append(body) or True)
+    payload = _new_user_payload(role="hr_admin")
+    res = client.post("/api/users", headers=hr_manager_auth, json=payload)
+    try:
+        assert res.status_code == 201, res.text
+        conn = get_db()
+        try:
+            row = conn.execute("SELECT must_change_password FROM users WHERE id=?", (res.json()["id"],)).fetchone()
+        finally:
+            conn.close()
+        assert row["must_change_password"] == 1
+    finally:
+        _delete_user(client, hr_manager_auth, res)
+
+
+def test_send_password_email_failure_does_not_create_user(client, hr_manager_auth, monkeypatch):
+    monkeypatch.setattr(users_module, "_smtp_settings", lambda conn, inst_id: {"host": "x"})
+    monkeypatch.setattr(users_module, "send_email", lambda *a, **kw: False)
+    payload = _new_user_payload()
+    res = client.post("/api/users", headers=hr_manager_auth, json=payload)
+    assert res.status_code == 502, res.text
+    users = client.get("/api/users", headers=hr_manager_auth).json()
+    assert not any(u["username"] == payload["username"] for u in users)
+
+
+def test_send_password_without_email_configured_is_rejected_before_creating(client, hr_manager_auth, monkeypatch):
+    monkeypatch.setattr(users_module, "_smtp_settings", lambda conn, inst_id: None)
+    payload = _new_user_payload()
+    res = client.post("/api/users", headers=hr_manager_auth, json=payload)
+    assert res.status_code == 400, res.text
+    assert "Settings" in res.json()["detail"]
+    users = client.get("/api/users", headers=hr_manager_auth).json()
+    assert not any(u["username"] == payload["username"] for u in users)
+
+
+def test_send_password_requires_an_email_address(client, hr_manager_auth):
+    assert client.post("/api/users", headers=hr_manager_auth, json=_new_user_payload(email=None)).status_code == 422
+    assert client.post("/api/users", headers=hr_manager_auth, json=_new_user_payload(email="not-an-email")).status_code == 422
+
+
+def test_create_user_needs_a_password_unless_send_password(client, hr_manager_auth):
+    res = client.post("/api/users", headers=hr_manager_auth, json=_new_user_payload(send_password=False))
+    assert res.status_code == 422
