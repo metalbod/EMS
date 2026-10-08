@@ -599,7 +599,37 @@ function openObTmplItemModal(type,id) {
   courseSel.innerHTML='<option value="">No linked course — manual completion</option>'+
     obTmplCoursesCache[type].map(c=>`<option value="${c.id}">${esc(c.title)}</option>`).join('');
   courseSel.value=item.linked_ld_course_id||'';
+  obModalDeps=[...(item.depends_on||[])];
+  obModalDepsOriginal=[...obModalDeps];
+  renderObTmplItemDeps();
   document.getElementById('obTmplItemModal').classList.remove('hidden');
+}
+
+// "Starts after" in the item dialog — the non-drag way to link items.
+let obModalDeps=[], obModalDepsOriginal=[];
+function renderObTmplItemDeps(){
+  const type=obActiveTmplType;
+  const id=+document.getElementById('obTmplItemId').value;
+  const items=obTmplItemsCache[type]||[];
+  const title=i=>items.find(x=>x.id===i)?.title||'';
+  document.getElementById('obTmplItemDeps').innerHTML=obModalDeps.map(d=>
+    `<span class="inline-flex items-center gap-1 text-xs bg-slate-100 border border-slate-200 rounded-md px-2 py-0.5">${esc(title(d))}<button type="button" onclick="removeObTmplItemDep(${d})" class="text-slate-400 hover:text-red-500" title="Remove">&times;</button></span>`
+  ).join('')||'<span class="text-xs text-slate-400">Nothing — it can start straight away.</span>';
+  // Offer every other item that isn't already chosen and wouldn't make a loop
+  // (i.e. doesn't itself start after this item).
+  const options=items.filter(i=>i.id!==id&&!obModalDeps.includes(i.id)&&!obStartsAfter(items,i.id,id));
+  document.getElementById('obTmplItemDepAdd').innerHTML='<option value="">Add an item this one starts after…</option>'+
+    options.map(i=>`<option value="${i.id}">${esc(i.title)} — ${esc(obRoleLabel(i.assigned_role))}</option>`).join('');
+}
+function addObTmplItemDep(){
+  const sel=document.getElementById('obTmplItemDepAdd');
+  const v=parseInt(sel.value);
+  if(v&&!obModalDeps.includes(v)) obModalDeps.push(v);
+  renderObTmplItemDeps();
+}
+function removeObTmplItemDep(id){
+  obModalDeps=obModalDeps.filter(d=>d!==id);
+  renderObTmplItemDeps();
 }
 function closeObTmplItemModal(){closeModal('obTmplItemModal');}
 
@@ -618,6 +648,15 @@ const saveObTmplItemDetail = guardAsync(async function() {
   };
   const res=await api(`/api/ob/templates/${id}`,{method:'PUT',body:JSON.stringify(body)});
   if(!res||!res.ok) return;
+  if(JSON.stringify([...obModalDeps].sort())!==JSON.stringify([...obModalDepsOriginal].sort())){
+    const dres=await api(`/api/ob/templates/${id}/dependencies`,{method:'PUT',body:JSON.stringify({depends_on:obModalDeps})});
+    if(!dres||!dres.ok){
+      const d=await dres?.json().catch(()=>null);
+      alert(d?.detail?apiErrorText(d.detail):'Could not save "Starts after".');
+      await refreshObTemplatesList(type);
+      return;
+    }
+  }
   closeObTmplItemModal();
   await refreshObTemplatesList(type);
 });
@@ -683,12 +722,90 @@ async function obSaveLayout(type, layout){
   else { obTmplItemsCache[type]=before; renderObSwimlane(type); }
 }
 
+// ---- Dependencies ("this item starts after those") -----------------------
+// Pure: row of every item. A card with no prerequisites sits at the top of
+// its role's column; one with prerequisites sits below ALL of them (so a
+// chain reads top to bottom), and two cards never share a cell — the later
+// one in the set's order is pushed down a row.
+function obComputeRows(items){
+  const rows={}, taken={};
+  let pending=[...items], progressed=true;
+  while(pending.length&&progressed){
+    progressed=false;
+    pending=pending.filter(it=>{
+      const pre=(it.depends_on||[]).filter(id=>items.some(x=>x.id===id));
+      if(pre.some(id=>rows[id]===undefined)) return true;
+      let row=pre.length?Math.max(...pre.map(id=>rows[id]))+1:0;
+      taken[it.assigned_role]=taken[it.assigned_role]||new Set();
+      while(taken[it.assigned_role].has(row)) row++;
+      taken[it.assigned_role].add(row);
+      rows[it.id]=row; progressed=true; return false;
+    });
+  }
+  // Defensive: a (server-rejected) loop would leave items unplaced — park them at the bottom.
+  let bottom=Math.max(-1,...Object.values(rows))+1;
+  pending.forEach(it=>{ rows[it.id]=bottom++; });
+  return rows;
+}
+
+// Pure: does `id` already start after `targetId`, directly or through a chain?
+function obStartsAfter(items, id, targetId){
+  const byId=new Map(items.map(i=>[i.id,i]));
+  const seen=new Set(), stack=[id];
+  while(stack.length){
+    const n=stack.pop();
+    if(n===targetId&&n!==id) return true;
+    if(seen.has(n)) continue;
+    seen.add(n);
+    (byId.get(n)?.depends_on||[]).forEach(p=>stack.push(p));
+  }
+  return false;
+}
+
+function obBoardNotice(type,text,isError){
+  const el=oel(type,'obBoardMsg');
+  if(!el) return;
+  el.textContent=text||'';
+  el.classList.toggle('hidden',!text);
+  el.classList.toggle('text-red-600',!!isError);
+  el.classList.toggle('text-slate-500',!isError);
+}
+
+let obSelectedLink=null; // {type, from, to} — the arrow showing a remove cross
+
+async function obSetDependencies(type, itemId, dependsOn){
+  const items=obTmplItemsCache[type];
+  const before=obComputeRows(items);
+  const res=await api(`/api/ob/templates/${itemId}/dependencies`,{method:'PUT',body:JSON.stringify({depends_on:dependsOn})});
+  if(!res||!res.ok){
+    const d=await res?.json().catch(()=>null);
+    obBoardNotice(type,d?.detail?apiErrorText(d.detail):'Could not save the link.',true);
+    return false;
+  }
+  const saved=await res.json();
+  const item=obTmplItemsCache[type].find(i=>i.id===itemId);
+  if(item) item.depends_on=saved.depends_on;
+  obSelectedLink=null;
+  const after=obComputeRows(obTmplItemsCache[type]);
+  const moved=obTmplItemsCache[type].filter(i=>after[i.id]!==before[i.id]).length;
+  renderObSwimlane(type);
+  obBoardNotice(type,moved?`${moved} card${moved===1?'':'s'} moved down to stay below ${moved===1?'its prerequisites':'their prerequisites'}.`:'',false);
+  return true;
+}
+
+// Cards as shown, top to bottom, for one role — what up/down and drops mean.
+function obColumnOrder(items, role){
+  const rows=obComputeRows(items);
+  return items.filter(i=>i.assigned_role===role)
+    .sort((a,b)=>rows[a.id]-rows[b.id]);
+}
+
 // Move a card one place up/down inside its own column (touch/keyboard
 // alternative to dragging).
 function moveObTemplateInColumn(type,id,direction){
   const items=obTmplItemsCache[type];
   const me=items.find(i=>i.id===id); if(!me) return;
-  const col=items.filter(i=>i.assigned_role===me.assigned_role);
+  const col=obColumnOrder(items,me.assigned_role);
   const idx=col.findIndex(i=>i.id===id);
   let beforeId;
   if(direction==='up'){ if(idx<=0) return; beforeId=col[idx-1].id; }
@@ -718,22 +835,39 @@ function renderObSwimlane(type) {
   emptyEl.classList.add('hidden');
 
   const canManage=HR_MANAGE_ROLES.includes(currentUser?.role);
+  const roles=obBoardRoles(items);
+  const rows=obComputeRows(items);
+  const maxRow=Math.max(-1,...Object.values(rows));
+  const totalRows=maxRow+3; // header + card rows + the "Add item" row
   const arrow=(d)=>`<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${d}"/></svg>`;
-  grid.innerHTML=obBoardRoles(items).map(role=>{
-    const mine=items.filter(i=>i.assigned_role===role);
-    const cards=mine.map((item,n)=>{
+
+  let html=`<svg id="${oid(type,'obArrows')}" class="absolute left-0 top-0" style="pointer-events:none;z-index:0;overflow:visible"></svg>`;
+  roles.forEach((role,ci)=>{
+    const mine=obColumnOrder(items,role);
+    html+=`<div data-ob-col="${esc(role)}" style="grid-column:${ci+1};grid-row:1 / span ${totalRows}" class="rounded-lg border border-dashed border-slate-200"></div>`;
+    html+=`<div style="grid-column:${ci+1};grid-row:1;z-index:1" class="text-center pt-1.5">
+      <span class="badge ${obRoleColor(role)} text-xs whitespace-nowrap">${esc(obRoleLabel(role))}</span>
+      <p class="text-[10px] text-slate-400 mt-0.5">${mine.length} item${mine.length===1?'':'s'}</p>
+    </div>`;
+    html+=canManage?`<div style="grid-column:${ci+1};grid-row:${totalRows};z-index:1" class="self-end px-1.5 pb-1.5">
+      <button type="button" onclick="addObTemplateForRole('${type}','${esc(role)}')" data-ob-add class="w-full text-xs text-slate-500 hover:text-blue-600 border border-dashed border-slate-300 rounded-lg py-1.5 bg-white">+ Add item${mine.length?'':'<span class="block text-[10px] text-slate-400">or drop a card here</span>'}</button>
+    </div>`:'';
+    mine.forEach((item,n)=>{
       const linkedCourse=obTmplCoursesCache[type].find(c=>c.id===item.linked_ld_course_id);
       const dueLabel=item.due_date_rule?(OB_DUE_DATE_RULE_LABELS[item.due_date_rule]||item.due_date_rule):'';
-      return `<div draggable="${canManage}" data-ob-card="${item.id}" id="${oid(type,'obSwimStep')}_${item.id}" class="${obRoleColor(role)} rounded-lg p-2 flex flex-col shadow-xs border border-black/5 ${canManage?'cursor-grab':''}">
-        <div class="flex items-start gap-1.5">
+      const after=(item.depends_on||[]).length;
+      html+=`<div draggable="${canManage}" data-ob-card="${item.id}" data-ob-role="${esc(role)}" id="${oid(type,'obSwimStep')}_${item.id}" style="grid-column:${ci+1};grid-row:${rows[item.id]+2};z-index:1" class="${obRoleColor(role)} rounded-lg p-2 mx-1.5 self-start flex flex-col shadow-xs border border-black/5 relative ${canManage?'cursor-grab':''}">
+        <div class="flex items-start gap-1.5 ${canManage?'pr-5':''}">
           <span class="text-[10px] font-semibold opacity-60 mt-0.5 min-w-3">${n+1}</span>
           <div class="flex-1 cursor-pointer min-w-0" onclick="openObTmplItemModal('${type}',${item.id})">
             <p class="text-xs font-semibold leading-tight break-words">${esc(item.title)}</p>
+            ${after?`<p class="text-[10px] mt-1 opacity-80">↳ after ${after} item${after===1?'':'s'}</p>`:''}
             ${linkedCourse?`<p class="text-[10px] mt-1 opacity-80 truncate" title="${esc(linkedCourse.title)}">🎓 ${esc(linkedCourse.title)}</p>`:''}
             ${dueLabel?`<p class="text-[10px] mt-1 opacity-80 truncate" title="${esc(dueLabel)}">📅 ${esc(dueLabel)}</p>`:''}
           </div>
         </div>
-        ${canManage?`<div class="flex items-center justify-between mt-1.5">
+        ${canManage?`<span data-ob-link="${item.id}" draggable="false" title="Drag onto another card to make that card start after this one" class="absolute right-1 top-1/2 -mt-2.5 w-5 h-5 rounded-full bg-white/80 border border-slate-300 text-slate-500 flex items-center justify-center cursor-crosshair" style="touch-action:none"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg></span>
+        <div class="flex items-center justify-between mt-1.5">
           <div class="flex gap-1">
             <button onclick="moveObTemplateInColumn('${type}',${item.id},'up')" ${n===0?'disabled':''} class="opacity-60 hover:opacity-100 disabled:opacity-20" title="Move up">${arrow('M5 15l7-7 7 7')}</button>
             <button onclick="moveObTemplateInColumn('${type}',${item.id},'down')" ${n===mine.length-1?'disabled':''} class="opacity-60 hover:opacity-100 disabled:opacity-20" title="Move down">${arrow('M19 9l-7 7-7-7')}</button>
@@ -741,26 +875,73 @@ function renderObSwimlane(type) {
           <button onclick="deleteObTemplate('${type}',${item.id})" class="opacity-50 hover:opacity-100 hover:text-red-600" title="Remove"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>
         </div>`:''}
       </div>`;
-    }).join('');
-    return `<div data-ob-col="${esc(role)}" class="w-44 shrink-0 flex flex-col gap-2 p-1.5 rounded-lg border border-dashed border-slate-200 min-h-32">
-      <div class="text-center mb-0.5">
-        <span class="badge ${obRoleColor(role)} text-xs whitespace-nowrap">${esc(obRoleLabel(role))}</span>
-        <p class="text-[10px] text-slate-400 mt-0.5">${mine.length} item${mine.length===1?'':'s'}</p>
-      </div>
-      ${cards}
-      ${canManage?`<button type="button" onclick="addObTemplateForRole('${type}','${esc(role)}')" data-ob-add class="mt-auto text-xs text-slate-500 hover:text-blue-600 border border-dashed border-slate-300 rounded-lg py-1.5">+ Add item${mine.length?'':'<span class="block text-[10px] text-slate-400">or drop a card here</span>'}</button>`:''}
-    </div>`;
-  }).join('');
-  grid.className='relative flex gap-3 items-stretch';
-  grid.style.minWidth='max-content';
+    });
+  });
+  grid.className='relative';
+  grid.style.cssText=`display:grid;grid-template-columns:repeat(${roles.length},11.5rem);column-gap:1.75rem;row-gap:1.5rem;width:max-content;min-height:8rem`;
+  grid.innerHTML=html;
   bindObBoardDnD(type,grid);
+  requestAnimationFrame(()=>drawObArrows(type));
 }
 
-// Insertion point for a drop at pointer height `y` inside column `col`: the
-// first card whose midpoint is below the pointer (null = after the last).
-function obCardAfter(col,y,dragId){
-  return [...col.querySelectorAll('[data-ob-card]')]
+// Straight arrows between linked cards: centre to centre, clipped to the
+// cards' edges. They sit under the cards (a line crossing another card is
+// hidden there), above the column backgrounds.
+function drawObArrows(type){
+  const grid=oel(type,'obSwimlaneGrid');
+  const svg=oel(type,'obArrows');
+  if(!grid||!svg) return;
+  const items=obTmplItemsCache[type]||[];
+  const gr=grid.getBoundingClientRect();
+  svg.setAttribute('width',grid.scrollWidth); svg.setAttribute('height',grid.scrollHeight);
+  const box=id=>{
+    const el=document.getElementById(`${oid(type,'obSwimStep')}_${id}`);
+    if(!el) return null;
+    const r=el.getBoundingClientRect();
+    return {cx:r.left+r.width/2-gr.left, cy:r.top+r.height/2-gr.top, hw:r.width/2+3, hh:r.height/2+3};
+  };
+  const edge=(b,dx,dy,sign)=>{
+    const k=Math.min(dx===0?Infinity:b.hw/Math.abs(dx), dy===0?Infinity:b.hh/Math.abs(dy));
+    return {x:b.cx+sign*dx*k, y:b.cy+sign*dy*k};
+  };
+  const markerId=`obArrowHead_${type}`;
+  let out=`<defs><marker id="${markerId}" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 Z" fill="#334155"/></marker></defs>`;
+  const canManage=HR_MANAGE_ROLES.includes(currentUser?.role);
+  items.forEach(it=>(it.depends_on||[]).forEach(fromId=>{
+    const a=box(fromId), b=box(it.id);
+    if(!a||!b) return;
+    const dx=b.cx-a.cx, dy=b.cy-a.cy;
+    const p1=edge(a,dx,dy,1), p2=edge(b,dx,dy,-1);
+    const on=obSelectedLink&&obSelectedLink.type===type&&obSelectedLink.from===fromId&&obSelectedLink.to===it.id;
+    out+=`<g style="color:${on?'#dc2626':'#334155'}">
+      ${canManage?`<line data-ob-arrow="${fromId}:${it.id}" x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}" stroke="transparent" stroke-width="14" style="pointer-events:stroke;cursor:pointer"/>`:''}
+      <line x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}" stroke="currentColor" stroke-width="${on?2:1.5}" marker-end="url(#${markerId})"/>`;
+    if(on&&canManage){
+      const mx=(p1.x+p2.x)/2, my=(p1.y+p2.y)/2;
+      out+=`<g data-ob-unlink="${fromId}:${it.id}" style="pointer-events:all;cursor:pointer"><title>Remove this link</title><circle cx="${mx}" cy="${my}" r="9" fill="white" stroke="currentColor"/><path d="M${mx-3},${my-3} L${mx+3},${my+3} M${mx+3},${my-3} L${mx-3},${my+3}" stroke="currentColor" stroke-width="1.5"/></g>`;
+    }
+    out+='</g>';
+  }));
+  if(obLinkDrag&&obLinkDrag.type===type){
+    out+=`<line x1="${obLinkDrag.x0}" y1="${obLinkDrag.y0}" x2="${obLinkDrag.x}" y2="${obLinkDrag.y}" stroke="#2563eb" stroke-width="2" stroke-dasharray="5 4"/>`;
+  }
+  svg.innerHTML=out;
+}
+window.addEventListener('resize',()=>{ ['onboarding','offboarding'].forEach(t=>{ if(oel(t,'obArrows')) drawObArrows(t); }); });
+
+let obLinkDrag=null; // {type, from, x0, y0, x, y}
+
+// Which column (role) a pointer x position is over, from the column backgrounds.
+function obColumnAt(grid,x){
+  return [...grid.querySelectorAll('[data-ob-col]')].find(c=>{const r=c.getBoundingClientRect(); return x>=r.left&&x<=r.right;})||null;
+}
+
+// First card (as displayed, top to bottom) in `role`'s column whose midpoint
+// is below the pointer; null = drop at the bottom of that column.
+function obCardAfter(grid,role,y,dragId){
+  return [...grid.querySelectorAll(`[data-ob-card][data-ob-role="${CSS.escape(role)}"]`)]
     .filter(c=>+c.dataset.obCard!==dragId)
+    .sort((a,b)=>a.getBoundingClientRect().top-b.getBoundingClientRect().top)
     .find(c=>{const b=c.getBoundingClientRect(); return y<b.top+b.height/2;})||null;
 }
 
@@ -770,6 +951,9 @@ function bindObBoardDnD(type,grid){
     grid.querySelectorAll('.ob-drop-ind').forEach(x=>x.remove());
     grid.querySelectorAll('[data-ob-col]').forEach(c=>c.classList.remove('bg-blue-50'));
   };
+  const pt=(e)=>{const r=grid.getBoundingClientRect(); return {x:e.clientX-r.left,y:e.clientY-r.top};};
+
+  // ---- Move a card (re-order / hand to another role) ----
   grid.ondragstart=e=>{
     const card=e.target.closest?.('[data-ob-card]'); if(!card) return;
     obDragId=+card.dataset.obCard;
@@ -779,24 +963,92 @@ function bindObBoardDnD(type,grid){
   };
   grid.ondragend=()=>{ obDragId=null; clearMarks(); grid.querySelectorAll('[data-ob-card]').forEach(c=>c.classList.remove('opacity-40')); };
   grid.ondragover=e=>{
-    const col=e.target.closest?.('[data-ob-col]');
-    if(obDragId==null||!col) return;
+    if(obDragId==null) return;
+    const col=obColumnAt(grid,e.clientX);
+    if(!col) return;
     e.preventDefault();
     clearMarks();
     col.classList.add('bg-blue-50');
+    const before=obCardAfter(grid,col.dataset.obCol,e.clientY,obDragId);
+    const gr=grid.getBoundingClientRect(), cr=col.getBoundingClientRect();
+    let top;
+    if(before) top=before.getBoundingClientRect().top-gr.top-8;
+    else {
+      const mine=[...grid.querySelectorAll(`[data-ob-card][data-ob-role="${CSS.escape(col.dataset.obCol)}"]`)].filter(c=>+c.dataset.obCard!==obDragId);
+      top=mine.length?Math.max(...mine.map(c=>c.getBoundingClientRect().bottom))-gr.top+8:cr.top-gr.top+52;
+    }
     const ind=document.createElement('div');
-    ind.className='ob-drop-ind h-1 rounded bg-blue-500';
-    const before=obCardAfter(col,e.clientY,obDragId);
-    col.insertBefore(ind, before||col.querySelector('[data-ob-add]'));
+    ind.className='ob-drop-ind absolute h-1 rounded bg-blue-500';
+    ind.style.cssText=`left:${cr.left-gr.left+6}px;width:${cr.width-12}px;top:${top}px;z-index:2;pointer-events:none`;
+    grid.appendChild(ind);
   };
   grid.ondragleave=e=>{ if(!grid.contains(e.relatedTarget)) clearMarks(); };
   grid.ondrop=e=>{
-    const col=e.target.closest?.('[data-ob-col]');
-    if(obDragId==null||!col) return;
+    if(obDragId==null) return;
+    const col=obColumnAt(grid,e.clientX);
+    if(!col) return;
     e.preventDefault();
     const dragId=obDragId, role=col.dataset.obCol;
-    const before=obCardAfter(col,e.clientY,dragId);
+    const before=obCardAfter(grid,role,e.clientY,dragId);
     obDragId=null; clearMarks();
     obSaveLayout(type,obApplyDrop(obTmplItemsCache[type],dragId,role,before?+before.dataset.obCard:null));
+  };
+
+  // ---- Link two cards: drag a card's link handle onto another card ----
+  grid.onpointerdown=e=>{
+    const h=e.target.closest?.('[data-ob-link]');
+    if(!h) return;
+    e.preventDefault();
+    const card=h.closest('[data-ob-card]'); if(card) card.draggable=false;
+    const gr=grid.getBoundingClientRect(), hr=h.getBoundingClientRect();
+    const x0=hr.left+hr.width/2-gr.left, y0=hr.top+hr.height/2-gr.top;
+    obLinkDrag={type,from:+h.dataset.obLink,x0,y0,x:x0,y:y0,card};
+    obSelectedLink=null;
+    try{ h.setPointerCapture(e.pointerId); }catch(_){}
+  };
+  grid.onpointermove=e=>{
+    if(!obLinkDrag||obLinkDrag.type!==type) return;
+    const p=pt(e); obLinkDrag.x=p.x; obLinkDrag.y=p.y;
+    grid.querySelectorAll('[data-ob-card]').forEach(c=>c.classList.remove('ring-2','ring-blue-500'));
+    const t=document.elementFromPoint(e.clientX,e.clientY)?.closest?.('[data-ob-card]');
+    if(t&&+t.dataset.obCard!==obLinkDrag.from) t.classList.add('ring-2','ring-blue-500');
+    drawObArrows(type);
+  };
+  const endLink=async e=>{
+    if(!obLinkDrag||obLinkDrag.type!==type) return;
+    const {from,card}=obLinkDrag; obLinkDrag=null;
+    if(card) card.draggable=true;
+    grid.querySelectorAll('[data-ob-card]').forEach(c=>c.classList.remove('ring-2','ring-blue-500'));
+    const t=e.type==='pointerup'?document.elementFromPoint(e.clientX,e.clientY)?.closest?.('[data-ob-card]'):null;
+    if(!t||+t.dataset.obCard===from){ drawObArrows(type); return; }
+    const toId=+t.dataset.obCard, items=obTmplItemsCache[type];
+    const target=items.find(i=>i.id===toId);
+    const title=id=>items.find(i=>i.id===id)?.title||'';
+    if((target.depends_on||[]).includes(from)){ obBoardNotice(type,'Already linked.',false); drawObArrows(type); return; }
+    if(obStartsAfter(items,from,toId)){
+      obBoardNotice(type,`Can't link: "${title(from)}" already starts after "${title(toId)}", so this would make a loop.`,true);
+      drawObArrows(type); return;
+    }
+    obBoardNotice(type,'',false);
+    await obSetDependencies(type,toId,[...(target.depends_on||[]),from]);
+  };
+  grid.onpointerup=endLink;
+  grid.onpointercancel=endLink;
+
+  // ---- Click an arrow to show its remove cross; click the cross to remove ----
+  grid.onclick=e=>{
+    const un=e.target.closest?.('[data-ob-unlink]');
+    if(un){
+      const [from,to]=un.dataset.obUnlink.split(':').map(Number);
+      const target=obTmplItemsCache[type].find(i=>i.id===to);
+      obSetDependencies(type,to,(target?.depends_on||[]).filter(x=>x!==from));
+      return;
+    }
+    const ar=e.target.closest?.('[data-ob-arrow]');
+    if(ar){
+      const [from,to]=ar.dataset.obArrow.split(':').map(Number);
+      obSelectedLink={type,from,to}; drawObArrows(type); return;
+    }
+    if(obSelectedLink){ obSelectedLink=null; drawObArrows(type); }
   };
 }

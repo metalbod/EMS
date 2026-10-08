@@ -514,6 +514,19 @@ wrapper everywhere.
   checklist items at start). Reordering a template never touches already-started
   checklists (they snapshot at start). The old `POST /api/ob/templates/{id}/move`
   (swap with the global neighbour) is no longer used by the UI.
+  **Phase 2a — item dependencies** (`ob_template_dependencies`, migration
+  `20261008_0001`; `PUT /api/ob/templates/{id}/dependencies` replaces an item's
+  "starts after" list; `GET /api/ob/templates` and the layout endpoint return
+  `depends_on` per item): HR links items by dragging a card's link handle onto
+  another card (or via "Starts After" in the item dialog). Rows are computed, not
+  stored (`obComputeRows`): no prerequisites = top of its column; otherwise one row
+  below the lowest prerequisite, bumped down if the cell is taken — so arrows (straight
+  lines, drawn only for real links, under the cards) always point down/across. Server
+  refuses self-links, other-set items and loops (`_would_create_cycle`); removing an
+  item deletes its links. **Template-only for now**: started checklists don't copy or
+  enforce links. Decided for "2b" (not built): checklists snapshot the links; a blocked
+  item can't be ticked by anyone but HR Manager/HR Admin until every prerequisite is
+  Done or N/A; blocked items stay out of the To-Do list.
 
 - **API docs/schema are opt-in** (`core/api_docs.py`, `ENABLE_API_DOCS` env
   var) — `/api/docs`, `/api/redoc` and `/api/openapi.json` are served only

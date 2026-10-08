@@ -1593,6 +1593,8 @@
           </div>
           <p id="obTemplatesEmpty_onboarding" class="hidden text-slate-400 text-sm text-center py-8">No templates yet — create one above.</p>
           <p id="obSwimlaneEmpty_onboarding" class="hidden text-slate-400 text-sm text-center py-8 border border-dashed border-slate-200 rounded-xl mb-6">No checklist items yet — add one below.</p>
+          <p class="text-xs text-slate-400 mb-1">Drag a card to re-order it or hand it to another role. To make an item wait for another, drag the link handle on its right edge onto the card it should start after.</p>
+          <p id="obBoardMsg_onboarding" class="hidden text-xs mb-1"></p>
           <div id="obSwimlaneWrap_onboarding" class="overflow-x-auto border border-slate-200 rounded-xl bg-white p-4 mb-6">
             <div id="obSwimlaneGrid_onboarding" class="relative"></div>
           </div>
@@ -1697,6 +1699,8 @@
           </div>
           <p id="obTemplatesEmpty_offboarding" class="hidden text-slate-400 text-sm text-center py-8">No templates yet — create one above.</p>
           <p id="obSwimlaneEmpty_offboarding" class="hidden text-slate-400 text-sm text-center py-8 border border-dashed border-slate-200 rounded-xl mb-6">No checklist items yet — add one below.</p>
+          <p class="text-xs text-slate-400 mb-1">Drag a card to re-order it or hand it to another role. To make an item wait for another, drag the link handle on its right edge onto the card it should start after.</p>
+          <p id="obBoardMsg_offboarding" class="hidden text-xs mb-1"></p>
           <div id="obSwimlaneWrap_offboarding" class="overflow-x-auto border border-slate-200 rounded-xl bg-white p-4 mb-6">
             <div id="obSwimlaneGrid_offboarding" class="relative"></div>
           </div>
@@ -4413,6 +4417,11 @@
           <option value="hr_admin">HR Admin</option>
           <option value="hr_manager">HR Manager</option>
         </select>
+      </div>
+      <div><label class="lbl">Starts After</label>
+        <div id="obTmplItemDeps" class="flex flex-wrap gap-1.5 mb-2"></div>
+        <select id="obTmplItemDepAdd" class="inp" onchange="addObTmplItemDep()"></select>
+        <p class="text-xs text-slate-400 mt-1">This item is shown below the items it starts after. Leave empty if it can start straight away.</p>
       </div>
       <div><label class="lbl">Linked L&amp;D Course</label>
         <select id="obTmplItemCourse" class="inp">

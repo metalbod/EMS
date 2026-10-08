@@ -327,7 +327,25 @@ def list_ob_templates(conn, type: Optional[str] = None, template_set_id: Optiona
         q += " AND template_set_id=?"; p.append(template_set_id)
     q += " ORDER BY type, order_index"
     rows = conn.execute(q, p).fetchall()
-    return [dict(r) for r in rows]
+    return _with_dependencies(conn, inst_id, [dict(r) for r in rows])
+
+
+def _with_dependencies(conn, inst_id: int, items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Adds `depends_on` (ids of the template items each one starts after) to
+    every item. Links to an item that isn't in `items` (removed, or in another
+    set) are dropped, so the board never draws an arrow to nowhere."""
+    ids = {i["id"] for i in items}
+    deps: Dict[int, List[int]] = {i: [] for i in ids}
+    if ids:
+        for r in conn.execute(
+            "SELECT template_id, depends_on_template_id FROM ob_template_dependencies WHERE institution_id=? "
+            "ORDER BY id", (inst_id,)
+        ).fetchall():
+            if r["template_id"] in ids and r["depends_on_template_id"] in ids:
+                deps[r["template_id"]].append(r["depends_on_template_id"])
+    for i in items:
+        i["depends_on"] = deps.get(i["id"], [])
+    return items
 
 
 def _get_owning_template_set(conn, inst_id: int, template_set_id: int, expected_type: str):
@@ -434,6 +452,9 @@ def delete_ob_template(conn, tmpl_id: int, user: dict = Depends(get_current_user
     inst_id = need_inst(user)
     tmpl = conn.execute("SELECT title, template_set_id FROM ob_templates WHERE id=? AND institution_id=?", (tmpl_id, inst_id)).fetchone()
     conn.execute("UPDATE ob_templates SET is_active=0 WHERE id=? AND institution_id=?", (tmpl_id, inst_id))
+    # A removed item must not keep holding others back (or be held back).
+    conn.execute("DELETE FROM ob_template_dependencies WHERE institution_id=? AND (template_id=? OR depends_on_template_id=?)",
+                 (inst_id, tmpl_id, tmpl_id))
     if tmpl:
         write_entity_audit(conn, user, inst_id, "Onboarding", "template_set", tmpl["template_set_id"], "Item removed", detail=f"'{tmpl['title']}' removed",
                            entity_label=f"Template #{tmpl['template_set_id']}")
@@ -487,7 +508,80 @@ def save_ob_template_layout(conn, set_id: int, body: OBTemplateLayoutIn,
         "SELECT * FROM ob_templates WHERE template_set_id=? AND institution_id=? AND is_active=1 ORDER BY order_index, id",
         (set_id, inst_id)
     ).fetchall()
-    return [dict(r) for r in rows]
+    return _with_dependencies(conn, inst_id, [dict(r) for r in rows])
+
+
+class OBTemplateDependenciesIn(BaseModel):
+    depends_on: List[int]  # ids of the items this one starts after (replaces the current list)
+
+
+def _would_create_cycle(links: Dict[int, set], tmpl_id: int, new_prereqs: set) -> bool:
+    """True if making `tmpl_id` start after `new_prereqs` closes a loop, i.e.
+    some new prerequisite already (transitively) starts after `tmpl_id`.
+    `links` maps item -> the items it starts after, as currently stored."""
+    waits_on_me = set()
+    # Everything that starts after tmpl_id, directly or through a chain.
+    children: Dict[int, set] = {}
+    for item, pres in links.items():
+        for p in pres:
+            children.setdefault(p, set()).add(item)
+    stack = [tmpl_id]
+    while stack:
+        n = stack.pop()
+        for c in children.get(n, ()):
+            if c not in waits_on_me:
+                waits_on_me.add(c)
+                stack.append(c)
+    return bool(waits_on_me & new_prereqs)
+
+
+@router.put("/api/ob/templates/{tmpl_id}/dependencies")
+@db_session
+def set_ob_template_dependencies(conn, tmpl_id: int, body: OBTemplateDependenciesIn,
+                                 user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    """Replaces the list of items `tmpl_id` starts after. Every prerequisite
+    must be an active item of the same template set; an item can't start
+    after itself, and a link that would close a loop is refused."""
+    require_permission(conn, user, "onboarding_offboarding.manage_template_sets_templates")
+    inst_id = need_inst(user)
+    tmpl = conn.execute("SELECT * FROM ob_templates WHERE id=? AND institution_id=? AND is_active=1",
+                        (tmpl_id, inst_id)).fetchone()
+    if not tmpl:
+        raise HTTPException(404, "Template not found")
+    wanted = list(dict.fromkeys(body.depends_on))  # de-dupe, keep order
+    if tmpl_id in wanted:
+        raise HTTPException(400, "An item can't start after itself")
+    if tmpl["template_set_id"] is None:
+        siblings = conn.execute(
+            "SELECT id, title FROM ob_templates WHERE template_set_id IS NULL AND institution_id=? AND type=? AND is_active=1",
+            (inst_id, tmpl["type"])).fetchall()
+    else:
+        siblings = conn.execute(
+            "SELECT id, title FROM ob_templates WHERE template_set_id=? AND institution_id=? AND is_active=1",
+            (tmpl["template_set_id"], inst_id)).fetchall()
+    titles = {r["id"]: r["title"] for r in siblings}
+    if any(w not in titles for w in wanted):
+        raise HTTPException(400, "Every prerequisite must be an item of the same template")
+    links: Dict[int, set] = {}
+    for r in conn.execute(
+        "SELECT template_id, depends_on_template_id FROM ob_template_dependencies WHERE institution_id=?", (inst_id,)
+    ).fetchall():
+        if r["template_id"] in titles and r["depends_on_template_id"] in titles:
+            links.setdefault(r["template_id"], set()).add(r["depends_on_template_id"])
+    before = sorted(links.get(tmpl_id, set()))
+    if _would_create_cycle(links, tmpl_id, set(wanted)):
+        raise HTTPException(400, "That would make a loop: one of those items already starts after this one")
+    conn.execute("DELETE FROM ob_template_dependencies WHERE template_id=? AND institution_id=?", (tmpl_id, inst_id))
+    for w in wanted:
+        conn.execute("INSERT INTO ob_template_dependencies (institution_id,template_id,depends_on_template_id) VALUES (?,?,?)",
+                     (inst_id, tmpl_id, w))
+    if before != sorted(wanted):
+        names = ", ".join(f"'{titles[w]}'" for w in wanted) or "nothing"
+        write_entity_audit(conn, user, inst_id, "Onboarding", "template_set", tmpl["template_set_id"], "Item dependency changed",
+                           detail=f"'{tmpl['title']}' now starts after {names}",
+                           entity_label=f"Template #{tmpl['template_set_id']}")
+    conn.commit()
+    return {"id": tmpl_id, "depends_on": wanted}
 
 
 @router.post("/api/ob/templates/{tmpl_id}/move")

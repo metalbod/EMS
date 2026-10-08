@@ -108,3 +108,91 @@ describe('Template board — drop logic', () => {
     expect(obLayoutChanged(items, obApplyDrop(items, 4, 'hr_admin', 1))).toBe(true);
   });
 });
+
+// Mirrors static/js/onboarding.js's dependency helpers.
+function obComputeRows(items) {
+  const rows = {}, taken = {};
+  let pending = [...items], progressed = true;
+  while (pending.length && progressed) {
+    progressed = false;
+    pending = pending.filter(it => {
+      const pre = (it.depends_on || []).filter(id => items.some(x => x.id === id));
+      if (pre.some(id => rows[id] === undefined)) return true;
+      let row = pre.length ? Math.max(...pre.map(id => rows[id])) + 1 : 0;
+      taken[it.assigned_role] = taken[it.assigned_role] || new Set();
+      while (taken[it.assigned_role].has(row)) row++;
+      taken[it.assigned_role].add(row);
+      rows[it.id] = row; progressed = true; return false;
+    });
+  }
+  let bottom = Math.max(-1, ...Object.values(rows)) + 1;
+  pending.forEach(it => { rows[it.id] = bottom++; });
+  return rows;
+}
+function obStartsAfter(items, id, targetId) {
+  const byId = new Map(items.map(i => [i.id, i]));
+  const seen = new Set(), stack = [id];
+  while (stack.length) {
+    const n = stack.pop();
+    if (n === targetId && n !== id) return true;
+    if (seen.has(n)) continue;
+    seen.add(n);
+    (byId.get(n)?.depends_on || []).forEach(p => stack.push(p));
+  }
+  return false;
+}
+
+describe('Template board — dependency layout', () => {
+  const mk = (id, role, dep = []) => ({ id, assigned_role: role, depends_on: dep });
+
+  it('puts every item without prerequisites at the top of its own column', () => {
+    const rows = obComputeRows([mk(1, 'employee'), mk(2, 'manager'), mk(3, 'hr_admin')]);
+    expect(rows).toEqual({ 1: 0, 2: 0, 3: 0 });
+  });
+
+  it('stacks independent items of one role in list order', () => {
+    expect(obComputeRows([mk(1, 'hr_admin'), mk(2, 'hr_admin'), mk(3, 'hr_admin')])).toEqual({ 1: 0, 2: 1, 3: 2 });
+  });
+
+  it('places a dependent card below all its prerequisites, across columns', () => {
+    const rows = obComputeRows([mk(1, 'hr_manager'), mk(2, 'manager', [1]), mk(3, 'it_infra', [2]), mk(4, 'employee', [1, 3])]);
+    expect(rows).toEqual({ 1: 0, 2: 1, 3: 2, 4: 3 });
+  });
+
+  it('bumps a card down when its target cell is taken', () => {
+    const rows = obComputeRows([mk(1, 'hr_manager'), mk(2, 'hr_admin', [1]), mk(3, 'hr_admin', [1])]);
+    expect(rows).toEqual({ 1: 0, 2: 1, 3: 2 });
+  });
+
+  it('handles an item listed before its prerequisite', () => {
+    const rows = obComputeRows([mk(2, 'manager', [1]), mk(1, 'hr_admin')]);
+    expect(rows).toEqual({ 1: 0, 2: 1 });
+  });
+
+  it('ignores links to items that are not on the board and never loses a card', () => {
+    expect(obComputeRows([mk(1, 'employee', [99])])).toEqual({ 1: 0 });
+    const looped = obComputeRows([mk(1, 'employee', [2]), mk(2, 'manager', [1])]);
+    expect(Object.keys(looped).length).toBe(2);
+  });
+});
+
+describe('Template board — loop detection', () => {
+  const items = [
+    { id: 1, depends_on: [] },
+    { id: 2, depends_on: [1] },
+    { id: 3, depends_on: [2] },
+    { id: 4, depends_on: [] },
+  ];
+  it('sees a chain', () => {
+    expect(obStartsAfter(items, 3, 1)).toBe(true);
+    expect(obStartsAfter(items, 1, 3)).toBe(false);
+  });
+  it('unrelated items never start after each other', () => {
+    expect(obStartsAfter(items, 4, 1)).toBe(false);
+  });
+  it('linking 1 after 3 would loop, linking 4 after 3 would not', () => {
+    // "to starts after from" is a loop when `from` already starts after `to`.
+    expect(obStartsAfter(items, 3, 1)).toBe(true);   // from=3,to=1
+    expect(obStartsAfter(items, 3, 4)).toBe(false);  // from=3,to=4
+  });
+});

@@ -805,3 +805,106 @@ def test_started_checklist_snapshot_is_unaffected_by_later_template_layout_chang
         for i in (a, b):
             client.delete(f"/api/ob/templates/{i}", headers=hr_manager_auth)
         client.delete(f"/api/ob/template-sets/{set_id}", headers=hr_manager_auth)
+
+
+# ---------------------------------------------------------------------------
+# Template item dependencies (PUT /api/ob/templates/{id}/dependencies)
+# ---------------------------------------------------------------------------
+def _cleanup_set(client, headers, set_id, ids):
+    for i in ids:
+        client.delete(f"/api/ob/templates/{i}", headers=headers)
+    client.delete(f"/api/ob/template-sets/{set_id}", headers=headers)
+
+
+def _deps(client, headers, set_id):
+    return {i["id"]: i["depends_on"] for i in _set_items(client, headers, set_id)}
+
+
+def _put_deps(client, headers, tmpl_id, depends_on):
+    return client.put(f"/api/ob/templates/{tmpl_id}/dependencies", headers=headers, json={"depends_on": depends_on})
+
+
+def test_template_dependencies_default_to_none_and_can_be_set_and_replaced(client, hr_manager_auth):
+    set_id, (a, b, c) = _new_set_with_items(client, hr_manager_auth, ["hr_admin", "manager", "hr_admin"])
+    try:
+        assert _deps(client, hr_manager_auth, set_id) == {a: [], b: [], c: []}
+        assert _put_deps(client, hr_manager_auth, c, [a, b]).status_code == 200
+        assert _deps(client, hr_manager_auth, set_id) == {a: [], b: [], c: [a, b]}
+        assert _put_deps(client, hr_manager_auth, c, [b]).json() == {"id": c, "depends_on": [b]}
+        assert _deps(client, hr_manager_auth, set_id)[c] == [b]
+        assert _put_deps(client, hr_manager_auth, c, []).status_code == 200
+        assert _deps(client, hr_manager_auth, set_id)[c] == []
+    finally:
+        _cleanup_set(client, hr_manager_auth, set_id, (a, b, c))
+
+
+def test_template_dependencies_reject_self_loops_and_foreign_items(client, hr_manager_auth):
+    set_id, (a, b, c) = _new_set_with_items(client, hr_manager_auth, ["hr_admin", "manager", "hr_admin"])
+    other_set, (z,) = _new_set_with_items(client, hr_manager_auth, ["hr_admin"])
+    try:
+        assert _put_deps(client, hr_manager_auth, a, [a]).status_code == 400            # itself
+        assert _put_deps(client, hr_manager_auth, a, [z]).status_code == 400            # another set's item
+        assert _put_deps(client, hr_manager_auth, a, [999999999]).status_code == 400    # no such item
+        assert _put_deps(client, hr_manager_auth, 999999999, [a]).status_code == 404
+        # a -> b -> c chain: now a starting after c (or b) would close a loop
+        assert _put_deps(client, hr_manager_auth, b, [a]).status_code == 200
+        assert _put_deps(client, hr_manager_auth, c, [b]).status_code == 200
+        loop = _put_deps(client, hr_manager_auth, a, [c])
+        assert loop.status_code == 400 and "loop" in loop.json()["detail"]
+        assert _put_deps(client, hr_manager_auth, a, [b]).status_code == 400
+        assert _deps(client, hr_manager_auth, set_id) == {a: [], b: [a], c: [b]}        # unchanged
+    finally:
+        _cleanup_set(client, hr_manager_auth, set_id, (a, b, c))
+        _cleanup_set(client, hr_manager_auth, other_set, (z,))
+
+
+def test_template_dependencies_allow_diamonds_and_removing_an_item_frees_its_links(client, hr_manager_auth):
+    set_id, (a, b, c, d) = _new_set_with_items(client, hr_manager_auth, ["hr_admin"] * 4)
+    try:
+        assert _put_deps(client, hr_manager_auth, b, [a]).status_code == 200
+        assert _put_deps(client, hr_manager_auth, c, [a]).status_code == 200
+        assert _put_deps(client, hr_manager_auth, d, [b, c]).status_code == 200          # diamond is not a loop
+        assert client.delete(f"/api/ob/templates/{b}", headers=hr_manager_auth).status_code == 204
+        assert _deps(client, hr_manager_auth, set_id) == {a: [], c: [a], d: [c]}         # b's links are gone
+    finally:
+        _cleanup_set(client, hr_manager_auth, set_id, (a, b, c, d))
+
+
+def test_template_dependencies_survive_layout_changes_and_come_back_in_the_response(client, hr_manager_auth):
+    set_id, (a, b) = _new_set_with_items(client, hr_manager_auth, ["hr_admin", "manager"])
+    try:
+        assert _put_deps(client, hr_manager_auth, b, [a]).status_code == 200
+        res = client.put(f"/api/ob/template-sets/{set_id}/layout", headers=hr_manager_auth, json={"items": [
+            {"id": b, "assigned_role": "hr_manager"}, {"id": a, "assigned_role": "employee"}]})
+        assert res.status_code == 200, res.text
+        assert {i["id"]: i["depends_on"] for i in res.json()} == {a: [], b: [a]}
+    finally:
+        _cleanup_set(client, hr_manager_auth, set_id, (a, b))
+
+
+def test_template_dependencies_require_manage_permission(client, make_test_user, hr_manager_auth, test_institution):
+    set_id, (a, b) = _new_set_with_items(client, hr_manager_auth, ["hr_admin", "manager"])
+    try:
+        token, _ = make_test_user(role="employee")
+        headers = {"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}
+        assert _put_deps(client, headers, b, [a]).status_code == 403
+        assert _deps(client, hr_manager_auth, set_id)[b] == []
+    finally:
+        _cleanup_set(client, hr_manager_auth, set_id, (a, b))
+
+
+def test_template_dependencies_do_not_change_started_checklists(client, hr_manager_auth, make_test_employee):
+    set_id, (a, b) = _new_set_with_items(client, hr_manager_auth, ["hr_admin", "manager"])
+    emp = make_test_employee()
+    cl = client.post("/api/ob/checklists", headers=hr_manager_auth, json={
+        "employee_id": emp["employee_id"], "type": "offboarding", "template_set_id": set_id}).json()
+    try:
+        assert _put_deps(client, hr_manager_auth, b, [a]).status_code == 200
+        items = client.get(f"/api/ob/checklists/{cl['id']}", headers=hr_manager_auth).json()["items"]
+        assert all(i["status"] == "Pending" for i in items)
+        # Items can still be ticked in any order — phase 2a adds no run-time rule.
+        assert client.patch(f"/api/ob/checklists/{cl['id']}/items/{items[1]['id']}", headers=hr_manager_auth,
+                            json={"status": "Done"}).status_code == 200
+    finally:
+        client.delete(f"/api/ob/checklists/{cl['id']}", headers=hr_manager_auth)
+        _cleanup_set(client, hr_manager_auth, set_id, (a, b))
