@@ -5,8 +5,8 @@ let viewingObId=null,obCurrentType="onboarding",obTemplatesCache={};const OB_ROL
           ${p?'<span class="badge status-pending text-xs shrink-0">Action Required</span>':""}
         </div>
       </td>
-      <td class="px-4 py-3 text-slate-600">${e==="offboarding"?fmtDate(d.last_working_day):fmtDate(d.created_at)}</td>
-      <td class="px-4 py-3 hidden md:table-cell text-slate-600">${fmtDate(d.start_date)}</td>
+      ${e==="offboarding"?`<td class="px-4 py-3 text-slate-600">${fmtDate(d.last_working_day)}</td>
+      <td class="px-4 py-3 hidden md:table-cell text-slate-600">${fmtDate(d.start_date)}</td>`:`<td class="px-4 py-3 text-slate-600">${fmtDate(d.start_date)}</td>`}
       <td class="px-4 py-3 hidden md:table-cell text-slate-600">${fmtDate(d.probation_end_date)}</td>
       <td class="px-4 py-3 hidden lg:table-cell text-slate-600">${esc(d.phone||"\u2014")}</td>
       <td class="px-4 py-3 hidden lg:table-cell text-slate-600">${esc(d.work_email||"\u2014")}</td>

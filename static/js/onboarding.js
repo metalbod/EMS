@@ -99,8 +99,10 @@ function renderObTable(type) {
           ${myPending?`<span class="badge status-pending text-xs shrink-0">Action Required</span>`:''}
         </div>
       </td>
-      <td class="px-4 py-3 text-slate-600">${type==='offboarding'?fmtDate(c.last_working_day):fmtDate(c.created_at)}</td>
-      <td class="px-4 py-3 hidden md:table-cell text-slate-600">${fmtDate(c.start_date)}</td>
+      ${type==='offboarding'
+        ?`<td class="px-4 py-3 text-slate-600">${fmtDate(c.last_working_day)}</td>
+      <td class="px-4 py-3 hidden md:table-cell text-slate-600">${fmtDate(c.start_date)}</td>`
+        :`<td class="px-4 py-3 text-slate-600">${fmtDate(c.start_date)}</td>`}
       <td class="px-4 py-3 hidden md:table-cell text-slate-600">${fmtDate(c.probation_end_date)}</td>
       <td class="px-4 py-3 hidden lg:table-cell text-slate-600">${esc(c.phone||'—')}</td>
       <td class="px-4 py-3 hidden lg:table-cell text-slate-600">${esc(c.work_email||'—')}</td>

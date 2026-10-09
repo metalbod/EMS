@@ -1075,9 +1075,8 @@ def test_removing_a_prerequisite_item_unblocks_its_dependents(client, hr_manager
         _cleanup_set(client, hr_manager_auth, set_id, tids)
 
 
-def test_checklist_list_exposes_start_and_last_working_day(client, hr_manager_auth, make_test_employee, make_test_ob_checklist):
-    """The Onboarding table's Start Date (the checklist's own created_at) and the
-    Offboarding table's Last Working Day (the employee's) come from this list."""
+def test_checklist_list_exposes_the_employees_last_working_day(client, hr_manager_auth, make_test_employee, make_test_ob_checklist):
+    """The Offboarding table's Last Working Day column (the employee's) comes from this list."""
     from db import get_admin_db
     emp = make_test_employee()
     cl = make_test_ob_checklist(employee_id=emp["employee_id"])
@@ -1091,4 +1090,4 @@ def test_checklist_list_exposes_start_and_last_working_day(client, hr_manager_au
     rows = client.get("/api/ob/checklists", headers=hr_manager_auth, params={"type": "onboarding"}).json()
     row = next(r for r in rows if r["id"] == cl["id"])
     assert row["last_working_day"] == "2027-03-31"
-    assert len(row["created_at"]) >= 10 and row["created_at"][4] == "-" and row["created_at"][7] == "-"   # a YYYY-MM-DD... timestamp
+    assert row["start_date"] == emp["start_date"]    # the Join Date column
