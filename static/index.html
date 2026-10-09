@@ -4724,10 +4724,10 @@
         <select id="leaveTypeSharesWith" class="inp" onchange="onLeaveTypeSharesChange()">
           <option value="">— No, tracks its own balance —</option>
         </select>
-        <p class="text-xs text-slate-400 mt-1">If set, applications for this type draw from that type's balance instead of its own — its own entitlement below is ignored.</p>
+        <p class="text-xs text-slate-400 mt-1">If set, applications for this type draw their days from that type's balance. This type keeps its own yearly limit and its own working/calendar day counting (below).</p>
       </div>
       <div id="leaveTypeEntitlementWrap" class="grid grid-cols-2 gap-3">
-        <div><label class="lbl">Annual Entitlement (days)</label><input id="leaveTypeEntitlement" type="number" step="0.5" min="0" class="inp" value="14"/></div>
+        <div><label id="leaveTypeEntitlementLabel" class="lbl">Annual Entitlement (days)</label><input id="leaveTypeEntitlement" type="number" step="0.5" min="0" class="inp" value="14"/></div>
         <div>
           <label class="lbl">Count days as</label>
           <select id="leaveTypeCountMode" class="inp">
@@ -4736,6 +4736,7 @@
           </select>
         </div>
       </div>
+      <p id="leaveTypeSharedLimitHint" class="hidden text-xs text-slate-400 -mt-2">This type draws its days from the shared leave type's balance, but has its own limit per year: an employee can take at most this many days of this type. Leave at 0 for no limit beyond the shared balance. Count days as is also this type's own.</p>
       <p class="text-xs text-slate-400 -mt-2">Working days exclude weekends and public holidays. Calendar days count every day in the range — required by Malaysian law for Maternity/Paternity leave.</p>
       <div id="leaveTypeAccrualWrap">
         <label class="lbl">Entitlement mode</label>

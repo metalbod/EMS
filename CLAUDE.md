@@ -622,6 +622,26 @@ wrapper everywhere.
   application lists show "(n carried fwd)". Helpers: `leaveCarry*`/`leaveAvailableFor`
   in `static/js/leave.js`.
 
+- **Shared-entitlement leave types keep their own yearly limit and day counting**
+  (`_check_yearly_cap`/`_year_usage` in `routers/leave.py`, `GET /api/leave/type-limits`,
+  migration `20261009_0003`). A type with `shares_entitlement_with_id` draws its days from
+  the pool owner's balance (`_balance_leave_type_id`) but its own `annual_entitlement`
+  now means **"yearly limit for this type within the pool"** (0 = none; confirmed:
+  *within* the pool, not an extra allowance) and its own `count_calendar_days` is honoured
+  and editable (the server always used it; only the dialog hid it — the whole entitlement
+  row was hidden, and the stored value, usually the form default 14, was never read, which
+  is why the migration zeroed existing shared types so nobody is suddenly capped). Counted
+  like the monthly cap: Approved + Pending Approval of *this type*, half-days 0.5, leave
+  straddling New Year split by year. A booking must fit both the limit and the pool; the
+  pool error names the pool ("Insufficient balance in the X pool"). Calendar-counting on
+  a type whose pool counts working days charges the pool the type's own count. The pool's
+  accrual mode governs the check for a sharing type (previously the sharing type's hidden,
+  always-default mode was read by mistake). Screens: Edit Leave Type relabels the field
+  "Yearly limit for this type (days)" when a pool is chosen (switching to "shares" starts it
+  at 0), the leave type list shows "N days/yr limit", the Apply Leave note adds "n of N <type>
+  day(s) left this year", My Leave shows a limit card ("taken from <pool>"). Carry-forward
+  and accrual settings of a sharing type are still ignored (the pool's apply).
+
 - **API docs/schema are opt-in** (`core/api_docs.py`, `ENABLE_API_DOCS` env
   var) — `/api/docs`, `/api/redoc` and `/api/openapi.json` are served only
   when it's truthy. Local `.env`/`.env.example` set it; production never does

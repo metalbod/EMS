@@ -386,6 +386,56 @@ def _check_monthly_cap(conn, inst_id: int, employee_id: str, leave_type_id: int,
                                       f"({existing_days} already applied + {new_days} requested = {total})")
 
 
+def _year_usage(conn, inst_id: int, employee_id: str, leave_type_id: int, count_calendar_days: bool,
+                year: int, exclude_app_id: Optional[int] = None) -> float:
+    """Days of one leave type an employee has booked (Approved + Pending
+    Approval) that fall inside calendar `year` — applications straddling
+    New Year are split by date, half-day starts/ends count 0.5, the same
+    rules _check_monthly_cap uses per month. Backs a shared leave type's own
+    yearly limit."""
+    q = ("SELECT id, start_date, end_date, start_day_period, end_day_period FROM leave_applications "
+         "WHERE institution_id=? AND employee_id=? AND leave_type_id=? AND status IN ('Approved', 'Pending Approval') "
+         "AND start_date<=? AND end_date>=?")
+    p = [inst_id, employee_id, leave_type_id, f"{year}-12-31", f"{year}-01-01"]
+    if exclude_app_id is not None:
+        q += " AND id != ?"
+        p.append(exclude_app_id)
+    total = 0.0
+    for r in conn.execute(q, p).fetchall():
+        days = sum(_days_in_month_range(conn, inst_id, r["start_date"], r["end_date"], count_calendar_days, year, m)
+                   for m in range(1, 13))
+        adj = _month_bucket_half_day_adjustment(r["start_date"], r["end_date"], r["start_day_period"], r["end_day_period"])
+        days -= sum(v for (y, _m), v in adj.items() if y == year)
+        total += max(0.0, days)
+    return total
+
+
+def _check_yearly_cap(conn, inst_id: int, employee_id: str, lt, start_date: str, end_date: str,
+                      start_day_period: Optional[str] = None, end_day_period: Optional[str] = None):
+    """A leave type that shares another type's entitlement still has its own
+    limit per calendar year: lt["annual_entitlement"] (0 = no limit of its own
+    beyond the shared pool). The days still come out of the pool; this only
+    caps how many days of THIS type can be taken. Counts Approved + Pending
+    Approval so several applications submitted at once can't collectively
+    pass it, and splits an application that straddles New Year by year."""
+    limit = lt["annual_entitlement"] if lt["shares_entitlement_with_id"] else 0
+    if not limit:
+        return
+    cal = bool(lt["count_calendar_days"])
+    new_by_year: Dict[int, float] = {}
+    for (y, _m), amt in _month_buckets(conn, inst_id, start_date, end_date, cal).items():
+        new_by_year[y] = new_by_year.get(y, 0.0) + amt
+    for (y, _m), amt in _month_bucket_half_day_adjustment(start_date, end_date, start_day_period, end_day_period).items():
+        if y in new_by_year:
+            new_by_year[y] = max(0.0, new_by_year[y] - amt)
+    for y, new_days in new_by_year.items():
+        existing = _year_usage(conn, inst_id, employee_id, lt["id"], cal, y)
+        total = existing + new_days
+        if total > limit:
+            raise HTTPException(400, f"Exceeds the {limit:g} day/year limit for {lt['name']} for {y} "
+                                      f"({existing:g} already applied + {new_days:g} requested = {total:g})")
+
+
 def _balance_leave_type_id(lt) -> int:
     """A leave type with shares_entitlement_with_id set draws from that
     other type's balance pool instead of its own — the application record
@@ -513,6 +563,34 @@ def delete_leave_type(conn, type_id: int, user: dict = Depends(get_current_user)
 # ---------------------------------------------------------------------------
 # Leave — Balances
 # ---------------------------------------------------------------------------
+@router.get("/api/leave/type-limits")
+@db_session
+def list_leave_type_limits(conn, employee_id: Optional[str] = None, year: Optional[int] = None,
+                           user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
+    """For each leave type that shares another's entitlement AND has its own
+    yearly limit: that limit, how much of it the employee has used this year
+    (Approved + Pending) and the pool it draws from. Defaults to the caller's
+    own employee record. Feeds the Apply Leave note and My Leave's limit cards."""
+    inst_id = need_inst(user)
+    year = year or datetime.now().year
+    emp_id = employee_id or user.get("employee_id")
+    if not emp_id:
+        return []
+    if user["role"] == "employee" and emp_id != user.get("employee_id"):
+        raise HTTPException(403, "Access denied")
+    rows = conn.execute(
+        "SELECT lt.*, pool.name AS pool_name FROM leave_types lt JOIN leave_types pool ON pool.id=lt.shares_entitlement_with_id "
+        "WHERE lt.institution_id=? AND lt.is_active=1 AND lt.annual_entitlement>0 ORDER BY lt.name", (inst_id,)
+    ).fetchall()
+    out = []
+    for lt in rows:
+        used = _year_usage(conn, inst_id, emp_id, lt["id"], bool(lt["count_calendar_days"]), year)
+        out.append({"leave_type_id": lt["id"], "leave_type_name": lt["name"], "pool_leave_type_id": lt["shares_entitlement_with_id"],
+                    "pool_name": lt["pool_name"], "year": year, "limit_days": lt["annual_entitlement"], "used_days": used,
+                    "remaining_days": max(0.0, lt["annual_entitlement"] - used)})
+    return out
+
+
 @router.get("/api/leave/balances")
 @db_session
 def list_leave_balances(conn, employee_id: Optional[str] = None, year: Optional[int] = None, team: bool = False,
@@ -774,9 +852,18 @@ def create_leave_application(conn, body: LeaveApplicationIn, user: dict = Depend
                        body.start_date, body.end_date, lt["max_days_per_month"],
                        start_day_period=body.start_day_period, end_day_period=body.end_day_period)
 
+    # A type that shares another's entitlement has its own yearly limit within that pool.
+    _check_yearly_cap(conn, inst_id, body.employee_id, lt, body.start_date, body.end_date,
+                      start_day_period=body.start_day_period, end_day_period=body.end_day_period)
+
     year = datetime.strptime(body.start_date, "%Y-%m-%d").year
     balance = _get_or_create_leave_balance(conn, inst_id, body.employee_id, _balance_leave_type_id(lt), year)
-    if lt["accrual_mode"] == "monthly":
+    # The pool is the OWNER type's balance, so its accrual mode governs (a type that shares never
+    # sets its own — the dialog hides that field).
+    pool_lt = lt
+    if lt["shares_entitlement_with_id"]:
+        pool_lt = conn.execute("SELECT * FROM leave_types WHERE id=?", (lt["shares_entitlement_with_id"],)).fetchone() or lt
+    if pool_lt["accrual_mode"] == "monthly":
         entitled_for_check = _accrued_days(balance["entitled_days"], emp["start_date"], body.start_date)
     else:
         entitled_for_check = balance["entitled_days"]
@@ -784,7 +871,8 @@ def create_leave_application(conn, body: LeaveApplicationIn, user: dict = Depend
     # leave starts on/before their expiry (see core/leave_balance_ops.py).
     available = _available_for(balance, entitled_for_check, body.start_date)
     if days > available:
-        raise HTTPException(400, f"Insufficient balance: requesting {days} day(s), only {available} available")
+        pool_note = f" in the {pool_lt['name']} pool" if lt["shares_entitlement_with_id"] else ""
+        raise HTTPException(400, f"Insufficient balance{pool_note}: requesting {days} day(s), only {available} available")
 
     status = "Pending Approval" if lt["requires_approval"] else "Approved"
     workflow_id, step_order = None, None

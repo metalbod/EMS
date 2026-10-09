@@ -89,6 +89,14 @@ async function renderLeaveBalanceCards() {
   const res=await api(`/api/leave/balances?year=${new Date().getFullYear()}`);
   if(!res?.ok){ wrap.innerHTML=''; return; }
   const balances=await res.json();
+  const limRes=await api(`/api/leave/type-limits?year=${new Date().getFullYear()}`);
+  const limits=limRes?.ok?await limRes.json():[];
+  const limitCards=limits.map(l=>`<div class="bg-white border border-slate-200 rounded-xl p-4">
+      <p class="text-xs text-slate-400 uppercase tracking-wide mb-1">${esc(l.leave_type_name)}</p>
+      <p class="text-2xl font-semibold text-slate-800">${l.remaining_days}</p>
+      <p class="text-xs text-slate-400 mt-1">of ${l.limit_days} day(s)/yr limit left</p>
+      <p class="text-xs mt-1 text-slate-500">taken from ${esc(l.pool_name)}</p>
+    </div>`).join('');
   wrap.innerHTML=balances.map(b=>{
     const entitled=b.accrued_days ?? b.entitled_days;
     const available=entitled+b.carried_forward_days-b.used_days;
@@ -99,7 +107,7 @@ async function renderLeaveBalanceCards() {
       <p class="text-xs text-slate-400 mt-1">of ${entitled+b.carried_forward_days} day(s) left</p>
       ${carry?`<p class="text-xs mt-1 ${carry.urgent?'text-amber-700 font-medium':'text-slate-500'}">${esc(carry.text)}</p>`:''}
     </div>`;
-  }).join('');
+  }).join('')+limitCards;
 }
 
 // Every role except plain "employee" sees every employee's applications
@@ -230,6 +238,7 @@ async function cancelLeaveApplication(appId) {
 // Apply for Leave
 // ---------------------------------------------------------------------------
 let leaveApplyAttachment=null;
+let leaveApplyLimitsCache=[];
 let leaveApplyBalancesCache=[];
 
 async function openLeaveApplyModal() {
@@ -267,13 +276,16 @@ async function openLeaveApplyModal() {
   const typeSel=document.getElementById('leaveApplyTypeId');
   typeSel.innerHTML=leaveTypesCache.map(t=>{
     const shared=t.shares_entitlement_with_id?leaveTypesCache.find(x=>x.id===t.shares_entitlement_with_id):null;
-    const label=shared?`${esc(t.name)} (shares with ${esc(shared.name)})`:`${esc(t.name)} (${t.annual_entitlement}/yr)`;
+    const label=shared?`${esc(t.name)} (shares with ${esc(shared.name)}${t.annual_entitlement>0?`, max ${t.annual_entitlement}/yr`:''})`:`${esc(t.name)} (${t.annual_entitlement}/yr)`;
     return `<option value="${t.id}">${label}</option>`;
   }).join('');
 
   const empId=(isLeaveManager()||currentUser?.role==='manager')?document.getElementById('leaveApplyEmpId').value:currentUser?.employee_id;
   const res=await api(`/api/leave/balances?year=${new Date().getFullYear()}${empId?`&employee_id=${empId}`:''}`);
   leaveApplyBalancesCache=res?.ok?await res.json():[];
+  // Own yearly limits of types that share another type's balance (used / remaining this year).
+  const limRes=await api(`/api/leave/type-limits?year=${new Date().getFullYear()}${empId?`&employee_id=${empId}`:''}`);
+  leaveApplyLimitsCache=limRes?.ok?await limRes.json():[];
 
   updateLeaveApplyBalanceNote();
   updateLeaveApplyDayPeriodVisibility();
@@ -331,6 +343,9 @@ function updateLeaveApplyBalanceNote() {
   } else {
     note.textContent='';
   }
+  // A type that shares a balance also has its own yearly limit — say how much of it is left.
+  const lim=type?.shares_entitlement_with_id?leaveApplyLimitsCache.find(l=>l.leave_type_id===type.id):null;
+  if(lim) note.textContent+=` · ${lim.remaining_days} of ${lim.limit_days} ${type.name} day(s) left this year`;
 }
 
 function ldLeaveComputeWorkdays(startStr, endStr) {
@@ -746,7 +761,8 @@ async function loadLeaveTypesForManage() {
     <div class="flex items-center gap-2 py-2 border-b border-slate-100">
       <span class="flex-1 text-sm text-slate-700">${esc(t.name)}</span>
       ${sharedType
-        ?`<span class="badge text-xs bg-amber-100 text-amber-700">Shares with ${esc(sharedType.name)}</span>`
+        ?`<span class="badge text-xs bg-amber-100 text-amber-700">Shares with ${esc(sharedType.name)}</span>
+          <span class="text-xs text-slate-400">${t.annual_entitlement>0?`${t.annual_entitlement} days/yr limit`:'no limit of its own'}</span>`
         :`<span class="text-xs text-slate-400">${t.annual_entitlement} days/yr</span>`}
       ${t.count_calendar_days?'<span class="badge text-xs bg-slate-100 text-slate-600">Calendar days</span>':''}
       ${!t.allow_half_day?'<span class="badge text-xs bg-slate-100 text-slate-600">No half-day</span>':''}
@@ -777,7 +793,7 @@ function openLeaveTypeModal(typeId) {
   if(typeId){
     const t=leaveTypesCache.find(x=>x.id===typeId);
     document.getElementById('leaveTypeName').value=t?.name||'';
-    document.getElementById('leaveTypeEntitlement').value=t?.annual_entitlement||14;
+    document.getElementById('leaveTypeEntitlement').value=t?.annual_entitlement ?? 14;
     document.getElementById('leaveTypeCountMode').value=t?.count_calendar_days?'calendar':'working';
     document.getElementById('leaveTypeAccrualMode').value=t?.accrual_mode||'full_year';
     document.getElementById('leaveTypeMaxPerApp').value=t?.max_days_per_application||0;
@@ -810,15 +826,26 @@ function openLeaveTypeModal(typeId) {
     document.getElementById('leaveTypeCarryMaxPercent').value=0;
     document.getElementById('leaveTypeCarryExpiryDays').value=0;
   }
+  // A type that is ALREADY sharing keeps its saved limit; only a fresh switch to "shares" zeroes it.
+  leaveTypeEntitlementBeforeShare=document.getElementById('leaveTypeSharesWith').value?'14':null;
   onLeaveTypeSharesChange();
   onLeaveTypeCarryForwardChange();
   document.getElementById('leaveTypeModal').classList.remove('hidden');
 }
 function closeLeaveTypeModal() { closeModal('leaveTypeModal'); }
 
+// A type that shares another's entitlement keeps its own yearly LIMIT (inside the
+// shared balance) and its own working/calendar counting; only the accrual mode
+// (the pool owner's) is hidden. Switching to "shares" starts the limit at 0 (none)
+// so the field's default of 14 doesn't silently become a cap; switching back restores it.
+let leaveTypeEntitlementBeforeShare=null;
 function onLeaveTypeSharesChange() {
   const sharing=!!document.getElementById('leaveTypeSharesWith').value;
-  document.getElementById('leaveTypeEntitlementWrap').classList.toggle('hidden', sharing);
+  const input=document.getElementById('leaveTypeEntitlement');
+  if(sharing && leaveTypeEntitlementBeforeShare===null){ leaveTypeEntitlementBeforeShare=input.value; input.value=0; }
+  else if(!sharing && leaveTypeEntitlementBeforeShare!==null){ input.value=leaveTypeEntitlementBeforeShare; leaveTypeEntitlementBeforeShare=null; }
+  document.getElementById('leaveTypeEntitlementLabel').textContent=sharing?'Yearly limit for this type (days)':'Annual Entitlement (days)';
+  document.getElementById('leaveTypeSharedLimitHint').classList.toggle('hidden', !sharing);
   document.getElementById('leaveTypeAccrualWrap').classList.toggle('hidden', sharing);
 }
 
