@@ -75,6 +75,20 @@ function leaveCarrySplitSuffix(a) {
   return a.carried_days_used>0?` <span class="text-xs text-amber-700">(${a.carried_days_used} carried fwd)</span>`:'';
 }
 
+// Sub-cards inside a pool's balance card, one per leave type that draws from it:
+// the type's own yearly limit left (if it has one) and what it has taken this year.
+function leaveSharedSubCards(subs) {
+  if(!subs.length) return '';
+  return `<div class="mt-3 space-y-2">${subs.map(l=>`
+    <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+      <p class="text-[11px] text-slate-500 uppercase tracking-wide">${esc(l.leave_type_name)}</p>
+      ${l.limit_days>0
+        ?`<p class="text-sm font-semibold text-slate-800">${l.remaining_days} <span class="text-xs font-normal text-slate-400">of ${l.limit_days} day(s)/yr limit left</span></p>`
+        :`<p class="text-sm font-semibold text-slate-800">${l.used_days} <span class="text-xs font-normal text-slate-400">day(s) taken this year</span></p>
+          <p class="text-[11px] text-slate-400">no limit of its own</p>`}
+    </div>`).join('')}</div>`;
+}
+
 async function renderLeaveBalanceCards() {
   const wrap=document.getElementById('leaveBalanceCards');
   // These are the caller's OWN balance (GET /api/leave/balances with no
@@ -89,14 +103,9 @@ async function renderLeaveBalanceCards() {
   const res=await api(`/api/leave/balances?year=${new Date().getFullYear()}`);
   if(!res?.ok){ wrap.innerHTML=''; return; }
   const balances=await res.json();
+  // Types that share a pool show as sub-cards INSIDE the pool's own card.
   const limRes=await api(`/api/leave/type-limits?year=${new Date().getFullYear()}`);
   const limits=limRes?.ok?await limRes.json():[];
-  const limitCards=limits.map(l=>`<div class="bg-white border border-slate-200 rounded-xl p-4">
-      <p class="text-xs text-slate-400 uppercase tracking-wide mb-1">${esc(l.leave_type_name)}</p>
-      <p class="text-2xl font-semibold text-slate-800">${l.remaining_days}</p>
-      <p class="text-xs text-slate-400 mt-1">of ${l.limit_days} day(s)/yr limit left</p>
-      <p class="text-xs mt-1 text-slate-500">taken from ${esc(l.pool_name)}</p>
-    </div>`).join('');
   wrap.innerHTML=balances.map(b=>{
     const entitled=b.accrued_days ?? b.entitled_days;
     const available=entitled+b.carried_forward_days-b.used_days;
@@ -106,8 +115,9 @@ async function renderLeaveBalanceCards() {
       <p class="text-2xl font-semibold text-slate-800">${available}</p>
       <p class="text-xs text-slate-400 mt-1">of ${entitled+b.carried_forward_days} day(s) left</p>
       ${carry?`<p class="text-xs mt-1 ${carry.urgent?'text-amber-700 font-medium':'text-slate-500'}">${esc(carry.text)}</p>`:''}
+      ${leaveSharedSubCards(limits.filter(l=>l.pool_leave_type_id===b.leave_type_id))}
     </div>`;
-  }).join('')+limitCards;
+  }).join('');
 }
 
 // Every role except plain "employee" sees every employee's applications
@@ -344,7 +354,7 @@ function updateLeaveApplyBalanceNote() {
     note.textContent='';
   }
   // A type that shares a balance also has its own yearly limit — say how much of it is left.
-  const lim=type?.shares_entitlement_with_id?leaveApplyLimitsCache.find(l=>l.leave_type_id===type.id):null;
+  const lim=type?.shares_entitlement_with_id?leaveApplyLimitsCache.find(l=>l.leave_type_id===type.id&&l.limit_days>0):null;
   if(lim) note.textContent+=` · ${lim.remaining_days} of ${lim.limit_days} ${type.name} day(s) left this year`;
 }
 

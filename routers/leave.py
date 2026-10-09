@@ -583,10 +583,11 @@ def delete_leave_type(conn, type_id: int, user: dict = Depends(get_current_user)
 @db_session
 def list_leave_type_limits(conn, employee_id: Optional[str] = None, year: Optional[int] = None,
                            user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
-    """For each leave type that shares another's entitlement AND has its own
-    yearly limit: that limit, how much of it the employee has used this year
-    (Approved + Pending) and the pool it draws from. Defaults to the caller's
-    own employee record. Feeds the Apply Leave note and My Leave's limit cards."""
+    """For each leave type that shares another's entitlement: the pool it draws
+    from, its own yearly limit (0 = none, then remaining_days is null), and how
+    much of this year the employee has used (Approved + Pending). Defaults to
+    the caller's own employee record. Feeds the Apply Leave note and the
+    sub-cards inside My Leave's pool cards."""
     inst_id = need_inst(user)
     year = year or datetime.now().year
     emp_id = employee_id or user.get("employee_id")
@@ -596,14 +597,14 @@ def list_leave_type_limits(conn, employee_id: Optional[str] = None, year: Option
         raise HTTPException(403, "Access denied")
     rows = conn.execute(
         "SELECT lt.*, pool.name AS pool_name FROM leave_types lt JOIN leave_types pool ON pool.id=lt.shares_entitlement_with_id "
-        "WHERE lt.institution_id=? AND lt.is_active=1 AND lt.annual_entitlement>0 ORDER BY lt.name", (inst_id,)
+        "WHERE lt.institution_id=? AND lt.is_active=1 ORDER BY lt.name", (inst_id,)
     ).fetchall()
     out = []
     for lt in rows:
         used = _year_usage(conn, inst_id, emp_id, lt["id"], bool(lt["count_calendar_days"]), year)
         out.append({"leave_type_id": lt["id"], "leave_type_name": lt["name"], "pool_leave_type_id": lt["shares_entitlement_with_id"],
                     "pool_name": lt["pool_name"], "year": year, "limit_days": lt["annual_entitlement"], "used_days": used,
-                    "remaining_days": max(0.0, lt["annual_entitlement"] - used)})
+                    "remaining_days": max(0.0, lt["annual_entitlement"] - used) if lt["annual_entitlement"] > 0 else None})
     return out
 
 

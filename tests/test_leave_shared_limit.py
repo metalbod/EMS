@@ -162,3 +162,13 @@ def test_a_sharing_type_never_stores_its_own_carry_forward(client, hr_manager_au
     finally:
         for tid in ids:
             client.delete(f"/api/leave/types/{tid}", headers=hr_manager_auth)
+
+
+def test_type_limits_endpoint_also_lists_sharing_types_without_a_limit(client, pool_setup):
+    emp, headers, pool, shared = pool_setup(pool_days=14, limit=0)
+    mon = _monday_after(date.today() + timedelta(days=45))
+    assert _apply(client, headers, emp, shared, mon, mon + timedelta(days=2)).status_code == 201
+    rows = client.get(f"/api/leave/type-limits?year={mon.year}", headers=headers).json()
+    mine = next(r for r in rows if r["leave_type_id"] == shared["id"])
+    assert (mine["limit_days"], mine["used_days"], mine["remaining_days"]) == (0, 3, None)
+    assert mine["pool_leave_type_id"] == pool["id"]
