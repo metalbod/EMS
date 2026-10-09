@@ -1783,19 +1783,19 @@
 
       <!-- MY LEAVE -->
       <div id="page-leave-my" class="hidden">
-        <div class="flex items-center justify-between mb-5">
-          <div class="flex gap-2">
-            <button onclick="setLeaveFilter('')" class="btn-ghost text-xs leave-filter-btn leave-filter-active">All</button>
-            <button onclick="setLeaveFilter('Pending Approval')" class="btn-ghost text-xs leave-filter-btn">Pending</button>
-            <button onclick="setLeaveFilter('Approved')" class="btn-ghost text-xs leave-filter-btn">Approved</button>
-            <button onclick="setLeaveFilter('Rejected')" class="btn-ghost text-xs leave-filter-btn">Rejected</button>
-          </div>
+        <div class="flex justify-end mb-3">
           <button onclick="openLeaveApplyModal()" class="btn-primary text-sm flex items-center gap-2">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
             Apply for Leave
           </button>
         </div>
-        <div id="leaveBalanceCards" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5"></div>
+        <div id="leaveBalanceCards" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5 empty:hidden"></div>
+        <div class="flex gap-2 mb-5">
+          <button onclick="setLeaveFilter('')" class="btn-ghost text-xs leave-filter-btn leave-filter-active">All</button>
+          <button onclick="setLeaveFilter('Pending Approval')" class="btn-ghost text-xs leave-filter-btn">Pending</button>
+          <button onclick="setLeaveFilter('Approved')" class="btn-ghost text-xs leave-filter-btn">Approved</button>
+          <button onclick="setLeaveFilter('Rejected')" class="btn-ghost text-xs leave-filter-btn">Rejected</button>
+        </div>
         <div id="leaveAppList" class="space-y-3"></div>
         <p id="leaveAppEmpty" class="hidden text-center text-slate-400 text-sm py-12">No leave applications yet.</p>
         <!-- Tabular view — HR/manager-tier roles land here instead of
