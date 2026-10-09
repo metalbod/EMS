@@ -61,7 +61,7 @@ function renderLdCourseTable() {
   bodyEl.innerHTML=pageItems.map(c=>`
     <tr class="border-t border-slate-100">
       <td class="px-4 py-3">
-        <p class="font-medium text-slate-800">${esc(c.title)}</p>
+        <p class="font-medium text-slate-800">${esc(c.title)}${c.file_count?` <span class="badge text-xs bg-slate-100 text-slate-600 align-middle" title="Downloadable documents in this course">📎 ${c.file_count}</span>`:''}</p>
         <p class="text-xs text-slate-400 line-clamp-1">${esc(c.description||'')}</p>
       </td>
       <td class="px-4 py-3 whitespace-nowrap"><span class="badge text-xs ${statusColor(LD_CATEGORY_COLORS, c.category)}">${LD_CATEGORY_LABELS[c.category]||c.category}</span></td>
@@ -476,7 +476,7 @@ async function openLdModulesModal(courseId) {
   const res=await api(`/api/ld/courses/${courseId}/modules`);
   if(res?.ok){
     const modules=await res.json();
-    modules.forEach(m=>addLdModule(m.content_type, m.title, m.content));
+    modules.forEach(m=>addLdModule(m.content_type, m.title, m.content, m));
   }
   document.getElementById('ldModulesModal').classList.remove('hidden');
 }
@@ -485,15 +485,59 @@ function closeLdModulesModal() {
   document.getElementById('ldModulesModal').classList.add('hidden');
 }
 
-function addLdModule(type, title, content) {
+// Document lessons (PDF / Word / PowerPoint). The file is uploaded as soon as it is picked
+// (POST /api/ld/courses/{id}/files) and the lesson just remembers its id until Save Content.
+const LD_DOC_EXTS=['.pdf','.doc','.docx','.ppt','.pptx'];
+const LD_DOC_MAX_BYTES=20*1024*1024;
+function ldFileSize(bytes) {
+  if(bytes>=1048576) return `${(bytes/1048576).toFixed(1)} MB`;
+  return `${Math.max(1,Math.round(bytes/1024))} KB`;
+}
+function ldDocTag(name) {
+  const ext=(name||'').split('.').pop().toLowerCase();
+  return ({pdf:'PDF',doc:'Word',docx:'Word',ppt:'PowerPoint',pptx:'PowerPoint'})[ext]||'File';
+}
+function ldDocFileLabel(name, size) {
+  return name?`${esc(name)} <span class="text-slate-400">(${ldFileSize(size)})</span>`:'<span class="text-slate-400">No file chosen yet</span>';
+}
+
+async function ldPickDocument(idx, input) {
+  const file=input.files?.[0];
+  input.value='';
+  if(!file) return;
+  const wrap=document.getElementById(`ldM-${idx}`);
+  const status=wrap.querySelector('.ldm-file-status');
+  const ext='.'+file.name.split('.').pop().toLowerCase();
+  if(!LD_DOC_EXTS.includes(ext)) { alert('Please choose a PDF, Word (.doc/.docx) or PowerPoint (.ppt/.pptx) file.'); return; }
+  if(file.size>LD_DOC_MAX_BYTES) { alert(`That file is ${ldFileSize(file.size)} — the limit is 20 MB.`); return; }
+  status.innerHTML='Uploading…';
+  const dataUrl=await new Promise((resolve,reject)=>{ const r=new FileReader(); r.onload=()=>resolve(r.result); r.onerror=reject; r.readAsDataURL(file); });
+  const courseId=document.getElementById('ldModulesCourseId').value;
+  const res=await api(`/api/ld/courses/${courseId}/files`,{method:'POST',body:JSON.stringify({file_name:file.name,data_url:dataUrl})});
+  if(!res?.ok) {
+    const d=await res?.json().catch(()=>null);
+    status.innerHTML=ldDocFileLabel(wrap.dataset.fileName, parseInt(wrap.dataset.fileSize)||0);
+    alert(d?.detail?apiErrorText(d.detail):'Upload failed.');
+    return;
+  }
+  const f=await res.json();
+  wrap.dataset.fileId=f.id; wrap.dataset.fileName=f.file_name; wrap.dataset.fileSize=f.size_bytes;
+  status.innerHTML=ldDocFileLabel(f.file_name, f.size_bytes);
+  const t=wrap.querySelector('.ldm-title');
+  if(!t.value.trim()) t.value=f.file_name.replace(/\.[^.]+$/,'');
+  wrap.querySelector('.ldm-doc-tag').textContent=ldDocTag(f.file_name);
+}
+
+function addLdModule(type, title, content, mod) {
   const idx=ldModuleCount++;
   const wrap=document.createElement('div');
   wrap.id=`ldM-${idx}`;
   wrap.dataset.contentType=type;
+  if(type==='document' && mod?.file_id) { wrap.dataset.fileId=mod.file_id; wrap.dataset.fileName=mod.file_name||''; wrap.dataset.fileSize=mod.file_size||0; }
   wrap.className='border border-slate-200 rounded-xl p-4';
   wrap.innerHTML=`
     <div class="flex items-center gap-2 mb-2">
-      <span class="badge text-xs ${type==='video'?'bg-rose-100 text-rose-700':'bg-slate-100 text-slate-600'}">${type==='video'?'Video':'Text'}</span>
+      <span class="badge text-xs ${type==='video'?'bg-rose-100 text-rose-700':type==='document'?'bg-blue-100 text-blue-700':'bg-slate-100 text-slate-600'} ldm-doc-tag">${type==='video'?'Video':type==='document'?ldDocTag(mod?.file_name):'Text'}</span>
       <input class="inp ldm-title flex-1" placeholder="Lesson title…" value="${esc(title||'')}"/>
       <button type="button" onclick="ldMoveModule(${idx},-1)" class="text-slate-300 hover:text-blue-500" title="Move up"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg></button>
       <button type="button" onclick="ldMoveModule(${idx},1)" class="text-slate-300 hover:text-blue-500" title="Move down"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg></button>
@@ -502,6 +546,14 @@ function addLdModule(type, title, content) {
     ${type==='video'
       ?`<input class="inp ldm-content text-sm" placeholder="Video URL (YouTube / Vimeo / direct link)…" value="${esc(content||'')}"/>
         <p class="text-xs text-slate-400 mt-1">YouTube links are embedded as a player; other links open in a new tab.</p>`
+      :type==='document'
+      ?`<div class="flex items-center gap-3 flex-wrap">
+          <label class="btn-ghost text-sm cursor-pointer">Choose file…
+            <input type="file" class="hidden" accept=".pdf,.doc,.docx,.ppt,.pptx" onchange="ldPickDocument(${idx},this)"/>
+          </label>
+          <span class="ldm-file-status text-sm text-slate-600">${ldDocFileLabel(mod?.file_name, mod?.file_size)}</span>
+        </div>
+        <p class="text-xs text-slate-400 mt-1">PDF, Word or PowerPoint, up to 20 MB. Employees enrolled in the course can download it.</p>`
       :`<textarea class="inp ldm-content text-sm" rows="4" placeholder="Lesson content…">${esc(content||'')}</textarea>`}
   `;
   document.getElementById('ldModulesList').appendChild(wrap);
@@ -516,14 +568,20 @@ function ldMoveModule(idx, dir) {
 
 const submitLdModules = guardAsync(async function() {
   const courseId=document.getElementById('ldModulesCourseId').value;
-  const modules=[...document.querySelectorAll('#ldModulesList > div')].map(el=>({
-    title: el.querySelector('.ldm-title').value.trim(),
-    content_type: el.dataset.contentType,
-    content: el.querySelector('.ldm-content').value.trim()||null
-  })).filter(m=>m.title);
+  const modules=[];
+  for(const el of document.querySelectorAll('#ldModulesList > div')) {
+    const title=el.querySelector('.ldm-title').value.trim();
+    if(!title) continue;
+    if(el.dataset.contentType==='document') {
+      if(!el.dataset.fileId) { alert(`Choose a file for the document lesson "${title}", or remove it.`); return; }
+      modules.push({title, content_type:'document', file_id:parseInt(el.dataset.fileId)});
+    } else {
+      modules.push({title, content_type:el.dataset.contentType, content:el.querySelector('.ldm-content').value.trim()||null});
+    }
+  }
   const res=await api(`/api/ld/courses/${courseId}/modules`,{method:'PUT',body:JSON.stringify({modules})});
   if(res?.ok){closeLdModulesModal();loadLdCourses();}
-  else{const d=await res.json();alert(d.detail||'Failed to save content');}
+  else{const d=await res.json();alert(d.detail?apiErrorText(d.detail):'Failed to save content');}
 });
 
 // ---------------------------------------------------------------------------
@@ -538,7 +596,40 @@ function ldYoutubeEmbed(url) {
 // shared by the real Course Viewer (employee, enrollment-bound, below)
 // and the HR Preview modal, which has no enrollment behind it and so
 // never has viewed/progress state to render alongside this.
-function ldModuleContentHtml(m) {
+// Download/Open a document lesson's file. With an enrollment id (the employee's own) the server
+// also marks the lesson viewed, so the viewer is refreshed afterwards.
+async function ldOpenModuleFile(btn, moduleId, enrollmentId, inline) {
+  const name=btn.dataset.name||'document';
+  const win=inline?window.open('','_blank'):null;   // opened now so the popup blocker allows it
+  const qs=[enrollmentId?`enrollment_id=${enrollmentId}`:'', inline?'inline=true':''].filter(Boolean).join('&');
+  const res=await api(`/api/ld/modules/${moduleId}/file${qs?'?'+qs:''}`);
+  if(!res?.ok) {
+    if(win) win.close();
+    const d=await res?.json().catch(()=>null);
+    alert(d?.detail?apiErrorText(d.detail):'Could not open the file.');
+    return;
+  }
+  const url=URL.createObjectURL(await res.blob());
+  if(win) win.location=url;
+  else { const a=document.createElement('a'); a.href=url; a.download=name; document.body.appendChild(a); a.click(); a.remove(); }
+  setTimeout(()=>URL.revokeObjectURL(url), 120000);
+  if(enrollmentId && ldViewerCtx) openLdViewerModal(ldViewerCtx.courseId, ldViewerCtx.enrollmentId, ldViewerCtx.title);
+}
+
+function ldModuleContentHtml(m, enrollmentId) {
+  if(m.content_type==='document') {
+    if(!m.file_name) return '<p class="text-sm text-slate-400">This lesson has no file attached.</p>';
+    const enr=enrollmentId||'null';
+    return `<div class="flex items-center gap-3 flex-wrap rounded-lg bg-slate-50 border border-slate-200 p-3">
+      <span class="badge text-xs bg-blue-100 text-blue-700">${ldDocTag(m.file_name)}</span>
+      <div class="flex-1 min-w-0">
+        <p class="text-sm text-slate-700 truncate" title="${esc(m.file_name)}">${esc(m.file_name)}</p>
+        <p class="text-xs text-slate-400">${ldFileSize(m.file_size||0)}</p>
+      </div>
+      ${m.file_mime_type==='application/pdf'?`<button type="button" class="btn-ghost text-xs" data-name="${esc(m.file_name)}" onclick="ldOpenModuleFile(this,${m.id},${enr},true)">Open</button>`:''}
+      <button type="button" class="btn-primary text-xs" data-name="${esc(m.file_name)}" onclick="ldOpenModuleFile(this,${m.id},${enr},false)">Download</button>
+    </div>`;
+  }
   if(m.content_type==='video'&&m.content){
     const embed=ldYoutubeEmbed(m.content);
     return embed
@@ -548,7 +639,9 @@ function ldModuleContentHtml(m) {
   return `<p class="text-sm text-slate-600 whitespace-pre-wrap">${esc(m.content||'')}</p>`;
 }
 
+let ldViewerCtx=null;
 async function openLdViewerModal(courseId, enrollmentId, courseTitle) {
+  ldViewerCtx={courseId, enrollmentId, title:courseTitle};
   const res=await api(`/api/ld/courses/${courseId}/modules?enrollment_id=${enrollmentId}`);
   if(!res?.ok){alert('Could not load course content.');return;}
   const modules=await res.json();
@@ -565,7 +658,7 @@ async function openLdViewerModal(courseId, enrollmentId, courseTitle) {
           :isOwn?`<button onclick="markLdModuleViewed(${enrollmentId},${m.id},${courseId},'${esc(courseTitle||'').replace(/'/g,"\\'")}')" class="btn-ghost text-xs px-2 py-1 border border-slate-200">Mark as viewed</button>`
           :`<span class="badge text-xs status-neutral">Not viewed</span>`}
       </div>
-      ${ldModuleContentHtml(m)}
+      ${ldModuleContentHtml(m, isOwn?enrollmentId:null)}
     </div>`).join('')||'<p class="text-sm text-slate-400 text-center py-8">No content in this course yet.</p>';
   document.getElementById('ldViewerModal').classList.remove('hidden');
 }

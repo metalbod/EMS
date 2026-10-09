@@ -642,6 +642,28 @@ wrapper everywhere.
   day(s) left this year", My Leave shows a limit card ("taken from <pool>"). Carry-forward
   and accrual settings are hidden for a sharing type (the pool's apply), and the server drops any carry-forward settings sent for one (`_drop_own_carry_forward_if_sharing`) so the list never claims "Carries forward" for a type that can't.
 
+- **Course documents (PDF / Word / PowerPoint) in the L&D course catalog**
+  (`ld_module_files` + `ld_course_modules.file_id`, migration `20261010_0001`;
+  `upload_course_file` / `download_module_file` / `replace_course_modules` in
+  `routers/ld.py`; `static/js/ld.js`) — a new **"document" lesson type** next to text and
+  video in Course Content: one file per lesson, ordered with the others, counted in the
+  "lessons viewed" progress. Bytes are stored in Postgres (`BYTEA`, 20 MB cap —
+  `LD_FILE_MAX_BYTES`; extension whitelist `.pdf/.doc/.docx/.ppt/.pptx` **plus** a
+  magic-byte check so a renamed file can't pass; the DB was only ~131 MB at the time, so
+  watch capacity if decks pile up — object storage is the next step). They are **not**
+  inside the lesson row because `replace_course_modules` deletes and re-inserts every
+  lesson on each save: HR uploads at once (`POST .../files`, base64 JSON like the app's other
+  attachments), the lesson keeps only `file_id`, and the save re-links it and **deletes any
+  file no lesson uses** (so a removed/abandoned upload is cleaned up on the next save;
+  a deactivated course keeps its files). Download is `GET /api/ld/modules/{module_id}/file`
+  (auth header, so the UI fetches a blob): HR/managers open anything; anyone else needs
+  their own Approved / In Progress / Completed enrollment in that course (else 403).
+  Passing the caller's **own** `enrollment_id` marks the lesson viewed — opening or
+  downloading counts as reading it. `inline=true` serves a PDF for the browser viewer, every
+  other type downloads; responses carry `X-Content-Type-Options: nosniff` and
+  `Cache-Control: private, no-store`. The catalog shows a 📎 count; the HR Preview and the
+  employee Course Viewer both render the document lesson with Open (PDF) / Download buttons.
+
 - **API docs/schema are opt-in** (`core/api_docs.py`, `ENABLE_API_DOCS` env
   var) — `/api/docs`, `/api/redoc` and `/api/openapi.json` are served only
   when it's truthy. Local `.env`/`.env.example` set it; production never does

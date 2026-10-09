@@ -1,9 +1,13 @@
 """Learning & Development: Courses, Enrollments, Quizzes, and Course Modules (content)."""
+import base64
 import random
+import re
+from urllib.parse import quote
 from typing import Any, Dict, List, Optional
 
 import psycopg2.extras
-from fastapi import APIRouter, Depends, HTTPException
+import psycopg2
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 
 from core.deps import get_current_user, need_inst
@@ -72,8 +76,30 @@ class LDQuizAttemptIn(BaseModel):
 
 class LDModuleIn(BaseModel):
     title: str
-    content_type: str = "text"  # text | video
+    content_type: str = "text"  # text | video | document
     content: Optional[str] = None  # text body, or video URL for video type
+    file_id: Optional[int] = None  # document type: an ld_module_files row of this course (see upload_course_file)
+
+
+# Course documents (PDF / Word / PowerPoint). Bytes live in ld_module_files; the extension
+# decides the mime type served back, and the first bytes must match the format so a renamed
+# .exe can't be filed as a "PDF".
+LD_FILE_MAX_BYTES = 20 * 1024 * 1024
+LD_FILE_TYPES = {
+    ".pdf": ("application/pdf", (b"%PDF",)),
+    ".doc": ("application/msword", (b"\xd0\xcf\x11\xe0",)),
+    ".docx": ("application/vnd.openxmlformats-officedocument.wordprocessingml.document", (b"PK\x03\x04",)),
+    ".ppt": ("application/vnd.ms-powerpoint", (b"\xd0\xcf\x11\xe0",)),
+    ".pptx": ("application/vnd.openxmlformats-officedocument.presentationml.presentation", (b"PK\x03\x04",)),
+}
+# HR/managers can open any course's files; anyone else needs their own enrollment in that course.
+LD_FILE_ANY_ROLES = ("superadmin", "hr_manager", "hr_admin", "manager")
+LD_FILE_ENROLLMENT_STATUSES = ("Approved", "In Progress", "Completed")
+
+
+class LDFileUploadIn(BaseModel):
+    file_name: str
+    data_url: str  # data:<mime>;base64,<payload> — same transport as the app's other attachments
 
 
 class LDModulesIn(BaseModel):
@@ -87,11 +113,12 @@ class LDModulesIn(BaseModel):
 @db_session
 def list_ld_courses(conn, category: Optional[str] = None, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
-    q = "SELECT * FROM ld_courses WHERE institution_id=? AND is_active=1"
+    q = ("SELECT c.*, (SELECT COUNT(*) FROM ld_course_modules m WHERE m.course_id=c.id AND m.file_id IS NOT NULL) AS file_count "
+         "FROM ld_courses c WHERE c.institution_id=? AND c.is_active=1")
     p = [inst_id]
     if category:
-        q += " AND category=?"; p.append(category)
-    q += " ORDER BY category, title"
+        q += " AND c.category=?"; p.append(category)
+    q += " ORDER BY c.category, c.title"
     rows = conn.execute(q, p).fetchall()
     return [dict(r) for r in rows]
 
@@ -490,6 +517,13 @@ def list_quiz_attempts(conn, quiz_id: int, user: dict = Depends(get_current_user
 # ---------------------------------------------------------------------------
 # Learning & Development — Course Modules (content)
 # ---------------------------------------------------------------------------
+_MODULES_WITH_FILE_SQL = (
+    "SELECT m.*, f.file_name, f.mime_type AS file_mime_type, f.size_bytes AS file_size "
+    "FROM ld_course_modules m LEFT JOIN ld_module_files f ON f.id = m.file_id "
+    "WHERE m.course_id=? AND m.institution_id=? ORDER BY m.order_index"
+)
+
+
 @router.get("/api/ld/courses/{course_id}/modules")
 @db_session
 def list_course_modules(conn, course_id: int, enrollment_id: Optional[int] = None,
@@ -498,10 +532,7 @@ def list_course_modules(conn, course_id: int, enrollment_id: Optional[int] = Non
     inst_id = need_inst(user)
     if not conn.execute("SELECT id FROM ld_courses WHERE id=? AND institution_id=?", (course_id, inst_id)).fetchone():
         raise HTTPException(404, "Course not found")
-    rows = conn.execute(
-        "SELECT * FROM ld_course_modules WHERE course_id=? AND institution_id=? ORDER BY order_index",
-        (course_id, inst_id)
-    ).fetchall()
+    rows = conn.execute(_MODULES_WITH_FILE_SQL, (course_id, inst_id)).fetchall()
     modules = [dict(r) for r in rows]
     if enrollment_id:
         viewed = {r["module_id"] for r in conn.execute(
@@ -521,28 +552,140 @@ def replace_course_modules(conn, course_id: int, body: LDModulesIn,
     require_permission(conn, user, "learning_development.manage_courses_quizzes")
     inst_id = need_inst(user)
     for m in body.modules:
-        if m.content_type not in ("text", "video"):
-            raise HTTPException(400, "content_type must be text or video")
+        if m.content_type not in ("text", "video", "document"):
+            raise HTTPException(400, "content_type must be text, video or document")
     if not conn.execute("SELECT id FROM ld_courses WHERE id=? AND institution_id=?", (course_id, inst_id)).fetchone():
         raise HTTPException(404, "Course not found")
+    for m in body.modules:
+        if m.content_type == "document":
+            if not m.file_id or not conn.execute(
+                "SELECT 1 FROM ld_module_files WHERE id=? AND course_id=? AND institution_id=?",
+                (m.file_id, course_id, inst_id)
+            ).fetchone():
+                raise HTTPException(400, f"Document lesson '{m.title}' needs an uploaded file")
     conn.execute(
         "DELETE FROM ld_lesson_progress WHERE module_id IN (SELECT id FROM ld_course_modules WHERE course_id=? AND institution_id=?)",
         (course_id, inst_id)
     )
     conn.execute("DELETE FROM ld_course_modules WHERE course_id=? AND institution_id=?", (course_id, inst_id))
+    # The lesson rows were just deleted, which (ON DELETE SET NULL) detached every file; re-linking
+    # is done by the inserts below. Whatever no lesson links to afterwards is dropped.
     for idx, m in enumerate(body.modules):
+        is_doc = m.content_type == "document"
         conn.execute(
-            "INSERT INTO ld_course_modules (institution_id,course_id,title,content_type,content,order_index) VALUES (?,?,?,?,?,?)",
-            (inst_id, course_id, m.title, m.content_type, m.content, idx)
+            "INSERT INTO ld_course_modules (institution_id,course_id,title,content_type,content,order_index,file_id) VALUES (?,?,?,?,?,?,?)",
+            (inst_id, course_id, m.title, m.content_type, None if is_doc else m.content, idx, m.file_id if is_doc else None)
         )
+    conn.execute(
+        "DELETE FROM ld_module_files WHERE course_id=? AND institution_id=? "
+        "AND id NOT IN (SELECT file_id FROM ld_course_modules WHERE course_id=? AND file_id IS NOT NULL)",
+        (course_id, inst_id, course_id)
+    )
+    docs = sum(1 for m in body.modules if m.content_type == "document")
     write_entity_audit(conn, user, inst_id, "L&D", "course", course_id, "Modules replaced",
-                       detail=f"{len(body.modules)} module(s): " + ", ".join(m.title for m in body.modules)[:300])
+                       detail=f"{len(body.modules)} module(s) ({docs} document(s)): " + ", ".join(m.title for m in body.modules)[:300])
     conn.commit()
-    rows = conn.execute(
-        "SELECT * FROM ld_course_modules WHERE course_id=? AND institution_id=? ORDER BY order_index",
-        (course_id, inst_id)
-    ).fetchall()
+    rows = conn.execute(_MODULES_WITH_FILE_SQL, (course_id, inst_id)).fetchall()
     return [dict(r) for r in rows]
+
+
+def _clean_file_name(name: str) -> str:
+    name = re.split(r"[\\/]", (name or "").strip())[-1]
+    name = re.sub(r"[\x00-\x1f\x7f]", "", name)
+    return name[:200] or "document"
+
+
+@router.post("/api/ld/courses/{course_id}/files", status_code=201)
+@db_session
+def upload_course_file(conn, course_id: int, body: LDFileUploadIn,
+                       user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    """Stores one PDF/Word/PowerPoint file for a course and returns its id, to be used as a
+    document lesson's file_id when the Course Content is saved. Not visible to employees
+    until a lesson links to it."""
+    require_permission(conn, user, "learning_development.manage_courses_quizzes")
+    inst_id = need_inst(user)
+    if not conn.execute("SELECT id FROM ld_courses WHERE id=? AND institution_id=?", (course_id, inst_id)).fetchone():
+        raise HTTPException(404, "Course not found")
+    file_name = _clean_file_name(body.file_name)
+    ext = "." + file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
+    if ext not in LD_FILE_TYPES:
+        raise HTTPException(400, "Only PDF, Word (.doc, .docx) and PowerPoint (.ppt, .pptx) files can be attached")
+    head, sep, payload = body.data_url.partition(",")
+    if not sep or not head.startswith("data:") or ";base64" not in head:
+        raise HTTPException(400, "File data must be a base64 data URL")
+    if len(payload) > (LD_FILE_MAX_BYTES * 4) // 3 + 8:
+        raise HTTPException(400, f"File is too large (limit {LD_FILE_MAX_BYTES // (1024 * 1024)} MB)")
+    try:
+        data = base64.b64decode(payload, validate=True)
+    except Exception:
+        raise HTTPException(400, "File data is not valid base64")
+    if not data:
+        raise HTTPException(400, "The file is empty")
+    if len(data) > LD_FILE_MAX_BYTES:
+        raise HTTPException(400, f"File is too large (limit {LD_FILE_MAX_BYTES // (1024 * 1024)} MB)")
+    mime, magics = LD_FILE_TYPES[ext]
+    if not any(data.startswith(m) for m in magics):
+        raise HTTPException(400, f"This doesn't look like a real {ext} file")
+    conn.execute(
+        "INSERT INTO ld_module_files (institution_id,course_id,file_name,mime_type,size_bytes,data,uploaded_by) VALUES (?,?,?,?,?,?,?)",
+        (inst_id, course_id, file_name, mime, len(data), psycopg2.Binary(data), user["username"])
+    )
+    file_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    write_entity_audit(conn, user, inst_id, "L&D", "course", course_id, "File uploaded",
+                       detail=f"{file_name} ({len(data) // 1024} KB)")
+    conn.commit()
+    return {"id": file_id, "file_name": file_name, "mime_type": mime, "size_bytes": len(data)}
+
+
+@router.get("/api/ld/modules/{module_id}/file")
+@db_session
+def download_module_file(conn, module_id: int, enrollment_id: Optional[int] = None, inline: bool = False,
+                         user: dict = Depends(get_current_user)):
+    """The file behind a document lesson. HR and managers can always open it; anyone else needs
+    their own approved / in-progress / completed enrollment in the course. Passing the caller's
+    own `enrollment_id` also marks the lesson viewed (opening or downloading counts as reading
+    it). `inline` serves a PDF for the browser's viewer; everything else downloads."""
+    inst_id = need_inst(user)
+    mod = conn.execute(
+        "SELECT m.id, m.course_id, m.file_id FROM ld_course_modules m WHERE m.id=? AND m.institution_id=?",
+        (module_id, inst_id)
+    ).fetchone()
+    if not mod or not mod["file_id"]:
+        raise HTTPException(404, "File not found")
+    own_enrollment = None
+    if user.get("employee_id"):
+        own_enrollment = conn.execute(
+            "SELECT id, status FROM ld_enrollments WHERE course_id=? AND employee_id=? AND institution_id=? "
+            "AND status IN ('Approved','In Progress','Completed') ORDER BY id DESC LIMIT 1",
+            (mod["course_id"], user["employee_id"], inst_id)
+        ).fetchone()
+    if user["role"] not in LD_FILE_ANY_ROLES and not own_enrollment:
+        raise HTTPException(403, "Enrol in this course to open its files")
+    f = conn.execute(
+        "SELECT file_name, mime_type, data FROM ld_module_files WHERE id=? AND institution_id=?",
+        (mod["file_id"], inst_id)
+    ).fetchone()
+    if not f:
+        raise HTTPException(404, "File not found")
+    if enrollment_id:
+        enr = conn.execute("SELECT id, employee_id, course_id FROM ld_enrollments WHERE id=? AND institution_id=?",
+                           (enrollment_id, inst_id)).fetchone()
+        if enr and enr["course_id"] == mod["course_id"] and enr["employee_id"] == user.get("employee_id"):
+            try:
+                conn.execute("INSERT INTO ld_lesson_progress (institution_id,enrollment_id,module_id,employee_id) VALUES (?,?,?,?)",
+                             (inst_id, enr["id"], module_id, enr["employee_id"]))
+                conn.commit()
+            except IntegrityError:
+                conn.rollback()   # already viewed — idempotent
+    disposition = "inline" if (inline and f["mime_type"] == "application/pdf") else "attachment"
+    quoted = f["file_name"].replace('"', "'")
+    return Response(
+        content=bytes(f["data"]), media_type=f["mime_type"],
+        headers={
+            "Content-Disposition": f"{disposition}; filename=\"{quoted.encode('ascii', 'replace').decode()}\"; filename*=UTF-8''{quote(f['file_name'])}",
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "private, no-store",
+        })
 
 
 @router.post("/api/ld/enrollments/{enr_id}/modules/{module_id}/viewed", status_code=201)
