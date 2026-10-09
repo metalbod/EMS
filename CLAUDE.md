@@ -248,6 +248,19 @@ wrapper everywhere.
   `_canOpenPage`), so it needed no changes — once the nav item is hidden,
   the tile stops being clickable automatically.
 
+- **Recruitment screens' write/history controls follow the permission answer, not a role
+  list** (`can_manage_recruitment`, `can_view_candidate_history`,
+  `can_view_candidate_stage_time` on `GET /api/auth/me`, `core/deps.py`'s
+  `build_current_user_out` → `has_permission()`; `canManageRecruitment()` etc. in
+  `static/js/recruitment.js`) — found live in institution 4: the custom "Hiring Manager" role had
+  "Create / edit requisition, candidate, interview, offer" overridden to *allow* and the API
+  accepted it, but "+ New Requisition" (and Add Candidate / Interview / Offer, the public-link
+  toggle, the candidate History and Time-in-Stage tabs) were still hidden by
+  `HR_MANAGE_ROLES.includes(role)`. Same pattern as `can_view_recruitment`. Approving a
+  requisition is untouched (approval-workflow engine, `HR_MANAGER_ONLY_ROLES`). When another
+  module's action is added to `ENFORCED_ACTION_KEYS`, its screen's buttons need the same
+  server-computed flag or the override will work in the API and not in the UI.
+
 - **Public (no-login) job applications** (`routers/public_careers.py`,
   `static/js/public_careers.js`, `20261001_0002_add_requisition_public_token`):
   the only unauthenticated, no-pre-shared-secret write path anywhere in this

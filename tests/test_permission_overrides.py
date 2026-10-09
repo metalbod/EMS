@@ -969,3 +969,52 @@ def test_approve_requisition_stays_non_enforced(client, hr_manager_auth):
         "action_key": "recruitment.approve_requisition", "role": "manager", "access_value": "allow",
     })
     assert res.status_code == 400, res.text
+
+
+def test_current_user_recruitment_write_and_history_flags_follow_overrides_for_a_custom_role(
+        client, hr_manager_auth, make_test_user, test_institution):
+    """GET /api/auth/me's can_manage_recruitment / can_view_candidate_history /
+    can_view_candidate_stage_time drive the Recruitment screens' write buttons
+    (static/js/recruitment.js) — they used to be a hardcoded role list, so a
+    custom 'Hiring Manager' role granted 'Create / edit requisition, ...' got
+    the API but never saw the '+ New Requisition' button."""
+    role_res = client.post("/api/roles", headers=hr_manager_auth,
+                            json={"display_name": f"ZZ Hiring Manager {os.urandom(3).hex()}"})
+    assert role_res.status_code == 201, role_res.text
+    role_key, role_id = role_res.json()["role_key"], role_res.json()["id"]
+    flags = ("can_manage_recruitment", "can_view_candidate_history", "can_view_candidate_stage_time")
+    keys = {"can_manage_recruitment": "recruitment.create_edit_requisition_candidate_interview_offer",
+            "can_view_candidate_history": "recruitment.view_candidate_audit_log",
+            "can_view_candidate_stage_time": "recruitment.view_candidate_stage_timing"}
+    granted = []
+    try:
+        token, _ = make_test_user(role=role_key)
+        headers = {"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}
+        me = client.get("/api/auth/me", headers=headers).json()
+        assert [me[f] for f in flags] == [False, False, False]
+
+        for flag in flags:
+            res = client.put("/api/roles/permission-matrix/override", headers=hr_manager_auth, json={
+                "action_key": keys[flag], "role": role_key, "access_value": "allow"})
+            assert res.status_code == 200, res.text
+            granted.append(keys[flag])
+            me = client.get("/api/auth/me", headers=headers).json()
+            assert me[flag] is True and [me[f] for f in flags].count(True) == len(granted)   # each grant flips only its own flag
+        # ...and the API agrees with the flag
+        created = client.post("/api/recruitment/requisitions", headers=headers,
+                              json={"title": f"ZZ HM Req {os.urandom(3).hex()}", "department": "Engineering"})
+        assert created.status_code == 201, created.text
+    finally:
+        for key in granted:
+            client.delete("/api/roles/permission-matrix/override", headers=hr_manager_auth,
+                          params={"action_key": key, "role": role_key})
+        client.delete(f"/api/roles/{role_id}", headers=hr_manager_auth)
+
+
+def test_current_user_recruitment_flags_for_the_built_in_roles(client, hr_manager_auth, make_test_user, test_institution):
+    hr_me = client.get("/api/auth/me", headers=hr_manager_auth).json()
+    assert (hr_me["can_manage_recruitment"], hr_me["can_view_candidate_history"], hr_me["can_view_candidate_stage_time"]) == (True, True, True)
+    token, _ = make_test_user(role="manager")
+    mgr = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}).json()
+    assert mgr["can_manage_recruitment"] is False and mgr["can_view_candidate_history"] is False
+    assert mgr["can_view_candidate_stage_time"] is True       # managers already had this one by default

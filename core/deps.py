@@ -162,12 +162,14 @@ def build_current_user_out(conn, user: dict, role_override: str = None):
         ).fetchone()
         inst = dict(inst_row) if inst_row else None
     effective_role = role_override or user["role"]
-    can_view_recruitment = True
+    can_view_recruitment = can_manage_recruitment = can_view_candidate_history = can_view_candidate_stage_time = True
     if user.get("institution_id") and effective_role != "superadmin":
-        can_view_recruitment = has_permission(
-            conn, user["institution_id"], {"role": effective_role},
-            "recruitment.view_requisitions_candidates_interviews_offers",
-        )
+        def _allowed(action_key):
+            return has_permission(conn, user["institution_id"], {"role": effective_role}, action_key)
+        can_view_recruitment = _allowed("recruitment.view_requisitions_candidates_interviews_offers")
+        can_manage_recruitment = _allowed("recruitment.create_edit_requisition_candidate_interview_offer")
+        can_view_candidate_history = _allowed("recruitment.view_candidate_audit_log")
+        can_view_candidate_stage_time = _allowed("recruitment.view_candidate_stage_timing")
     return CurrentUserOut(
         id=user["id"],
         username=user["username"],
@@ -180,6 +182,9 @@ def build_current_user_out(conn, user: dict, role_override: str = None):
         institution=inst,
         must_change_password=bool(user.get("must_change_password", False)),
         can_view_recruitment=can_view_recruitment,
+        can_manage_recruitment=can_manage_recruitment,
+        can_view_candidate_history=can_view_candidate_history,
+        can_view_candidate_stage_time=can_view_candidate_stage_time,
     )
 
 

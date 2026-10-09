@@ -67,13 +67,21 @@ async function loadRecruitMeta() {
 // ---------------------------------------------------------------------------
 // Recruitment — Job Requisitions
 // ---------------------------------------------------------------------------
+// Recruitment's write/history controls follow the server's permission answer (GET /api/auth/me:
+// has_permission() against this institution's role overrides), not a fixed role list — so a custom
+// role granted "Create / edit requisition, candidate, interview, offer" in the Permission Matrix
+// really gets the buttons. The role list stays as the fallback for an older /me response.
+function canManageRecruitment() { return currentUser?.can_manage_recruitment ?? HR_MANAGE_ROLES.includes(currentUser?.role); }
+function canViewCandidateHistory() { return currentUser?.can_view_candidate_history ?? HR_MANAGE_ROLES.includes(currentUser?.role); }
+function canViewCandidateStageTime() { return currentUser?.can_view_candidate_stage_time ?? HR_AND_MANAGER_ROLES.includes(currentUser?.role); }
+
 async function loadRequisitions() {
   await loadRecruitMeta();
   const status=document.getElementById('reqStatusFilter')?.value||'';
   const res=await api('/api/recruitment/requisitions'+(status?`?status=${encodeURIComponent(status)}`:''));
   if(!res||!res.ok) return;
   const rows=await res.json();
-  const canManage=HR_MANAGE_ROLES.includes(currentUser?.role);
+  const canManage=canManageRecruitment();
   document.getElementById('addReqBtn')?.classList.toggle('hidden',!canManage);
   document.getElementById('viewCareersPageBtn')?.classList.toggle('hidden',!canManage);
   const body=document.getElementById('reqTableBody');
@@ -172,7 +180,7 @@ async function openReqDetail(reqId) {
   // Public Applications — only ever possible once Approved (see
   // enable_public_link in routers/recruitment.py); the HR-manage-only gate
   // matches every other write action on this modal.
-  const canManagePublicLink=HR_MANAGE_ROLES.includes(currentUser?.role);
+  const canManagePublicLink=canManageRecruitment();
   const linkSection=document.getElementById('rdPublicLinkSection');
   linkSection.classList.toggle('hidden',!(canManagePublicLink&&r.status==='Approved'));
   document.getElementById('rdPublicLinkOff').classList.toggle('hidden',!!r.public_token);
@@ -348,7 +356,7 @@ async function loadCandidates() {
   const rows=await res.json();
   candPageRows=rows;
   candTotal=parseInt(res.headers.get('X-Total-Count')||'0',10);
-  const canManage=HR_MANAGE_ROLES.includes(currentUser?.role);
+  const canManage=canManageRecruitment();
   document.getElementById('addCandBtn')?.classList.toggle('hidden',!canManage);
   const body=document.getElementById('candTableBody');
   const empty=document.getElementById('candEmpty');
@@ -756,7 +764,7 @@ async function openCandDetail(candId) {
   const badge=document.getElementById('cdStageBadge');
   if(c.stage){ badge.textContent=c.stage; badge.className=`badge ${stageBadgeClass(c.stage)}`; badge.classList.remove('hidden'); }
   else { badge.classList.add('hidden'); }
-  const canManage=HR_MANAGE_ROLES.includes(currentUser?.role);
+  const canManage=canManageRecruitment();
   const multiApp=shouldShowPerApplicationStages(c.applications);
   // Applications section — only shown once there's more than one (the
   // common single-application case stays exactly as before: just the
@@ -845,11 +853,11 @@ async function openCandDetail(candId) {
   const showConvert=canManage&&['Offer','Hired'].includes(c.stage)&&(c.offers||[]).some(o=>o.status==='Accepted'&&o.offer_type==='Offer');
   document.getElementById('cdConvertBtn').classList.toggle('hidden',!showConvert);
   // History tab visible to HR roles only
-  const canViewHistory=HR_MANAGE_ROLES.includes(currentUser?.role);
+  const canViewHistory=canViewCandidateHistory();
   document.getElementById('cdHistoryTab').classList.toggle('hidden',!canViewHistory);
   // Time in Stage tab visible to HR roles + manager (matches the
   // Recruitment dashboard tab's own canRecruit visibility, dashboard.js)
-  const canViewStageTime=HR_AND_MANAGER_ROLES.includes(currentUser?.role);
+  const canViewStageTime=canViewCandidateStageTime();
   document.getElementById('cdStageTimeTab').classList.toggle('hidden',!canViewStageTime);
   switchCandTab('cdt-profile');
   document.getElementById('candDetailModal').classList.remove('hidden');
@@ -966,7 +974,7 @@ async function loadInterviews() {
   const res=await api('/api/recruitment/interviews'+(status?`?status=${encodeURIComponent(status)}`:''));
   if(!res||!res.ok) return;
   const rows=await res.json();
-  const canManage=HR_MANAGE_ROLES.includes(currentUser?.role);
+  const canManage=canManageRecruitment();
   document.getElementById('addIntBtn')?.classList.toggle('hidden',!canManage);
   const body=document.getElementById('intTableBody');
   const empty=document.getElementById('intEmpty');
@@ -1111,7 +1119,7 @@ async function loadOffers() {
   const res=await api('/api/recruitment/offers');
   if(!res||!res.ok) return;
   const rows=await res.json();
-  const canManage=HR_MANAGE_ROLES.includes(currentUser?.role);
+  const canManage=canManageRecruitment();
   document.getElementById('addOfferBtn')?.classList.toggle('hidden',!canManage);
   const body=document.getElementById('offerTableBody');
   const empty=document.getElementById('offerEmpty');

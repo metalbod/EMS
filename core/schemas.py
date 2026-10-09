@@ -47,6 +47,13 @@ class CurrentUserOut(BaseModel):
     # superadmin and any role with no institution context, since the
     # permission check itself doesn't apply there.
     can_view_recruitment: bool = True
+    # Same idea for the Recruitment screens' write/history controls (the "+ New Requisition",
+    # Add Candidate/Interview/Offer buttons, the candidate History and Time-in-Stage tabs), which
+    # used to be shown by a hardcoded role list and so ignored an override like a custom
+    # "Hiring Manager" role being granted "Create / edit requisition, candidate, interview, offer".
+    can_manage_recruitment: bool = True
+    can_view_candidate_history: bool = True
+    can_view_candidate_stage_time: bool = True
 
 
 class TokenResponse(BaseModel):
