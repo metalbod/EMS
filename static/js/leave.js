@@ -752,17 +752,41 @@ const submitPopulateHolidays = guardAsync(async function() {
 // ---------------------------------------------------------------------------
 // Leave Types (management, shown under Holiday Manager page)
 // ---------------------------------------------------------------------------
-async function loadLeaveTypesForManage() {
-  await loadLeaveTypesCache();
-  const wrap=document.getElementById('leaveTypeList');
-  wrap.innerHTML=leaveTypesCache.length?leaveTypesCache.map(t=>{
-    const sharedType=t.shares_entitlement_with_id?leaveTypesCache.find(x=>x.id===t.shares_entitlement_with_id):null;
-    return `
-    <div class="flex items-center gap-2 py-2 border-b border-slate-100">
-      <span class="flex-1 text-sm text-slate-700">${esc(t.name)}</span>
-      ${sharedType
-        ?`<span class="badge text-xs bg-amber-100 text-amber-700">Shares with ${esc(sharedType.name)}</span>
-          <span class="text-xs text-slate-400">${t.annual_entitlement>0?`${t.annual_entitlement} days/yr limit`:'no limit of its own'}</span>`
+function leaveTypeRowButtons(t) {
+  return `<button onclick="openLeaveTypeModal(${t.id})" class="text-slate-300 hover:text-blue-500"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
+      <button onclick="deleteLeaveType(${t.id})" class="text-slate-300 hover:text-red-500"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>`;
+}
+
+// Leave types in display order: each type that owns a balance, followed (indented) by the
+// types that share its entitlement — so the relationships read at a glance. A sharing type
+// whose pool isn't in the list (e.g. the pool was deactivated) stays at the top level.
+function leaveTypeTree(types) {
+  const byId=new Map(types.map(t=>[t.id,t]));
+  const children=new Map();
+  const roots=[];
+  types.forEach(t=>{
+    const owner=t.shares_entitlement_with_id?byId.get(t.shares_entitlement_with_id):null;
+    if(owner) { if(!children.has(owner.id)) children.set(owner.id,[]); children.get(owner.id).push(t); }
+    else roots.push(t);
+  });
+  const rows=[];
+  roots.forEach(t=>{
+    const kids=children.get(t.id)||[];
+    rows.push({type:t, indent:false, sharedBy:kids.length});
+    kids.forEach(k=>rows.push({type:k, indent:true, sharedBy:0}));
+  });
+  return rows;
+}
+
+function renderLeaveTypeRow({type:t, indent, sharedBy}) {
+  const sharing=!!t.shares_entitlement_with_id && indent;
+  return `
+    <div class="flex items-center gap-2 py-2 border-b border-slate-100 ${indent?'pl-8 bg-slate-50/60':''}">
+      ${indent?'<span class="text-slate-300 -ml-5" aria-hidden="true">↳</span>':''}
+      <span class="flex-1 text-sm ${indent?'text-slate-600':'text-slate-700 font-medium'}">${esc(t.name)}</span>
+      ${sharedBy?`<span class="badge text-xs bg-amber-100 text-amber-700" title="These types draw their days from this balance">Pool shared by ${sharedBy}</span>`:''}
+      ${sharing
+        ?`<span class="text-xs text-slate-400">${t.annual_entitlement>0?`${t.annual_entitlement} days/yr limit`:'no limit of its own'}</span>`
         :`<span class="text-xs text-slate-400">${t.annual_entitlement} days/yr</span>`}
       ${t.count_calendar_days?'<span class="badge text-xs bg-slate-100 text-slate-600">Calendar days</span>':''}
       ${!t.allow_half_day?'<span class="badge text-xs bg-slate-100 text-slate-600">No half-day</span>':''}
@@ -772,10 +796,14 @@ async function loadLeaveTypesForManage() {
       ${t.requires_approval?'<span class="badge text-xs bg-blue-100 text-blue-700">Approval</span>':''}
       ${t.requires_attachment?'<span class="badge text-xs bg-purple-100 text-purple-700">Doc required</span>':''}
       ${t.carry_forward_enabled?`<span class="badge text-xs bg-amber-100 text-amber-700" title="${esc(leaveCarryTooltip(t))}">Carries forward</span>`:''}
-      <button onclick="openLeaveTypeModal(${t.id})" class="text-slate-300 hover:text-blue-500"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
-      <button onclick="deleteLeaveType(${t.id})" class="text-slate-300 hover:text-red-500"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+      ${leaveTypeRowButtons(t)}
     </div>`;
-  }).join(''):'<p class="text-sm text-slate-400 text-center py-4">No leave types yet.</p>';
+}
+
+async function loadLeaveTypesForManage() {
+  await loadLeaveTypesCache();
+  const wrap=document.getElementById('leaveTypeList');
+  wrap.innerHTML=leaveTypesCache.length?leaveTypeTree(leaveTypesCache).map(renderLeaveTypeRow).join(''):'<p class="text-sm text-slate-400 text-center py-4">No leave types yet.</p>';
 }
 
 function openLeaveTypeModal(typeId) {
