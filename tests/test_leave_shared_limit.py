@@ -132,3 +132,33 @@ def test_type_limits_endpoint_is_private_to_the_employee(client, hr_manager_auth
     other = make_test_employee(full_name="ZZ Someone Else")
     res = client.get(f"/api/leave/type-limits?employee_id={other['employee_id']}", headers=headers)
     assert res.status_code == 403
+
+
+def test_a_sharing_type_never_stores_its_own_carry_forward(client, hr_manager_auth):
+    tag = os.urandom(3).hex()
+    pool = client.post("/api/leave/types", headers=hr_manager_auth, json={
+        "name": f"ZZ CF Pool {tag}", "annual_entitlement": 14, "carry_forward_enabled": True, "carry_forward_max_days": 5}).json()
+    ids = [pool["id"]]
+    try:
+        assert pool["carry_forward_enabled"] in (1, True) and pool["carry_forward_max_days"] == 5   # the pool owner keeps it
+        res = client.post("/api/leave/types", headers=hr_manager_auth, json={
+            "name": f"ZZ CF Shared {tag}", "annual_entitlement": 3, "shares_entitlement_with_id": pool["id"],
+            "carry_forward_enabled": True, "carry_forward_max_days": 4, "carry_forward_max_percent": 50,
+            "carry_forward_expiry_days": 90, "carry_forward_percent_basis": "entitlement", "carry_forward_cap_rule": "higher"})
+        assert res.status_code == 201, res.text
+        shared = res.json()
+        ids.insert(0, shared["id"])
+        assert not shared["carry_forward_enabled"]
+        assert (shared["carry_forward_max_days"], shared["carry_forward_max_percent"], shared["carry_forward_expiry_days"]) == (0, 0, 0)
+        assert (shared["carry_forward_percent_basis"], shared["carry_forward_cap_rule"]) == ("balance", "lower")
+        # ...and switching an existing carrying type to share clears it too
+        other = client.post("/api/leave/types", headers=hr_manager_auth, json={
+            "name": f"ZZ CF Other {tag}", "annual_entitlement": 10, "carry_forward_enabled": True, "carry_forward_max_days": 2}).json()
+        ids.insert(0, other["id"])
+        upd = client.put(f"/api/leave/types/{other['id']}", headers=hr_manager_auth, json={
+            "name": other["name"], "annual_entitlement": 2, "shares_entitlement_with_id": pool["id"],
+            "carry_forward_enabled": True, "carry_forward_max_days": 2})
+        assert upd.status_code == 200 and not upd.json()["carry_forward_enabled"]
+    finally:
+        for tid in ids:
+            client.delete(f"/api/leave/types/{tid}", headers=hr_manager_auth)

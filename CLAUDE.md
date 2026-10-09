@@ -640,7 +640,7 @@ wrapper everywhere.
   "Yearly limit for this type (days)" when a pool is chosen (switching to "shares" starts it
   at 0), the leave type list shows "N days/yr limit", the Apply Leave note adds "n of N <type>
   day(s) left this year", My Leave shows a limit card ("taken from <pool>"). Carry-forward
-  and accrual settings of a sharing type are still ignored (the pool's apply).
+  and accrual settings are hidden for a sharing type (the pool's apply), and the server drops any carry-forward settings sent for one (`_drop_own_carry_forward_if_sharing`) so the list never claims "Carries forward" for a type that can't.
 
 - **API docs/schema are opt-in** (`core/api_docs.py`, `ENABLE_API_DOCS` env
   var) — `/api/docs`, `/api/redoc` and `/api/openapi.json` are served only

@@ -496,12 +496,27 @@ _LEAVE_TYPE_AUDIT_LABELS = {
 }
 
 
+def _drop_own_carry_forward_if_sharing(body: "LeaveTypeIn") -> None:
+    """A type that shares another's entitlement has no balance of its own, so
+    carry-forward (which acts on a balance row) can only ever be the pool
+    owner's. Don't store settings that would be ignored — and would otherwise
+    make the type list claim "Carries forward"."""
+    if body.shares_entitlement_with_id:
+        body.carry_forward_enabled = False
+        body.carry_forward_max_days = 0
+        body.carry_forward_max_percent = 0
+        body.carry_forward_expiry_days = 0
+        body.carry_forward_percent_basis = "balance"
+        body.carry_forward_cap_rule = "lower"
+
+
 @router.post("/api/leave/types", status_code=201)
 @db_session
 def create_leave_type(conn, body: LeaveTypeIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     require_permission(conn, user, "leave.manage_leave_types")
     inst_id = need_inst(user)
     _validate_shares_entitlement(conn, inst_id, None, body.shares_entitlement_with_id, body.name)
+    _drop_own_carry_forward_if_sharing(body)
     conn.execute(
         "INSERT INTO leave_types (institution_id,name,annual_entitlement,requires_approval,requires_attachment,is_paid,is_active,shares_entitlement_with_id,count_calendar_days,allow_half_day,accrual_mode,max_days_per_application,max_days_per_month,carry_forward_enabled,carry_forward_max_days,carry_forward_max_percent,carry_forward_expiry_days,carry_forward_percent_basis,carry_forward_cap_rule) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (inst_id, body.name, body.annual_entitlement, 1 if body.requires_approval else 0,
@@ -528,6 +543,7 @@ def update_leave_type(conn, type_id: int, body: LeaveTypeIn, user: dict = Depend
     if not old_row:
         raise HTTPException(404, "Leave type not found")
     _validate_shares_entitlement(conn, inst_id, type_id, body.shares_entitlement_with_id, body.name)
+    _drop_own_carry_forward_if_sharing(body)
     conn.execute(
         "UPDATE leave_types SET name=?,annual_entitlement=?,requires_approval=?,requires_attachment=?,is_paid=?,is_active=?,shares_entitlement_with_id=?,count_calendar_days=?,allow_half_day=?,accrual_mode=?,max_days_per_application=?,max_days_per_month=?,carry_forward_enabled=?,carry_forward_max_days=?,carry_forward_max_percent=?,carry_forward_expiry_days=?,carry_forward_percent_basis=?,carry_forward_cap_rule=? WHERE id=?",
         (body.name, body.annual_entitlement, 1 if body.requires_approval else 0,

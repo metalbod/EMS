@@ -847,6 +847,8 @@ function onLeaveTypeSharesChange() {
   document.getElementById('leaveTypeEntitlementLabel').textContent=sharing?'Yearly limit for this type (days)':'Annual Entitlement (days)';
   document.getElementById('leaveTypeSharedLimitHint').classList.toggle('hidden', !sharing);
   document.getElementById('leaveTypeAccrualWrap').classList.toggle('hidden', sharing);
+  // Carry-forward belongs to the pool owner's balance, so it isn't offered here.
+  document.getElementById('leaveTypeCarryBlock').classList.toggle('hidden', sharing);
 }
 
 // Tooltip on the "Carries forward" badge, e.g. "Max 7 days or 50% of entitlement,
@@ -895,7 +897,7 @@ async function submitLeaveType(e) {
     accrual_mode: document.getElementById('leaveTypeAccrualMode').value,
     max_days_per_application: parseFloat(document.getElementById('leaveTypeMaxPerApp').value)||0,
     max_days_per_month: parseFloat(document.getElementById('leaveTypeMaxPerMonth').value)||0,
-    carry_forward_enabled: document.getElementById('leaveTypeCarryForwardEnabled').checked,
+    carry_forward_enabled: !document.getElementById('leaveTypeSharesWith').value && document.getElementById('leaveTypeCarryForwardEnabled').checked,
     carry_forward_max_days: parseFloat(document.getElementById('leaveTypeCarryMaxDays').value)||0,
     carry_forward_max_percent: parseFloat(document.getElementById('leaveTypeCarryMaxPercent').value)||0,
     carry_forward_expiry_days: parseInt(document.getElementById('leaveTypeCarryExpiryDays').value)||0,
