@@ -171,7 +171,8 @@ async function openReqDetail(reqId) {
         ${(r.candidates||[]).map(c=>`<div class="flex items-center gap-2 py-1 border-b border-slate-100"><span class="flex-1">${esc(c.full_name)}</span><span class="badge ${stageBadgeClass(c.stage)}">${esc(c.stage)}</span><button onclick="closeBothReq();openCandDetail(${c.id})" class="text-xs text-blue-600 hover:underline">View</button></div>`).join('')||'<p class="text-slate-400">No candidates yet.</p>'}
       </div>
     </div>`;
-  const canApprove=HR_MANAGER_ONLY_ROLES.includes(currentUser?.role);
+  // A requester can't decide their own requisition (the server refuses it), so don't offer the buttons.
+  const canApprove=HR_MANAGER_ONLY_ROLES.includes(currentUser?.role)&&!r.own_request_blocked;
   const appSection=document.getElementById('rdApprovalSection');
   appSection.classList.toggle('hidden',!(r.status==='Pending Approval'&&canApprove));
   document.getElementById('rdEditBtn').classList.toggle('hidden',r.status!=='Draft');
@@ -233,10 +234,18 @@ async function editReqFromDetail(){
   openReqModal(r);
 }
 
+// Shows the server's reason when a requisition action is refused (it used to fail silently).
+async function reqActionFailed(res, fallback) {
+  if(!res) return true;
+  if(res.ok) return false;
+  const d=await res.json().catch(()=>({}));
+  alert(apiErrorText(d?.detail,fallback));
+  return true;
+}
 const submitReqForApproval = guardAsync(async function() {
   if(!viewingReqId) return;
   const res=await api(`/api/recruitment/requisitions/${viewingReqId}/submit`,{method:'PATCH',body:JSON.stringify({})});
-  if(!res||!res.ok) return;
+  if(await reqActionFailed(res,'Failed to submit the requisition')) return;
   closeReqDetailModal(); loadRequisitions();
 });
 async function approveReq(action) {
@@ -244,13 +253,13 @@ async function approveReq(action) {
   const comments=document.getElementById('rdComments').value;
   const res=await api(`/api/recruitment/requisitions/${viewingReqId}/approve`,
     {method:'PATCH',body:JSON.stringify({action,comments})});
-  if(!res||!res.ok) return;
+  if(await reqActionFailed(res,`Failed to ${action} the requisition`)) return;
   closeReqDetailModal(); loadRequisitions();
 }
 async function closeReqAction() {
   if(!viewingReqId||!confirm('Close this requisition?')) return;
   const res=await api(`/api/recruitment/requisitions/${viewingReqId}/close`,{method:'PATCH',body:JSON.stringify({})});
-  if(!res||!res.ok) return;
+  if(await reqActionFailed(res,'Failed to close the requisition')) return;
   closeReqDetailModal(); loadRequisitions();
 }
 

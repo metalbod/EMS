@@ -1251,3 +1251,40 @@ def test_dashboard_cards_count_only_active_items_on_open_requisitions(client, hr
     assert closed["offers_pending"] == before["offers_pending"]
     # the pipeline chart still counts everything
     assert closed["total_candidates"] >= before["total_candidates"] + 2
+
+
+def test_requester_cannot_approve_their_own_requisition_and_is_told_why(
+    client, hr_manager_auth, make_test_employee, test_institution
+):
+    """The approval workflow never lets a requester decide their own request; the API says so
+    plainly and flags it on the requisition so the UI can hide the buttons."""
+    emp = make_test_employee()
+    username = f"zzselfreq_{emp['employee_id'].lower()}"
+    res = client.post("/api/users", headers=hr_manager_auth, json={
+        "username": username, "full_name": "ZZ Self Requester", "password": "ZzPytest@123",
+        "role": "hr_manager", "employee_id": emp["employee_id"],
+    })
+    assert res.status_code == 201, res.text
+    user_id = res.json()["id"]
+    try:
+        login = client.post("/api/auth/login", json={
+            "username": username, "password": "ZzPytest@123", "institution_code": test_institution["code"]})
+        assert login.status_code == 200
+        me = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+        req = client.post("/api/recruitment/requisitions", headers=me,
+                          json={"title": _unique_title(), "department": "Sales"}).json()
+        assert client.patch(f"/api/recruitment/requisitions/{req['id']}/submit", headers=me).status_code == 200
+
+        detail = client.get(f"/api/recruitment/requisitions/{req['id']}", headers=me).json()
+        assert detail["own_request_blocked"] is True
+        # someone else (no linked employee record) is not blocked
+        other = client.get(f"/api/recruitment/requisitions/{req['id']}", headers=hr_manager_auth).json()
+        assert other["own_request_blocked"] is False
+
+        res = client.patch(f"/api/recruitment/requisitions/{req['id']}/approve", headers=me,
+                           json={"action": "approve", "comments": "ZZ"})
+        assert res.status_code == 403
+        assert "created yourself" in res.json()["detail"]
+    finally:
+        client.delete(f"/api/users/{user_id}", headers=hr_manager_auth)

@@ -469,6 +469,15 @@ def _requisition_requester_employee_id(conn, inst_id, req):
     return u["employee_id"] if u else None
 
 
+def _is_blocked_from_own_requisition(conn, inst_id, req, user) -> bool:
+    """True when the approval workflow would refuse `user` because they raised this requisition
+    themselves (core.approval_workflow.is_eligible_approver never lets a requester approve their
+    own request; only a superadmin is exempt). Used for a clear error and to hide the buttons."""
+    if not req.get("approval_workflow_id") or user["role"] == "superadmin" or not user.get("employee_id"):
+        return False
+    return user["employee_id"] == _requisition_requester_employee_id(conn, inst_id, req)
+
+
 # Institutions get one of each lazily (see _get_or_create_default_offer_template)
 # rather than being seeded up front — same resolve-or-create-default pattern
 # as get_or_create_default_workflow (core/approval_workflow.py) and onboarding's
@@ -738,6 +747,7 @@ def get_requisition(conn, req_id: int, user: dict = Depends(get_current_user)) -
         WHERE cr.requisition_id=? AND cr.institution_id=? ORDER BY cr.created_at DESC
     """, (req_id, inst_id)).fetchall()
     r["candidates"] = [dict(c) for c in cands]
+    r["own_request_blocked"] = _is_blocked_from_own_requisition(conn, inst_id, r, user)
     return r
 
 
@@ -802,6 +812,9 @@ def approve_requisition(conn, req_id: int, body: RequisitionApprovalIn,
     action = "reject" if body.action == "reject" else "approve"
     requester_employee_id = _requisition_requester_employee_id(conn, inst_id, r)
     if r["approval_workflow_id"] and r["approval_step"] is not None:
+        if _is_blocked_from_own_requisition(conn, inst_id, r, user):
+            raise HTTPException(403, "You can't approve or reject a requisition you created yourself. "
+                                     "Ask another approver to decide it.")
         try:
             outcome, next_step = advance_or_finalize(
                 conn, inst_id, "requisition", requester_employee_id,

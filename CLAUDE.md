@@ -728,6 +728,16 @@ wrapper everywhere.
   and requisitions-by-status charts and the "Open Requisitions" card (Approved + Draft)
   are unchanged and still count everything; `total_candidates` stays in the response for
   the pipeline chart, `active_candidates` is the new field the card reads.
+- **Requisition approve/reject says why it was refused** (live report 2026-10-12: Kenneth
+  clicked Approve on a requisition he created and "nothing happened"): the approval
+  workflow never lets a requester decide their own request (`is_eligible_approver`; only
+  superadmin is exempt), the API returned 403, and `approveReq` swallowed it. Now
+  `reqActionFailed()` (recruitment.js) alerts the server's message for submit/approve/close;
+  `approve_requisition` answers "You can't approve or reject a requisition you created
+  yourself"; `GET /api/recruitment/requisitions/{id}` carries `own_request_blocked`, which
+  hides the Approve/Reject block for the requester. Still open: a step whose approver has no
+  login account (e.g. a direct manager with no user) can never be cleared by anyone but a
+  superadmin — not auto-skipped, not warned about when the rule is set up.
 
 ## Recurring gotchas (hit more than once this project's history)
 
