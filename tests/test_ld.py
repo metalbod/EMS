@@ -518,3 +518,83 @@ def test_required_correct_follows_the_pass_mark(client, hr_manager_auth, employe
     wrong = next(o["id"] for o in q0["options"] if not o["is_correct"])
     res = client.post(f"/api/ld/quizzes/{quiz['id']}/attempts", headers=emp_headers, json={"answers": {str(q0["id"]): [wrong]}}).json()
     assert res["passed"] is False and res["required_correct"] == 1   # 1 of 2 = 50% would have passed
+
+
+# ---------------------------------------------------------------------------
+# Past scores: Score column data, per-enrolment attempt list, and the employee's Learning tab
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def scored_enrollment(client, hr_manager_auth, employee_with_user, free_course):
+    """The employee has failed once and then passed a two-question quiz."""
+    emp, emp_headers = employee_with_user
+    quiz = client.put(f"/api/ld/courses/{free_course['id']}/quiz", headers=hr_manager_auth, json=_two_question_quiz(pass_threshold=100)).json()
+    enroll = client.post("/api/ld/enrollments", headers=emp_headers,
+                         json={"employee_id": emp["employee_id"], "course_id": free_course["id"]}).json()
+    first, second = quiz["questions"]
+    right = lambda q: next(o["id"] for o in q["options"] if o["is_correct"])
+    wrong = lambda q: next(o["id"] for o in q["options"] if not o["is_correct"])
+    client.post(f"/api/ld/quizzes/{quiz['id']}/attempts", headers=emp_headers,
+                json={"answers": {str(first["id"]): [right(first)], str(second["id"]): [wrong(second)]}})
+    client.post(f"/api/ld/quizzes/{quiz['id']}/attempts", headers=emp_headers,
+                json={"answers": {str(first["id"]): [right(first)], str(second["id"]): [right(second)]}})
+    return emp, emp_headers, enroll, free_course
+
+
+def test_enrollment_list_carries_the_quiz_score_summary(client, scored_enrollment):
+    emp, emp_headers, enroll, course = scored_enrollment
+    row = next(e for e in client.get("/api/ld/enrollments", headers=emp_headers).json() if e["id"] == enroll["id"])
+    assert row["attempts_used"] == 2 and row["best_score"] == 100.0 and row["passed_any"] == 1
+    assert row["quiz_pass_threshold"] == 100 and row["quiz_max_attempts"] == 2
+
+
+def test_attempt_list_for_one_enrollment_shows_scores_but_never_answers(client, hr_manager_auth, scored_enrollment):
+    emp, emp_headers, enroll, course = scored_enrollment
+    for headers in (emp_headers, hr_manager_auth):
+        res = client.get(f"/api/ld/enrollments/{enroll['id']}/quiz-attempts", headers=headers)
+        assert res.status_code == 200, res.text
+        body = res.json()
+        assert body["course_title"] == course["title"] and body["quiz"]["pass_threshold"] == 100
+        assert [(a["attempt_number"], a["score"], a["passed"]) for a in body["attempts"]] == [(1, 50.0, 0), (2, 100.0, 1)]
+        assert all("answers" not in a and a["submitted_at"] for a in body["attempts"])
+
+
+def test_someone_elses_scores_are_not_visible_to_other_employees(client, scored_enrollment, make_test_employee, make_test_user, test_institution):
+    emp, emp_headers, enroll, course = scored_enrollment
+    token, _ = make_test_user(role="employee")
+    stranger = {"Authorization": f"Bearer {token}", "X-Institution-Id": str(test_institution["id"])}
+    assert client.get(f"/api/ld/enrollments/{enroll['id']}/quiz-attempts", headers=stranger).status_code == 403
+    assert client.get(f"/api/employees/{emp['employee_id']}/ld-courses", headers=stranger).status_code == 403
+    assert client.get("/api/ld/enrollments/99999999/quiz-attempts", headers=emp_headers).status_code == 404
+
+
+def test_a_manager_sees_their_own_teams_scores_only(client, hr_manager_auth, make_test_employee, test_institution, free_course):
+    boss = make_test_employee()
+    report = make_test_employee(reports_to=boss["employee_id"])
+    outsider = make_test_employee()
+    enrollments = {}
+    for who in (report, outsider):
+        enrollments[who["employee_id"]] = client.post("/api/ld/enrollments", headers=hr_manager_auth, json={
+            "employee_id": who["employee_id"], "course_id": free_course["id"]}).json()["id"]
+    res = client.post("/api/users", headers=hr_manager_auth, json={
+        "username": f"zzldmgr_{boss['employee_id'].lower()}", "full_name": "ZZ LD Manager", "password": "ZzPytest@123",
+        "role": "manager", "employee_id": boss["employee_id"]})
+    assert res.status_code == 201, res.text
+    try:
+        login = client.post("/api/auth/login", json={"username": f"zzldmgr_{boss['employee_id'].lower()}", "password": "ZzPytest@123",
+                                                     "institution_code": test_institution["code"]})
+        mgr = {"Authorization": f"Bearer {login.json()['access_token']}"}
+        assert client.get(f"/api/ld/enrollments/{enrollments[report['employee_id']]}/quiz-attempts", headers=mgr).status_code == 200
+        assert client.get(f"/api/ld/enrollments/{enrollments[outsider['employee_id']]}/quiz-attempts", headers=mgr).status_code == 403
+        assert client.get(f"/api/employees/{report['employee_id']}/ld-courses", headers=mgr).status_code == 200
+        assert client.get(f"/api/employees/{outsider['employee_id']}/ld-courses", headers=mgr).status_code == 403
+    finally:
+        client.delete(f"/api/users/{res.json()['id']}", headers=hr_manager_auth)
+
+
+def test_employee_learning_tab_lists_courses_with_scores(client, hr_manager_auth, scored_enrollment):
+    emp, emp_headers, enroll, course = scored_enrollment
+    for headers in (emp_headers, hr_manager_auth):
+        rows = client.get(f"/api/employees/{emp['employee_id']}/ld-courses", headers=headers).json()
+        row = next(r for r in rows if r["id"] == enroll["id"])
+        assert row["course_title"] == course["title"] and row["status"] == "Completed"
+        assert row["best_score"] == 100.0 and row["attempts_used"] == 2 and row["quiz_id"]

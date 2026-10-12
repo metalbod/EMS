@@ -262,6 +262,9 @@ function viewEmployee(id) {
   const canStatutory = canNotes || isSelf;
   document.getElementById('vt-statutory-btn').classList.toggle('hidden', !canStatutory);
   document.getElementById('vt-notes-btn').classList.toggle('hidden', !canNotes);
+  // Learning: courses and quiz scores — HR for anyone, a manager for their team, an employee for themselves
+  // (the server enforces the same rule on GET /api/employees/{id}/ld-courses).
+  document.getElementById('vt-learning-btn').classList.toggle('hidden', !(canNotes || isSelf || role==='manager'));
   // Employee document compliance tracking is HR-only end to end (matches
   // routers/employee_documents.py's require_roles("hr_manager","hr_admin")
   // — narrower than canWrite, which also allows superadmin).
@@ -442,6 +445,7 @@ async function switchViewTab(name) {
     if(btn) btn.classList.toggle('active',t===name);
   });
   if(name==='vt-notes') loadNotes();
+  if(name==='vt-learning') loadEmployeeLearning(viewingId);
   // employee-documents.js is lazy-loaded (Speed Audit item 7 — HR-only,
   // this tab's button is itself hidden for non-HR-staff roles already).
   if(name==='vt-documents') { await ensureModuleLoaded('employee-documents'); loadEmployeeDocuments(viewingId); }

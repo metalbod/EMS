@@ -14,7 +14,8 @@ const LD_COURSE_COLUMNS = [
 const ldEnrollList = createListState({
   sortKey: 'employee_name',
   pageSize: Number.MAX_SAFE_INTEGER,
-  sortValue: (en, key) => key === 'progress' ? (en.module_count > 0 ? en.modules_viewed / en.module_count : -1) : en[key],
+  sortValue: (en, key) => key === 'progress' ? (en.module_count > 0 ? en.modules_viewed / en.module_count : -1)
+    : key === 'score' ? (en.best_score ?? -1) : en[key],
 });
 const LD_ENROLL_COLUMNS = [
   { key:'employee_name', label:'Employee', sortKey:'employee_name' },
@@ -23,6 +24,7 @@ const LD_ENROLL_COLUMNS = [
   { key:'course_category', label:'Category', sortKey:'course_category' },
   { key:'status', label:'Status', sortKey:'status' },
   { key:'progress', label:'Progress', sortKey:'progress' },
+  { key:'score', label:'Quiz Score', sortKey:'score' },
   { key:'created_at', label:'Requested', sortKey:'created_at' },
   { key:'completed_at', label:'Completed', sortKey:'completed_at' },
 ];
@@ -191,10 +193,62 @@ async function submitLdEnroll(e) {
   }
 }
 
+// What a quiz-score cell says for an enrolment row (from GET /api/ld/enrollments or /api/employees/{id}/ld-courses).
+// Pure so it is unit-tested. tone: 'pass' | 'fail' | 'none'.
+function ldScoreSummary(row) {
+  if(!row.quiz_id) return {label:'—', detail:'', tone:'none', clickable:false};
+  const used=row.attempts_used||0, max=row.quiz_max_attempts;
+  if(!used) return {label:'Not attempted', detail:max?`${max} ${max===1?'attempt':'attempts'} allowed`:'', tone:'none', clickable:false};
+  if(row.passed_any) return {label:`${row.best_score}% · Passed`, detail:`${used} of ${max} ${max===1?'attempt':'attempts'} used`, tone:'pass', clickable:true};
+  const left=Math.max(0,(max||0)-used);
+  return {label:`${row.best_score}% · Not passed`, detail:left>0?`${left} ${left===1?'attempt':'attempts'} left`:'No attempts left', tone:'fail', clickable:true};
+}
+function ldScoreCellHtml(row) {
+  const s=ldScoreSummary(row);
+  if(s.tone==='none') return `<span class="text-slate-400 text-xs">${esc(s.label)}</span>`;
+  const colour=s.tone==='pass'?'text-green-700':'text-red-600';
+  return `<button onclick="openLdAttemptsModal(${row.id})" class="text-left hover:underline" title="See every attempt">
+    <span class="font-medium ${colour}">${esc(s.label)}</span><span class="block text-xs text-slate-400">${esc(s.detail)}</span></button>`;
+}
+
+async function openLdAttemptsModal(enrollmentId) {
+  const res=await api(`/api/ld/enrollments/${enrollmentId}/quiz-attempts`);
+  if(!res?.ok){ const d=await res?.json().catch(()=>null); alert(d?.detail?apiErrorText(d.detail):'Could not load the scores.'); return; }
+  const d=await res.json();
+  document.getElementById('ldAttemptsTitle').textContent=`${d.course_title} — quiz scores`;
+  document.getElementById('ldAttemptsSub').textContent=
+    `${displayName(d.employee_name,d.employee_preferred_name)||d.employee_id}${d.quiz?` · Pass mark ${d.quiz.pass_threshold}% · ${d.quiz.max_attempts} attempts allowed`:''}`;
+  document.getElementById('ldAttemptsEmpty').classList.toggle('hidden',d.attempts.length>0);
+  document.getElementById('ldAttemptsBody').innerHTML=d.attempts.map(a=>`<tr class="border-t border-slate-100">
+    <td class="px-4 py-2.5">${a.attempt_number}</td>
+    <td class="px-4 py-2.5 text-slate-600 whitespace-nowrap">${fmtDateTime(a.submitted_at)}</td>
+    <td class="px-4 py-2.5 font-medium">${a.score}%</td>
+    <td class="px-4 py-2.5"><span class="badge text-xs ${a.passed?'status-positive':'status-negative'}">${a.passed?'Passed':'Not passed'}</span></td>
+  </tr>`).join('');
+  document.getElementById('ldAttemptsNote').textContent=d.quiz?'The pass mark shown is the quiz\'s current one. If HR changed the pass mark or the questions since, earlier attempts were scored against the old ones.':'';
+  document.getElementById('ldAttemptsModal').classList.remove('hidden');
+}
+function closeLdAttemptsModal() { document.getElementById('ldAttemptsModal').classList.add('hidden'); }
+
+// Employee profile → Learning tab
+async function loadEmployeeLearning(employeeId) {
+  const body=document.getElementById('employeeLearningBody'), empty=document.getElementById('employeeLearningEmpty');
+  body.innerHTML='<tr><td colspan="4" class="text-slate-400 text-sm text-center py-6">Loading…</td></tr>';
+  const res=await api(`/api/employees/${encodeURIComponent(employeeId)}/ld-courses`);
+  const rows=res?.ok?await res.json():[];
+  empty.classList.toggle('hidden',rows.length>0);
+  body.innerHTML=rows.map(r=>`<tr class="border-t border-slate-100">
+    <td class="px-4 py-3"><p class="font-medium text-slate-800">${esc(r.course_title)}</p><p class="text-xs text-slate-400">${esc(LD_CATEGORY_LABELS[r.course_category]||r.course_category)}</p></td>
+    <td class="px-4 py-3 whitespace-nowrap"><span class="badge text-xs ${statusColor(LD_STATUS_COLORS,r.status)}">${esc(r.status)}</span></td>
+    <td class="px-4 py-3 text-slate-600 whitespace-nowrap">${r.completed_at?fmtDate(r.completed_at):'—'}</td>
+    <td class="px-4 py-3 whitespace-nowrap">${ldScoreCellHtml(r)}</td>
+  </tr>`).join('');
+}
+
 async function loadLdEnrollments() {
   const bodyEl=document.getElementById('ldEnrollTableBody');
   const emptyEl=document.getElementById('ldEnrollmentEmpty');
-  bodyEl.innerHTML='<tr><td colspan="9" class="text-slate-400 text-sm text-center py-8">Loading…</td></tr>';
+  bodyEl.innerHTML='<tr><td colspan="10" class="text-slate-400 text-sm text-center py-8">Loading…</td></tr>';
   let url='/api/ld/enrollments';
   if(ldEnrollFilter) url+=`?status=${encodeURIComponent(ldEnrollFilter)}`;
   const res=await api(url);
@@ -238,6 +292,7 @@ function renderLdEnrollTable() {
       <td class="px-4 py-3 whitespace-nowrap"><span class="badge text-xs ${statusColor(LD_CATEGORY_COLORS, en.course_category)}">${LD_CATEGORY_LABELS[en.course_category]||en.course_category}</span></td>
       <td class="px-4 py-3 whitespace-nowrap"><span class="badge ${statusColor(LD_STATUS_COLORS, en.status)}">${en.status}</span></td>
       <td class="px-4 py-3 text-slate-600 whitespace-nowrap">${en.module_count>0?`${en.modules_viewed}/${en.module_count} lessons`:'—'}</td>
+      <td class="px-4 py-3 whitespace-nowrap">${ldScoreCellHtml(en)}</td>
       <td class="px-4 py-3 text-slate-600 whitespace-nowrap">${fmtDate(en.created_at)}</td>
       <td class="px-4 py-3 text-slate-600 whitespace-nowrap">${en.completed_at?fmtDate(en.completed_at):'—'}</td>
       <td class="px-4 py-3 text-right whitespace-nowrap">

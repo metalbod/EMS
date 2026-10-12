@@ -8,7 +8,7 @@ let currentPage = null;
 let currentTab = 'personal';
 let openGroups = new Set(['empMgmt']);
 const TABS = ['personal','employment','statutory','dependents'];
-const VIEW_TABS = ['vt-personal','vt-employment','vt-locations','vt-statutory','vt-compensation','vt-notes','vt-documents','vt-consent'];
+const VIEW_TABS = ['vt-personal','vt-employment','vt-locations','vt-statutory','vt-compensation','vt-notes','vt-documents','vt-consent','vt-learning'];
 // Shared role-tier constants for the `.includes(role)` checks that gate nav
 // visibility and per-page "can manage" toggles across the app. Extracted
 // because the same role sets were previously hand-typed as inline array

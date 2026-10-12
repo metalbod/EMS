@@ -809,6 +809,20 @@ wrapper everywhere.
   "Incorrect" tag), and attempts left, with a **Retake quiz** button (reloads the quiz, so randomised
   order reshuffles) or "contact HR" when none are left. `ldQuizOutcome` is pure and unit-tested.
   Also fixed: the HR preview judged pass/fail against a hardcoded 80% instead of the quiz's own pass mark.
+- **Past quiz scores are visible** (`routers/ld.py`: `_ENROLLMENT_QUIZ_COLUMNS`, `_can_see_enrollment_scores`,
+  `GET /api/ld/enrollments/{id}/quiz-attempts`, `GET /api/employees/{id}/ld-courses`; `ldScoreSummary` /
+  `openLdAttemptsModal` / `loadEmployeeLearning` in `static/js/ld.js`, the **Learning** tab in the employee profile
+  modal, `ldAttemptsModal`): My Trainings (HR sees everyone, a manager their reporting chain, an employee their own)
+  has a **Quiz Score** column — best score + Passed / Not passed + attempts used or left, "Not attempted" before the
+  first try, "—" for a course with no quiz — and clicking it lists every attempt (number, date, score, result).
+  `GET /api/ld/enrollments` carries `attempts_used` / `best_score` / `passed_any` / `quiz_pass_threshold` /
+  `quiz_max_attempts`. The employee profile's Learning tab (HR, the employee themself, a manager for their team;
+  the server applies the same rule) lists that person's courses with the same score cell. Attempts are per
+  **enrolment** (a re-enrolment starts a new set). **Scores only — the answers given are never returned.** The pass
+  mark shown is the quiz's current one (attempts store only score + passed), and editing a quiz leaves old attempts
+  in place, scored against the old questions. Gotcha hit here: `z-[70]` isn't in the compiled tailwind.css, so a
+  modal using it had no z-index and the page's sticky table header painted over it — use `z-50` (later in the DOM
+  wins) or rebuild the CSS.
 
 ## Recurring gotchas (hit more than once this project's history)
 

@@ -186,14 +186,86 @@ def delete_ld_course(conn, course_id: int, user: dict = Depends(get_current_user
 # ---------------------------------------------------------------------------
 # Learning & Development — Enrollments
 # ---------------------------------------------------------------------------
+# Quiz outcome columns for an enrolment row (`en` = ld_enrollments, `qz` = LEFT JOINed ld_quizzes). attempts_used / best_score /
+# passed_any come from ld_quiz_attempts, which are recorded per enrolment (a re-enrolment starts a fresh set).
+_ENROLLMENT_QUIZ_COLUMNS = """
+               qz.pass_threshold AS quiz_pass_threshold, qz.max_attempts AS quiz_max_attempts,
+               (SELECT COUNT(*) FROM ld_quiz_attempts a WHERE a.enrollment_id = en.id) AS attempts_used,
+               (SELECT MAX(a.score) FROM ld_quiz_attempts a WHERE a.enrollment_id = en.id) AS best_score,
+               (SELECT MAX(a.passed) FROM ld_quiz_attempts a WHERE a.enrollment_id = en.id) AS passed_any"""
+
+
+def _can_see_enrollment_scores(conn, inst_id: int, user: dict, employee_id: str) -> bool:
+    """Whose quiz scores a caller may look at: their own; anyone's for HR (L&D managers); their reporting
+    chain for a manager."""
+    if user["role"] in LD_MANAGE_ROLES:
+        return True
+    if user.get("employee_id") and user["employee_id"] == employee_id:
+        return True
+    if user["role"] == "manager" and user.get("employee_id"):
+        frag, fp = subordinates_in_clause(inst_id, user["employee_id"])
+        return conn.execute(f"SELECT 1 WHERE ? IN {frag}", [employee_id, *fp]).fetchone() is not None
+    return False
+
+
+@router.get("/api/ld/enrollments/{enr_id}/quiz-attempts")
+@db_session
+def get_enrollment_quiz_attempts(conn, enr_id: int, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    """Every quiz attempt for one enrolment — number, date, score, passed — for the Score column and the
+    employee's L&D history. Scores only: the answers given are never returned."""
+    inst_id = need_inst(user)
+    enr = conn.execute(
+        "SELECT en.*, c.title AS course_title, e.full_name AS employee_name, e.preferred_name AS employee_preferred_name "
+        "FROM ld_enrollments en JOIN ld_courses c ON c.id=en.course_id "
+        "JOIN employees e ON e.employee_id=en.employee_id AND e.institution_id=en.institution_id "
+        "WHERE en.id=? AND en.institution_id=?", (enr_id, inst_id)).fetchone()
+    if not enr:
+        raise HTTPException(404, "Enrollment not found")
+    if not _can_see_enrollment_scores(conn, inst_id, user, enr["employee_id"]):
+        raise HTTPException(403, "Access denied")
+    quiz = conn.execute("SELECT id, title, pass_threshold, max_attempts FROM ld_quizzes WHERE course_id=? AND institution_id=?",
+                        (enr["course_id"], inst_id)).fetchone()
+    attempts = conn.execute(
+        "SELECT attempt_number, score, passed, submitted_at FROM ld_quiz_attempts WHERE enrollment_id=? AND institution_id=? "
+        "ORDER BY attempt_number", (enr_id, inst_id)).fetchall()
+    return {
+        "enrollment_id": enr_id, "course_title": enr["course_title"], "status": enr["status"],
+        "employee_id": enr["employee_id"], "employee_name": enr["employee_name"],
+        "employee_preferred_name": enr["employee_preferred_name"],
+        "quiz": dict(quiz) if quiz else None,
+        "attempts": [dict(a) for a in attempts],
+    }
+
+
+@router.get("/api/employees/{employee_id}/ld-courses")
+@db_session
+def get_employee_ld_courses(conn, employee_id: str, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
+    """One employee's courses with status and quiz scores — the Learning tab on their profile. HR for anyone, a
+    manager for their reporting chain, an employee for themselves."""
+    inst_id = need_inst(user)
+    if not _can_see_enrollment_scores(conn, inst_id, user, employee_id):
+        raise HTTPException(403, "Access denied")
+    rows = conn.execute(f"""
+        SELECT en.id, en.course_id, en.status, en.created_at, en.completed_at,
+               c.title AS course_title, c.category AS course_category,
+               qz.id AS quiz_id,{_ENROLLMENT_QUIZ_COLUMNS}
+        FROM ld_enrollments en
+        JOIN ld_courses c ON c.id = en.course_id
+        LEFT JOIN ld_quizzes qz ON qz.course_id = c.id
+        WHERE en.institution_id=? AND en.employee_id=? AND en.status <> 'Rejected'
+        ORDER BY en.created_at DESC
+    """, (inst_id, employee_id)).fetchall()
+    return [dict(r) for r in rows]
+
+
 @router.get("/api/ld/enrollments")
 @db_session
 def list_ld_enrollments(conn, status: Optional[str] = None, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
-    q = """
+    q = f"""
         SELECT en.*, c.title AS course_title, c.category AS course_category, c.cost AS course_cost,
                e.full_name AS employee_name, e.preferred_name AS employee_preferred_name, e.department, e.designation,
-               qz.id AS quiz_id,
+               qz.id AS quiz_id,{_ENROLLMENT_QUIZ_COLUMNS},
                (SELECT COUNT(*) FROM ld_course_modules m WHERE m.course_id = c.id) AS module_count,
                (SELECT COUNT(*) FROM ld_lesson_progress lp WHERE lp.enrollment_id = en.id) AS modules_viewed
         FROM ld_enrollments en
