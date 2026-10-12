@@ -684,6 +684,21 @@ wrapper everywhere.
   and the full endpoint/field map was readable without a login. If you need
   the live API surface, run locally or generate the schema from the code.
 
+- **Timesheets were filed Sun–Sat, so the Monday reminder nagged people who had
+  submitted** (found live in institution 4, 2026-10-12): My Timesheet's `tsFmt`
+  (`static/js/timesheet.js`) used `toISOString()`, which converts to UTC — in
+  Malaysia (UTC+8) Monday 00:00 became the Sunday, so every timesheet got
+  `period_start` = Sunday (21 of 22 live rows). `sweep_pending_timesheets` looks
+  for the Monday-start week, found nothing, and reminded. Fixed twice: `tsFmt` now
+  formats local date parts (new timesheets start on Monday), and the sweep treats
+  any Submitted/Approved timesheet that **overlaps** the Mon–Sun week as submitted,
+  so the existing Sunday-dated rows are covered without re-dating them (left as is:
+  approvals, overtime and payroll reference them). General rule: never build a
+  `YYYY-MM-DD` from a local `Date` with `toISOString()` in a UTC+ zone. Other
+  `toISOString().slice(0,10)` uses remain (`leave.js`, `attendance.js`,
+  `benefits.js`, `dashboard.js`, `resignation.js`) — "today"/date comparisons that
+  are wrong for the first 8 hours of the day in MYT; not yet audited.
+
 ## Recurring gotchas (hit more than once this project's history)
 
 - **RLS fails closed, not open.** A table gets RLS auto-enabled by an

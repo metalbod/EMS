@@ -77,7 +77,7 @@ import argparse
 import logging
 import os
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -231,10 +231,15 @@ def sweep_pending_timesheets(conn, inst_id, period_start, dry_run):
         if not is_member:
             continue
 
+        # Match on overlap with the Mon-Sun week, not an exact period_start: until the
+        # My Timesheet date bug was fixed (UTC conversion), timesheets were filed as
+        # Sun-Sat, so an exact match never found them and reminded people who had submitted.
+        week_end = (date.fromisoformat(period_start) + timedelta(days=6)).isoformat()
         already_submitted = conn.execute(
-            "SELECT 1 FROM timesheets WHERE institution_id=? AND employee_id=? AND period_start=? "
+            "SELECT 1 FROM timesheets WHERE institution_id=? AND employee_id=? "
+            "AND period_start<=? AND period_end>=? "
             "AND status IN ('Submitted','Approved') LIMIT 1",
-            (inst_id, emp["employee_id"], period_start)
+            (inst_id, emp["employee_id"], week_end, period_start)
         ).fetchone()
         if already_submitted:
             continue

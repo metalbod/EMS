@@ -158,6 +158,49 @@ def test_pending_timesheet_reminder_sent_and_not_duplicated(
     assert second_pass == 0, "the same missed period must never be re-reminded once already logged"
 
 
+def _last_monday():
+    today = datetime.now(timezone.utc).date()
+    return today - timedelta(days=today.weekday() + 7)
+
+
+@pytest.mark.parametrize("start_offset,status,expect_reminder", [
+    (0, "Submitted", False),    # Mon-Sun, as the app now files it
+    (-1, "Submitted", False),   # Sun-Sat, as it was filed before the UTC date fix (live data)
+    (-1, "Approved", False),
+    (-1, "Draft", True),        # filed but never submitted
+    (-8, "Submitted", True),    # Sun-Sat the week BEFORE: ends before last Monday, doesn't cover it
+    (7, "Submitted", True),     # the following week: starts after last Sunday
+])
+def test_timesheet_reminder_only_skips_a_submitted_timesheet_covering_the_week(
+    client, hr_manager_auth, make_test_employee, make_test_project, make_test_project_task,
+    configured_email_settings, reminder_conn, start_offset, status, expect_reminder
+):
+    emp_email = f"zzremindcover_{os.urandom(4).hex()}@zzpytest.example.com"
+    emp = make_test_employee(full_name="ZZ Reminder Coverage Employee", personal_email=emp_email)
+    project = make_test_project(name="ZZ Reminder Coverage Project", member_ids=[emp["employee_id"]])
+    make_test_project_task(project["id"])
+    inst_id = emp["institution_id"]
+
+    monday = _last_monday()
+    start = monday + timedelta(days=start_offset)
+    reminder_conn.execute(
+        "INSERT INTO timesheets (institution_id, employee_id, period_start, period_end, status) VALUES (?,?,?,?,?)",
+        (inst_id, emp["employee_id"], start.isoformat(), (start + timedelta(days=6)).isoformat(), status),
+    )
+    reminder_conn.commit()
+    try:
+        with patch("core.email_engine.smtplib.SMTP"):
+            send_reminders.sweep_pending_timesheets(reminder_conn, inst_id, monday.isoformat(), dry_run=False)
+        log = client.get("/api/notifications/email-log", headers=hr_manager_auth).json()
+        reminded = any(r["recipient_email"] == emp_email and r["category"] == "timesheet_reminder" for r in log)
+        assert reminded is expect_reminder
+    finally:
+        reminder_conn.execute(
+            "DELETE FROM timesheets WHERE institution_id=? AND employee_id=?", (inst_id, emp["employee_id"])
+        )
+        reminder_conn.commit()
+
+
 def test_employee_with_no_project_access_is_not_reminded(
     client, hr_manager_auth, make_test_employee, configured_email_settings, reminder_conn
 ):

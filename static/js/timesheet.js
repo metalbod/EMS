@@ -599,7 +599,11 @@ function tsGetMonday(d) {
   date.setHours(0,0,0,0);
   return date;
 }
-function tsFmt(d) { return d.toISOString().slice(0,10); }
+// Local date parts, not toISOString(): that converts to UTC, which in a UTC+ zone
+// (Malaysia) turns Monday 00:00 into Sunday and filed every week as Sun-Sat.
+function tsFmt(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
 
 async function loadTimesheetPage() {
   if(!tsCurrentWeekStart) tsCurrentWeekStart=tsGetMonday(new Date());
