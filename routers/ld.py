@@ -366,6 +366,18 @@ def get_course_quiz(conn, course_id: int, user: dict = Depends(get_current_user)
         if quiz["randomize_options"]:
             random.shuffle(opts)
         q["options"] = opts
+    # How many attempts this employee has already used on their current enrolment, so the quiz
+    # screen can say "attempt 2 of 3".
+    quiz["attempts_used"] = 0
+    if user["role"] == "employee" and user.get("employee_id"):
+        enr = conn.execute(
+            "SELECT id FROM ld_enrollments WHERE course_id=? AND institution_id=? AND status='In Progress' "
+            "AND employee_id=? ORDER BY created_at DESC LIMIT 1", (course_id, inst_id, user["employee_id"])
+        ).fetchone()
+        if enr:
+            quiz["attempts_used"] = conn.execute(
+                "SELECT COUNT(*) FROM ld_quiz_attempts WHERE quiz_id=? AND enrollment_id=?", (quiz["id"], enr["id"])
+            ).fetchone()[0]
     return quiz
 
 
@@ -472,6 +484,7 @@ def submit_quiz_attempt(conn, quiz_id: int, body: LDQuizAttemptIn, user: dict = 
     questions = conn.execute("SELECT * FROM ld_quiz_questions WHERE quiz_id=?", (quiz_id,)).fetchall()
     total = len(questions)
     correct = 0
+    incorrect_ids = []
     for q in questions:
         submitted = body.answers.get(str(q["id"]), [])
         if not isinstance(submitted, list):
@@ -482,8 +495,12 @@ def submit_quiz_attempt(conn, quiz_id: int, body: LDQuizAttemptIn, user: dict = 
         # picking every option would otherwise trivially "pass" multi-select questions.
         if submitted_ids == correct_ids:
             correct += 1
+        else:
+            incorrect_ids.append(q["id"])
     score = round((correct / total) * 100, 1) if total else 0
     passed = score >= quiz["pass_threshold"]
+    # the fewest correct answers that would have passed (score is rounded to 1 decimal, same as above)
+    required_correct = next((n for n in range(total + 1) if round((n / total) * 100, 1) >= quiz["pass_threshold"]), total) if total else 0
 
     conn.execute(
         "INSERT INTO ld_quiz_attempts (institution_id,quiz_id,enrollment_id,employee_id,attempt_number,score,passed,answers) "
@@ -503,7 +520,13 @@ def submit_quiz_attempt(conn, quiz_id: int, body: LDQuizAttemptIn, user: dict = 
         log_ld(conn, inst_id, enrollment["id"], enrollment["employee_id"], "Quiz Attempt Failed",
                f"Scored {score}% on '{quiz['title']}' (attempt {prior_attempts+1}, needed {quiz['pass_threshold']}%)", user)
     conn.commit()
-    return {"score": score, "passed": passed, "attempt_number": prior_attempts + 1, "max_attempts": quiz["max_attempts"]}
+    return {
+        "score": score, "passed": passed, "attempt_number": prior_attempts + 1, "max_attempts": quiz["max_attempts"],
+        "correct": correct, "total": total, "pass_threshold": quiz["pass_threshold"], "required_correct": required_correct,
+        "attempts_remaining": max(0, quiz["max_attempts"] - (prior_attempts + 1)),
+        # which questions were wrong (ids only — never the right answers)
+        "incorrect_question_ids": incorrect_ids,
+    }
 
 
 @router.get("/api/ld/quizzes/{quiz_id}/attempts")

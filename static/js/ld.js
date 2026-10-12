@@ -405,19 +405,37 @@ async function deleteLdQuiz() {
 // ---------------------------------------------------------------------------
 // Quiz Taking (Employee)
 // ---------------------------------------------------------------------------
+// What the employee is told after submitting: the score against the pass mark, whether they passed, and — if
+// not — exactly why they have to retake and how many tries are left. Pure so it is unit-tested.
+// `numberOf(questionId)` maps a question id to the number shown beside it.
+function ldQuizOutcome(r, numberOf) {
+  const scoreLine=`You scored ${r.score}% (${r.correct} of ${r.total} correct). The pass mark is ${r.pass_threshold}%.`;
+  if(r.passed) return {passed:true, headline:'Passed', lines:[scoreLine, 'This course is now marked complete.'], canRetake:false};
+  const wrong=(r.incorrect_question_ids||[]).map(id=>numberOf?numberOf(id):id).filter(n=>n!=null).sort((a,b)=>a-b);
+  const lines=[scoreLine, `You needed at least ${r.required_correct} of ${r.total} correct to pass, so you will need to retake the quiz.`];
+  if(wrong.length) lines.push(`Questions to review: ${wrong.join(', ')}.`);
+  lines.push(r.attempts_remaining>0
+    ? `Attempt ${r.attempt_number} of ${r.max_attempts} used — you have ${r.attempts_remaining} ${r.attempts_remaining===1?'attempt':'attempts'} left.`
+    : `You have used all ${r.max_attempts} ${r.max_attempts===1?'attempt':'attempts'}. Please contact HR to arrange another attempt.`);
+  return {passed:false, headline:'Not passed', lines, canRetake:r.attempts_remaining>0};
+}
+
 async function openLdTakeQuizModal(courseId, enrollmentId) {
   const res=await api(`/api/ld/courses/${courseId}/quiz`);
   if(!res?.ok){alert('Could not load quiz.');return;}
   const quiz=await res.json();
   document.getElementById('ldTakeQuizId').value=quiz.id;
   document.getElementById('ldTakeQuizEnrollId').value=enrollmentId;
+  document.getElementById('ldTakeQuizCourseId').value=courseId;
   document.getElementById('ldTakeQuizTitle').textContent=quiz.title;
+  document.getElementById('ldTakeQuizIntro').textContent=
+    `${quiz.questions.length} question${quiz.questions.length===1?'':'s'} · Pass mark ${quiz.pass_threshold}% · Attempt ${(quiz.attempts_used||0)+1} of ${quiz.max_attempts}`;
   document.getElementById('ldTakeQuizResult').classList.add('hidden');
   document.getElementById('ldTakeQuizSubmitBtn').classList.remove('hidden');
-  document.getElementById('ldTakeQuizQuestions').innerHTML=quiz.questions.map(q=>{
+  document.getElementById('ldTakeQuizQuestions').innerHTML=quiz.questions.map((q,i)=>{
     const isMulti=q.question_type==='multi';
-    return `<div data-qid="${q.id}" data-qtype="${isMulti?'multi':'single'}">
-      <p class="text-sm font-medium text-slate-800 mb-1">${esc(q.question_text)}</p>
+    return `<div data-qid="${q.id}" data-qnum="${i+1}" data-qtype="${isMulti?'multi':'single'}">
+      <p class="text-sm font-medium text-slate-800 mb-1"><span class="text-slate-500">${i+1}.</span> ${esc(q.question_text)}<span class="ldtq-flag hidden ml-2 text-xs font-medium text-red-600">Incorrect</span></p>
       ${isMulti?`<p class="text-xs text-slate-400 mb-2">Select all that apply</p>`:''}
       <div class="space-y-1.5">
         ${q.options.map(o=>`
@@ -439,34 +457,35 @@ const submitLdQuizAttempt = guardAsync(async function() {
   const quizId=document.getElementById('ldTakeQuizId').value;
   const questionEls=document.querySelectorAll('#ldTakeQuizQuestions > div');
   const answers={};
-  let unanswered=false;
+  const unansweredNums=[];
   questionEls.forEach(qEl=>{
     const qId=qEl.dataset.qid;
     const checked=[...qEl.querySelectorAll('input:checked')].map(el=>parseInt(el.value));
     if(checked.length) answers[qId]=checked;
-    else unanswered=true;
+    else unansweredNums.push(qEl.dataset.qnum);
   });
-  if(unanswered && !confirm('Some questions are unanswered. Submit anyway?')) return;
+  if(unansweredNums.length && !confirm(`Question${unansweredNums.length===1?'':'s'} ${unansweredNums.join(', ')} ${unansweredNums.length===1?'is':'are'} unanswered. Submit anyway?`)) return;
 
   const res=await api(`/api/ld/quizzes/${quizId}/attempts`,{method:'POST',body:JSON.stringify({answers})});
   if(!res?.ok){
     const d=await res.json();
-    alert(d.detail||'Failed to submit quiz');
+    alert(apiErrorText(d.detail,'Failed to submit quiz'));
     return;
   }
   const result=await res.json();
+  const numberOf=id=>{ const el=document.querySelector(`#ldTakeQuizQuestions > div[data-qid="${id}"]`); return el?parseInt(el.dataset.qnum):null; };
+  const outcome=ldQuizOutcome(result,numberOf);
   const resultEl=document.getElementById('ldTakeQuizResult');
   resultEl.classList.remove('hidden');
-  if(result.passed){
-    resultEl.className='mb-4 rounded-xl p-4 text-sm bg-green-50 border border-green-200 text-green-700';
-    resultEl.innerHTML=`<strong>Passed!</strong> Score: ${result.score}%. Course marked complete.`;
-    document.getElementById('ldTakeQuizSubmitBtn').classList.add('hidden');
-  } else {
-    const remaining=result.max_attempts - result.attempt_number;
-    resultEl.className='mb-4 rounded-xl p-4 text-sm bg-red-50 border border-red-200 text-red-700';
-    resultEl.innerHTML=`<strong>Not passed.</strong> Score: ${result.score}%. ${remaining>0?`${remaining} attempt(s) remaining.`:'No attempts remaining.'}`;
-    if(remaining<=0) document.getElementById('ldTakeQuizSubmitBtn').classList.add('hidden');
-  }
+  resultEl.className=`mb-4 rounded-xl p-4 text-sm ${outcome.passed?'bg-green-50 border border-green-200 text-green-700':'bg-red-50 border border-red-200 text-red-700'}`;
+  resultEl.innerHTML=`<p class="font-semibold text-base mb-1">${outcome.headline}</p>`+outcome.lines.map(l=>`<p class="mb-1">${esc(l)}</p>`).join('')+
+    (outcome.canRetake?`<button type="button" onclick="openLdTakeQuizModal(${parseInt(document.getElementById('ldTakeQuizCourseId').value)},${parseInt(document.getElementById('ldTakeQuizEnrollId').value)})" class="btn-primary text-sm mt-2">Retake quiz</button>`:'');
+  // The answers are now locked in; flag the wrong ones so they know where to look.
+  questionEls.forEach(qEl=>qEl.querySelectorAll('input').forEach(i=>i.disabled=true));
+  if(!outcome.passed) (result.incorrect_question_ids||[]).forEach(id=>
+    document.querySelector(`#ldTakeQuizQuestions > div[data-qid="${id}"] .ldtq-flag`)?.classList.remove('hidden'));
+  document.getElementById('ldTakeQuizSubmitBtn').classList.add('hidden');
+  resultEl.scrollIntoView({block:'nearest'});
   loadLdEnrollments();
 });
 
@@ -727,13 +746,14 @@ async function openLdPreviewQuizModal(courseId) {
   if(quiz.randomize_questions) questions=ldShuffle(questions);
 
   ldPreviewAnswerKey={};
-  document.getElementById('ldPreviewQuizQuestions').innerHTML=questions.map(q=>{
+  window.ldPreviewPassMark=quiz.pass_threshold;
+  document.getElementById('ldPreviewQuizQuestions').innerHTML=questions.map((q,i)=>{
     const isMulti=q.question_type==='multi';
     let opts=q.options;
     if(quiz.randomize_options) opts=ldShuffle(opts);
     ldPreviewAnswerKey[q.id]=opts.filter(o=>o.is_correct).map(o=>o.id);
     return `<div data-qid="${q.id}" data-qtype="${isMulti?'multi':'single'}" id="ldpq-${q.id}">
-      <p class="text-sm font-medium text-slate-800 mb-1">${esc(q.question_text)}</p>
+      <p class="text-sm font-medium text-slate-800 mb-1"><span class="text-slate-500">${i+1}.</span> ${esc(q.question_text)}</p>
       ${isMulti?`<p class="text-xs text-slate-400 mb-2">Select all that apply</p>`:''}
       <div class="space-y-1.5 ldpq-options">
         ${opts.map(o=>`
@@ -772,11 +792,12 @@ function submitLdQuizPreview() {
     qEl.querySelectorAll('input').forEach(inp=>inp.disabled=true);
   });
   const total=questionEls.length;
-  const score=total?Math.round((correctCount/total)*100):0;
+  const score=total?Math.round((correctCount/total)*1000)/10:0;
+  const passMark=window.ldPreviewPassMark??80;
   const resultEl=document.getElementById('ldPreviewQuizResult');
   resultEl.classList.remove('hidden');
-  resultEl.className=`mb-4 rounded-xl p-4 text-sm ${score>=80?'bg-green-50 border border-green-200 text-green-700':'bg-amber-50 border border-amber-200 text-amber-700'}`;
-  resultEl.innerHTML=`<strong>Preview result:</strong> ${correctCount}/${total} correct (${score}%). This was not recorded — correct answers are highlighted in green, wrong picks in red.`;
+  resultEl.className=`mb-4 rounded-xl p-4 text-sm ${score>=passMark?'bg-green-50 border border-green-200 text-green-700':'bg-amber-50 border border-amber-200 text-amber-700'}`;
+  resultEl.innerHTML=`<strong>Preview result:</strong> ${correctCount}/${total} correct (${score}%) — pass mark ${passMark}%, so this would ${score>=passMark?'pass':'not pass'}. This was not recorded — correct answers are highlighted in green, wrong picks in red.`;
   document.getElementById('ldPreviewQuizSubmitBtn').classList.add('hidden');
   document.getElementById('ldPreviewQuizRetryBtn').classList.remove('hidden');
 }

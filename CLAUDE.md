@@ -799,6 +799,17 @@ wrapper everywhere.
   out on 401). `policy_acknowledgements.method` is `'password'`; NULL = an earlier tick-box
   acknowledgement (CSV shows "Tick box"). It is a recorded confirmation, not a certified e-signature;
   anything contractual needs a real e-signature service (not built).
+- **Quiz screens show numbering and a proper result** (`ld.js`'s `openLdTakeQuizModal` / `ldQuizOutcome` /
+  `submitLdQuizAttempt`, `routers/ld.py`'s `submit_quiz_attempt` and `get_course_quiz`): questions are
+  numbered "1." "2." … in the order shown (also in the HR preview); the take screen opens with
+  "N questions · Pass mark X% · Attempt k of M" (`attempts_used` on `GET .../quiz`); after submitting, the
+  employee sees the score, "(c of t correct)", the pass mark, Passed / Not passed, and for a fail why
+  (needed at least `required_correct` of `total`), which questions to review (the numbers they saw —
+  `incorrect_question_ids` are ids only, **never the correct answers**; each wrong question also gets an
+  "Incorrect" tag), and attempts left, with a **Retake quiz** button (reloads the quiz, so randomised
+  order reshuffles) or "contact HR" when none are left. `ldQuizOutcome` is pure and unit-tested.
+  Also fixed: the HR preview judged pass/fail against a hardcoded 80% instead of the quiz's own pass mark.
+
 ## Recurring gotchas (hit more than once this project's history)
 
 - **RLS fails closed, not open.** A table gets RLS auto-enabled by an

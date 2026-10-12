@@ -474,3 +474,47 @@ def test_mark_module_viewed_denied_for_other_employee(client, hr_manager_auth, e
     _, emp_headers = employee_with_user
     res = client.post(f"/api/ld/enrollments/{enroll['id']}/modules/{module_id}/viewed", headers=emp_headers)
     assert res.status_code == 403
+
+
+def _two_question_quiz(**overrides):
+    q = lambda text: {"question_text": text, "question_type": "single",
+                      "options": [{"text": "right", "is_correct": True}, {"text": "wrong", "is_correct": False}]}
+    payload = {"title": "ZZ Score Quiz", "pass_threshold": 100, "max_attempts": 2, "questions": [q("Q one"), q("Q two")]}
+    payload.update(overrides)
+    return payload
+
+
+def test_quiz_result_explains_the_score_the_pass_mark_and_what_to_retake(client, hr_manager_auth, employee_with_user, free_course):
+    emp, emp_headers = employee_with_user
+    quiz = client.put(f"/api/ld/courses/{free_course['id']}/quiz", headers=hr_manager_auth, json=_two_question_quiz()).json()
+    client.post("/api/ld/enrollments", headers=emp_headers, json={"employee_id": emp["employee_id"], "course_id": free_course["id"]})
+    first, second = quiz["questions"]
+    right = lambda q: next(o["id"] for o in q["options"] if o["is_correct"])
+    wrong = lambda q: next(o["id"] for o in q["options"] if not o["is_correct"])
+
+    taking = client.get(f"/api/ld/courses/{free_course['id']}/quiz", headers=emp_headers).json()
+    assert taking["pass_threshold"] == 100 and taking["max_attempts"] == 2 and taking["attempts_used"] == 0
+
+    res = client.post(f"/api/ld/quizzes/{quiz['id']}/attempts", headers=emp_headers,
+                      json={"answers": {str(first["id"]): [right(first)], str(second["id"]): [wrong(second)]}}).json()
+    assert res["passed"] is False and res["score"] == 50.0
+    assert (res["correct"], res["total"]) == (1, 2)
+    assert res["pass_threshold"] == 100 and res["required_correct"] == 2
+    assert res["attempt_number"] == 1 and res["attempts_remaining"] == 1
+    assert res["incorrect_question_ids"] == [second["id"]]     # which ones, never the right answers
+    assert client.get(f"/api/ld/courses/{free_course['id']}/quiz", headers=emp_headers).json()["attempts_used"] == 1
+
+    again = client.post(f"/api/ld/quizzes/{quiz['id']}/attempts", headers=emp_headers,
+                        json={"answers": {str(first["id"]): [right(first)], str(second["id"]): [right(second)]}}).json()
+    assert again["passed"] is True and again["incorrect_question_ids"] == [] and again["attempts_remaining"] == 0
+
+
+def test_required_correct_follows_the_pass_mark(client, hr_manager_auth, employee_with_user, free_course):
+    emp, emp_headers = employee_with_user
+    quiz = client.put(f"/api/ld/courses/{free_course['id']}/quiz", headers=hr_manager_auth,
+                      json=_two_question_quiz(pass_threshold=50)).json()
+    client.post("/api/ld/enrollments", headers=emp_headers, json={"employee_id": emp["employee_id"], "course_id": free_course["id"]})
+    q0 = quiz["questions"][0]
+    wrong = next(o["id"] for o in q0["options"] if not o["is_correct"])
+    res = client.post(f"/api/ld/quizzes/{quiz['id']}/attempts", headers=emp_headers, json={"answers": {str(q0["id"]): [wrong]}}).json()
+    assert res["passed"] is False and res["required_correct"] == 1   # 1 of 2 = 50% would have passed
