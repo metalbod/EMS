@@ -1191,3 +1191,63 @@ def test_dashboard_stats_reflects_created_data(client, hr_manager_auth):
     assert after["total_requisitions"] == before_total + 1
     assert after["req_by_status"].get("Draft", 0) >= 1
     assert "cand_by_stage" in after
+
+
+def _stats(client, hr_manager_auth):
+    return client.get("/api/recruitment/dashboard-stats", headers=hr_manager_auth).json()
+
+
+def _approved_req(client, hr_manager_auth):
+    req = client.post("/api/recruitment/requisitions", headers=hr_manager_auth,
+                       json={"title": _unique_title(), "department": "Sales"}).json()
+    client.patch(f"/api/recruitment/requisitions/{req['id']}/submit", headers=hr_manager_auth)
+    res = client.patch(f"/api/recruitment/requisitions/{req['id']}/approve", headers=hr_manager_auth,
+                       json={"action": "approve", "comments": "ZZ"})
+    assert res.json()["status"] == "Approved", res.text
+    return req
+
+
+def test_dashboard_cards_count_only_active_items_on_open_requisitions(client, hr_manager_auth):
+    """Candidates / upcoming interviews / pending offers drop out when their requisition is
+    closed, when the candidate is finished, or when there is no requisition at all."""
+    import uuid
+    from datetime import date, timedelta
+    tag = uuid.uuid4().hex[:8]
+    soon = (date.today() + timedelta(days=2)).isoformat()
+    before = _stats(client, hr_manager_auth)
+
+    req = _approved_req(client, hr_manager_auth)
+    cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth, json={
+        "full_name": "ZZ Active Card Cand", "email": f"zzpytest.activecard.{tag}@example.com",
+        "requisition_id": req["id"]}).json()
+    assert client.post("/api/recruitment/interviews", headers=hr_manager_auth, json={
+        "candidate_id": cand["id"], "requisition_id": req["id"], "interview_type": "Video",
+        "scheduled_date": soon, "scheduled_time": "10:00", "interviewers": "ZZ"}).status_code == 201
+    offer = client.post("/api/recruitment/offers", headers=hr_manager_auth, json={
+        "candidate_id": cand["id"], "requisition_id": req["id"], "salary_offered": 5000.0}).json()
+    assert client.patch(f"/api/recruitment/offers/{offer['id']}/status", headers=hr_manager_auth,
+                        json={"status": "Sent"}).status_code == 200
+
+    # a candidate with no requisition never counts toward the cards
+    client.post("/api/recruitment/candidates", headers=hr_manager_auth, json={
+        "full_name": "ZZ Active Card NoReq", "email": f"zzpytest.activecard.noreq.{tag}@example.com"})
+
+    live = _stats(client, hr_manager_auth)
+    assert live["active_candidates"] == before["active_candidates"] + 1
+    assert live["upcoming_interviews"] == before["upcoming_interviews"] + 1
+    assert live["offers_pending"] == before["offers_pending"] + 1
+
+    # the candidate being rejected removes them from "active candidates" but not the others
+    client.patch(f"/api/recruitment/candidates/{cand['id']}/stage", headers=hr_manager_auth,
+                 json={"stage": "Rejected by Company"})
+    after_reject = _stats(client, hr_manager_auth)
+    assert after_reject["active_candidates"] == before["active_candidates"]
+
+    # closing the requisition removes the interview and offer too
+    assert client.patch(f"/api/recruitment/requisitions/{req['id']}/close", headers=hr_manager_auth).status_code == 200
+    closed = _stats(client, hr_manager_auth)
+    assert closed["active_candidates"] == before["active_candidates"]
+    assert closed["upcoming_interviews"] == before["upcoming_interviews"]
+    assert closed["offers_pending"] == before["offers_pending"]
+    # the pipeline chart still counts everything
+    assert closed["total_candidates"] >= before["total_candidates"] + 2

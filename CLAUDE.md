@@ -718,6 +718,16 @@ wrapper everywhere.
   on prod that left 2 July rows for a person to decide (ts 4 inst 2 EMP0001, a Draft beside
   an Approved Monday row; ts 5 inst 4 EMP0002, Approved, 1h logged on Sun 5 Jul). Downgrade
   is a no-op. The `start_timesheet` legacy fallback stays as a safety net.
+- **Home → Recruitment KPI cards count active items only** (`recruitment_dashboard_stats`,
+  `loadRecruitmentDash`): "Active Candidates" = applications in New/Screening/Interview/
+  Pending Checks/Offer on an **Approved** requisition (Hired, rejected, withdrawn,
+  no-requisition and closed/filled/draft/pending-requisition applications are left out);
+  "Upcoming Interviews" (next 7 days, Scheduled) and its "this month" line, and "Offers
+  Pending" (status Sent) are likewise limited to Approved requisitions, so closing a
+  requisition drops its items at once. Decided with the owner (2026-10-12). The pipeline
+  and requisitions-by-status charts and the "Open Requisitions" card (Approved + Draft)
+  are unchanged and still count everything; `total_candidates` stays in the response for
+  the pipeline chart, `active_candidates` is the new field the card reads.
 
 ## Recurring gotchas (hit more than once this project's history)
 

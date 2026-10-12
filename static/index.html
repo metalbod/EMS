@@ -809,17 +809,17 @@
                   <p id="rStatOpenReq" class="kpi-number mt-1">0</p>
                   <p id="rStatPendingApproval" class="kpi-tile-delta"></p>
                 </div>
-                <div class="kpi-tile cursor-pointer" onclick="showPage('candidates')">
-                  <p class="kpi-tile-label">Total Candidates</p>
+                <div class="kpi-tile cursor-pointer" onclick="showPage('candidates')" title="In-progress candidates (New to Offer) on Approved requisitions. Hired, rejected, withdrawn and closed-requisition candidates are not counted.">
+                  <p class="kpi-tile-label">Active Candidates</p>
                   <p id="rStatCands" class="kpi-number mt-1">0</p>
                   <p id="rStatHiredMonth" class="kpi-tile-delta"></p>
                 </div>
-                <div class="kpi-tile cursor-pointer" onclick="showPage('interviews')">
+                <div class="kpi-tile cursor-pointer" onclick="showPage('interviews')" title="Scheduled interviews in the next 7 days on Approved requisitions.">
                   <p class="kpi-tile-label">Upcoming Interviews</p>
                   <p id="rStatUpcoming" class="kpi-number mt-1">0</p>
                   <p id="rStatIntMonth" class="kpi-tile-delta"></p>
                 </div>
-                <div class="kpi-tile cursor-pointer" onclick="showPage('offers')">
+                <div class="kpi-tile cursor-pointer" onclick="showPage('offers')" title="Sent offers awaiting a response, on Approved requisitions.">
                   <p class="kpi-tile-label">Offers Pending</p>
                   <p id="rStatOffers" class="kpi-number mt-1">0</p>
                   <p class="kpi-tile-delta">awaiting response</p>

@@ -1948,16 +1948,31 @@ def recruitment_dashboard_stats(conn, user: dict = Depends(get_current_user)) ->
     ).fetchall()
     cand_by_stage = {r["stage"]: r["cnt"] for r in cand_rows}
 
-    # Interviews this month
-    interviews_this_month = conn.execute(
-        "SELECT COUNT(*) FROM interviews WHERE institution_id=? AND LEFT(scheduled_date,7)=to_char(NOW(),'YYYY-MM')",
-        (iid,)
+    # The three KPI cards (candidates / interviews / offers) count ACTIVE items only: ones
+    # on an Approved requisition (hiring now; Closed/Filled/Rejected/Draft/Pending are out).
+    # Items with no requisition (general interest) are left out too. The pipeline and
+    # by-status charts above keep counting everything.
+    open_req = "requisition_id IN (SELECT id FROM job_requisitions WHERE institution_id=? AND status='Approved')"
+
+    # Candidates still in progress on an open requisition (not Hired / Rejected / Withdrawn)
+    active_candidates = conn.execute(
+        f"SELECT COUNT(*) FROM candidate_requisitions WHERE institution_id=? AND {open_req} "
+        "AND stage IN ('New','Screening','Interview','Pending Checks','Offer')",
+        (iid, iid)
     ).fetchone()[0]
 
-    # Upcoming interviews (next 7 days)
+    # Interviews this month (on open requisitions)
+    interviews_this_month = conn.execute(
+        f"SELECT COUNT(*) FROM interviews WHERE institution_id=? AND {open_req} "
+        "AND LEFT(scheduled_date,7)=to_char(NOW(),'YYYY-MM')",
+        (iid, iid)
+    ).fetchone()[0]
+
+    # Upcoming interviews (next 7 days, on open requisitions)
     upcoming = conn.execute(
-        "SELECT COUNT(*) FROM interviews WHERE institution_id=? AND status='Scheduled' AND scheduled_date BETWEEN to_char(NOW(),'YYYY-MM-DD') AND to_char(NOW() + interval '7 days','YYYY-MM-DD')",
-        (iid,)
+        f"SELECT COUNT(*) FROM interviews WHERE institution_id=? AND {open_req} AND status='Scheduled' "
+        "AND scheduled_date BETWEEN to_char(NOW(),'YYYY-MM-DD') AND to_char(NOW() + interval '7 days','YYYY-MM-DD')",
+        (iid, iid)
     ).fetchone()[0]
 
     # Pending approvals
@@ -1967,7 +1982,7 @@ def recruitment_dashboard_stats(conn, user: dict = Depends(get_current_user)) ->
 
     # Offers pending response
     offers_pending = conn.execute(
-        "SELECT COUNT(*) FROM offers WHERE institution_id=? AND status='Sent'", (iid,)
+        f"SELECT COUNT(*) FROM offers WHERE institution_id=? AND status='Sent' AND {open_req}", (iid, iid)
     ).fetchone()[0]
 
     # Hired this month
@@ -1997,5 +2012,6 @@ def recruitment_dashboard_stats(conn, user: dict = Depends(get_current_user)) ->
         "hired_this_month": hired_this_month,
         "total_requisitions": sum(req_by_status.values()),
         "total_candidates": sum(cand_by_stage.values()),
+        "active_candidates": active_candidates,
         "avg_time_in_stage": avg_time_in_stage,
     }

@@ -270,7 +270,7 @@ function loadRecruitmentDash() {
     const s = await res.json();
     document.getElementById('rStatOpenReq').textContent = (s.req_by_status['Approved'] || 0) + (s.req_by_status['Draft'] || 0);
     document.getElementById('rStatPendingApproval').textContent = s.pending_approvals ? `${s.pending_approvals} pending approval` : '';
-    document.getElementById('rStatCands').textContent = s.total_candidates;
+    document.getElementById('rStatCands').textContent = s.active_candidates ?? s.total_candidates;
     document.getElementById('rStatHiredMonth').textContent = s.hired_this_month ? `${s.hired_this_month} hired this month` : '';
     document.getElementById('rStatUpcoming').textContent = s.upcoming_interviews;
     document.getElementById('rStatIntMonth').textContent = `${s.interviews_this_month} this month`;
