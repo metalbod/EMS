@@ -310,3 +310,91 @@ def test_consent_update_requires_hr_manager_role(client, make_test_user, test_in
 def test_consent_update_404_unknown_employee(client, hr_manager_auth):
     res = client.patch("/api/employees/NONEXISTENT/consent", headers=hr_manager_auth, json={"consent_recognition": True})
     assert res.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Single employee lookup, the `birthday` flag, and date-of-birth consent
+# ---------------------------------------------------------------------------
+from zoneinfo import ZoneInfo
+from routers.fr_integration import is_birthday
+
+
+def _today_in_company_tz(client, hr_manager_auth):
+    tz = client.get("/api/notifications/general-settings", headers=hr_manager_auth).json()["timezone"] or "UTC"
+    return datetime.now(ZoneInfo(tz)).date()
+
+
+def _grant(client, hr_manager_auth, emp, **consents):
+    res = client.patch(f"/api/employees/{emp['employee_id']}/consent", headers=hr_manager_auth, json=consents)
+    assert res.status_code == 200, res.text
+
+
+def test_is_birthday_matches_month_and_day_and_handles_29_february():
+    assert is_birthday("1992-10-12", "2026-10-12") is True
+    assert is_birthday("1992-10-12", "2026-10-13") is False
+    assert is_birthday("1992-10-12", "2026-11-12") is False
+    assert is_birthday("1992-02-29", "2027-02-28") is True      # not a leap year: celebrated on 28 Feb
+    assert is_birthday("1992-02-29", "2027-03-01") is False
+    assert is_birthday("1992-02-29", "2028-02-29") is True      # leap year: the real day
+    assert is_birthday("1992-02-29", "2028-02-28") is False
+    assert is_birthday("1992-02-29", "2100-02-28") is True      # 2100 is not a leap year
+    assert is_birthday(None, "2026-10-12") is False
+    assert is_birthday("not a date", "2026-10-12") is False
+
+
+def test_single_employee_lookup_returns_name_consent_and_birthday(client, fr_device, make_test_employee):
+    emp = make_test_employee(full_name="ZZ FR Single Employee", preferred_name="Zee")
+    res = client.get(f"/api/integrations/fr/employees/{emp['employee_id']}", headers={"X-Device-Api-Key": fr_device})
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["ems_employee_id"] == emp["employee_id"]
+    assert body["full_name"] == "ZZ FR Single Employee" and body["display_name"] == "Zee"
+    assert body["consent_display_name"] is False and body["consent_dob"] is False
+    assert body["birthday"] is False and body["status"] == "active"
+
+
+def test_single_employee_lookup_needs_a_key_and_hides_unknown_and_other_companies(client, fr_device, superadmin_headers):
+    assert client.get("/api/integrations/fr/employees/EMP-1").status_code == 401
+    assert client.get("/api/integrations/fr/employees/ZZ-NO-SUCH", headers={"X-Device-Api-Key": fr_device}).status_code == 404
+    other = _fresh_institution_employee(client, superadmin_headers)
+    res = client.get(f"/api/integrations/fr/employees/{other['employee_id']}", headers={"X-Device-Api-Key": fr_device})
+    # Employee IDs are numbered per company, so the same ID may exist in OUR company (a 200 for a different
+    # person) — what must never happen is returning the other company's person.
+    assert res.status_code == 404 or res.json()["full_name"] != "ZZ Other Institution Employee"
+
+
+def test_date_of_birth_is_withheld_unless_the_employee_consented(client, fr_device, hr_manager_auth, make_test_employee):
+    emp = make_test_employee(full_name="ZZ FR DOB Employee", date_of_birth="1990-03-04")
+    headers = {"X-Device-Api-Key": fr_device}
+    one = client.get(f"/api/integrations/fr/employees/{emp['employee_id']}", headers=headers).json()
+    assert one["date_of_birth"] is None
+    roster = next(r for r in client.get("/api/integrations/fr/employees", headers=headers).json()
+                  if r["ems_employee_id"] == emp["employee_id"])
+    assert roster["date_of_birth"] is None
+
+    _grant(client, hr_manager_auth, emp, consent_dob=True)
+    one = client.get(f"/api/integrations/fr/employees/{emp['employee_id']}", headers=headers).json()
+    assert one["date_of_birth"] == "1990-03-04"
+    roster = next(r for r in client.get("/api/integrations/fr/employees", headers=headers).json()
+                  if r["ems_employee_id"] == emp["employee_id"])
+    assert roster["date_of_birth"] == "1990-03-04"
+
+
+def test_birthday_flag_needs_consent_and_todays_date_in_the_company_timezone(client, fr_device, hr_manager_auth, make_test_employee):
+    today = _today_in_company_tz(client, hr_manager_auth)
+    birthday = make_test_employee(full_name="ZZ FR Birthday Today", date_of_birth=today.replace(year=1990, day=today.day).isoformat()
+                                  if not (today.month == 2 and today.day == 29) else "1992-02-29")
+    other_day = make_test_employee(full_name="ZZ FR Not Today", date_of_birth="1990-01-01" if (today.month, today.day) != (1, 1) else "1990-01-02")
+    headers = {"X-Device-Api-Key": fr_device}
+    get = lambda e: client.get(f"/api/integrations/fr/employees/{e['employee_id']}", headers=headers).json()
+
+    assert get(birthday)["birthday"] is False                    # it is their birthday, but no consent
+    _grant(client, hr_manager_auth, birthday, consent_dob=True)
+    _grant(client, hr_manager_auth, other_day, consent_dob=True)
+    assert get(birthday)["birthday"] is True
+    assert get(other_day)["birthday"] is False
+    roster = {r["ems_employee_id"]: r for r in client.get("/api/integrations/fr/employees", headers=headers).json()}
+    assert roster[birthday["employee_id"]]["birthday"] is True
+    assert roster[other_day["employee_id"]]["birthday"] is False
+    _grant(client, hr_manager_auth, birthday, consent_dob=False)
+    assert get(birthday)["birthday"] is False and get(birthday)["date_of_birth"] is None

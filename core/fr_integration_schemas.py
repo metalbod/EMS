@@ -22,6 +22,9 @@ class FrEmployeeOut(BaseModel):
     consent_recognition: bool
     consent_display_name: bool
     consent_dob: bool
+    # True only when it is the employee's birthday today (in the company's timezone) AND they consented
+    # (consent_dob). Always False otherwise — including when no date of birth is on file.
+    birthday: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 

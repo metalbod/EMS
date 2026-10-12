@@ -39,11 +39,12 @@ shape exactly):
 | `department` | string \| null | `employees.department` |
 | `email` | string \| null | `employees.work_email` or `personal_email` if unset |
 | `start_date` | `YYYY-MM-DD` | `employees.start_date` |
-| `date_of_birth` | `YYYY-MM-DD` \| null | `employees.date_of_birth` |
+| `date_of_birth` | `YYYY-MM-DD` \| null | `employees.date_of_birth` — **null unless `consent_dob` is true** (withheld server-side since 2026-10-13) |
 | `status` | `"active"` \| `"inactive"` | lowercased from `Active`/`Inactive` |
 | `consent_recognition` | bool | new column, **default false** |
 | `consent_display_name` | bool | new column, **default false** |
 | `consent_dob` | bool | new column, **default false** |
+| `birthday` | bool | **true only if it is the employee's birthday today** (month/day of `date_of_birth`, in the company's own timezone; 29 Feb counts as 28 Feb in a non-leap year) **and `consent_dob` is true**; otherwise false |
 
 **Consent defaults to false for every employee, existing and new.** FR
 will see `consent_recognition: false` for the entire roster until HR
@@ -62,6 +63,18 @@ returned in an **`X-Next-Cursor` response header**, not a JSON envelope —
 the body stays a pure array either way. Omitting `page_size` returns the
 full matching roster in one call, which the original contract says is
 acceptable.
+
+## 1b. Single employee
+
+```
+GET {base}/employees/{ems_employee_id}
+```
+
+Same shape as one roster row (all fields above, including `birthday`). 404 `{"detail": "Employee not found"}`
+for an unknown ID — and for an ID that only exists in another company (the key's company is the only one
+searched). An **inactive** employee is still returned, with `status: "inactive"`. Built for an external system
+that wants "name + consent + is it their birthday" for one ID without pulling the roster; the external-system
+guide (a published Artifact, "Employee Lookup Guide") describes it.
 
 ## 2. Push attendance
 
@@ -137,8 +150,8 @@ next cycle rather than treat as permanently bad).
 - **`GET /health`** — already exists, unauthenticated, at the app root
   (`/health`, not under `/api/integrations/fr`) — checks DB connectivity.
   No new work needed.
-- **`GET /employees/{ems_employee_id}`** (single fetch) — not built. Low
-  cost to add if FR wants it for debugging; ask if needed.
+- ~~**`GET /employees/{ems_employee_id}`** (single fetch)~~ — built
+  (2026-10-13), see below.
 - **Change webhook (EMS → FR)** — not built. Would need an outbound HTTP
   call from EMS on hire/consent-change, which nothing in this codebase
   does today (no existing outbound-webhook infrastructure) — real, if

@@ -70,14 +70,8 @@ def assign_current_version(conn, inst_id: int, employee_id: str, course_id: int)
 
 def today_for_institution(conn, inst_id: int) -> str:
     """Today's date (YYYY-MM-DD) in the institution's own timezone — what 'overdue' is judged against."""
-    from datetime import datetime
-    from zoneinfo import ZoneInfo
-    row = conn.execute("SELECT timezone FROM institutions WHERE id=?", (inst_id,)).fetchone()
-    try:
-        tz = ZoneInfo((row["timezone"] if row else None) or "UTC")
-    except Exception:
-        tz = ZoneInfo("UTC")
-    return datetime.now(tz).date().isoformat()
+    from core.institution_time import institution_today
+    return institution_today(conn, inst_id)
 
 
 def ack_status(ack, due_date: Optional[str], today: str) -> str:

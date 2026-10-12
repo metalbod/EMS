@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Response
 
 from core.db_session import db_session
+from core.institution_time import institution_today
 from core.fr_integration_schemas import (
     FrEmployeeOut, FrAttendanceRow, FrAttendancePushResult,
 )
@@ -37,7 +38,20 @@ def _parse_iso(ts: str) -> datetime:
     return datetime.fromisoformat(ts.replace("Z", "+00:00")).replace(tzinfo=None)
 
 
-def _to_fr_employee(row) -> Dict[str, Any]:
+def is_birthday(dob: Optional[str], today: str) -> bool:
+    """Whether `dob` (YYYY-MM-DD) falls on `today` (YYYY-MM-DD) by month and day. A 29 February birthday is
+    celebrated on 28 February in years that are not leap years."""
+    try:
+        _, m, d = (int(x) for x in (dob or "")[:10].split("-"))
+        ty, tm, td = (int(x) for x in today[:10].split("-"))
+    except ValueError:
+        return False
+    if (m, d) == (2, 29) and not (ty % 4 == 0 and (ty % 100 != 0 or ty % 400 == 0)):
+        d = 28
+    return (m, d) == (tm, td)
+
+
+def _to_fr_employee(row, today: str) -> Dict[str, Any]:
     """Maps an `employees` row onto FR's own field names/casing — a
     deliberately narrow, stable external contract, not just EmployeeOut
     reused. display_name falls back to full_name, matching the
@@ -51,11 +65,14 @@ def _to_fr_employee(row) -> Dict[str, Any]:
         "department": d.get("department"),
         "email": d.get("work_email") or d.get("personal_email"),
         "start_date": d["start_date"],
-        "date_of_birth": d.get("date_of_birth"),
+        # The date of birth is only released when the employee consented to the birthday greeting; without
+        # consent there is no reason for the external system to hold it.
+        "date_of_birth": d.get("date_of_birth") if d.get("consent_dob") else None,
         "status": "active" if d["status"] == "Active" else "inactive",
         "consent_recognition": bool(d.get("consent_recognition")),
         "consent_display_name": bool(d.get("consent_display_name")),
         "consent_dob": bool(d.get("consent_dob")),
+        "birthday": bool(d.get("consent_dob")) and is_birthday(d.get("date_of_birth"), today),
     }
 
 
@@ -103,7 +120,22 @@ def fr_list_employees(
     if limit and len(rows) > limit:
         rows = rows[:limit]
         response.headers["X-Next-Cursor"] = str(rows[-1]["id"])
-    return [_to_fr_employee(r) for r in rows]
+    today = institution_today(conn, inst_id)
+    return [_to_fr_employee(r, today) for r in rows]
+
+
+@router.get("/employees/{ems_employee_id}", response_model=FrEmployeeOut)
+@db_session
+def fr_get_employee(conn, ems_employee_id: str, device: dict = Depends(get_device)) -> Dict[str, Any]:
+    """One employee by ID, same shape as a roster row — name, the three consent flags, and `birthday`
+    (true only if it is their birthday today in the company's timezone AND they consented). An inactive
+    employee is still returned (status 'inactive'); an unknown ID, or one in another company, is a 404."""
+    inst_id = device["institution_id"]
+    row = conn.execute("SELECT * FROM employees WHERE institution_id=? AND employee_id=?",
+                       (inst_id, ems_employee_id)).fetchone()
+    if not row:
+        raise HTTPException(404, detail="Employee not found")
+    return _to_fr_employee(row, institution_today(conn, inst_id))
 
 
 @router.post("/attendance", response_model=FrAttendancePushResult, status_code=201)
