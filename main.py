@@ -31,6 +31,7 @@ from routers.recruitment import router as recruitment_router
 from routers.public_careers import router as public_careers_router
 from routers.onboarding import router as onboarding_router
 from routers.ld import router as ld_router
+from routers.policies import router as policies_router
 from routers.dashboard import router as dashboard_router
 from routers.payroll import router as payroll_router
 from routers.performance import router as performance_router
@@ -139,6 +140,7 @@ app.include_router(recruitment_router)
 app.include_router(public_careers_router)
 app.include_router(onboarding_router)
 app.include_router(ld_router)
+app.include_router(policies_router)
 app.include_router(dashboard_router)
 app.include_router(payroll_router)
 app.include_router(performance_router)

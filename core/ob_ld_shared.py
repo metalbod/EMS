@@ -32,7 +32,14 @@ def log_ld(conn, inst_id: int, enr_id: int, emp_id: str,
 
 def auto_enroll_ld_course(conn, inst_id: int, employee_id: str, course_id: int, user: dict):
     """Enroll an employee in a course as part of an onboarding checklist item. Skips the
-    cost-approval gate since HR is explicitly triggering the checklist. Returns the enrollment id."""
+    cost-approval gate since HR is explicitly triggering the checklist. Returns the enrollment id.
+    A linked *policy* (category 'policy') is assigned for acknowledgement instead — there is no
+    enrollment, so this returns None; acknowledging it completes the checklist item."""
+    kind = conn.execute("SELECT category FROM ld_courses WHERE id=? AND institution_id=?", (course_id, inst_id)).fetchone()
+    if kind and kind["category"] == "policy":
+        from core.policies import assign_current_version
+        assign_current_version(conn, inst_id, employee_id, course_id)
+        return None
     existing = conn.execute(
         "SELECT id FROM ld_enrollments WHERE employee_id=? AND course_id=? AND institution_id=? "
         "AND status NOT IN ('Rejected','Completed') ORDER BY created_at DESC LIMIT 1",

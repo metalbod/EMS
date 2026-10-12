@@ -111,13 +111,18 @@ class LDModulesIn(BaseModel):
 # ---------------------------------------------------------------------------
 @router.get("/api/ld/courses")
 @db_session
-def list_ld_courses(conn, category: Optional[str] = None, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
+def list_ld_courses(conn, category: Optional[str] = None, include_policies: bool = False,
+                    user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
+    """Policies (category 'policy', see routers/policies.py) are left out unless asked for by
+    category or include_policies — they aren't enrollable courses."""
     inst_id = need_inst(user)
     q = ("SELECT c.*, (SELECT COUNT(*) FROM ld_course_modules m WHERE m.course_id=c.id AND m.file_id IS NOT NULL) AS file_count "
          "FROM ld_courses c WHERE c.institution_id=? AND c.is_active=1")
     p = [inst_id]
     if category:
         q += " AND c.category=?"; p.append(category)
+    elif not include_policies:
+        q += " AND c.category<>'policy'"
     q += " ORDER BY c.category, c.title"
     rows = conn.execute(q, p).fetchall()
     return [dict(r) for r in rows]
@@ -151,6 +156,8 @@ def update_ld_course(conn, course_id: int, body: LDCourseIn, user: dict = Depend
     old_course = conn.execute("SELECT * FROM ld_courses WHERE id=? AND institution_id=?", (course_id, inst_id)).fetchone()
     if not old_course:
         raise HTTPException(404, "Course not found")
+    if old_course["category"] == "policy":
+        raise HTTPException(400, "Policies are managed under the Policies filter in the Course Catalog")
     conn.execute(
         "UPDATE ld_courses SET title=?,category=?,description=?,cost=?,is_active=? WHERE id=?",
         (body.title, body.category, body.description, body.cost, 1 if body.is_active else 0, course_id)
@@ -221,6 +228,8 @@ def create_ld_enrollment(conn, body: LDEnrollIn, user: dict = Depends(get_curren
                            (body.course_id, inst_id)).fetchone()
     if not course:
         raise HTTPException(404, "Course not found")
+    if course["category"] == "policy":
+        raise HTTPException(400, "Policies are acknowledged, not enrolled in")
     existing = conn.execute(
         "SELECT id FROM ld_enrollments WHERE employee_id=? AND course_id=? AND status NOT IN ('Rejected','Completed')",
         (body.employee_id, body.course_id)
@@ -554,8 +563,11 @@ def replace_course_modules(conn, course_id: int, body: LDModulesIn,
     for m in body.modules:
         if m.content_type not in ("text", "video", "document"):
             raise HTTPException(400, "content_type must be text, video or document")
-    if not conn.execute("SELECT id FROM ld_courses WHERE id=? AND institution_id=?", (course_id, inst_id)).fetchone():
+    course = conn.execute("SELECT id, category FROM ld_courses WHERE id=? AND institution_id=?", (course_id, inst_id)).fetchone()
+    if not course:
         raise HTTPException(404, "Course not found")
+    if course["category"] == "policy":
+        raise HTTPException(400, "A policy has no course content; publish a new version instead")
     for m in body.modules:
         if m.content_type == "document":
             if not m.file_id or not conn.execute(
@@ -595,22 +607,14 @@ def _clean_file_name(name: str) -> str:
     return name[:200] or "document"
 
 
-@router.post("/api/ld/courses/{course_id}/files", status_code=201)
-@db_session
-def upload_course_file(conn, course_id: int, body: LDFileUploadIn,
-                       user: dict = Depends(get_current_user)) -> Dict[str, Any]:
-    """Stores one PDF/Word/PowerPoint file for a course and returns its id, to be used as a
-    document lesson's file_id when the Course Content is saved. Not visible to employees
-    until a lesson links to it."""
-    require_permission(conn, user, "learning_development.manage_courses_quizzes")
-    inst_id = need_inst(user)
-    if not conn.execute("SELECT id FROM ld_courses WHERE id=? AND institution_id=?", (course_id, inst_id)).fetchone():
-        raise HTTPException(404, "Course not found")
-    file_name = _clean_file_name(body.file_name)
+def validate_document_upload(raw_name: str, data_url: str):
+    """Checks an uploaded PDF/Word/PowerPoint (name, base64 data URL, size, magic bytes) and returns
+    (clean file name, mime type, bytes). Raises 400 with a plain reason. Shared with routers/policies.py."""
+    file_name = _clean_file_name(raw_name)
     ext = "." + file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
     if ext not in LD_FILE_TYPES:
         raise HTTPException(400, "Only PDF, Word (.doc, .docx) and PowerPoint (.ppt, .pptx) files can be attached")
-    head, sep, payload = body.data_url.partition(",")
+    head, sep, payload = data_url.partition(",")
     if not sep or not head.startswith("data:") or ";base64" not in head:
         raise HTTPException(400, "File data must be a base64 data URL")
     if len(payload) > (LD_FILE_MAX_BYTES * 4) // 3 + 8:
@@ -626,6 +630,21 @@ def upload_course_file(conn, course_id: int, body: LDFileUploadIn,
     mime, magics = LD_FILE_TYPES[ext]
     if not any(data.startswith(m) for m in magics):
         raise HTTPException(400, f"This doesn't look like a real {ext} file")
+    return file_name, mime, data
+
+
+@router.post("/api/ld/courses/{course_id}/files", status_code=201)
+@db_session
+def upload_course_file(conn, course_id: int, body: LDFileUploadIn,
+                       user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    """Stores one PDF/Word/PowerPoint file for a course and returns its id, to be used as a
+    document lesson's file_id when the Course Content is saved. Not visible to employees
+    until a lesson links to it."""
+    require_permission(conn, user, "learning_development.manage_courses_quizzes")
+    inst_id = need_inst(user)
+    if not conn.execute("SELECT id FROM ld_courses WHERE id=? AND institution_id=?", (course_id, inst_id)).fetchone():
+        raise HTTPException(404, "Course not found")
+    file_name, mime, data = validate_document_upload(body.file_name, body.data_url)
     conn.execute(
         "INSERT INTO ld_module_files (institution_id,course_id,file_name,mime_type,size_bytes,data,uploaded_by) VALUES (?,?,?,?,?,?,?)",
         (inst_id, course_id, file_name, mime, len(data), psycopg2.Binary(data), user["username"])

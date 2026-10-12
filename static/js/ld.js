@@ -31,6 +31,13 @@ const LD_CATEGORY_COLORS={mandatory:'bg-red-100 text-red-700',professional_devel
 const LD_STATUS_COLORS={'Pending Approval':'status-pending','Approved':'status-info','Rejected':'status-negative','In Progress':'status-info','Completed':'status-positive'};
 
 async function loadLdCourses() {
+  // Policies chip: HR and managers only (managers see their own team's status). Under it the
+  // course table gives way to the policy table.
+  document.getElementById('ldPolicyChip')?.classList.toggle('hidden',!HR_AND_MANAGER_ROLES.includes(currentUser?.role));
+  const showPolicies=ldCatFilter==='policy';
+  document.getElementById('ldCourseTableWrap')?.classList.toggle('hidden',showPolicies);
+  document.getElementById('ldPolicyWrap')?.classList.toggle('hidden',!showPolicies);
+  if(showPolicies){ document.getElementById('ldCourseEmpty')?.classList.add('hidden'); loadLdPolicies(); return; }
   const bodyEl=document.getElementById('ldCourseTableBody');
   const emptyEl=document.getElementById('ldCourseEmpty');
   bodyEl.innerHTML='<tr><td colspan="4" class="text-slate-400 text-sm text-center py-8">Loading…</td></tr>';
@@ -192,6 +199,7 @@ async function loadLdEnrollments() {
   if(ldEnrollFilter) url+=`?status=${encodeURIComponent(ldEnrollFilter)}`;
   const res=await api(url);
   ldEnrollData=res&&res.ok?await res.json():[];
+  loadLdMyPolicies();
   const focusId=pendingFocusId('ld-trainings');
   if(focusId) ldEnrollList.showItem(ldEnrollData, en=>String(en.id)===focusId);
   renderLdEnrollTable();
@@ -772,3 +780,275 @@ function submitLdQuizPreview() {
   document.getElementById('ldPreviewQuizSubmitBtn').classList.add('hidden');
   document.getElementById('ldPreviewQuizRetryBtn').classList.remove('hidden');
 }
+
+
+// ---------------------------------------------------------------------------
+// Policies — documents employees read and acknowledge (routers/policies.py)
+// ---------------------------------------------------------------------------
+const POLICY_STATUS_LABEL={acknowledged:'Acknowledged',overdue:'Overdue',opened:'Opened, not acknowledged',not_opened:'Not opened'};
+const POLICY_STATUS_CLASS={acknowledged:'status-positive',overdue:'status-negative',opened:'status-pending',not_opened:'status-pending'};
+let ldPolicies=[], policyPeople=[], policyTracker=null, policyTrackerFilter='outstanding', policyRead=null;
+
+function policyAudienceLabel(type, ref, lookup) {
+  if(type==='department') return ref?`Department: ${ref}`:'A department';
+  if(type==='team') return `Team of ${(lookup&&lookup(ref))||ref||'a manager'}`;
+  if(type==='people') return 'Named people';
+  return 'All employees';
+}
+function policyProgressPct(assigned, acknowledged) {
+  return assigned>0?Math.round(acknowledged/assigned*100):0;
+}
+function policyEmpName(id) {
+  const e=(typeof employees!=='undefined'?employees:[]).find(x=>x.employee_id===id);
+  return e?displayName(e.full_name,e.preferred_name):null;
+}
+
+async function loadLdPolicies() {
+  const body=document.getElementById('ldPolicyTableBody');
+  const empty=document.getElementById('ldPolicyEmpty');
+  const canManage=HR_MANAGE_ROLES.includes(currentUser?.role);
+  document.getElementById('ldPublishPolicyBtn')?.classList.toggle('hidden',!canManage);
+  body.innerHTML='<tr><td colspan="6" class="text-slate-400 text-sm text-center py-8">Loading…</td></tr>';
+  const res=await api('/api/policies');
+  ldPolicies=res&&res.ok?await res.json():[];
+  if(!ldPolicies.length){body.innerHTML='';empty.classList.remove('hidden');return;}
+  empty.classList.add('hidden');
+  body.innerHTML=ldPolicies.map(p=>{
+    const pct=policyProgressPct(p.assigned,p.acknowledged);
+    return `<tr class="border-t border-slate-100">
+      <td class="px-4 py-3"><p class="font-medium text-slate-800">${esc(p.title)}</p><p class="text-xs text-slate-400">${esc(p.file_name)}</p></td>
+      <td class="px-4 py-3 whitespace-nowrap">v${p.version}${p.change_note?`<p class="text-xs text-slate-400 max-w-[14rem] truncate" title="${esc(p.change_note)}">${esc(p.change_note)}</p>`:''}</td>
+      <td class="px-4 py-3 text-slate-600">${esc(policyAudienceLabel(p.audience_type,p.audience_ref,policyEmpName))}</td>
+      <td class="px-4 py-3 whitespace-nowrap text-slate-600">${p.due_date?fmtDate(p.due_date):'—'}</td>
+      <td class="px-4 py-3 whitespace-nowrap">
+        <div class="flex items-center gap-2"><div class="bg-slate-100 rounded-full h-1.5 w-24"><div class="bg-green-500 h-1.5 rounded-full" style="width:${pct}%"></div></div>
+        <span class="text-xs text-slate-600">${p.acknowledged} / ${p.assigned}</span>${p.overdue?`<span class="badge status-negative text-xs">${p.overdue} overdue</span>`:''}</div>
+      </td>
+      <td class="px-4 py-3 text-right whitespace-nowrap">
+        <button onclick="openPolicyTracker(${p.course_id})" class="btn-ghost text-xs">Tracker</button>
+        ${canManage?`<button onclick="openPolicyPublishModal(${p.course_id})" class="btn-ghost text-xs">New version</button>
+        <button onclick="deleteLdCourse(${p.course_id})" class="btn-ghost text-xs text-red-600">Remove</button>`:''}
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// ---- Publish / new version ----
+function openPolicyPublishModal(courseId) {
+  document.getElementById('policyPublishForm').reset();
+  policyPeople=[]; renderPolicyPeople();
+  document.getElementById('policyCourseId').value=courseId||'';
+  const p=courseId?ldPolicies.find(x=>x.course_id===courseId):null;
+  document.getElementById('policyPublishTitle').textContent=p?`New version of ${p.title}`:'Publish Policy';
+  document.getElementById('policyPublishBtn').textContent=p?`Publish v${p.version+1}`:'Publish';
+  document.getElementById('policyTitle').value=p?p.title:'';
+  const note=document.getElementById('policyVersionNote');
+  note.classList.toggle('hidden',!p);
+  if(p) note.textContent=`This asks everyone in the audience to acknowledge again. Version ${p.version} and who acknowledged it stay on record.`;
+  const active=(typeof employees!=='undefined'?employees:[]).filter(e=>e.status==='Active');
+  const opts=active.map(e=>`<option value="${esc(e.employee_id)}">${esc(e.employee_id)} — ${esc(displayName(e.full_name,e.preferred_name))}</option>`).join('');
+  const depts=[...new Set(active.map(e=>e.department).filter(Boolean))].sort();
+  document.getElementById('policyAudienceDept').innerHTML=depts.map(d=>`<option value="${esc(d)}">${esc(d)}</option>`).join('');
+  document.getElementById('policyAudienceTeam').innerHTML=opts;
+  document.getElementById('policyAudiencePerson').innerHTML=opts;
+  initEmployeeSearchSelect('policyAudienceTeam','Search manager…');
+  initEmployeeSearchSelect('policyAudiencePerson','Search employee…');
+  if(p){
+    document.getElementById('policyAudienceType').value=p.audience_type;
+    if(p.audience_type==='department') document.getElementById('policyAudienceDept').value=p.audience_ref;
+    if(p.audience_type==='team') document.getElementById('policyAudienceTeam').value=p.audience_ref;
+    document.getElementById('policyRequireOpen').checked=!!p.require_open;
+  }
+  onPolicyAudienceChange();
+  document.getElementById('policyPublishModal').classList.remove('hidden');
+}
+function closePolicyPublishModal() { document.getElementById('policyPublishModal').classList.add('hidden'); }
+
+function onPolicyAudienceChange() {
+  const t=document.getElementById('policyAudienceType').value;
+  document.getElementById('policyAudienceDept').classList.toggle('hidden',t!=='department');
+  document.getElementById('policyAudienceTeam').classList.toggle('hidden',t!=='team');
+  document.getElementById('policyAudienceTeamSearchWrap')?.classList.toggle('hidden',t!=='team');
+  document.getElementById('policyAudiencePeopleWrap').classList.toggle('hidden',t!=='people');
+  const active=(typeof employees!=='undefined'?employees:[]).filter(e=>e.status==='Active');
+  let n=null;
+  if(t==='all') n=active.length;
+  else if(t==='department') n=active.filter(e=>e.department===document.getElementById('policyAudienceDept').value).length;
+  else if(t==='people') n=policyPeople.length;
+  document.getElementById('policyAudienceCount').textContent=n===null?"Everyone in that manager's reporting chain (including them).":`Will be assigned to ${n} employee${n===1?'':'s'}.`;
+}
+document.addEventListener('change',e=>{ if(e.target?.id==='policyAudienceDept') onPolicyAudienceChange(); });
+
+function addPolicyPerson() {
+  const id=document.getElementById('policyAudiencePerson').value;
+  if(!id||policyPeople.some(x=>x.id===id)) return;
+  policyPeople.push({id,name:policyEmpName(id)||id});
+  renderPolicyPeople(); onPolicyAudienceChange();
+}
+function removePolicyPerson(id) { policyPeople=policyPeople.filter(x=>x.id!==id); renderPolicyPeople(); onPolicyAudienceChange(); }
+function renderPolicyPeople() {
+  document.getElementById('policyPeopleChips').innerHTML=policyPeople.map(x=>
+    `<span class="badge status-neutral text-xs">${esc(x.name)} <button type="button" onclick="removePolicyPerson('${esc(x.id)}')" class="ml-1" aria-label="Remove">×</button></span>`).join('');
+}
+
+const submitPolicyPublish = guardAsync(async function(e) {
+  e.preventDefault();
+  const courseId=document.getElementById('policyCourseId').value;
+  const file=document.getElementById('policyFile').files?.[0];
+  if(!file){ alert('Choose the document to publish.'); return; }
+  const ext='.'+file.name.split('.').pop().toLowerCase();
+  if(!LD_DOC_EXTS.includes(ext)){ alert('Please choose a PDF, Word (.doc/.docx) or PowerPoint (.ppt/.pptx) file.'); return; }
+  if(file.size>LD_DOC_MAX_BYTES){ alert(`That file is ${ldFileSize(file.size)} — the limit is 20 MB.`); return; }
+  const type=document.getElementById('policyAudienceType').value;
+  if(type==='people'&&!policyPeople.length){ alert('Add at least one person.'); return; }
+  const dataUrl=await new Promise((resolve,reject)=>{ const r=new FileReader(); r.onload=()=>resolve(r.result); r.onerror=reject; r.readAsDataURL(file); });
+  const body={
+    title:document.getElementById('policyTitle').value.trim(),
+    change_note:document.getElementById('policyChangeNote').value.trim()||null,
+    due_date:document.getElementById('policyDue').value||null,
+    require_open:document.getElementById('policyRequireOpen').checked,
+    audience_type:type,
+    audience_ref:type==='department'?document.getElementById('policyAudienceDept').value:type==='team'?document.getElementById('policyAudienceTeam').value:null,
+    employee_ids:type==='people'?policyPeople.map(x=>x.id):[],
+    file_name:file.name, data_url:dataUrl,
+  };
+  const res=await api(courseId?`/api/policies/${courseId}/versions`:'/api/policies',{method:'POST',body:JSON.stringify(body)});
+  if(!res?.ok){ const d=await res?.json().catch(()=>null); alert(d?.detail?apiErrorText(d.detail):'Could not publish the policy.'); return; }
+  closePolicyPublishModal();
+  loadLdPolicies();
+});
+
+// ---- Tracker (HR sees everyone; a manager their own team, read-only) ----
+async function openPolicyTracker(courseId, versionId) {
+  const res=await api(`/api/policies/${courseId}/tracker${versionId?`?version_id=${versionId}`:''}`);
+  if(!res?.ok){ const d=await res?.json().catch(()=>null); alert(d?.detail?apiErrorText(d.detail):'Could not load the tracker.'); return; }
+  policyTracker=await res.json();
+  policyTrackerFilter=policyTracker.summary.assigned>policyTracker.summary.acknowledged?'outstanding':'all';
+  renderPolicyTracker();
+  document.getElementById('policyTrackerModal').classList.remove('hidden');
+}
+function closePolicyTrackerModal() { document.getElementById('policyTrackerModal').classList.add('hidden'); }
+function setPolicyTrackerFilter(f) { policyTrackerFilter=f; renderPolicyTracker(); }
+function onPolicyTrackerVersionChange() {
+  openPolicyTracker(policyTracker.policy.course_id, parseInt(document.getElementById('policyTrackerVersion').value));
+}
+function policyTrackerRows(rows, filter) {
+  if(filter==='outstanding') return rows.filter(r=>r.status!=='acknowledged');
+  if(filter==='acknowledged') return rows.filter(r=>r.status==='acknowledged');
+  return rows;
+}
+function renderPolicyTracker() {
+  const t=policyTracker, v=t.version;
+  document.getElementById('policyTrackerTitle').textContent=`${t.policy.title} — v${v.version}`;
+  document.getElementById('policyTrackerSub').textContent=
+    `${v.due_date?`Due ${fmtDate(v.due_date)} · `:''}${t.summary.acknowledged} of ${t.summary.assigned} acknowledged${t.summary.overdue?` · ${t.summary.overdue} overdue`:''}${t.is_current?'':' · an earlier version'}`;
+  document.getElementById('policyTrackerVersion').innerHTML=t.versions.map(x=>
+    `<option value="${x.id}"${x.id===v.id?' selected':''}>v${x.version} — ${fmtDate(x.created_at)}</option>`).join('');
+  document.querySelectorAll('.policy-trk-chip').forEach(b=>b.classList.toggle('ld-cat-filter-active',b.dataset.f===policyTrackerFilter));
+  const rows=policyTrackerRows(t.rows,policyTrackerFilter);
+  document.getElementById('policyTrackerEmpty').classList.toggle('hidden',rows.length>0);
+  document.getElementById('policyTrackerBody').innerHTML=rows.map(r=>`<tr class="border-t border-slate-100">
+    <td class="px-4 py-2.5 font-medium text-slate-800 whitespace-nowrap">${esc(displayName(r.full_name,r.preferred_name)||r.employee_id)}${r.employee_status&&r.employee_status!=='Active'?` <span class="text-xs text-slate-400">(${esc(r.employee_status)})</span>`:''}</td>
+    <td class="px-4 py-2.5 text-slate-600">${esc(r.department||'—')}</td>
+    <td class="px-4 py-2.5"><span class="badge text-xs ${POLICY_STATUS_CLASS[r.status]}">${POLICY_STATUS_LABEL[r.status]}</span></td>
+    <td class="px-4 py-2.5 text-slate-600 whitespace-nowrap">${r.first_opened_at?fmtDateTime(r.first_opened_at):'—'}</td>
+    <td class="px-4 py-2.5 text-slate-600 whitespace-nowrap">${r.acknowledged_at?fmtDateTime(r.acknowledged_at):'—'}</td>
+  </tr>`).join('');
+  const un=t.unassigned||[];
+  document.getElementById('policyUnassignedHint').classList.toggle('hidden',!un.length);
+  document.getElementById('policyUnassignedText').textContent=un.length
+    ?`${un.length} active employee${un.length===1?'':'s'} in this audience ${un.length===1?"hasn't":"haven't"} been assigned: ${un.slice(0,4).map(u=>u.full_name).join(', ')}${un.length>4?'…':''}`:'';
+  const addWrap=document.getElementById('policyAddPeopleWrap');
+  addWrap.classList.toggle('hidden',!(t.can_manage&&t.is_current));
+  if(t.can_manage&&t.is_current){
+    document.getElementById('policyTrackerAddEmp').innerHTML=(typeof employees!=='undefined'?employees:[]).filter(e=>e.status==='Active')
+      .map(e=>`<option value="${esc(e.employee_id)}">${esc(e.employee_id)} — ${esc(displayName(e.full_name,e.preferred_name))}</option>`).join('');
+    initEmployeeSearchSelect('policyTrackerAddEmp','Search employee…');
+  }
+}
+async function policyAssign(ids) {
+  const res=await api(`/api/policies/versions/${policyTracker.version.id}/assign`,{method:'POST',body:JSON.stringify({employee_ids:ids})});
+  if(!res?.ok){ const d=await res?.json().catch(()=>null); alert(d?.detail?apiErrorText(d.detail):'Could not add them.'); return; }
+  await openPolicyTracker(policyTracker.policy.course_id);
+  loadLdPolicies();
+}
+const assignPolicyUnassigned = guardAsync(async function() { await policyAssign((policyTracker.unassigned||[]).map(u=>u.employee_id)); });
+const addPolicyTrackerPerson = guardAsync(async function() {
+  const id=document.getElementById('policyTrackerAddEmp').value;
+  if(id) await policyAssign([id]);
+});
+
+// ---- Employee: My Policies ----
+let ldMyPolicies=[];
+async function loadLdMyPolicies() {
+  const sec=document.getElementById('ldMyPoliciesSection');
+  if(!sec) return;
+  if(!currentUser?.employee_id){ sec.classList.add('hidden'); return; }
+  const res=await api('/api/policies/mine');
+  ldMyPolicies=res&&res.ok?await res.json():[];
+  sec.classList.toggle('hidden',!ldMyPolicies.length);
+  const pending=ldMyPolicies.filter(p=>p.status!=='acknowledged');
+  const banner=document.getElementById('ldMyPoliciesBanner');
+  banner.classList.toggle('hidden',!pending.length);
+  if(pending.length){
+    const next=pending.filter(p=>p.due_date).sort((a,b)=>a.due_date.localeCompare(b.due_date))[0];
+    banner.textContent=`${pending.length} polic${pending.length===1?'y is':'ies are'} waiting for your acknowledgement${next?` — ${next.title} is due ${fmtDate(next.due_date)}`:''}.`;
+  }
+  document.getElementById('ldMyPoliciesBody').innerHTML=ldMyPolicies.map(p=>`<tr class="border-t border-slate-100">
+    <td class="px-4 py-3 font-medium text-slate-800">${esc(p.title)}</td>
+    <td class="px-4 py-3 whitespace-nowrap text-slate-600">v${p.version}</td>
+    <td class="px-4 py-3 whitespace-nowrap text-slate-600">${p.due_date?fmtDate(p.due_date):'—'}</td>
+    <td class="px-4 py-3 whitespace-nowrap"><span class="badge text-xs ${POLICY_STATUS_CLASS[p.status]}">${p.status==='acknowledged'?`Acknowledged ${fmtDate(p.acknowledged_at)}`:p.status==='overdue'?'Overdue':'Action needed'}</span></td>
+    <td class="px-4 py-3 text-right whitespace-nowrap"><button onclick="openPolicyRead(${p.version_id})" class="${p.status==='acknowledged'?'btn-ghost':'btn-primary'} text-xs px-3 py-1.5">${p.status==='acknowledged'?'View':'Read and acknowledge'}</button></td>
+  </tr>`).join('');
+}
+
+function openPolicyRead(versionId) {
+  const p=ldMyPolicies.find(x=>x.version_id===versionId);
+  if(!p) return;
+  policyRead=p;
+  const done=p.status==='acknowledged';
+  document.getElementById('policyReadTitle').innerHTML=`${esc(p.title)} <span class="badge status-info text-xs">v${p.version}</span>`;
+  document.getElementById('policyReadMeta').innerHTML=
+    (p.description?`<p>${esc(p.description)}</p>`:'')+
+    (p.change_note?`<p class="text-slate-500">What changed: ${esc(p.change_note)}</p>`:'')+
+    (p.due_date?`<p class="text-slate-500">Acknowledge by ${fmtDate(p.due_date)}</p>`:'');
+  document.getElementById('policyReadFile').textContent=p.file_name;
+  document.getElementById('policyReadConfirm').checked=false;
+  document.getElementById('policyReadStatement').textContent=`I have read and understood ${p.title} (v${p.version}).`;
+  document.getElementById('policyReadHint').textContent=p.require_open?'Open the document first. Your acknowledgement is recorded with today\'s date and time.':'Your acknowledgement is recorded with today\'s date and time.';
+  document.getElementById('policyReadAckBlock').classList.toggle('hidden',done||!p.is_current);
+  document.getElementById('policyReadAckBtn').classList.toggle('hidden',done||!p.is_current);
+  const msg=document.getElementById('policyReadDone');
+  msg.classList.toggle('hidden',!done);
+  if(done) msg.textContent=`You acknowledged this on ${fmtDateTime(p.acknowledged_at)}.`;
+  document.getElementById('policyReadModal').classList.remove('hidden');
+}
+function closePolicyReadModal() { document.getElementById('policyReadModal').classList.add('hidden'); }
+
+async function policyOpenFromModal() {
+  const p=policyRead; if(!p) return;
+  const isPdf=/\.pdf$/i.test(p.file_name);
+  const win=isPdf?window.open('','_blank'):null;   // opened now so the popup blocker allows it
+  const res=await api(`/api/policies/versions/${p.version_id}/file${isPdf?'?inline=true':''}`);
+  if(!res?.ok){
+    if(win) win.close();
+    const d=await res?.json().catch(()=>null);
+    alert(d?.detail?apiErrorText(d.detail):'Could not open the document.');
+    return;
+  }
+  const url=URL.createObjectURL(await res.blob());
+  if(win) win.location=url;
+  else { const a=document.createElement('a'); a.href=url; a.download=p.file_name; document.body.appendChild(a); a.click(); a.remove(); }
+  setTimeout(()=>URL.revokeObjectURL(url),120000);
+  p.first_opened_at=p.first_opened_at||new Date().toISOString();   // the server has recorded it
+  document.getElementById('policyReadHint').textContent='Thanks for opening it. Tick the box and acknowledge when you have read it.';
+}
+
+const submitPolicyAcknowledge = guardAsync(async function() {
+  const p=policyRead; if(!p) return;
+  const res=await api(`/api/policies/versions/${p.version_id}/acknowledge`,{method:'POST',body:JSON.stringify({confirm:document.getElementById('policyReadConfirm').checked})});
+  if(!res?.ok){ const d=await res?.json().catch(()=>null); alert(d?.detail?apiErrorText(d.detail):'Could not record your acknowledgement.'); return; }
+  closePolicyReadModal();
+  loadLdMyPolicies();
+});

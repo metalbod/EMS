@@ -488,10 +488,10 @@ async function loadObTemplatesTab(type) {
   if(!rolesCache.length) await loadRolesCache();
   populateObRoleSelect(oel(type,'obTmplRole'));
   populateObRoleSelect(document.getElementById('obTmplItemRole'));
-  const coursesRes=await api('/api/ld/courses');
+  const coursesRes=await api('/api/ld/courses?include_policies=true');
   obTmplCoursesCache[type]=coursesRes?.ok?await coursesRes.json():[];
   const courseOptions='<option value="">No linked course — manual completion</option>'+
-    obTmplCoursesCache[type].map(c=>`<option value="${c.id}">${esc(c.title)}</option>`).join('');
+    obTmplCoursesCache[type].map(c=>`<option value="${c.id}">${esc(c.title)}${c.category==='policy'?' (Policy — acknowledge)':''}</option>`).join('');
   oel(type,'obTmplLdCourse').innerHTML=courseOptions;
   await loadObTemplateSets(type);
 }

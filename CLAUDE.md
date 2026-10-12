@@ -746,6 +746,31 @@ wrapper everywhere.
   appears when the viewer *isn't* an eligible approver; here HR wants it regardless, to
   follow up. A requisition whose creator has no linked employee record gets no label
   (the requester can't be resolved).
+- **Policy acknowledgements** (L&D → Course Catalog → **Policies** filter; `routers/policies.py`,
+  `core/policies.py`, `20261013_0001`, Policies section in `static/js/ld.js`, `policyPublishModal` /
+  `policyTrackerModal` / `policyReadModal` in index.html) — HR publishes a PDF/Word/PowerPoint
+  (handbook, memo, code of conduct); each assigned employee opens it and ticks "I have read and
+  understood …" to acknowledge. A policy is an `ld_courses` row with category `policy` (hidden from
+  `/api/ld/courses` unless `category=policy` or `include_policies=true`; can't be enrolled in, edited
+  as a course, or given lessons — those endpoints 400); each **version** is a `policy_versions` row
+  (file in `ld_module_files`, `due_date`, `require_open`, audience) and each person has one
+  `policy_acknowledgements` row per version (`first_opened_at`, `acknowledged_at`, the exact
+  `statement`). Publishing a new version re-asks the audience; old versions and who acknowledged them
+  stay (tracker has a version picker). Audience types: all active employees / a department / a
+  manager's whole reporting chain / named people — resolved **once at publish**; decided with the
+  owner (2026-10-13) that people who join later are **not** auto-assigned: the tracker shows an
+  "N not assigned yet" hint with Add them, plus Add a person, and an onboarding/offboarding template
+  item linked to a policy (the existing `linked_ld_course_id`, picker now lists policies) assigns the
+  current version when the checklist starts and is auto-completed when it's acknowledged
+  (`auto_enroll_ld_course` branches on category; `complete_linked_ob_items` is called on acknowledge).
+  Acknowledging needs the box ticked, the **current** version, and — per policy, default on — the
+  document opened first (`GET .../versions/{id}/file` stamps `first_opened_at` for the assignee; HR and
+  managers can open any policy without that). It is a recorded click with the account and time, not a
+  legal e-signature. Visibility: HR (`learning_development.manage_courses_quizzes`) sees everyone and
+  publishes; a `manager` sees read-only status for their own reporting chain; others get 403.
+  Employees see **My Policies** at the top of My Trainings (superseded unacknowledged versions are
+  hidden) and a Home To-Do item (`policy-ack`). Not built yet (phase 2): reminder emails
+  (`reminder_acknowledgement_enabled` is still stored but unread), CSV export.
 
 ## Recurring gotchas (hit more than once this project's history)
 

@@ -1744,13 +1744,14 @@
             <button onclick="setLdCatFilter('mandatory')" class="btn-ghost text-xs ld-cat-filter-btn">Mandatory</button>
             <button onclick="setLdCatFilter('professional_development')" class="btn-ghost text-xs ld-cat-filter-btn">Professional Dev</button>
             <button onclick="setLdCatFilter('certification')" class="btn-ghost text-xs ld-cat-filter-btn">Certification</button>
+            <button id="ldPolicyChip" onclick="setLdCatFilter('policy')" class="btn-ghost text-xs ld-cat-filter-btn hidden">Policies</button>
           </div>
           <div class="flex items-center gap-2 shrink-0"><button onclick="openEntityHistory({title:'Course history',module:'L&D',entity_type:'course'})" class="hist-btn hidden btn-ghost text-sm">History</button><button id="ldAddCourseBtn" onclick="openLdCourseModal()" class="btn-primary hidden text-sm flex items-center gap-2">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
             Add Course
           </button></div>
         </div>
-        <div class="bg-white rounded-xl border border-slate-200 table-scroll">
+        <div id="ldCourseTableWrap" class="bg-white rounded-xl border border-slate-200 table-scroll">
           <table class="w-full text-sm">
             <thead class="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
               <tr id="ldCourseTableHead"></tr>
@@ -1759,10 +1760,51 @@
           </table>
         </div>
         <p id="ldCourseEmpty" class="hidden text-center text-slate-400 text-sm py-12">No courses in the catalog yet.</p>
+        <!-- Policies (documents employees must read and acknowledge) — shown instead of the course table under the Policies filter -->
+        <div id="ldPolicyWrap" class="hidden">
+          <div class="flex items-center justify-between mb-3">
+            <p class="text-xs text-slate-500">Documents employees read and acknowledge — handbook, memos, code of conduct.</p>
+            <button id="ldPublishPolicyBtn" onclick="openPolicyPublishModal()" class="btn-primary text-sm hidden">Publish Policy</button>
+          </div>
+          <div class="bg-white rounded-xl border border-slate-200 table-scroll">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
+                <tr>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Policy</th>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Version</th>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Audience</th>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Due</th>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Acknowledged</th>
+                  <th class="px-4 py-2.5"></th>
+                </tr>
+              </thead>
+              <tbody id="ldPolicyTableBody"></tbody>
+            </table>
+          </div>
+          <p id="ldPolicyEmpty" class="hidden text-center text-slate-400 text-sm py-12">No policies published yet.</p>
+        </div>
       </div>
 
       <!-- LD MY TRAININGS -->
       <div id="page-ld-trainings" class="hidden">
+        <div id="ldMyPoliciesSection" class="hidden mb-6">
+          <div id="ldMyPoliciesBanner" class="hidden text-sm bg-amber-50 text-amber-700 border border-amber-200 rounded-lg px-4 py-2.5 mb-3"></div>
+          <h3 class="text-sm font-semibold text-slate-700 mb-2">My Policies</h3>
+          <div class="bg-white rounded-xl border border-slate-200 table-scroll">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Policy</th>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Version</th>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Due</th>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
+                  <th class="px-4 py-2.5"></th>
+                </tr>
+              </thead>
+              <tbody id="ldMyPoliciesBody"></tbody>
+            </table>
+          </div>
+        </div>
         <div class="flex items-center justify-between mb-5">
           <div class="flex gap-2">
             <button onclick="setLdEnrollFilter('')" class="btn-ghost text-xs ld-enr-filter-btn ld-enr-filter-active">All</button>
@@ -4475,6 +4517,123 @@
     <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
       <button type="submit" form="ldCourseForm" class="btn-primary">Save</button>
       <button type="button" onclick="closeLdCourseModal()" class="btn-ghost">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Policy: publish / new version -->
+<div id="policyPublishModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
+      <h2 id="policyPublishTitle" class="text-base font-semibold">Publish Policy</h2>
+      <button onclick="closePolicyPublishModal()" class="btn-close"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form id="policyPublishForm" onsubmit="submitPolicyPublish(event)" class="p-6 space-y-4 overflow-y-auto flex-1">
+      <input type="hidden" id="policyCourseId"/>
+      <div><label class="lbl">Title <span class="text-red-500">*</span></label><input id="policyTitle" class="inp" required placeholder="Employee Handbook"/></div>
+      <div id="policyVersionNote" class="hidden text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2"></div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="lbl">Acknowledge by</label><input id="policyDue" type="date" class="inp"/></div>
+        <div><label class="lbl">Document <span class="text-red-500">*</span></label><input id="policyFile" type="file" accept=".pdf,.doc,.docx,.ppt,.pptx" class="inp"/></div>
+      </div>
+      <p class="text-xs text-slate-400 -mt-2">PDF, Word or PowerPoint, up to 20 MB.</p>
+      <div><label class="lbl">What changed</label><textarea id="policyChangeNote" class="inp" rows="2" placeholder="Shown to employees, e.g. Updated leave carry-forward section"></textarea></div>
+      <div>
+        <label class="lbl">Audience <span class="text-red-500">*</span></label>
+        <select id="policyAudienceType" class="inp" onchange="onPolicyAudienceChange()">
+          <option value="all">All active employees</option>
+          <option value="department">A department</option>
+          <option value="team">A manager's team (their whole reporting chain)</option>
+          <option value="people">Specific people</option>
+        </select>
+        <select id="policyAudienceDept" class="inp mt-2 hidden"></select>
+        <select id="policyAudienceTeam" class="inp mt-2 hidden"></select>
+        <div id="policyAudiencePeopleWrap" class="mt-2 hidden">
+          <div class="flex gap-2"><select id="policyAudiencePerson" class="inp flex-1"></select><button type="button" onclick="addPolicyPerson()" class="btn-ghost text-sm shrink-0">Add</button></div>
+          <div id="policyPeopleChips" class="flex flex-wrap gap-1.5 mt-2"></div>
+        </div>
+        <p id="policyAudienceCount" class="text-xs text-slate-500 mt-1.5"></p>
+      </div>
+      <label class="flex items-start gap-2 text-sm"><input type="checkbox" id="policyRequireOpen" class="mt-0.5" checked/><span>Employee must open the document before they can acknowledge</span></label>
+    </form>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="submit" form="policyPublishForm" id="policyPublishBtn" class="btn-primary">Publish</button>
+      <button type="button" onclick="closePolicyPublishModal()" class="btn-ghost">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Policy: acknowledgement tracker -->
+<div id="policyTrackerModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-4xl flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
+      <div class="min-w-0">
+        <h2 id="policyTrackerTitle" class="text-base font-semibold truncate">Acknowledgements</h2>
+        <p id="policyTrackerSub" class="text-xs text-slate-500"></p>
+      </div>
+      <button onclick="closePolicyTrackerModal()" class="btn-close"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <div class="p-6 overflow-y-auto flex-1">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <div class="flex gap-2" id="policyTrackerChips">
+          <button class="btn-ghost text-xs policy-trk-chip ld-cat-filter-active" data-f="outstanding" onclick="setPolicyTrackerFilter('outstanding')">Outstanding</button>
+          <button class="btn-ghost text-xs policy-trk-chip" data-f="acknowledged" onclick="setPolicyTrackerFilter('acknowledged')">Acknowledged</button>
+          <button class="btn-ghost text-xs policy-trk-chip" data-f="all" onclick="setPolicyTrackerFilter('all')">All</button>
+        </div>
+        <select id="policyTrackerVersion" class="inp w-auto text-xs" onchange="onPolicyTrackerVersionChange()"></select>
+      </div>
+      <div id="policyUnassignedHint" class="hidden text-sm bg-amber-50 text-amber-700 border border-amber-200 rounded-lg px-4 py-2.5 mb-3 flex flex-wrap items-center justify-between gap-2">
+        <span id="policyUnassignedText"></span>
+        <button onclick="assignPolicyUnassigned()" class="btn-ghost text-xs">Add them</button>
+      </div>
+      <div class="bg-white rounded-xl border border-slate-200 table-scroll">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-50 border-b border-slate-200">
+            <tr>
+              <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Employee</th>
+              <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Department</th>
+              <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
+              <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Opened</th>
+              <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Acknowledged</th>
+            </tr>
+          </thead>
+          <tbody id="policyTrackerBody"></tbody>
+        </table>
+      </div>
+      <p id="policyTrackerEmpty" class="hidden text-center text-slate-400 text-sm py-8">Nobody in this view.</p>
+      <div id="policyAddPeopleWrap" class="hidden mt-4">
+        <label class="lbl">Add a person to this version</label>
+        <div class="flex gap-2"><select id="policyTrackerAddEmp" class="inp flex-1"></select><button onclick="addPolicyTrackerPerson()" class="btn-ghost text-sm shrink-0">Add</button></div>
+      </div>
+    </div>
+    <div class="flex justify-end px-6 py-4 border-t border-slate-200 shrink-0">
+      <button type="button" onclick="closePolicyTrackerModal()" class="btn-ghost">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Policy: employee reads and acknowledges -->
+<div id="policyReadModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
+      <h2 id="policyReadTitle" class="text-base font-semibold">Policy</h2>
+      <button onclick="closePolicyReadModal()" class="btn-close"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <div class="p-6 space-y-4 overflow-y-auto flex-1">
+      <div id="policyReadMeta" class="text-sm text-slate-600 space-y-1"></div>
+      <div class="border border-slate-200 rounded-lg px-4 py-3 flex items-center justify-between gap-3">
+        <span id="policyReadFile" class="text-sm text-slate-700 truncate"></span>
+        <button id="policyReadOpenBtn" onclick="policyOpenFromModal()" class="btn-ghost text-sm shrink-0">Open document</button>
+      </div>
+      <div id="policyReadAckBlock">
+        <label class="flex items-start gap-2 text-sm"><input type="checkbox" id="policyReadConfirm" class="mt-0.5"/><span id="policyReadStatement">I have read and understood this document.</span></label>
+        <p id="policyReadHint" class="text-xs text-slate-400 mt-2">Your acknowledgement is recorded with today's date and time.</p>
+      </div>
+      <p id="policyReadDone" class="hidden text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2"></p>
+    </div>
+    <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+      <button id="policyReadAckBtn" onclick="submitPolicyAcknowledge()" class="btn-primary">Acknowledge</button>
+      <button type="button" onclick="closePolicyReadModal()" class="btn-ghost">Close</button>
     </div>
   </div>
 </div>

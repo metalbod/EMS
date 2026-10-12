@@ -267,6 +267,17 @@ def get_todos(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, An
         if cnt:
             todos.append({"key": "ld-trainings", "label": f"{cnt} training course{'s' if cnt != 1 else ''} in progress", "page": "ld-trainings", "count": cnt})
 
+        pol = conn.execute("""
+            SELECT COUNT(*) FROM policy_acknowledgements a
+            JOIN policy_versions v ON v.id=a.version_id
+            JOIN ld_courses c ON c.id=v.course_id AND c.is_active=1
+            WHERE a.institution_id=? AND a.employee_id=? AND a.acknowledged_at IS NULL
+              AND v.version=(SELECT MAX(version) FROM policy_versions WHERE course_id=v.course_id)
+        """, (inst_id, emp_id)).fetchone()[0]
+        if pol:
+            todos.append({"key": "policy-ack", "label": f"{pol} polic{'ies' if pol != 1 else 'y'} waiting for your acknowledgement",
+                          "page": "ld-trainings", "count": pol})
+
         if role in ("manager", "hr_manager"):
             frag, fp = subordinates_in_clause(inst_id, emp_id)
             cnt = conn.execute(f"""
