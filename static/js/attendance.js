@@ -59,7 +59,7 @@ function renderAttClockStatus() {
     inBtn.classList.add('hidden');
     outBtn.classList.remove('hidden');
   } else {
-    const today = attHistoryCache.find(r => r.work_date === new Date().toISOString().slice(0, 10));
+    const today = attHistoryCache.find(r => r.work_date === localDateStr());
     if (today && today.clock_out_at) {
       statusEl.textContent = 'Clocked Out';
       detailEl.textContent = `Worked ${today.worked_minutes ?? '—'} min today`;

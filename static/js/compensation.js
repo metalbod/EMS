@@ -1684,7 +1684,7 @@ async function openAssignCompModal(employeeId) {
   document.getElementById('acEmployeeId').value = employeeId;
   document.getElementById('assignCompForm').reset();
   document.getElementById('assignCompErr').classList.add('hidden');
-  document.getElementById('acEffectiveDate').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('acEffectiveDate').value = localDateStr();
 
   const roleSelect = document.getElementById('acJobRole');
   roleSelect.innerHTML = '<option value="">— No job role —</option>' +

@@ -134,6 +134,13 @@ function parseUTC(value) {
 // ---------------------------------------------------------------------------
 // Date display: dd-mmm-yy everywhere (e.g. "15-Aug-26")
 // ---------------------------------------------------------------------------
+// "YYYY-MM-DD" for a Date in the browser's LOCAL calendar. Never build this with
+// toISOString().slice(0,10): that converts to UTC, so in a UTC+ zone (Malaysia)
+// local midnight is "yesterday" and, before 08:00, so is "now".
+function localDateStr(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 function fmtDate(value) {

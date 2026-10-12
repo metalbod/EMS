@@ -422,7 +422,7 @@ async function loadMyBenefitsPage() {
   myDependents = (depsRes && depsRes.ok) ? await depsRes.json() : [];
   myClaims = (claimsRes && claimsRes.ok) ? await claimsRes.json() : [];
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateStr();
   myApprovedWindowEvent = myLifeEvents.find(e => e.status === 'Approved' && e.window_end_date && e.window_end_date >= today) || null;
 
   myBenefitsPlansList.resetPage();

@@ -367,7 +367,7 @@ function ldLeaveComputeWorkdays(startStr, endStr) {
   const d=new Date(start);
   while(d<=end){
     const dow=d.getDay();
-    const ds=d.toISOString().slice(0,10);
+    const ds=localDateStr(d);
     if(dow!==0 && dow!==6 && !holidaySet.has(ds)) count++;
     d.setDate(d.getDate()+1);
   }

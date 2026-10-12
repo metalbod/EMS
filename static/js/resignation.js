@@ -13,7 +13,7 @@ let resignApprovalFilter = 'Pending';
 let resignApprovalRowsCache = [];
 const resignApprovalList = createListState({ sortKey: 'created_at', sortDir: 'desc' });
 
-function todayStr() { return new Date().toISOString().slice(0, 10); }
+function todayStr() { return localDateStr(); }
 
 function openResignModal(empId, empName) {
   document.getElementById('resignModalTitle').textContent = empId ? 'File Resignation' : 'Submit Resignation';

@@ -694,10 +694,14 @@ wrapper everywhere.
   any Submitted/Approved timesheet that **overlaps** the Mon–Sun week as submitted,
   so the existing Sunday-dated rows are covered without re-dating them (left as is:
   approvals, overtime and payroll reference them). General rule: never build a
-  `YYYY-MM-DD` from a local `Date` with `toISOString()` in a UTC+ zone. Other
-  `toISOString().slice(0,10)` uses remain (`leave.js`, `attendance.js`,
-  `benefits.js`, `dashboard.js`, `resignation.js`) — "today"/date comparisons that
-  are wrong for the first 8 hours of the day in MYT; not yet audited.
+  `YYYY-MM-DD` from a local `Date` with `toISOString()` in a UTC+ zone — use
+  `localDateStr(d)` (`static/js/core.js`). Follow-up sweep (same day) replaced the
+  other date uses: the Apply Leave workday preview (`ldLeaveComputeWorkdays`
+  matched holidays one day early), the Clock page's "Clocked Out" status, Benefits
+  window expiry, Home calendar "today", and the Resign / Assign Compensation
+  default dates. `notifications.js` is deliberately left (it converts local time
+  to UTC on purpose). Regression test: `static/js/__tests__/local-dates.test.js`
+  (runs the real functions with TZ=Asia/Kuala_Lumpur).
 
 ## Recurring gotchas (hit more than once this project's history)
 

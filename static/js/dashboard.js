@@ -1090,7 +1090,7 @@ function renderLeaveCalendarGrid(entries, holidays, obItems, docExpiries) {
     }
   }
 
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = localDateStr();
   let cells = '';
   for (let i = 0; i < startOffset; i++) cells += `<div></div>`;
   for (let day = 1; day <= daysInMonth; day++) {
