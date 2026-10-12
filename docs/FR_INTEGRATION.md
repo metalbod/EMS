@@ -64,17 +64,26 @@ the body stays a pure array either way. Omitting `page_size` returns the
 full matching roster in one call, which the original contract says is
 acceptable.
 
-## 1b. Single employee
+## 1b. Single employee (greeting lookup)
 
 ```
 GET {base}/employees/{ems_employee_id}
 ```
 
-Same shape as one roster row (all fields above, including `birthday`). 404 `{"detail": "Employee not found"}`
-for an unknown ID — and for an ID that only exists in another company (the key's company is the only one
-searched). An **inactive** employee is still returned, with `status: "inactive"`. Built for an external system
-that wants "name + consent + is it their birthday" for one ID without pulling the roster; the external-system
-guide (a published Artifact, "Employee Lookup Guide") describes it.
+Returns **only two fields**, for an external system that wants to greet one person:
+
+```json
+{ "display_name": "Amirah", "birthday": true }
+```
+
+| field | meaning |
+|---|---|
+| `display_name` | the employee's preferred name (or full name if none is set) **only if `consent_display_name` is true**, otherwise `null` |
+| `birthday` | `true` only if it is their birthday today (company timezone; 29 Feb = 28 Feb in a non-leap year) **and `consent_dob` is true**, otherwise `false` |
+
+Nothing else is released (no full name, date of birth, email, status or consent flags). 404
+`{"detail": "Employee not found"}` for an unknown ID, an ID that only exists in another company, **or an
+employee who is no longer active**. Use the roster pull above when the full row is needed.
 
 ## 2. Push attendance
 

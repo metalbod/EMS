@@ -29,6 +29,14 @@ class FrEmployeeOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class FrEmployeeLookupOut(BaseModel):
+    """The single-employee lookup: deliberately just two fields. `display_name` is the employee's preferred
+    name, or null unless they consented to a name greeting (consent_display_name); `birthday` is true only
+    when it is their birthday today AND they consented (consent_dob). Nothing else is released."""
+    display_name: Optional[str] = None
+    birthday: bool = False
+
+
 class FrAttendanceRow(BaseModel):
     ems_employee_id: str
     work_date: str = Field(..., description="YYYY-MM-DD, local calendar date")

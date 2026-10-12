@@ -824,14 +824,15 @@ wrapper everywhere.
   modal using it had no z-index and the page's sticky table header painted over it — use `z-50` (later in the DOM
   wins) or rebuild the CSS.
 - **FR / external employee lookup** (`routers/fr_integration.py`, `docs/FR_INTEGRATION.md`): besides the
-  roster pull there is now `GET /api/integrations/fr/employees/{ems_employee_id}` (device-key auth, one employee
-  of the key's company; 404 if unknown; inactive still returned) and every employee row (roster and single)
-  carries `birthday` — true only when today's month/day (in the **company's timezone**,
+  roster pull there is `GET /api/integrations/fr/employees/{ems_employee_id}` (device-key auth, the key's company
+  only) that returns **only** `{"display_name", "birthday"}` — `display_name` is null unless
+  `consent_display_name`, `birthday` is true only when today's month/day (in the **company's timezone**,
   `core/institution_time.institution_today`; 29 Feb = 28 Feb in a non-leap year, `is_birthday`) matches
-  `date_of_birth` **and** `consent_dob` is true. **`date_of_birth` is now null unless `consent_dob` is true** —
-  before 2026-10-13 the roster released every employee's date of birth regardless of consent and relied on the
-  kiosk to ignore it. Employee IDs are numbered per company, so the same ID can exist in two companies; a test
-  must compare the person, not just the status code, when checking tenant isolation.
+  `date_of_birth` **and** `consent_dob`. Unknown, other-company and **inactive** employees are 404. The roster rows
+  carry the same `birthday` flag, and **`date_of_birth` there is null unless `consent_dob` is true** — before
+  2026-10-13 the roster released every employee's date of birth regardless of consent and relied on the kiosk to
+  ignore it. Employee IDs are numbered per company, so the same ID can exist in two companies; a test must compare
+  the person, not just the status code, when checking tenant isolation.
 
 ## Recurring gotchas (hit more than once this project's history)
 

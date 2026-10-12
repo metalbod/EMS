@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from core.db_session import db_session
 from core.institution_time import institution_today
 from core.fr_integration_schemas import (
-    FrEmployeeOut, FrAttendanceRow, FrAttendancePushResult,
+    FrEmployeeOut, FrEmployeeLookupOut, FrAttendanceRow, FrAttendancePushResult,
 )
 from routers.attendance import get_device
 
@@ -124,18 +124,20 @@ def fr_list_employees(
     return [_to_fr_employee(r, today) for r in rows]
 
 
-@router.get("/employees/{ems_employee_id}", response_model=FrEmployeeOut)
+@router.get("/employees/{ems_employee_id}", response_model=FrEmployeeLookupOut)
 @db_session
 def fr_get_employee(conn, ems_employee_id: str, device: dict = Depends(get_device)) -> Dict[str, Any]:
-    """One employee by ID, same shape as a roster row — name, the three consent flags, and `birthday`
-    (true only if it is their birthday today in the company's timezone AND they consented). An inactive
-    employee is still returned (status 'inactive'); an unknown ID, or one in another company, is a 404."""
+    """Look up one employee by ID for a greeting: just `display_name` (only if they consented to a name
+    greeting, else null) and `birthday` (true only if it is their birthday today in the company's timezone
+    AND they consented to a birthday greeting). No other field is returned. An unknown ID, an ID that only
+    exists in another company, or an employee who is no longer active is a 404."""
     inst_id = device["institution_id"]
-    row = conn.execute("SELECT * FROM employees WHERE institution_id=? AND employee_id=?",
+    row = conn.execute("SELECT * FROM employees WHERE institution_id=? AND employee_id=? AND status='Active'",
                        (inst_id, ems_employee_id)).fetchone()
     if not row:
         raise HTTPException(404, detail="Employee not found")
-    return _to_fr_employee(row, institution_today(conn, inst_id))
+    e = _to_fr_employee(row, institution_today(conn, inst_id))
+    return {"display_name": e["display_name"] if e["consent_display_name"] else None, "birthday": e["birthday"]}
 
 
 @router.post("/attendance", response_model=FrAttendancePushResult, status_code=201)
