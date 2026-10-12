@@ -85,6 +85,30 @@ def test_start_timesheet_is_idempotent(client, employee_with_user, make_test_tim
     assert res.json()["id"] == first["id"]
 
 
+def test_monday_week_request_returns_the_legacy_sunday_start_timesheet(client, employee_with_user):
+    """Timesheets filed before the My Timesheet date fix are Sun-Sat; opening the same week
+    (now requested Mon-Sun) must return that one, not an empty overlapping Draft."""
+    emp, headers = employee_with_user
+    legacy = client.post("/api/timesheets", headers=headers, json={
+        "employee_id": emp["employee_id"], "period_start": "2027-05-02", "period_end": "2027-05-08",  # Sun-Sat
+    })
+    assert legacy.status_code == 201
+    same_week = client.post("/api/timesheets", headers=headers, json={
+        "employee_id": emp["employee_id"], "period_start": "2027-05-03", "period_end": "2027-05-09",  # Mon-Sun
+    })
+    assert same_week.status_code == 201
+    assert same_week.json()["id"] == legacy.json()["id"]
+
+
+def test_monday_week_request_without_a_legacy_timesheet_creates_a_new_one(client, employee_with_user):
+    emp, headers = employee_with_user
+    res = client.post("/api/timesheets", headers=headers, json={
+        "employee_id": emp["employee_id"], "period_start": "2027-06-07", "period_end": "2027-06-13",  # Mon-Sun
+    })
+    assert res.status_code == 201
+    assert res.json()["period_start"] == "2027-06-07"
+
+
 def test_employee_cannot_start_timesheet_for_someone_else(client, employee_with_user):
     emp, headers = employee_with_user
     res = client.post("/api/timesheets", headers=headers, json={

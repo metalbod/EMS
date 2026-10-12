@@ -702,6 +702,15 @@ wrapper everywhere.
   default dates. `notifications.js` is deliberately left (it converts local time
   to UTC on purpose). Regression test: `static/js/__tests__/local-dates.test.js`
   (runs the real functions with TZ=Asia/Kuala_Lumpur).
+  **Follow-up regression (v0.53):** making the page ask for Mon–Sun weeks meant
+  `POST /api/timesheets` (get-or-create by exact period) no longer found the existing
+  Sun–Sat rows and created empty overlapping Drafts — a user saw their submitted week
+  "missing" (hours were safe on the Sunday-dated row). `start_timesheet` now returns the
+  employee's legacy Sunday-start timesheet for a Monday-start request (same week shifted
+  one day) before creating anything; the three empty drafts it had created were deleted.
+  Known leftover: a Sunday entry in a legacy-dated week (e.g. Sun 11 Oct on a 4–10 Oct row)
+  is outside the stored range and is rejected, as it always was. Lesson: changing how a
+  key (period_start) is computed needs a check of how existing rows are looked up by it.
 
 ## Recurring gotchas (hit more than once this project's history)
 

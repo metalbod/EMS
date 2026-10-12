@@ -280,6 +280,22 @@ def start_timesheet(conn, body: TimesheetStartIn, user: dict = Depends(get_curre
     ).fetchone()
     if existing:
         return dict(existing)
+    # Before the My Timesheet date fix, weeks were filed Sun-Sat (UTC shift of a Monday start
+    # in UTC+ zones). For a Monday-start week, return that employee's legacy Sunday-start
+    # timesheet for the same week instead of creating an empty, overlapping Draft beside it.
+    try:
+        start_d = datetime.strptime(body.period_start, "%Y-%m-%d").date()
+        end_d = datetime.strptime(body.period_end, "%Y-%m-%d").date()
+    except ValueError:
+        start_d = end_d = None
+    if start_d and start_d.weekday() == 0:
+        legacy = conn.execute(
+            "SELECT * FROM timesheets WHERE employee_id=? AND period_start=? AND period_end=? AND institution_id=?",
+            (body.employee_id, (start_d - timedelta(days=1)).isoformat(),
+             (end_d - timedelta(days=1)).isoformat(), inst_id)
+        ).fetchone()
+        if legacy:
+            return dict(legacy)
     conn.execute(
         "INSERT INTO timesheets (institution_id,employee_id,period_start,period_end) VALUES (?,?,?,?)",
         (inst_id, body.employee_id, body.period_start, body.period_end)
