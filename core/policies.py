@@ -140,3 +140,21 @@ def csv_cell(value) -> str:
     if s[:1] in ("=", "+", "-", "@", "\t", "\r"):
         s = "'" + s
     return '"' + s.replace('"', '""') + '"'
+
+
+MAX_LINK_LENGTH = 2000
+
+
+def clean_link_url(raw: Optional[str]) -> Optional[str]:
+    """A policy link must be a plain http(s) URL — anything else (javascript:, data:, file:...) could run
+    code or reach local files when an employee clicks it. Returns the trimmed URL, or None if blank."""
+    from urllib.parse import urlparse
+    url = (raw or "").strip()
+    if not url:
+        return None
+    if len(url) > MAX_LINK_LENGTH or any(ord(ch) < 32 or ch.isspace() for ch in url):
+        raise ValueError("That link isn't valid")
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc or not parsed.hostname:
+        raise ValueError("The link must start with http:// or https://")
+    return url

@@ -9,9 +9,9 @@ const fn = name => {
   expect(start).toBeGreaterThan(-1);
   return src.slice(start, src.indexOf('\n}\n', start) + 2);
 };
-const { policyAudienceLabel, policyProgressPct, policyTrackerRows } = new Function(
-  `${fn('policyAudienceLabel')}${fn('policyProgressPct')}${fn('policyTrackerRows')}
-   return { policyAudienceLabel, policyProgressPct, policyTrackerRows };`)();
+const { policyAudienceLabel, policyProgressPct, policyTrackerRows, policyLinkHost } = new Function(
+  `${fn('policyAudienceLabel')}${fn('policyProgressPct')}${fn('policyTrackerRows')}${fn('policyLinkHost')}
+   return { policyAudienceLabel, policyProgressPct, policyTrackerRows, policyLinkHost };`)();
 
 describe('policy helpers', () => {
   it('labels each audience type', () => {
@@ -26,6 +26,12 @@ describe('policy helpers', () => {
     expect(policyProgressPct(50, 31)).toBe(62);
     expect(policyProgressPct(3, 1)).toBe(33);
     expect(policyProgressPct(0, 0)).toBe(0);
+  });
+
+  it('shows just the host of a link, and falls back to the raw text', () => {
+    expect(policyLinkHost('https://company.sharepoint.com/sites/hr/Handbook.pdf?v=3')).toBe('company.sharepoint.com');
+    expect(policyLinkHost('not a url')).toBe('not a url');
+    expect(policyLinkHost(null)).toBe('');
   });
 
   it('filters tracker rows into outstanding / acknowledged / all', () => {

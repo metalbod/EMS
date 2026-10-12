@@ -7,6 +7,9 @@ import pytest
 PDF = b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n"
 
 
+ACK = {"password": "ZzPytest@123"}   # employee_with_user's login password
+
+
 def pdf_url(raw=PDF):
     return "data:application/pdf;base64," + base64.b64encode(raw).decode()
 
@@ -59,15 +62,19 @@ def test_employee_must_open_then_confirm_then_acknowledge(client, hr_manager_aut
     assert row["status"] == "not_opened" and row["is_current"]
 
     # can't acknowledge before opening, nor without ticking the box
-    assert client.post(f"/api/policies/versions/{vid}/acknowledge", headers=me, json={"confirm": True}).status_code == 400
+    assert client.post(f"/api/policies/versions/{vid}/acknowledge", headers=me, json=ACK).status_code == 400
     f = client.get(f"/api/policies/versions/{vid}/file", headers=me)
     assert f.status_code == 200 and f.content == PDF
     assert client.get("/api/policies/mine", headers=me).json()[0]["status"] == "opened"
-    assert client.post(f"/api/policies/versions/{vid}/acknowledge", headers=me, json={"confirm": False}).status_code == 400
+    assert client.post(f"/api/policies/versions/{vid}/acknowledge", headers=me, json={}).status_code == 400
+    wrong = client.post(f"/api/policies/versions/{vid}/acknowledge", headers=me, json={"password": "nope-not-it"})
+    assert wrong.status_code == 403 and "password" in wrong.json()["detail"].lower()   # 403, never 401 (401 signs the user out)
 
-    ok = client.post(f"/api/policies/versions/{vid}/acknowledge", headers=me, json={"confirm": True})
+    ok = client.post(f"/api/policies/versions/{vid}/acknowledge", headers=me, json=ACK)
     assert ok.status_code == 200 and ok.json()["acknowledged_at"]
-    assert client.post(f"/api/policies/versions/{vid}/acknowledge", headers=me, json={"confirm": True}).json()["already"] is True
+    tracker_row = client.get(f"/api/policies/{pub['course_id']}/tracker", headers=hr_manager_auth).json()["rows"][0]
+    assert tracker_row["method"] == "password"
+    assert client.post(f"/api/policies/versions/{vid}/acknowledge", headers=me, json=ACK).json()["already"] is True
     assert next(r for r in client.get("/api/policies/mine", headers=me).json() if r["version_id"] == vid)["status"] == "acknowledged"
 
     tracker = client.get(f"/api/policies/{pub['course_id']}/tracker", headers=hr_manager_auth).json()
@@ -80,7 +87,7 @@ def test_employee_must_open_then_confirm_then_acknowledge(client, hr_manager_aut
 def test_acknowledging_without_requiring_open_is_allowed(client, hr_manager_auth, employee_with_user):
     emp, me = employee_with_user
     vid = publish(client, hr_manager_auth, [emp["employee_id"]], require_open=False).json()["version_id"]
-    assert client.post(f"/api/policies/versions/{vid}/acknowledge", headers=me, json={"confirm": True}).status_code == 200
+    assert client.post(f"/api/policies/versions/{vid}/acknowledge", headers=me, json=ACK).status_code == 200
 
 
 def test_a_new_version_asks_again_and_supersedes_the_old_request(client, hr_manager_auth, employee_with_user):
@@ -96,10 +103,10 @@ def test_a_new_version_asks_again_and_supersedes_the_old_request(client, hr_mana
     mine = client.get("/api/policies/mine", headers=me).json()
     assert [r["version"] for r in mine] == [2], "the unacknowledged v1 is superseded and hidden"
     client.get(f"/api/policies/versions/{v1}/file", headers=me)
-    assert client.post(f"/api/policies/versions/{v1}/acknowledge", headers=me, json={"confirm": True}).status_code == 400
+    assert client.post(f"/api/policies/versions/{v1}/acknowledge", headers=me, json=ACK).status_code == 400
 
     client.get(f"/api/policies/versions/{v2id}/file", headers=me)
-    assert client.post(f"/api/policies/versions/{v2id}/acknowledge", headers=me, json={"confirm": True}).status_code == 200
+    assert client.post(f"/api/policies/versions/{v2id}/acknowledge", headers=me, json=ACK).status_code == 200
     tracker = client.get(f"/api/policies/{pub['course_id']}/tracker", headers=hr_manager_auth).json()
     assert [v["version"] for v in tracker["versions"]] == [2, 1] and tracker["version"]["version"] == 2
     old = client.get(f"/api/policies/{pub['course_id']}/tracker", headers=hr_manager_auth, params={"version_id": v1}).json()
@@ -118,7 +125,7 @@ def test_a_policy_not_assigned_to_you_is_not_yours_to_open_or_acknowledge(client
     other = make_test_employee()
     vid = publish(client, hr_manager_auth, [other["employee_id"]]).json()["version_id"]
     assert client.get(f"/api/policies/versions/{vid}/file", headers=me).status_code == 403
-    assert client.post(f"/api/policies/versions/{vid}/acknowledge", headers=me, json={"confirm": True}).status_code == 403
+    assert client.post(f"/api/policies/versions/{vid}/acknowledge", headers=me, json=ACK).status_code == 403
     assert client.get("/api/policies/mine", headers=me).json() == []
 
 
@@ -208,7 +215,7 @@ def test_todo_lists_pending_policies(client, hr_manager_auth, employee_with_user
     item = next(t for t in todos if t["key"] == "policy-ack")
     assert item["count"] == 1 and "acknowledgement" in item["label"]
     client.get(f"/api/policies/versions/{pub['version_id']}/file", headers=me)
-    client.post(f"/api/policies/versions/{pub['version_id']}/acknowledge", headers=me, json={"confirm": True})
+    client.post(f"/api/policies/versions/{pub['version_id']}/acknowledge", headers=me, json=ACK)
     assert not [t for t in client.get("/api/todos", headers=me).json() if t["key"] == "policy-ack"]
 
 
@@ -228,7 +235,7 @@ def test_onboarding_item_linked_to_a_policy_assigns_it_and_completes_on_acknowle
         assert [r["version_id"] for r in client.get("/api/policies/mine", headers=me).json()] == [pol["version_id"]]
         client.get(f"/api/policies/versions/{pol['version_id']}/file", headers=me)
         assert client.post(f"/api/policies/versions/{pol['version_id']}/acknowledge", headers=me,
-                           json={"confirm": True}).status_code == 200
+                           json=ACK).status_code == 200
         detail = client.get(f"/api/ob/checklists/{cl.json()['id']}", headers=hr_manager_auth).json()
         got = next(i for i in detail["items"] if i["id"] == item.json()["id"])
         assert got["status"] == "Done"
@@ -273,7 +280,7 @@ def test_manual_reminder_emails_outstanding_people_and_holds_off_repeats(
 def test_reminder_skips_people_who_already_acknowledged(client, hr_manager_auth, employee_with_user, configured_email_settings):
     emp, me = employee_with_user
     pub = publish(client, hr_manager_auth, [emp["employee_id"]], require_open=False).json()
-    client.post(f"/api/policies/versions/{pub['version_id']}/acknowledge", headers=me, json={"confirm": True})
+    client.post(f"/api/policies/versions/{pub['version_id']}/acknowledge", headers=me, json=ACK)
     with patch("core.email_engine.smtplib.SMTP"):
         res = client.post(f"/api/policies/versions/{pub['version_id']}/remind", headers=hr_manager_auth)
     assert res.json() == {"queued": 0, "skipped_recent": 0, "no_email": 0}
@@ -299,15 +306,73 @@ def test_csv_export_lists_each_person_and_neutralises_formulas(client, hr_manage
     emp, me = employee_with_user
     pub = publish(client, hr_manager_auth, [emp["employee_id"]], title="ZZ Export Policy").json()
     client.get(f"/api/policies/versions/{pub['version_id']}/file", headers=me)
-    client.post(f"/api/policies/versions/{pub['version_id']}/acknowledge", headers=me, json={"confirm": True})
+    client.post(f"/api/policies/versions/{pub['version_id']}/acknowledge", headers=me, json=ACK)
     res = client.get(f"/api/policies/{pub['course_id']}/export.csv", headers=hr_manager_auth)
     assert res.status_code == 200 and res.headers["content-type"].startswith("text/csv")
     assert "attachment" in res.headers["content-disposition"] and ".csv" in res.headers["content-disposition"]
     text = res.content.decode("utf-8")
     assert text.startswith("﻿")
     lines = text.lstrip("﻿").strip().split("\r\n")
-    assert lines[0].startswith('"Employee ID","Name","Department","Policy","Version"')
+    assert lines[0].startswith('"Employee ID","Name","Department","Policy","Version","Link"')
     assert len(lines) == 2
     assert emp["employee_id"] in lines[1] and "ZZ Export Policy" in lines[1] and "Acknowledged" in lines[1]
-    assert "I have read and understood ZZ Export Policy (v1)." in lines[1]
+    assert "I have read and understood ZZ Export Policy (v1) and confirm this with my login password." in lines[1]
+    assert '"Password"' in lines[1]
     assert client.get(f"/api/policies/{pub['course_id']}/export.csv", headers=me).status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Link documents (with an optional PDF copy) and the password confirmation
+# ---------------------------------------------------------------------------
+def test_publish_with_a_link_only_and_opening_it_is_recorded(client, hr_manager_auth, employee_with_user):
+    emp, me = employee_with_user
+    res = client.post("/api/policies", headers=hr_manager_auth, json={
+        "title": f"ZZ Link Policy {os.urandom(3).hex()}", "audience_type": "people", "employee_ids": [emp["employee_id"]],
+        "link_url": "https://example.com/handbook?v=3"})
+    assert res.status_code == 201, res.text
+    vid = res.json()["version_id"]
+    row = client.get("/api/policies/mine", headers=me).json()[0]
+    assert row["link_url"] == "https://example.com/handbook?v=3" and row["file_name"] is None
+    assert client.get(f"/api/policies/versions/{vid}/file", headers=me).status_code == 404    # no uploaded file
+    # can't acknowledge before opening the link, and opening it through EMS is what records it
+    assert client.post(f"/api/policies/versions/{vid}/acknowledge", headers=me, json=ACK).status_code == 400
+    opened = client.post(f"/api/policies/versions/{vid}/open-link", headers=me)
+    assert opened.status_code == 200 and opened.json()["url"] == "https://example.com/handbook?v=3"
+    assert client.get("/api/policies/mine", headers=me).json()[0]["status"] == "opened"
+    assert client.post(f"/api/policies/versions/{vid}/acknowledge", headers=me, json=ACK).status_code == 200
+
+
+def test_a_link_can_come_with_a_pdf_copy_kept_as_evidence(client, hr_manager_auth, employee_with_user):
+    emp, me = employee_with_user
+    res = publish(client, hr_manager_auth, [emp["employee_id"]], link_url="https://example.com/policy")
+    assert res.status_code == 201, res.text
+    row = client.get("/api/policies/mine", headers=me).json()[0]
+    assert row["link_url"] and row["file_name"] == "policy.pdf"
+    assert client.get(f"/api/policies/versions/{row['version_id']}/file", headers=me).content == PDF
+    csv = client.get(f"/api/policies/{res.json()['course_id']}/export.csv", headers=hr_manager_auth).content.decode()
+    assert "https://example.com/policy" in csv
+
+
+@pytest.mark.parametrize("bad", ["javascript:alert(1)", "data:text/html,hi", "file:///etc/passwd", "ftp://x.com/a",
+                                 "example.com/no-scheme", "https://", "https://exa mple.com", "http://a.com/\nx"])
+def test_only_plain_http_links_are_accepted(client, hr_manager_auth, employee_with_user, bad):
+    emp, _ = employee_with_user
+    res = client.post("/api/policies", headers=hr_manager_auth, json={
+        "title": "ZZ Bad Link", "audience_type": "people", "employee_ids": [emp["employee_id"]], "link_url": bad})
+    assert res.status_code == 400, f"{bad!r} should be refused"
+
+
+def test_a_version_needs_a_file_or_a_link(client, hr_manager_auth, employee_with_user):
+    emp, _ = employee_with_user
+    res = client.post("/api/policies", headers=hr_manager_auth, json={
+        "title": "ZZ Nothing", "audience_type": "people", "employee_ids": [emp["employee_id"]]})
+    assert res.status_code == 400
+
+
+def test_wrong_passwords_are_rate_limited(client, hr_manager_auth, employee_with_user):
+    emp, me = employee_with_user
+    vid = publish(client, hr_manager_auth, [emp["employee_id"]], require_open=False).json()["version_id"]
+    codes = [client.post(f"/api/policies/versions/{vid}/acknowledge", headers=me, json={"password": "wrong"}).status_code
+             for _ in range(6)]
+    assert codes[:5] == [403] * 5 and codes[5] == 429
+    assert client.post(f"/api/policies/versions/{vid}/acknowledge", headers=me, json=ACK).status_code == 429

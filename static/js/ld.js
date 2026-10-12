@@ -795,6 +795,9 @@ function policyAudienceLabel(type, ref, lookup) {
   if(type==='people') return 'Named people';
   return 'All employees';
 }
+function policyLinkHost(url) {
+  try { return new URL(url).hostname; } catch (e) { return url || ''; }
+}
 function policyProgressPct(assigned, acknowledged) {
   return assigned>0?Math.round(acknowledged/assigned*100):0;
 }
@@ -816,7 +819,7 @@ async function loadLdPolicies() {
   body.innerHTML=ldPolicies.map(p=>{
     const pct=policyProgressPct(p.assigned,p.acknowledged);
     return `<tr class="border-t border-slate-100">
-      <td class="px-4 py-3"><p class="font-medium text-slate-800">${esc(p.title)}</p><p class="text-xs text-slate-400">${esc(p.file_name)}</p></td>
+      <td class="px-4 py-3"><p class="font-medium text-slate-800">${esc(p.title)}</p><p class="text-xs text-slate-400">${esc(p.link_url?`Link: ${policyLinkHost(p.link_url)}${p.file_name?' + PDF copy':''}`:(p.file_name||''))}</p></td>
       <td class="px-4 py-3 whitespace-nowrap">v${p.version}${p.change_note?`<p class="text-xs text-slate-400 max-w-[14rem] truncate" title="${esc(p.change_note)}">${esc(p.change_note)}</p>`:''}</td>
       <td class="px-4 py-3 text-slate-600">${esc(policyAudienceLabel(p.audience_type,p.audience_ref,policyEmpName))}</td>
       <td class="px-4 py-3 whitespace-nowrap text-slate-600">${p.due_date?fmtDate(p.due_date):'—'}</td>
@@ -860,7 +863,13 @@ function openPolicyPublishModal(courseId) {
     document.getElementById('policyRequireOpen').checked=!!p.require_open;
   }
   onPolicyAudienceChange();
+  onPolicySourceChange();
   document.getElementById('policyPublishModal').classList.remove('hidden');
+}
+function onPolicySourceChange() {
+  const link=document.getElementById('policySource').value==='link';
+  document.getElementById('policySourceFileWrap').classList.toggle('hidden',link);
+  document.getElementById('policySourceLinkWrap').classList.toggle('hidden',!link);
 }
 function closePolicyPublishModal() { document.getElementById('policyPublishModal').classList.add('hidden'); }
 
@@ -894,14 +903,20 @@ function renderPolicyPeople() {
 const submitPolicyPublish = guardAsync(async function(e) {
   e.preventDefault();
   const courseId=document.getElementById('policyCourseId').value;
-  const file=document.getElementById('policyFile').files?.[0];
-  if(!file){ alert('Choose the document to publish.'); return; }
-  const ext='.'+file.name.split('.').pop().toLowerCase();
-  if(!LD_DOC_EXTS.includes(ext)){ alert('Please choose a PDF, Word (.doc/.docx) or PowerPoint (.ppt/.pptx) file.'); return; }
-  if(file.size>LD_DOC_MAX_BYTES){ alert(`That file is ${ldFileSize(file.size)} — the limit is 20 MB.`); return; }
+  const isLink=document.getElementById('policySource').value==='link';
+  const link=document.getElementById('policyLink').value.trim();
+  const file=document.getElementById(isLink?'policyFileCopy':'policyFile').files?.[0];
+  if(isLink){
+    if(!/^https?:\/\//i.test(link)){ alert('Enter the link, starting with http:// or https://'); return; }
+  } else if(!file){ alert('Choose the document to publish.'); return; }
+  if(file){
+    const ext='.'+file.name.split('.').pop().toLowerCase();
+    if(!LD_DOC_EXTS.includes(ext)){ alert('Please choose a PDF, Word (.doc/.docx) or PowerPoint (.ppt/.pptx) file.'); return; }
+    if(file.size>LD_DOC_MAX_BYTES){ alert(`That file is ${ldFileSize(file.size)} — the limit is 20 MB.`); return; }
+  }
   const type=document.getElementById('policyAudienceType').value;
   if(type==='people'&&!policyPeople.length){ alert('Add at least one person.'); return; }
-  const dataUrl=await new Promise((resolve,reject)=>{ const r=new FileReader(); r.onload=()=>resolve(r.result); r.onerror=reject; r.readAsDataURL(file); });
+  const dataUrl=file?await new Promise((resolve,reject)=>{ const r=new FileReader(); r.onload=()=>resolve(r.result); r.onerror=reject; r.readAsDataURL(file); }):null;
   const body={
     title:document.getElementById('policyTitle').value.trim(),
     change_note:document.getElementById('policyChangeNote').value.trim()||null,
@@ -910,7 +925,8 @@ const submitPolicyPublish = guardAsync(async function(e) {
     audience_type:type,
     audience_ref:type==='department'?document.getElementById('policyAudienceDept').value:type==='team'?document.getElementById('policyAudienceTeam').value:null,
     employee_ids:type==='people'?policyPeople.map(x=>x.id):[],
-    file_name:file.name, data_url:dataUrl,
+    link_url:isLink?link:null,
+    file_name:file?file.name:null, data_url:dataUrl,
   };
   const res=await api(courseId?`/api/policies/${courseId}/versions`:'/api/policies',{method:'POST',body:JSON.stringify(body)});
   if(!res?.ok){ const d=await res?.json().catch(()=>null); alert(d?.detail?apiErrorText(d.detail):'Could not publish the policy.'); return; }
@@ -1041,10 +1057,17 @@ function openPolicyRead(versionId) {
     (p.description?`<p>${esc(p.description)}</p>`:'')+
     (p.change_note?`<p class="text-slate-500">What changed: ${esc(p.change_note)}</p>`:'')+
     (p.due_date?`<p class="text-slate-500">Acknowledge by ${fmtDate(p.due_date)}</p>`:'');
-  document.getElementById('policyReadFile').textContent=p.file_name;
-  document.getElementById('policyReadConfirm').checked=false;
+  // The document: a link (opened through EMS so the open is recorded), an uploaded file, or both
+  // (then the file is the PDF copy of what the link showed).
+  const row=(label,btnLabel,fn)=>`<div class="border border-slate-200 rounded-lg px-4 py-3 flex items-center justify-between gap-3">
+    <span class="text-sm text-slate-700 truncate" title="${esc(label)}">${esc(label)}</span>
+    <button onclick="${fn}()" class="btn-ghost text-sm shrink-0 whitespace-nowrap">${btnLabel}</button></div>`;
+  document.getElementById('policyReadDocs').innerHTML=
+    (p.link_url?row(policyLinkHost(p.link_url),'Open link','policyOpenLinkFromModal'):'')+
+    (p.file_name?row(p.link_url?`PDF copy — ${p.file_name}`:p.file_name,p.link_url?'View copy':'Open document','policyOpenFromModal'):'');
+  document.getElementById('policyReadPassword').value='';
   document.getElementById('policyReadStatement').textContent=`I have read and understood ${p.title} (v${p.version}).`;
-  document.getElementById('policyReadHint').textContent=p.require_open?'Open the document first. Your acknowledgement is recorded with today\'s date and time.':'Your acknowledgement is recorded with today\'s date and time.';
+  document.getElementById('policyReadHint').textContent=(p.require_open?'Open the document first. ':'')+"Entering your password confirms it's you. Your acknowledgement is recorded with today's date and time.";
   document.getElementById('policyReadAckBlock').classList.toggle('hidden',done||!p.is_current);
   document.getElementById('policyReadAckBtn').classList.toggle('hidden',done||!p.is_current);
   const msg=document.getElementById('policyReadDone');
@@ -1052,11 +1075,19 @@ function openPolicyRead(versionId) {
   if(done) msg.textContent=`You acknowledged this on ${fmtDateTime(p.acknowledged_at)}.`;
   document.getElementById('policyReadModal').classList.remove('hidden');
 }
-function closePolicyReadModal() { document.getElementById('policyReadModal').classList.add('hidden'); }
+function closePolicyReadModal() {
+  document.getElementById('policyReadPassword').value='';
+  document.getElementById('policyReadModal').classList.add('hidden');
+}
+
+function policyMarkOpened() {
+  policyRead.first_opened_at=policyRead.first_opened_at||new Date().toISOString();   // the server has recorded it
+  document.getElementById('policyReadHint').textContent='Thanks for opening it. Enter your password and acknowledge when you have read it.';
+}
 
 async function policyOpenFromModal() {
   const p=policyRead; if(!p) return;
-  const isPdf=/\.pdf$/i.test(p.file_name);
+  const isPdf=/\.pdf$/i.test(p.file_name||'');
   const win=isPdf?window.open('','_blank'):null;   // opened now so the popup blocker allows it
   const res=await api(`/api/policies/versions/${p.version_id}/file${isPdf?'?inline=true':''}`);
   if(!res?.ok){
@@ -1069,14 +1100,35 @@ async function policyOpenFromModal() {
   if(win) win.location=url;
   else { const a=document.createElement('a'); a.href=url; a.download=p.file_name; document.body.appendChild(a); a.click(); a.remove(); }
   setTimeout(()=>URL.revokeObjectURL(url),120000);
-  p.first_opened_at=p.first_opened_at||new Date().toISOString();   // the server has recorded it
-  document.getElementById('policyReadHint').textContent='Thanks for opening it. Tick the box and acknowledge when you have read it.';
+  policyMarkOpened();
+}
+
+async function policyOpenLinkFromModal() {
+  const p=policyRead; if(!p) return;
+  const win=window.open('','_blank');   // opened now so the popup blocker allows it
+  const res=await api(`/api/policies/versions/${p.version_id}/open-link`,{method:'POST'});
+  if(!res?.ok){
+    if(win) win.close();
+    const d=await res?.json().catch(()=>null);
+    alert(d?.detail?apiErrorText(d.detail):'Could not open the link.');
+    return;
+  }
+  const {url}=await res.json();
+  if(win){ win.opener=null; win.location=url; }
+  policyMarkOpened();
 }
 
 const submitPolicyAcknowledge = guardAsync(async function() {
   const p=policyRead; if(!p) return;
-  const res=await api(`/api/policies/versions/${p.version_id}/acknowledge`,{method:'POST',body:JSON.stringify({confirm:document.getElementById('policyReadConfirm').checked})});
-  if(!res?.ok){ const d=await res?.json().catch(()=>null); alert(d?.detail?apiErrorText(d.detail):'Could not record your acknowledgement.'); return; }
+  const password=document.getElementById('policyReadPassword').value;
+  if(!password){ alert('Enter your password to confirm.'); return; }
+  const res=await api(`/api/policies/versions/${p.version_id}/acknowledge`,{method:'POST',body:JSON.stringify({password})});
+  if(!res?.ok){
+    const d=await res?.json().catch(()=>null);
+    document.getElementById('policyReadPassword').value='';
+    alert(d?.detail?apiErrorText(d.detail):'Could not record your acknowledgement.');
+    return;
+  }
   closePolicyReadModal();
   loadLdMyPolicies();
 });

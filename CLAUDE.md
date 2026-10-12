@@ -785,7 +785,20 @@ wrapper everywhere.
   **CSV**: `GET /api/policies/{course_id}/export.csv?version_id=` (HR everyone, manager their team;
   UTF-8 with BOM, times in the company timezone, cells starting `= + - @` are neutralised by
   `csv_cell`) via the tracker's Export CSV (fetched as a blob because of the auth header).
-
+  **Links and password confirmation** (`20261015_0001`): a policy version's document can be an
+  uploaded file, a **link**, or a link **plus** a PDF copy (kept as evidence — a page behind a link can
+  change after people acknowledge). `policy_versions.file_id` is now nullable (a CHECK requires a file or
+  a link) and `link_url` is validated by `core.policies.clean_link_url` — **http/https only**, no
+  whitespace/control characters (a `javascript:`/`data:`/`file:` link would run code or reach local files
+  when clicked). Employees open a link via `POST .../versions/{id}/open-link`, which stamps
+  `first_opened_at` and returns the URL (a link opened any other way can't be recorded; "must open
+  first" works the same as for files). Acknowledging no longer uses a tick box: the body is
+  `{"password": ...}` and the server verifies it against the caller's own login password
+  (`verify_password`), rate-limited with the **login limiter** (`policy-ack:{user id}`, 5 wrong tries per
+  5 minutes → 429) and answering a wrong password with **403, never 401** (the front end signs a user
+  out on 401). `policy_acknowledgements.method` is `'password'`; NULL = an earlier tick-box
+  acknowledgement (CSV shows "Tick box"). It is a recorded confirmation, not a certified e-signature;
+  anything contractual needs a real e-signature service (not built).
 ## Recurring gotchas (hit more than once this project's history)
 
 - **RLS fails closed, not open.** A table gets RLS auto-enabled by an

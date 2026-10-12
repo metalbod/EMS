@@ -9,7 +9,10 @@ versions and who acknowledged them are kept.
 
 Deliberately: assignment is explicit (people who join later are NOT added automatically — HR uses
 "Add people" on the tracker, or links the policy to an onboarding checklist item); acknowledging
-is a tick box recorded with the account, time and exact wording, not a signature.
+is confirmed by the employee re-entering their own login password (rate-limited like logins), recorded
+with the account, time, method and exact wording — a recorded confirmation, not a drawn or certified
+e-signature. A version's document is an uploaded file, a link (opened through EMS so the open is
+recorded), or a link plus a PDF copy kept as evidence of what the link showed.
 """
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -27,10 +30,12 @@ from core.email_engine import _cooldown_cutoff, _smtp_settings, queue_email
 from core.ob_ld_shared import complete_linked_ob_items
 from core.org_queries import subordinates_in_clause
 from core.permission_matrix import has_permission, require_permission
+from routers.auth import _check_login_rate_limit, _clear_login_failures, _record_login_failure
+from core.deps import verify_password
 from core.policies import (
     AUDIENCE_TYPES, MANUAL_REMIND_COOLDOWN_DAYS, POLICY_CATEGORY, REMINDER_CATEGORY, ack_status, assign_version,
     csv_cell, current_version, last_reminded_map, reminder_dedupe_key, reminder_email, resolve_audience,
-    today_for_institution,
+    today_for_institution, clean_link_url,
 )
 from routers.ld import validate_document_upload
 
@@ -50,8 +55,9 @@ class PolicyPublishIn(BaseModel):
     audience_type: str = "all"             # all | department | team | people
     audience_ref: Optional[str] = None     # department name, or the team lead's employee_id
     employee_ids: List[str] = []           # for audience_type 'people'
-    file_name: str
-    data_url: str
+    file_name: Optional[str] = None        # an uploaded document (PDF/Word/PowerPoint)...
+    data_url: Optional[str] = None
+    link_url: Optional[str] = None         # ...and/or a link; with both, the file is the PDF copy kept as evidence
 
 
 class PolicyAssignIn(BaseModel):
@@ -59,7 +65,7 @@ class PolicyAssignIn(BaseModel):
 
 
 class PolicyAcknowledgeIn(BaseModel):
-    confirm: bool = False
+    password: str = ""                     # the employee's own login password confirms the acknowledgement
 
 
 def _check_audience(conn, inst_id: int, body: PolicyPublishIn) -> List[str]:
@@ -92,16 +98,25 @@ def _check_due_date(due: Optional[str]) -> Optional[str]:
 
 def _store_version(conn, inst_id: int, course_id: int, version: int, body: PolicyPublishIn,
                    user: dict, audience_ids: List[str]) -> int:
-    file_name, mime, data = validate_document_upload(body.file_name, body.data_url)
+    try:
+        link = clean_link_url(body.link_url)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    has_file = bool((body.file_name or "").strip() or (body.data_url or "").strip())
+    if not has_file and not link:
+        raise HTTPException(400, "Add a document or a link to it")
+    file_id = None
+    if has_file:
+        file_name, mime, data = validate_document_upload(body.file_name or "", body.data_url or "")
+        conn.execute(
+            "INSERT INTO ld_module_files (institution_id,course_id,file_name,mime_type,size_bytes,data,uploaded_by) VALUES (?,?,?,?,?,?,?)",
+            (inst_id, course_id, file_name, mime, len(data), psycopg2.Binary(data), user["username"])
+        )
+        file_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     conn.execute(
-        "INSERT INTO ld_module_files (institution_id,course_id,file_name,mime_type,size_bytes,data,uploaded_by) VALUES (?,?,?,?,?,?,?)",
-        (inst_id, course_id, file_name, mime, len(data), psycopg2.Binary(data), user["username"])
-    )
-    file_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-    conn.execute(
-        "INSERT INTO policy_versions (institution_id,course_id,version,file_id,change_note,due_date,require_open,"
-        "audience_type,audience_ref,published_by) VALUES (?,?,?,?,?,?,?,?,?,?)",
-        (inst_id, course_id, version, file_id, (body.change_note or "").strip() or None, _check_due_date(body.due_date),
+        "INSERT INTO policy_versions (institution_id,course_id,version,file_id,link_url,change_note,due_date,require_open,"
+        "audience_type,audience_ref,published_by) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (inst_id, course_id, version, file_id, link, (body.change_note or "").strip() or None, _check_due_date(body.due_date),
          1 if body.require_open else 0, body.audience_type, (body.audience_ref or None), user["username"])
     )
     version_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -182,11 +197,11 @@ def list_policies(conn, user: dict = Depends(get_current_user)) -> List[Dict[str
     today = today_for_institution(conn, inst_id)
     versions = conn.execute("""
         SELECT c.id AS course_id, c.title, c.description, v.id AS version_id, v.version, v.due_date, v.audience_type,
-               v.audience_ref, v.require_open, v.change_note, v.created_at AS published_at, f.file_name
+               v.audience_ref, v.require_open, v.change_note, v.created_at AS published_at, v.link_url, f.file_name
         FROM ld_courses c
         JOIN policy_versions v ON v.course_id=c.id
              AND v.version=(SELECT MAX(version) FROM policy_versions WHERE course_id=c.id)
-        JOIN ld_module_files f ON f.id=v.file_id
+        LEFT JOIN ld_module_files f ON f.id=v.file_id
         WHERE c.institution_id=? AND c.category=? AND c.is_active=1
         ORDER BY c.title
     """, (inst_id, POLICY_CATEGORY)).fetchall()
@@ -218,13 +233,13 @@ def my_policies(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, 
     today = today_for_institution(conn, inst_id)
     rows = conn.execute("""
         SELECT a.id AS ack_id, a.version_id, a.assigned_at, a.first_opened_at, a.acknowledged_at,
-               v.course_id, v.version, v.change_note, v.due_date, v.require_open, f.file_name,
+               v.course_id, v.version, v.change_note, v.due_date, v.require_open, v.link_url, f.file_name,
                c.title, c.description,
                (v.version=(SELECT MAX(version) FROM policy_versions WHERE course_id=v.course_id)) AS is_current
         FROM policy_acknowledgements a
         JOIN policy_versions v ON v.id=a.version_id
         JOIN ld_courses c ON c.id=v.course_id AND c.is_active=1
-        JOIN ld_module_files f ON f.id=v.file_id
+        LEFT JOIN ld_module_files f ON f.id=v.file_id
         WHERE a.institution_id=? AND a.employee_id=?
         ORDER BY a.assigned_at DESC
     """, (inst_id, emp_id)).fetchall()
@@ -246,7 +261,7 @@ def policy_tracker(conn, course_id: int, version_id: Optional[int] = None, statu
     sees_all, scope_sql, scope_params = _scope(conn, inst_id, user)
     course = _get_policy(conn, inst_id, course_id)
     versions = [dict(v) for v in conn.execute(
-        "SELECT id, version, change_note, due_date, created_at, published_by, audience_type, audience_ref, require_open "
+        "SELECT id, version, change_note, due_date, created_at, published_by, audience_type, audience_ref, require_open, link_url, file_id "
         "FROM policy_versions WHERE course_id=? AND institution_id=? ORDER BY version DESC", (course_id, inst_id)
     ).fetchall()]
     if not versions:
@@ -268,7 +283,7 @@ def policy_tracker(conn, course_id: int, version_id: Optional[int] = None, statu
             "employee_id": a["employee_id"], "full_name": a["full_name"], "preferred_name": a["preferred_name"],
             "department": a["department"], "employee_status": a["employee_status"], "status": st,
             "assigned_at": a["assigned_at"], "first_opened_at": a["first_opened_at"], "acknowledged_at": a["acknowledged_at"],
-            "last_reminded_at": reminded.get(a["employee_id"]),
+            "last_reminded_at": reminded.get(a["employee_id"]), "method": a["method"],
         })
     summary = {
         "assigned": len(rows), "opened": sum(1 for r in rows if r["first_opened_at"]),
@@ -334,9 +349,9 @@ def download_policy_file(conn, version_id: int, inline: bool = False, user: dict
     if not own and user["role"] not in FILE_ANY_ROLES:
         raise HTTPException(403, "This policy isn't assigned to you")
     f = conn.execute("SELECT file_name, mime_type, data FROM ld_module_files WHERE id=? AND institution_id=?",
-                     (ver["file_id"], inst_id)).fetchone()
+                     (ver["file_id"], inst_id)).fetchone() if ver["file_id"] else None
     if not f:
-        raise HTTPException(404, "File not found")
+        raise HTTPException(404, "This version has no uploaded file")
     if own and not own["first_opened_at"]:
         conn.execute("UPDATE policy_acknowledgements SET first_opened_at=to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS') WHERE id=?",
                      (own["id"],))
@@ -350,6 +365,28 @@ def download_policy_file(conn, version_id: int, inline: bool = False, user: dict
             "X-Content-Type-Options": "nosniff",
             "Cache-Control": "private, no-store",
         })
+
+
+@router.post("/api/policies/versions/{version_id}/open-link")
+@db_session
+def open_policy_link(conn, version_id: int, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    """Opening a linked document goes through here so the first open is recorded (a link opened any
+    other way can't be). Returns the URL for the browser to open."""
+    inst_id = need_inst(user)
+    ver = conn.execute("SELECT * FROM policy_versions WHERE id=? AND institution_id=?", (version_id, inst_id)).fetchone()
+    if not ver or not ver["link_url"]:
+        raise HTTPException(404, "This version has no link")
+    own = None
+    if user.get("employee_id"):
+        own = conn.execute("SELECT id, first_opened_at FROM policy_acknowledgements WHERE version_id=? AND employee_id=?",
+                           (version_id, user["employee_id"])).fetchone()
+    if not own and user["role"] not in FILE_ANY_ROLES:
+        raise HTTPException(403, "This policy isn't assigned to you")
+    if own and not own["first_opened_at"]:
+        conn.execute("UPDATE policy_acknowledgements SET first_opened_at=to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS') WHERE id=?",
+                     (own["id"],))
+        conn.commit()
+    return {"url": ver["link_url"]}
 
 
 @router.post("/api/policies/versions/{version_id}/acknowledge")
@@ -368,14 +405,23 @@ def acknowledge_policy(conn, version_id: int, body: PolicyAcknowledgeIn, user: d
     latest = current_version(conn, inst_id, ver["course_id"])
     if latest["id"] != ver["id"]:
         raise HTTPException(400, "A newer version of this policy has been published. Please read that one.")
-    if not body.confirm:
-        raise HTTPException(400, "Tick the box to confirm you have read and understood it")
     if ver["require_open"] and not ack["first_opened_at"]:
         raise HTTPException(400, "Open the document first, then acknowledge it")
-    statement = f"I have read and understood {course['title']} (v{ver['version']})."
+    if not body.password:
+        raise HTTPException(400, "Enter your password to confirm")
+    # The caller's own password is the confirmation. Wrong guesses are rate-limited like logins (and
+    # answered with 403, not 401 — the app signs a user out on 401).
+    rate_key = f"policy-ack:{user['id']}"
+    _check_login_rate_limit(rate_key)
+    pw = conn.execute("SELECT password_hash FROM users WHERE id=?", (user["id"],)).fetchone()
+    if not pw or not verify_password(body.password, pw["password_hash"]):
+        _record_login_failure(rate_key)
+        raise HTTPException(403, "That password isn't right")
+    _clear_login_failures(rate_key)
+    statement = f"I have read and understood {course['title']} (v{ver['version']}) and confirm this with my login password."
     conn.execute(
         "UPDATE policy_acknowledgements SET acknowledged_at=to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'), "
-        "statement=?, acknowledged_by=? WHERE id=?", (statement, user["username"], ack["id"])
+        "statement=?, acknowledged_by=?, method='password' WHERE id=?", (statement, user["username"], ack["id"])
     )
     complete_linked_ob_items(conn, inst_id, emp_id, ver["course_id"], user)
     write_entity_audit(conn, user, inst_id, "L&D", "policy", ver["course_id"], "Acknowledged",
@@ -465,13 +511,15 @@ def export_policy_csv(conn, course_id: int, version_id: Optional[int] = None, us
             WHERE a.version_id=?{scope_sql} ORDER BY e.full_name""", [ver["id"], *scope_params]
     ).fetchall()
     labels = {"acknowledged": "Acknowledged", "overdue": "Overdue", "opened": "Opened, not acknowledged", "not_opened": "Not opened"}
-    header = ["Employee ID", "Name", "Department", "Policy", "Version", "Due", "Status", "Assigned", "Opened", "Acknowledged", "Statement"]
+    header = ["Employee ID", "Name", "Department", "Policy", "Version", "Link", "Due", "Status", "Assigned", "Opened", "Acknowledged", "Method", "Statement"]
     lines = [",".join(csv_cell(h) for h in header)]
     for a in acks:
         lines.append(",".join(csv_cell(v) for v in [
-            a["employee_id"], a["full_name"], a["department"], course["title"], f"v{ver['version']}", ver["due_date"] or "",
-            labels[ack_status(a, ver["due_date"], today)], local(a["assigned_at"]), local(a["first_opened_at"]),
-            local(a["acknowledged_at"]), a["statement"] or ""]))
+            a["employee_id"], a["full_name"], a["department"], course["title"], f"v{ver['version']}", ver["link_url"] or "",
+            ver["due_date"] or "", labels[ack_status(a, ver["due_date"], today)], local(a["assigned_at"]),
+            local(a["first_opened_at"]), local(a["acknowledged_at"]),
+            ("Password" if a["method"] == "password" else "Tick box") if a["acknowledged_at"] else "",
+            a["statement"] or ""]))
     safe = "".join(ch if ch.isalnum() else "-" for ch in course["title"]).strip("-")[:60] or "policy"
     return Response(
         content="\ufeff" + "\r\n".join(lines) + "\r\n", media_type="text/csv; charset=utf-8",

@@ -4532,11 +4532,24 @@
       <input type="hidden" id="policyCourseId"/>
       <div><label class="lbl">Title <span class="text-red-500">*</span></label><input id="policyTitle" class="inp" required placeholder="Employee Handbook"/></div>
       <div id="policyVersionNote" class="hidden text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2"></div>
-      <div class="grid grid-cols-2 gap-3">
-        <div><label class="lbl">Acknowledge by</label><input id="policyDue" type="date" class="inp"/></div>
-        <div><label class="lbl">Document <span class="text-red-500">*</span></label><input id="policyFile" type="file" accept=".pdf,.doc,.docx,.ppt,.pptx" class="inp"/></div>
+      <div><label class="lbl">Acknowledge by</label><input id="policyDue" type="date" class="inp"/></div>
+      <div>
+        <label class="lbl">Document <span class="text-red-500">*</span></label>
+        <select id="policySource" class="inp" onchange="onPolicySourceChange()">
+          <option value="file">Upload a file</option>
+          <option value="link">Link to a document</option>
+        </select>
+        <div id="policySourceFileWrap" class="mt-2">
+          <input id="policyFile" type="file" accept=".pdf,.doc,.docx,.ppt,.pptx" class="inp"/>
+          <p class="text-xs text-slate-400 mt-1">PDF, Word or PowerPoint, up to 20 MB.</p>
+        </div>
+        <div id="policySourceLinkWrap" class="mt-2 hidden">
+          <input id="policyLink" type="url" class="inp" placeholder="https://company.sharepoint.com/handbook"/>
+          <label class="lbl mt-3">PDF copy of the linked document <span class="text-slate-400 font-normal">(optional)</span></label>
+          <input id="policyFileCopy" type="file" accept=".pdf,.doc,.docx,.ppt,.pptx" class="inp"/>
+          <p class="text-xs text-slate-400 mt-1">Kept as evidence of what the link showed today — a page can change after people acknowledge it. Employees must be able to open the link.</p>
+        </div>
       </div>
-      <p class="text-xs text-slate-400 -mt-2">PDF, Word or PowerPoint, up to 20 MB.</p>
       <div><label class="lbl">What changed</label><textarea id="policyChangeNote" class="inp" rows="2" placeholder="Shown to employees, e.g. Updated leave carry-forward section"></textarea></div>
       <div>
         <label class="lbl">Audience <span class="text-red-500">*</span></label>
@@ -4626,12 +4639,11 @@
     </div>
     <div class="p-6 space-y-4 overflow-y-auto flex-1">
       <div id="policyReadMeta" class="text-sm text-slate-600 space-y-1"></div>
-      <div class="border border-slate-200 rounded-lg px-4 py-3 flex items-center justify-between gap-3">
-        <span id="policyReadFile" class="text-sm text-slate-700 truncate"></span>
-        <button id="policyReadOpenBtn" onclick="policyOpenFromModal()" class="btn-ghost text-sm shrink-0">Open document</button>
-      </div>
+      <div id="policyReadDocs" class="space-y-2"></div>
       <div id="policyReadAckBlock">
-        <label class="flex items-start gap-2 text-sm"><input type="checkbox" id="policyReadConfirm" class="mt-0.5"/><span id="policyReadStatement">I have read and understood this document.</span></label>
+        <p id="policyReadStatement" class="text-sm text-slate-700">I have read and understood this document.</p>
+        <label class="lbl mt-3" for="policyReadPassword">Enter your login password to confirm</label>
+        <input id="policyReadPassword" type="password" autocomplete="current-password" class="inp" onkeydown="if(event.key==='Enter'){event.preventDefault();submitPolicyAcknowledge();}"/>
         <p id="policyReadHint" class="text-xs text-slate-400 mt-2">Your acknowledgement is recorded with today's date and time.</p>
       </div>
       <p id="policyReadDone" class="hidden text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2"></p>
