@@ -210,6 +210,10 @@ app.conf.beat_schedule = {
         "task": "core.tasks.reminder_sweep_timesheets",
         "schedule": crontab(minute="*/30"),
     },
+    "reminder-sweep-policies": {
+        "task": "core.tasks.reminder_sweep_policies",
+        "schedule": crontab(minute="*/30"),
+    },
 }
 
 
@@ -335,6 +339,27 @@ def reminder_sweep_timesheets(self):
             last_period_start = (current_week_monday - timedelta(days=7)).isoformat()
             sent += sr.sweep_pending_timesheets(conn, inst["id"], last_period_start, dry_run=False)
         logger.info(f"Task {self.request.id}: timesheet reminder sweep sent {sent} email(s)")
+        return {"sent": sent}
+    finally:
+        conn.close()
+
+
+@app.task(bind=True, **_RETRY_KWARGS)
+def reminder_sweep_policies(self):
+    """Beat-scheduled: policy acknowledgement reminders (see scripts/send_reminders.py's
+    sweep_pending_policies), for every notifications_email_enabled institution whose own
+    reminder_acknowledgement_hour matches the current local hour there."""
+    sr = _send_reminders_module()
+    set_rls_context(None, bypass_rls=True)
+    conn = get_db()
+    try:
+        sent = 0
+        for inst in sr._enabled_institutions(conn):
+            if not _reminder_category_due_now(inst, "reminder_acknowledgement_hour"):
+                continue
+            today_str = _reminder_local_now(inst).date().isoformat()
+            sent += sr.sweep_pending_policies(conn, inst["id"], today_str, dry_run=False)
+        logger.info(f"Task {self.request.id}: policy reminder sweep sent {sent} email(s)")
         return {"sent": sent}
     finally:
         conn.close()

@@ -13,7 +13,7 @@ import pytest
 from celery.schedules import crontab
 
 from db import get_db
-from core.tasks import app as celery_app, reminder_sweep_checklists, reminder_sweep_holidays, reminder_sweep_timesheets
+from core.tasks import app as celery_app, reminder_sweep_checklists, reminder_sweep_holidays, reminder_sweep_policies, reminder_sweep_timesheets
 
 
 def _insert_tracking_row(user_id, inst_id, task_id=None):
@@ -97,6 +97,7 @@ def test_beat_schedule_has_expected_reminder_entries():
         ("reminder-sweep-checklists", "core.tasks.reminder_sweep_checklists"),
         ("reminder-sweep-holidays", "core.tasks.reminder_sweep_holidays"),
         ("reminder-sweep-timesheets", "core.tasks.reminder_sweep_timesheets"),
+        ("reminder-sweep-policies", "core.tasks.reminder_sweep_policies"),
     ):
         assert schedule[name]["task"] == task_name
         assert schedule[name]["schedule"] == every_30_min
@@ -259,3 +260,34 @@ def test_reminder_sweep_holidays_task_emails_when_holiday_tomorrow(
         client.delete(f"/api/holidays/{holiday['id']}", headers=hr_manager_auth)
         settings["reminder_holidays_enabled"] = original_holidays_enabled
         client.put("/api/notifications/reminder-settings", headers=hr_manager_auth, json=settings)
+
+
+def test_reminder_sweep_policies_task_emails_outstanding_person_when_hour_matches(
+    client, hr_manager_auth, make_test_employee, configured_email_settings
+):
+    import base64
+    emp_email = f"zztaskpol_{os.urandom(4).hex()}@zzpytest.example.com"
+    emp = make_test_employee(full_name="ZZ Task Policy Employee", personal_email=emp_email)
+    pdf = base64.b64encode(b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n").decode()
+    pub = client.post("/api/policies", headers=hr_manager_auth, json={
+        "title": f"ZZ Task Policy {os.urandom(3).hex()}", "audience_type": "people", "employee_ids": [emp["employee_id"]],
+        "file_name": "p.pdf", "data_url": "data:application/pdf;base64," + pdf, "due_date": "2026-09-22"})
+    assert pub.status_code == 201, pub.text
+
+    original = client.get("/api/notifications/reminder-settings", headers=hr_manager_auth).json()
+    client.put("/api/notifications/reminder-settings", headers=hr_manager_auth,
+               json={**original, "reminder_acknowledgement_enabled": True, "reminder_acknowledgement_hour": 9})
+    try:
+        due_now = _FIXED_MONDAY.replace(hour=9)
+        with patch("core.email_engine.smtplib.SMTP"), patch("core.tasks._reminder_local_now", return_value=due_now):
+            result = reminder_sweep_policies()
+        assert result["sent"] >= 1
+        wrong_hour = _FIXED_MONDAY.replace(hour=4)
+        with patch("core.email_engine.smtplib.SMTP"), patch("core.tasks._reminder_local_now", return_value=wrong_hour):
+            assert reminder_sweep_policies()["sent"] == 0
+    finally:
+        client.put("/api/notifications/reminder-settings", headers=hr_manager_auth, json=original)
+
+    log = client.get("/api/notifications/email-log", headers=hr_manager_auth).json()
+    row = next(r for r in log if r["recipient_email"] == emp_email and r["category"] == "policy_reminder")
+    assert row["status"] == "sent"

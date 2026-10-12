@@ -481,3 +481,60 @@ def test_overdue_reminder_skips_item_blocked_by_an_unfinished_prerequisite(
         for t in (first, second):
             client.delete(f"/api/ob/templates/{t['id']}", headers=hr_manager_auth)
         client.delete(f"/api/ob/template-sets/{tset['id']}", headers=hr_manager_auth)
+
+
+# ---------------------------------------------------------------------------
+# Policy acknowledgement reminders (reminder_acknowledgement_enabled)
+# ---------------------------------------------------------------------------
+def _publish_policy(client, headers, emp_id, due_date):
+    import base64
+    pdf = base64.b64encode(b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n").decode()
+    body = {"title": f"ZZ Reminder Policy {os.urandom(3).hex()}", "audience_type": "people", "employee_ids": [emp_id],
+            "file_name": "p.pdf", "data_url": "data:application/pdf;base64," + pdf, "due_date": due_date}
+    res = client.post("/api/policies", headers=headers, json=body)
+    assert res.status_code == 201, res.text
+    return res.json()
+
+
+def _enable_policy_reminders(client, headers, on=True):
+    settings = client.get("/api/notifications/reminder-settings", headers=headers).json()
+    settings["reminder_acknowledgement_enabled"] = on
+    assert client.put("/api/notifications/reminder-settings", headers=headers, json=settings).status_code == 200
+
+
+@pytest.mark.parametrize("days_until_due,expect", [(2, True), (0, True), (-5, True), (10, False), (None, False)])
+def test_policy_reminder_window(
+    client, hr_manager_auth, make_test_employee, configured_email_settings, restore_reminder_settings,
+    reminder_conn, days_until_due, expect
+):
+    emp_email = f"zzpolsweep_{os.urandom(4).hex()}@zzpytest.example.com"
+    emp = make_test_employee(personal_email=emp_email)
+    today = datetime.now(timezone.utc).date()
+    due = None if days_until_due is None else (today + timedelta(days=days_until_due)).isoformat()
+    _publish_policy(client, hr_manager_auth, emp["employee_id"], due)
+    _enable_policy_reminders(client, hr_manager_auth)
+    with patch("core.email_engine.smtplib.SMTP"):
+        send_reminders.sweep_pending_policies(reminder_conn, emp["institution_id"], today.isoformat(), dry_run=False)
+    log = client.get("/api/notifications/email-log", headers=hr_manager_auth).json()
+    assert any(r["recipient_email"] == emp_email and r["category"] == "policy_reminder" for r in log) is expect
+
+
+def test_policy_reminder_repeats_only_weekly_and_respects_the_toggle(
+    client, hr_manager_auth, make_test_employee, configured_email_settings, restore_reminder_settings, reminder_conn
+):
+    emp_email = f"zzpolrep_{os.urandom(4).hex()}@zzpytest.example.com"
+    emp = make_test_employee(personal_email=emp_email)
+    today = datetime.now(timezone.utc).date().isoformat()
+    _publish_policy(client, hr_manager_auth, emp["employee_id"], today)
+    inst_id = emp["institution_id"]
+
+    _enable_policy_reminders(client, hr_manager_auth, on=False)
+    with patch("core.email_engine.smtplib.SMTP"):
+        assert send_reminders.sweep_pending_policies(reminder_conn, inst_id, today, dry_run=False) == 0
+
+    _enable_policy_reminders(client, hr_manager_auth, on=True)
+    with patch("core.email_engine.smtplib.SMTP"):
+        first = send_reminders.sweep_pending_policies(reminder_conn, inst_id, today, dry_run=False)
+        second = send_reminders.sweep_pending_policies(reminder_conn, inst_id, today, dry_run=False)
+    assert first >= 1
+    assert second == 0, "the same person must not be re-reminded within a week"

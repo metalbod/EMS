@@ -59,9 +59,8 @@ never replaces, the master notifications_email_enabled toggle:
     the banner on, this email off, or both. Reminded once per employee
     per holiday, never re-sent for the same holiday.
 
-reminder_acknowledgement_enabled is stored but not swept here — nothing
-reads it yet, since the "document acknowledgement" feature it will
-eventually gate doesn't exist.
+reminder_acknowledgement_enabled gates sweep_pending_policies (policy acknowledgement reminders:
+from 3 days before a policy's due date, then weekly until acknowledged).
 
 All categories dedupe against email_log's dedupe_key column rather than
 any new tracking table.
@@ -89,6 +88,9 @@ load_dotenv(env_file)
 
 from db import get_db, set_rls_context  # noqa: E402
 from core.email_engine import send_email, already_sent_recently  # noqa: E402
+from core.policies import (  # noqa: E402
+    AUTO_REMIND_EVERY_DAYS, REMIND_BEFORE_DUE_DAYS, REMINDER_CATEGORY, reminder_dedupe_key, reminder_email,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ems")
@@ -267,6 +269,42 @@ def sweep_pending_timesheets(conn, inst_id, period_start, dry_run):
     return sent
 
 
+def sweep_pending_policies(conn, inst_id, today_str, dry_run):
+    """Emails each Active employee who hasn't acknowledged the CURRENT version of a policy that has a
+    due date, from REMIND_BEFORE_DUE_DAYS before it falls due and then every AUTO_REMIND_EVERY_DAYS
+    while it's still outstanding (a manual 'Send reminder' from the tracker counts too — they share one
+    dedupe key per person per version). Policies with no due date are only reminded by hand."""
+    if not _category_enabled(conn, inst_id, "reminder_acknowledgement_enabled"):
+        return 0
+    horizon = (date.fromisoformat(today_str) + timedelta(days=REMIND_BEFORE_DUE_DAYS)).isoformat()
+    rows = conn.execute("""
+        SELECT a.employee_id, v.id AS version_id, v.version, v.due_date, c.title,
+               e.full_name, e.work_email, e.personal_email
+        FROM policy_acknowledgements a
+        JOIN policy_versions v ON v.id=a.version_id
+             AND v.version=(SELECT MAX(version) FROM policy_versions WHERE course_id=v.course_id)
+        JOIN ld_courses c ON c.id=v.course_id AND c.is_active=1
+        JOIN employees e ON e.employee_id=a.employee_id AND e.institution_id=a.institution_id AND e.status='Active'
+        WHERE a.institution_id=? AND a.acknowledged_at IS NULL AND v.due_date IS NOT NULL AND v.due_date<=?
+    """, (inst_id, horizon)).fetchall()
+    sent = 0
+    for r in rows:
+        key = reminder_dedupe_key(r["version_id"], r["employee_id"])
+        if already_sent_recently(conn, inst_id, REMINDER_CATEGORY, key, AUTO_REMIND_EVERY_DAYS):
+            continue
+        email = r["work_email"] or r["personal_email"]
+        if not email:
+            continue
+        subject, body = reminder_email(r["title"], r["version"], r["due_date"], today_str, r["full_name"], APP_BASE_URL)
+        if dry_run:
+            print(f"[DRY RUN] {REMINDER_CATEGORY} -> {email}: {subject}")
+        else:
+            send_email(conn, inst_id, email, subject, body, REMINDER_CATEGORY, "policy", key)
+            conn.commit()
+        sent += 1
+    return sent
+
+
 def sweep_holiday_eve_emails(conn, inst_id, dry_run):
     """Emails every active employee when a public holiday falls tomorrow,
     in the institution's own timezone — same "is a holiday exactly one
@@ -332,7 +370,7 @@ def main():
         last_period_start = (today - timedelta(days=today.weekday() + 7)).isoformat()
 
         institutions = _enabled_institutions(conn)
-        total_checklist = total_timesheet = total_holiday = 0
+        total_checklist = total_timesheet = total_holiday = total_policy = 0
         for inst in institutions:
             inst_id = inst["id"]
             # Each sweep checks its own reminder_<category>_enabled column
@@ -342,6 +380,7 @@ def main():
             if is_monday:
                 total_timesheet += sweep_pending_timesheets(conn, inst_id, last_period_start, args.dry_run)
             total_holiday += sweep_holiday_eve_emails(conn, inst_id, args.dry_run)
+            total_policy += sweep_pending_policies(conn, inst_id, today_str, args.dry_run)
     finally:
         conn.close()
 
@@ -349,7 +388,7 @@ def main():
         f"Reminder sweep complete ({'dry run, ' if args.dry_run else ''}"
         f"{len(institutions)} institution(s)): "
         f"{total_checklist} checklist reminder(s), {total_timesheet} timesheet reminder(s), "
-        f"{total_holiday} holiday reminder(s)"
+        f"{total_holiday} holiday reminder(s), {total_policy} policy reminder(s)"
         f"{' (timesheet check skipped, not Monday)' if not is_monday else ''}."
     )
     logger.info(msg)

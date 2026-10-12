@@ -87,3 +87,56 @@ def ack_status(ack, due_date: Optional[str], today: str) -> str:
     if due_date and due_date < today:
         return "overdue"
     return "opened" if ack["first_opened_at"] else "not_opened"
+
+
+# ---------------------------------------------------------------------------
+# Reminders (automatic sweep in scripts/send_reminders.py, manual button in routers/policies.py)
+# ---------------------------------------------------------------------------
+REMINDER_CATEGORY = "policy_reminder"
+REMIND_BEFORE_DUE_DAYS = 3     # the automatic reminders start this many days before the due date
+AUTO_REMIND_EVERY_DAYS = 7     # ...then repeat this often while it's still unacknowledged
+MANUAL_REMIND_COOLDOWN_DAYS = 1
+
+
+def reminder_dedupe_key(version_id: int, employee_id: str) -> str:
+    """One key per person per version for every kind of reminder, so a manual nudge also holds off
+    the next automatic one and the tracker can show a single 'last reminded'."""
+    return f"policy:{version_id}:{employee_id}"
+
+
+def reminder_email(title: str, version: int, due_date: Optional[str], today: str, name: Optional[str], app_url: str):
+    """(subject, html) for a 'please acknowledge' email."""
+    if due_date and due_date < today:
+        when = f"It was due on {due_date}."
+        subject = f"Overdue: please acknowledge {title}"
+    elif due_date:
+        when = f"Please do so by {due_date}."
+        subject = f"Please acknowledge {title}"
+    else:
+        when = ""
+        subject = f"Please acknowledge {title}"
+    body = (
+        f"<p>Hi {name or 'there'},</p>"
+        f"<p><strong>{title}</strong> (version {version}) is waiting for your acknowledgement. {when}</p>"
+        f'<p><a href="{app_url}">Open EMS</a> and go to L&amp;D → My Trainings to read and acknowledge it.</p>'
+    )
+    return subject, body
+
+
+def last_reminded_map(conn, inst_id: int, version_id: int) -> dict:
+    """{employee_id: last reminder time (UTC text)} for one version, from the email log."""
+    prefix = f"policy:{version_id}:"
+    rows = conn.execute(
+        "SELECT dedupe_key, MAX(created_at) AS at FROM email_log "
+        "WHERE institution_id=? AND category=? AND status='sent' AND dedupe_key LIKE ? GROUP BY dedupe_key",
+        (inst_id, REMINDER_CATEGORY, prefix + "%")
+    ).fetchall()
+    return {r["dedupe_key"][len(prefix):]: r["at"] for r in rows}
+
+
+def csv_cell(value) -> str:
+    """A CSV-safe cell: quoted, and neutralised if a spreadsheet would read it as a formula."""
+    s = "" if value is None else str(value)
+    if s[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        s = "'" + s
+    return '"' + s.replace('"', '""') + '"'

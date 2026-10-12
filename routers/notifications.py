@@ -379,12 +379,11 @@ REMINDER_CATEGORY_COLUMNS = (
     "reminder_holidays_enabled", "reminder_acknowledgement_enabled",
 )
 
-# Categories with a configurable sweep hour — excludes 'acknowledgement',
-# which has no hour column (see the 20260922_0003 migration's docstring:
-# that category is disabled/unused, nothing reads it yet).
+# Categories with a configurable sweep hour (acknowledgement's was added in 20261014_0001 once
+# policy reminders existed).
 REMINDER_HOUR_COLUMNS = (
     "reminder_timesheet_hour", "reminder_onboarding_hour",
-    "reminder_offboarding_hour", "reminder_holidays_hour",
+    "reminder_offboarding_hour", "reminder_holidays_hour", "reminder_acknowledgement_hour",
 )
 
 # Only the timesheet sweep is weekly, not daily — see the 20260922_0004
@@ -406,6 +405,7 @@ class ReminderSettingsIn(BaseModel):
     reminder_onboarding_hour: int
     reminder_offboarding_hour: int
     reminder_holidays_hour: int
+    reminder_acknowledgement_hour: int = 9
     reminder_timesheet_day_of_week: int
 
     @field_validator(*REMINDER_HOUR_COLUMNS)
@@ -455,10 +455,8 @@ def update_reminder_settings(
     core/tasks.py's reminder_sweep_checklists/_holidays/_timesheets and
     their _reminder_category_due_now helper. `reminder_timesheet_day_of_week`
     (0=Monday..6=Sunday) additionally gates the timesheet sweep to one day a
-    week, same helper. `reminder_acknowledgement_enabled` is stored ahead of
-    the "document acknowledgement" feature it will eventually gate; nothing
-    reads it yet (see the Reminders tab's "coming soon" row) — it has no
-    `_hour`/`_day_of_week` column for the same reason."""
+    week, same helper. `reminder_acknowledgement_enabled` / `_hour` drive the daily policy
+    acknowledgement reminders (routers/policies.py, core/tasks.py's reminder_sweep_policies)."""
     inst_id = need_inst(user)
     assignments = ", ".join(f"{c}=?" for c in _ALL_REMINDER_SETTINGS_COLUMNS)
     values = [getattr(body, c) for c in _ALL_REMINDER_SETTINGS_COLUMNS]

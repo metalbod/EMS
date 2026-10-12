@@ -15,6 +15,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from urllib.parse import quote
 
+import os
 import psycopg2
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
@@ -22,12 +23,14 @@ from pydantic import BaseModel
 from core.audit import write_entity_audit
 from core.db_session import db_session
 from core.deps import get_current_user, need_inst
+from core.email_engine import _cooldown_cutoff, _smtp_settings, queue_email
 from core.ob_ld_shared import complete_linked_ob_items
 from core.org_queries import subordinates_in_clause
 from core.permission_matrix import has_permission, require_permission
 from core.policies import (
-    AUDIENCE_TYPES, POLICY_CATEGORY, ack_status, assign_version, current_version,
-    resolve_audience, today_for_institution,
+    AUDIENCE_TYPES, MANUAL_REMIND_COOLDOWN_DAYS, POLICY_CATEGORY, REMINDER_CATEGORY, ack_status, assign_version,
+    csv_cell, current_version, last_reminded_map, reminder_dedupe_key, reminder_email, resolve_audience,
+    today_for_institution,
 )
 from routers.ld import validate_document_upload
 
@@ -257,6 +260,7 @@ def policy_tracker(conn, course_id: int, version_id: Optional[int] = None, statu
             LEFT JOIN employees e ON e.employee_id=a.employee_id AND e.institution_id=a.institution_id
             WHERE a.version_id=?{scope_sql} ORDER BY e.full_name""", [ver["id"], *scope_params]
     ).fetchall()
+    reminded = last_reminded_map(conn, inst_id, ver["id"])
     rows = []
     for a in acks:
         st = ack_status(a, ver["due_date"], today)
@@ -264,6 +268,7 @@ def policy_tracker(conn, course_id: int, version_id: Optional[int] = None, statu
             "employee_id": a["employee_id"], "full_name": a["full_name"], "preferred_name": a["preferred_name"],
             "department": a["department"], "employee_status": a["employee_status"], "status": st,
             "assigned_at": a["assigned_at"], "first_opened_at": a["first_opened_at"], "acknowledged_at": a["acknowledged_at"],
+            "last_reminded_at": reminded.get(a["employee_id"]),
         })
     summary = {
         "assigned": len(rows), "opened": sum(1 for r in rows if r["first_opened_at"]),
@@ -286,6 +291,7 @@ def policy_tracker(conn, course_id: int, version_id: Optional[int] = None, statu
         "policy": {"course_id": course_id, "title": course["title"], "description": course["description"]},
         "version": ver, "versions": versions, "is_current": is_current, "summary": summary,
         "rows": rows, "unassigned": unassigned, "can_manage": sees_all,
+        "email_ready": bool(_smtp_settings(conn, inst_id)) if sees_all else None,
     }
 
 
@@ -377,3 +383,97 @@ def acknowledge_policy(conn, version_id: int, body: PolicyAcknowledgeIn, user: d
     conn.commit()
     row = conn.execute("SELECT acknowledged_at FROM policy_acknowledgements WHERE id=?", (ack["id"],)).fetchone()
     return {"acknowledged_at": row["acknowledged_at"], "already": False}
+
+
+@router.post("/api/policies/versions/{version_id}/remind")
+@db_session
+def remind_policy_outstanding(conn, version_id: int, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    """HR's manual "Send reminder": emails everyone who still hasn't acknowledged this (current) version,
+    except anyone already reminded in the last day. Goes out in the background; each send is logged."""
+    require_permission(conn, user, MANAGE_KEY)
+    inst_id = need_inst(user)
+    ver = conn.execute("SELECT * FROM policy_versions WHERE id=? AND institution_id=?", (version_id, inst_id)).fetchone()
+    if not ver:
+        raise HTTPException(404, "Policy version not found")
+    latest = current_version(conn, inst_id, ver["course_id"])
+    if latest["id"] != ver["id"]:
+        raise HTTPException(400, "Only the current version can be reminded")
+    if not _smtp_settings(conn, inst_id):
+        raise HTTPException(400, "Email isn't set up for this company. Turn on email notifications under Settings → Notifications first.")
+    course = conn.execute("SELECT title FROM ld_courses WHERE id=?", (ver["course_id"],)).fetchone()
+    today = today_for_institution(conn, inst_id)
+    app_url = os.environ.get("APP_BASE_URL", "https://ems-app.fly.dev")
+    recent = last_reminded_map(conn, inst_id, version_id)
+    cutoff = _cooldown_cutoff(MANUAL_REMIND_COOLDOWN_DAYS)
+    rows = conn.execute("""
+        SELECT a.employee_id, e.full_name, e.work_email, e.personal_email
+        FROM policy_acknowledgements a
+        JOIN employees e ON e.employee_id=a.employee_id AND e.institution_id=a.institution_id AND e.status='Active'
+        WHERE a.version_id=? AND a.institution_id=? AND a.acknowledged_at IS NULL ORDER BY e.full_name
+    """, (version_id, inst_id)).fetchall()
+    queued = skipped_recent = no_email = 0
+    for r in rows:
+        if recent.get(r["employee_id"], "") >= cutoff:
+            skipped_recent += 1
+            continue
+        email = r["work_email"] or r["personal_email"]
+        if not email:
+            no_email += 1
+            continue
+        subject, body = reminder_email(course["title"], ver["version"], ver["due_date"], today, r["full_name"], app_url)
+        queue_email(conn, inst_id, email, subject, body, REMINDER_CATEGORY, "policy",
+                    reminder_dedupe_key(version_id, r["employee_id"]))
+        queued += 1
+    write_entity_audit(conn, user, inst_id, "L&D", "policy", ver["course_id"], "Reminders sent",
+                       detail=f"v{ver['version']}: reminder emailed to {queued} employee(s)", entity_label=course["title"])
+    conn.commit()
+    return {"queued": queued, "skipped_recent": skipped_recent, "no_email": no_email}
+
+
+@router.get("/api/policies/{course_id}/export.csv")
+@db_session
+def export_policy_csv(conn, course_id: int, version_id: Optional[int] = None, user: dict = Depends(get_current_user)):
+    """The acknowledgement record for one version as a CSV (audit evidence). HR gets everyone, a manager
+    their own team. Times are in the company's own timezone."""
+    inst_id = need_inst(user)
+    _, scope_sql, scope_params = _scope(conn, inst_id, user)
+    course = _get_policy(conn, inst_id, course_id)
+    if version_id:
+        ver = conn.execute("SELECT * FROM policy_versions WHERE id=? AND course_id=? AND institution_id=?",
+                           (version_id, course_id, inst_id)).fetchone()
+    else:
+        ver = current_version(conn, inst_id, course_id)
+    if not ver:
+        raise HTTPException(404, "Policy version not found")
+    from zoneinfo import ZoneInfo
+    from datetime import timezone as _tz
+    tzrow = conn.execute("SELECT timezone FROM institutions WHERE id=?", (inst_id,)).fetchone()
+    try:
+        tz = ZoneInfo((tzrow["timezone"] if tzrow else None) or "UTC")
+    except Exception:
+        tz = ZoneInfo("UTC")
+
+    def local(ts):
+        if not ts:
+            return ""
+        return datetime.strptime(ts[:19], "%Y-%m-%d %H:%M:%S").replace(tzinfo=_tz.utc).astimezone(tz).strftime("%Y-%m-%d %H:%M")
+
+    today = today_for_institution(conn, inst_id)
+    acks = conn.execute(
+        f"""SELECT a.*, e.full_name, e.department FROM policy_acknowledgements a
+            LEFT JOIN employees e ON e.employee_id=a.employee_id AND e.institution_id=a.institution_id
+            WHERE a.version_id=?{scope_sql} ORDER BY e.full_name""", [ver["id"], *scope_params]
+    ).fetchall()
+    labels = {"acknowledged": "Acknowledged", "overdue": "Overdue", "opened": "Opened, not acknowledged", "not_opened": "Not opened"}
+    header = ["Employee ID", "Name", "Department", "Policy", "Version", "Due", "Status", "Assigned", "Opened", "Acknowledged", "Statement"]
+    lines = [",".join(csv_cell(h) for h in header)]
+    for a in acks:
+        lines.append(",".join(csv_cell(v) for v in [
+            a["employee_id"], a["full_name"], a["department"], course["title"], f"v{ver['version']}", ver["due_date"] or "",
+            labels[ack_status(a, ver["due_date"], today)], local(a["assigned_at"]), local(a["first_opened_at"]),
+            local(a["acknowledged_at"]), a["statement"] or ""]))
+    safe = "".join(ch if ch.isalnum() else "-" for ch in course["title"]).strip("-")[:60] or "policy"
+    return Response(
+        content="\ufeff" + "\r\n".join(lines) + "\r\n", media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{safe}-v{ver["version"]}-acknowledgements.csv"',
+                 "Cache-Control": "private, no-store"})

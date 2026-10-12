@@ -769,8 +769,22 @@ wrapper everywhere.
   legal e-signature. Visibility: HR (`learning_development.manage_courses_quizzes`) sees everyone and
   publishes; a `manager` sees read-only status for their own reporting chain; others get 403.
   Employees see **My Policies** at the top of My Trainings (superseded unacknowledged versions are
-  hidden) and a Home To-Do item (`policy-ack`). Not built yet (phase 2): reminder emails
-  (`reminder_acknowledgement_enabled` is still stored but unread), CSV export.
+  hidden) and a Home To-Do item (`policy-ack`).
+  **Phase 2 — reminders and CSV** (`20261014_0001` adds `institutions.reminder_acknowledgement_hour`,
+  default 9): the **automatic** sweep is `sweep_pending_policies` in `scripts/send_reminders.py`, run
+  by Celery beat's `reminder_sweep_policies` (`core/tasks.py`, every 30 min like the others, gated by
+  the institution's hour and the opt-in `reminder_acknowledgement_enabled` toggle — default off — on
+  Settings → Notifications → Reminders). It emails each Active, unacknowledged assignee of the
+  **current** version of a policy **that has a due date**, from 3 days before it (`REMIND_BEFORE_DUE_DAYS`)
+  and then every 7 days (`AUTO_REMIND_EVERY_DAYS`) until they acknowledge; no due date = manual only.
+  The **manual** "Send reminder (N)" on the tracker (`POST /api/policies/versions/{id}/remind`, HR,
+  current version, needs email set up, skips anyone reminded in the last day, queued via
+  `queue_email`) shares the same email-log dedupe key per person per version
+  (`policy:{version_id}:{employee_id}`, category `policy_reminder`), so a manual nudge also holds off
+  the next automatic one and the tracker's "Last reminded" column is just the latest log row.
+  **CSV**: `GET /api/policies/{course_id}/export.csv?version_id=` (HR everyone, manager their team;
+  UTF-8 with BOM, times in the company timezone, cells starting `= + - @` are neutralised by
+  `csv_cell`) via the tracker's Export CSV (fetched as a blob because of the auth header).
 
 ## Recurring gotchas (hit more than once this project's history)
 

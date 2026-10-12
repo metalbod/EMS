@@ -953,7 +953,12 @@ function renderPolicyTracker() {
     <td class="px-4 py-2.5"><span class="badge text-xs ${POLICY_STATUS_CLASS[r.status]}">${POLICY_STATUS_LABEL[r.status]}</span></td>
     <td class="px-4 py-2.5 text-slate-600 whitespace-nowrap">${r.first_opened_at?fmtDateTime(r.first_opened_at):'—'}</td>
     <td class="px-4 py-2.5 text-slate-600 whitespace-nowrap">${r.acknowledged_at?fmtDateTime(r.acknowledged_at):'—'}</td>
+    <td class="px-4 py-2.5 text-slate-600 whitespace-nowrap">${r.last_reminded_at?fmtDateTime(r.last_reminded_at):'—'}</td>
   </tr>`).join('');
+  const outstanding=t.rows.filter(r=>r.status!=='acknowledged'&&(!r.employee_status||r.employee_status==='Active')).length;
+  const remindBtn=document.getElementById('policyRemindBtn');
+  remindBtn.classList.toggle('hidden',!(t.can_manage&&t.is_current&&outstanding>0));
+  remindBtn.textContent=`Send reminder (${outstanding})`;
   const un=t.unassigned||[];
   document.getElementById('policyUnassignedHint').classList.toggle('hidden',!un.length);
   document.getElementById('policyUnassignedText').textContent=un.length
@@ -966,6 +971,29 @@ function renderPolicyTracker() {
     initEmployeeSearchSelect('policyTrackerAddEmp','Search employee…');
   }
 }
+const remindPolicyOutstanding = guardAsync(async function() {
+  const t=policyTracker;
+  if(t.email_ready===false){ alert("Email isn't set up for this company. Turn on email notifications under Settings → Notifications first."); return; }
+  if(!confirm('Email everyone who has not acknowledged this version yet? Anyone reminded in the last day is skipped.')) return;
+  const res=await api(`/api/policies/versions/${t.version.id}/remind`,{method:'POST'});
+  if(!res?.ok){ const d=await res?.json().catch(()=>null); alert(d?.detail?apiErrorText(d.detail):'Could not send the reminders.'); return; }
+  const r=await res.json();
+  alert(`Reminder queued for ${r.queued} ${r.queued===1?'person':'people'}.${r.skipped_recent?` ${r.skipped_recent} skipped (reminded in the last day).`:''}${r.no_email?` ${r.no_email} have no email address.`:''}`);
+  await openPolicyTracker(t.policy.course_id, t.version.id);
+});
+
+// CSV of who acknowledged what and when (audit evidence). Fetched with the auth header, so it goes via a blob.
+async function exportPolicyCsv() {
+  const t=policyTracker;
+  const res=await api(`/api/policies/${t.policy.course_id}/export.csv?version_id=${t.version.id}`);
+  if(!res?.ok){ const d=await res?.json().catch(()=>null); alert(d?.detail?apiErrorText(d.detail):'Could not export.'); return; }
+  const url=URL.createObjectURL(await res.blob());
+  const a=document.createElement('a'); a.href=url;
+  a.download=`${t.policy.title.replace(/[^A-Za-z0-9]+/g,'-')}-v${t.version.version}-acknowledgements.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),60000);
+}
+
 async function policyAssign(ids) {
   const res=await api(`/api/policies/versions/${policyTracker.version.id}/assign`,{method:'POST',body:JSON.stringify({employee_ids:ids})});
   if(!res?.ok){ const d=await res?.json().catch(()=>null); alert(d?.detail?apiErrorText(d.detail):'Could not add them.'); return; }

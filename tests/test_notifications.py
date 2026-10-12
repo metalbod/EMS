@@ -462,7 +462,7 @@ REMINDER_SETTINGS_KEYS = (
 )
 REMINDER_SETTINGS_HOUR_KEYS = (
     "reminder_timesheet_hour", "reminder_onboarding_hour",
-    "reminder_offboarding_hour", "reminder_holidays_hour",
+    "reminder_offboarding_hour", "reminder_holidays_hour", "reminder_acknowledgement_hour",
 )
 REMINDER_SETTINGS_DAY_OF_WEEK_KEYS = ("reminder_timesheet_day_of_week",)
 
@@ -499,12 +499,15 @@ def test_update_reminder_settings_roundtrip(client, hr_manager_auth, restore_rem
         "reminder_offboarding_enabled": False, "reminder_holidays_enabled": True,
         "reminder_acknowledgement_enabled": False,
         "reminder_timesheet_hour": 7, "reminder_onboarding_hour": 9,
-        "reminder_offboarding_hour": 17, "reminder_holidays_hour": 6,
+        "reminder_offboarding_hour": 17, "reminder_holidays_hour": 6, "reminder_acknowledgement_hour": 15,
         "reminder_timesheet_day_of_week": 4,
     }
     res = client.put("/api/notifications/reminder-settings", headers=hr_manager_auth, json=payload)
     assert res.status_code == 200
     assert res.json() == payload
+    bad = client.put("/api/notifications/reminder-settings", headers=hr_manager_auth,
+                     json={**payload, "reminder_acknowledgement_hour": 24})
+    assert bad.status_code == 422
 
     res = client.get("/api/notifications/reminder-settings", headers=hr_manager_auth)
     assert res.json() == payload

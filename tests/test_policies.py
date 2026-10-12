@@ -234,3 +234,80 @@ def test_onboarding_item_linked_to_a_policy_assigns_it_and_completes_on_acknowle
         assert got["status"] == "Done"
     finally:
         client.delete(f"/api/ob/checklists/{cl.json()['id']}", headers=hr_manager_auth)
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: reminders and CSV export
+# ---------------------------------------------------------------------------
+from unittest.mock import patch
+
+
+def _with_email(make_test_employee):
+    return make_test_employee(personal_email=f"zzpolrem_{os.urandom(4).hex()}@zzpytest.example.com")
+
+
+def test_manual_reminder_emails_outstanding_people_and_holds_off_repeats(
+    client, hr_manager_auth, make_test_employee, configured_email_settings
+):
+    todo = _with_email(make_test_employee)
+    done = _with_email(make_test_employee)
+    pub = publish(client, hr_manager_auth, [todo["employee_id"], done["employee_id"]]).json()
+    vid = pub["version_id"]
+    # `done` acknowledges (require_open off for brevity)... simplest: publish again is overkill, so mark via the API as that user
+    # — instead leave both outstanding and check the counts, then acknowledge one through a second policy-less path below.
+    with patch("core.email_engine.smtplib.SMTP"):
+        res = client.post(f"/api/policies/versions/{vid}/remind", headers=hr_manager_auth)
+        assert res.status_code == 200, res.text
+        assert res.json() == {"queued": 2, "skipped_recent": 0, "no_email": 0}
+        again = client.post(f"/api/policies/versions/{vid}/remind", headers=hr_manager_auth).json()
+        assert again == {"queued": 0, "skipped_recent": 2, "no_email": 0}
+
+    log = client.get("/api/notifications/email-log", headers=hr_manager_auth).json()
+    sent_to = {r["recipient_email"] for r in log if r["category"] == "policy_reminder"}
+    assert todo["personal_email"] in sent_to and done["personal_email"] in sent_to
+    tracker = client.get(f"/api/policies/{pub['course_id']}/tracker", headers=hr_manager_auth).json()
+    assert tracker["email_ready"] is True
+    assert all(r["last_reminded_at"] for r in tracker["rows"])
+
+
+def test_reminder_skips_people_who_already_acknowledged(client, hr_manager_auth, employee_with_user, configured_email_settings):
+    emp, me = employee_with_user
+    pub = publish(client, hr_manager_auth, [emp["employee_id"]], require_open=False).json()
+    client.post(f"/api/policies/versions/{pub['version_id']}/acknowledge", headers=me, json={"confirm": True})
+    with patch("core.email_engine.smtplib.SMTP"):
+        res = client.post(f"/api/policies/versions/{pub['version_id']}/remind", headers=hr_manager_auth)
+    assert res.json() == {"queued": 0, "skipped_recent": 0, "no_email": 0}
+
+
+def test_reminder_needs_email_set_up_and_hr_and_the_current_version(
+    client, hr_manager_auth, employee_with_user, clean_email_settings
+):
+    emp, me = employee_with_user
+    pub = publish(client, hr_manager_auth, [emp["employee_id"]]).json()
+    assert client.post(f"/api/policies/versions/{pub['version_id']}/remind", headers=hr_manager_auth).status_code == 400
+    assert client.post(f"/api/policies/versions/{pub['version_id']}/remind", headers=me).status_code == 403
+    client.post(f"/api/policies/{pub['course_id']}/versions", headers=hr_manager_auth, json={
+        "audience_type": "people", "employee_ids": [emp["employee_id"]], "file_name": "v2.pdf", "data_url": pdf_url()})
+    assert client.post(f"/api/policies/versions/{pub['version_id']}/remind", headers=hr_manager_auth).status_code in (400, 404)
+
+
+def test_csv_export_lists_each_person_and_neutralises_formulas(client, hr_manager_auth, employee_with_user):
+    from core.policies import csv_cell
+    assert csv_cell('=HYPERLINK("x")') == '"\'=HYPERLINK(""x"")"'
+    assert csv_cell("a,b") == '"a,b"' and csv_cell(None) == '""'
+
+    emp, me = employee_with_user
+    pub = publish(client, hr_manager_auth, [emp["employee_id"]], title="ZZ Export Policy").json()
+    client.get(f"/api/policies/versions/{pub['version_id']}/file", headers=me)
+    client.post(f"/api/policies/versions/{pub['version_id']}/acknowledge", headers=me, json={"confirm": True})
+    res = client.get(f"/api/policies/{pub['course_id']}/export.csv", headers=hr_manager_auth)
+    assert res.status_code == 200 and res.headers["content-type"].startswith("text/csv")
+    assert "attachment" in res.headers["content-disposition"] and ".csv" in res.headers["content-disposition"]
+    text = res.content.decode("utf-8")
+    assert text.startswith("﻿")
+    lines = text.lstrip("﻿").strip().split("\r\n")
+    assert lines[0].startswith('"Employee ID","Name","Department","Policy","Version"')
+    assert len(lines) == 2
+    assert emp["employee_id"] in lines[1] and "ZZ Export Policy" in lines[1] and "Acknowledged" in lines[1]
+    assert "I have read and understood ZZ Export Policy (v1)." in lines[1]
+    assert client.get(f"/api/policies/{pub['course_id']}/export.csv", headers=me).status_code == 403

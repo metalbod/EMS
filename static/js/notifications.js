@@ -99,9 +99,7 @@ function resetNotifTabs() {
 }
 
 const REMINDER_CATEGORIES = ['timesheet', 'onboarding', 'offboarding', 'holidays', 'acknowledgement'];
-// 'acknowledgement' has no configurable hour — its toggle is a disabled
-// "coming soon" row (see static/index.html), nothing reads its schedule yet.
-const REMINDER_HOUR_CATEGORIES = ['timesheet', 'onboarding', 'offboarding', 'holidays'];
+const REMINDER_HOUR_CATEGORIES = ['timesheet', 'onboarding', 'offboarding', 'holidays', 'acknowledgement'];
 // Only the timesheet sweep is weekly, not daily, so it's the only row with a
 // Day column (see static/index.html — the others show a static "Daily" cell).
 const REMINDER_DAY_OF_WEEK_CATEGORIES = ['timesheet'];
