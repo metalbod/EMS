@@ -711,6 +711,13 @@ wrapper everywhere.
   Known leftover: a Sunday entry in a legacy-dated week (e.g. Sun 11 Oct on a 4–10 Oct row)
   is outside the stored range and is rejected, as it always was. Lesson: changing how a
   key (period_start) is computed needs a check of how existing rows are looked up by it.
+  **Re-dating (migration `20261012_0001`)**: shifts Sunday-start/Sat-end timesheets (and
+  the period copied onto `timesheet_project_approvals`) forward one day to Mon–Sun; entries
+  keep their own dates. Skips a row when the employee already has a Monday-start timesheet
+  that week (clash) or it has an entry on the old Sunday (would fall outside the range) —
+  on prod that left 2 July rows for a person to decide (ts 4 inst 2 EMP0001, a Draft beside
+  an Approved Monday row; ts 5 inst 4 EMP0002, Approved, 1h logged on Sun 5 Jul). Downgrade
+  is a no-op. The `start_timesheet` legacy fallback stays as a safety net.
 
 ## Recurring gotchas (hit more than once this project's history)
 
