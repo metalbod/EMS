@@ -1288,3 +1288,33 @@ def test_requester_cannot_approve_their_own_requisition_and_is_told_why(
         assert "created yourself" in res.json()["detail"]
     finally:
         client.delete(f"/api/users/{user_id}", headers=hr_manager_auth)
+
+
+def test_requisition_list_shows_who_a_pending_requisition_is_waiting_on(
+    client, hr_manager_auth, make_test_employee, test_institution
+):
+    emp = make_test_employee()
+    username = f"zzpendwith_{emp['employee_id'].lower()}"
+    res = client.post("/api/users", headers=hr_manager_auth, json={
+        "username": username, "full_name": "ZZ Pending With Requester", "password": "ZzPytest@123",
+        "role": "hr_manager", "employee_id": emp["employee_id"],
+    })
+    assert res.status_code == 201, res.text
+    user_id = res.json()["id"]
+    try:
+        login = client.post("/api/auth/login", json={
+            "username": username, "password": "ZzPytest@123", "institution_code": test_institution["code"]})
+        me = {"Authorization": f"Bearer {login.json()['access_token']}"}
+        pending = client.post("/api/recruitment/requisitions", headers=me,
+                              json={"title": _unique_title(), "department": "Sales"}).json()
+        client.patch(f"/api/recruitment/requisitions/{pending['id']}/submit", headers=me)
+        draft = client.post("/api/recruitment/requisitions", headers=me,
+                            json={"title": _unique_title(), "department": "Sales"}).json()
+
+        rows = {r["id"]: r for r in client.get("/api/recruitment/requisitions", headers=hr_manager_auth).json()}
+        assert rows[pending["id"]]["status"] == "Pending Approval"
+        assert rows[pending["id"]]["pending_with"], "a pending requisition must say who it is waiting on"
+        # the label is for HR follow-up, so it shows even to an HR manager who could approve it
+        assert rows[draft["id"]]["pending_with"] is None
+    finally:
+        client.delete(f"/api/users/{user_id}", headers=hr_manager_auth)

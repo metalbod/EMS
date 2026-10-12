@@ -764,7 +764,8 @@ def count_pending_for_approver(conn, inst_id: int, user: dict, module: str) -> i
     return len(pending_rows_for_approver(conn, inst_id, user, module))
 
 
-def annotate_actionability(conn, inst_id: int, module: str, rows: List[Dict[str, Any]], user: dict) -> List[Dict[str, Any]]:
+def annotate_actionability(conn, inst_id: int, module: str, rows: List[Dict[str, Any]], user: dict,
+                           always_describe: bool = False) -> List[Dict[str, Any]]:
     """For a list endpoint's already role-scoped rows (e.g. a manager sees
     only their subordinates' requests), tag each row with whether THIS
     user can act on it right now (`is_actionable`) and, if not, who
@@ -797,6 +798,10 @@ def annotate_actionability(conn, inst_id: int, module: str, rows: List[Dict[str,
     `pending_with` becomes a comma-joined list of every still-open step's
     description rather than just one, since more than one can be
     actionable at once.
+
+    `always_describe=True` fills `pending_with` even when the viewer IS
+    an eligible approver — for screens where HR follows up on who a
+    request is waiting on, rather than deciding it from the list.
     """
     pending = set(MODULE_PENDING_STATUSES[module])
     for row in rows:
@@ -818,7 +823,7 @@ def annotate_actionability(conn, inst_id: int, module: str, rows: List[Dict[str,
             if not current:
                 continue
             row["is_actionable"] = is_eligible_approver(conn, inst_id, module, employee_id, current, user, project_ids)
-            if not row["is_actionable"]:
+            if always_describe or not row["is_actionable"]:
                 row["pending_with"] = describe_current_step(conn, inst_id, employee_id, current, project_ids)
             continue
 
@@ -830,7 +835,7 @@ def annotate_actionability(conn, inst_id: int, module: str, rows: List[Dict[str,
         row["is_actionable"] = any(
             is_eligible_approver(conn, inst_id, module, employee_id, s, user, project_ids) for s in open_steps
         )
-        if not row["is_actionable"] and open_steps:
+        if (always_describe or not row["is_actionable"]) and open_steps:
             row["pending_with"] = ", ".join(
                 describe_current_step(conn, inst_id, employee_id, s, project_ids) for s in open_steps
             )

@@ -17,7 +17,7 @@ from core.deps import get_current_user, need_inst
 
 from core.validators import validate_document_data_url, validate_ai_extractable_data_url
 
-from core.approval_workflow import start_workflow, advance_or_finalize
+from core.approval_workflow import start_workflow, advance_or_finalize, annotate_actionability
 
 from core.anthropic_client import get_client_for_institution
 
@@ -708,7 +708,9 @@ def list_requisitions(conn,
     if department: q += " AND r.department=?"; p.append(department)
     q += " ORDER BY r.created_at DESC"
     rows = conn.execute(q, p).fetchall()
-    return [dict(r) for r in rows]
+    # pending_with / approval_progress: who a Pending Approval requisition is waiting on, shown
+    # under its status so HR can follow up.
+    return annotate_actionability(conn, inst_id, "requisition", [dict(r) for r in rows], user, always_describe=True)
 
 
 @router.post("/api/recruitment/requisitions", status_code=201)

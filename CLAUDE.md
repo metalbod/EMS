@@ -738,6 +738,14 @@ wrapper everywhere.
   hides the Approve/Reject block for the requester. Still open: a step whose approver has no
   login account (e.g. a direct manager with no user) can never be cleared by anyone but a
   superadmin — not auto-skipped, not warned about when the rule is set up.
+- **Job Requisitions list shows "Pending with …" under a Pending Approval status**
+  (`list_requisitions` → `annotate_actionability(..., always_describe=True)`,
+  `loadRequisitions` in recruitment.js): the same `pending_with` / `approval_progress`
+  the leave/claims/etc. screens use, e.g. "Davent Low (Direct Manager), HR Manager (0/2
+  approved)" for a flat workflow. `always_describe` is new — by default the label only
+  appears when the viewer *isn't* an eligible approver; here HR wants it regardless, to
+  follow up. A requisition whose creator has no linked employee record gets no label
+  (the requester can't be resolved).
 
 ## Recurring gotchas (hit more than once this project's history)
 

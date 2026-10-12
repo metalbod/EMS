@@ -101,7 +101,8 @@ async function loadRequisitions() {
       <td class="px-4 py-3 text-center text-slate-700">${r.shortlisted_count||0}</td>
       <td class="px-4 py-3 text-center text-slate-700">${r.interviewed_count||0}</td>
       <td class="px-4 py-3 text-center text-slate-700">${r.offer_count||0}</td>
-      <td class="px-4 py-3"><span class="badge ${reqStatusBadge(r.status)}">${esc(r.status)}</span></td>
+      <td class="px-4 py-3"><span class="badge ${reqStatusBadge(r.status)}">${esc(r.status)}</span>
+        ${r.status==='Pending Approval'&&r.pending_with?`<div class="text-xs text-slate-500 mt-1">Pending with ${pendingWithLabel(r)}</div>`:''}</td>
       <td class="px-4 py-3 text-right whitespace-nowrap">
         ${r.status==='Approved'?`<button class="btn-ghost text-xs" onclick="event.stopPropagation();openCandModal(null,${r.id})">Add Candidate</button>`:''}
         <button class="btn-ghost text-xs" onclick="event.stopPropagation();openReqDetail(${r.id})">View</button>
