@@ -25,7 +25,7 @@ const HR_STAFF_ROLES = ['hr_manager','hr_admin'];                  // no superad
 const HR_MANAGER_ONLY_ROLES = ['superadmin','hr_manager'];         // no hr_admin
 const COMPENSATION_STAFF_ROLES = ['hr_manager','payroll_manager','compensation_manager'];
 const BENEFITS_DASHBOARD_ROLES = ['hr_manager','compensation_manager','manager'];
-const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','leave-my','leave-approvals','leave-holidays','resignation-approvals','projects','timesheet-my','timesheet-approvals','overtime-my','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','comp-paygrades','comp-joblevels','comp-jobroles','comp-meritcycles','comp-bonusplans','comp-commissions','comp-equity','comp-totalrewards','comp-payequity','ben-plans','ben-periods','ben-lifeevents','ben-claims','ben-compliance','payroll-runs','payroll-my','payroll-myrewards','payroll-mybenefits','perf-my','perf-team','perf-cycles','perf-calibration','attendance-clock','attendance-review','settings-attendance','settings-approval-workflow','settings-roles','settings-document-types','settings-offer-letter-templates','settings-performance','settings-ai-assistant','coming-soon'];
+const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','my-interviews','leave-my','leave-approvals','leave-holidays','resignation-approvals','projects','timesheet-my','timesheet-approvals','overtime-my','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','comp-paygrades','comp-joblevels','comp-jobroles','comp-meritcycles','comp-bonusplans','comp-commissions','comp-equity','comp-totalrewards','comp-payequity','ben-plans','ben-periods','ben-lifeevents','ben-claims','ben-compliance','payroll-runs','payroll-my','payroll-myrewards','payroll-mybenefits','perf-my','perf-team','perf-cycles','perf-calibration','attendance-clock','attendance-review','settings-attendance','settings-approval-workflow','settings-roles','settings-document-types','settings-offer-letter-templates','settings-performance','settings-ai-assistant','coming-soon'];
 
 // ---------------------------------------------------------------------------
 // Lazy module loading (Speed Audit item 7)
@@ -64,7 +64,7 @@ function ensureModuleLoaded(name) {
 // comment on why those aren't split).
 const LAZY_PAGE_MODULES = {
   audit: 'audit', users: 'users', institutions: 'institutions',
-  requisitions: 'recruitment', candidates: 'recruitment', interviews: 'recruitment', offers: 'recruitment',
+  requisitions: 'recruitment', candidates: 'recruitment', interviews: 'recruitment', offers: 'recruitment', 'my-interviews': 'recruitment',
   'settings-offer-letter-templates': 'recruitment',
   onboarding: 'onboarding', offboarding: 'onboarding',
   'settings-bulk-upload': 'bulk-upload',
@@ -802,6 +802,8 @@ function applyRoleUI() {
   // Positions for non-recruiting roles) is unaffected — it reads the public
   // careers listing endpoint, which has no permission check at all.
   document.getElementById('nav-recruit-group').classList.toggle('hidden', hideEmp || role === 'employee' || !currentUser?.can_view_recruitment);
+  // People picked as an interviewer get "My Interviews" whatever their role (they may have no Recruitment access).
+  document.getElementById('nav-my-interviews')?.classList.toggle('hidden', hideEmp || !currentUser?.is_interviewer);
   document.getElementById('nav-ld-group')?.classList.toggle('hidden', hideEmp);
   document.getElementById('nav-leave-group')?.classList.toggle('hidden', hideEmp);
   document.getElementById('nav-leave-approvals')?.classList.toggle('hidden', !HR_AND_MANAGER_ROLES.includes(role));
@@ -977,7 +979,7 @@ async function showPage(page, opts = {}) {
     orgchart:'Org Chart', audit:'Audit Log', users:'User Management', 'coming-soon':'Coming Soon',
     requisitions:'Job Requisitions', candidates:'Candidate Bank', interviews:'Interviews', offers:'Stationery',
     onboarding:'Onboarding', offboarding:'Offboarding',
-    'ld-catalog':'Course Catalog', 'ld-trainings':'My Trainings',
+    'ld-catalog':'Course Catalog', 'ld-trainings':'My Trainings', 'my-interviews':'My Interviews',
     'leave-my':'My Leave', 'leave-approvals':'Leave Approvals', 'leave-holidays':'Holiday Manager',
     'resignation-approvals':'Resignation Approvals',
     'projects':'Projects', 'timesheet-my':'My Timesheet', 'timesheet-approvals':'Timesheet Approvals', 'overtime-my':'My Overtime',
@@ -1027,6 +1029,7 @@ async function showPage(page, opts = {}) {
   if (page === 'requisitions') loadRequisitions();
   if (page === 'candidates')   loadCandidates();
   if (page === 'interviews')   loadInterviews();
+  if (page === 'my-interviews') loadMyInterviews();
   if (page === 'offers')       loadOffers();
   if (page === 'onboarding')   loadObChecklists('onboarding');
   if (page === 'offboarding')  loadObChecklists('offboarding');

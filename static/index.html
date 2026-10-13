@@ -256,6 +256,13 @@
           </div>
         </div>
       </div>
+      <!-- My Interviews (direct nav) — only for people picked as an interviewer; they may have no Recruitment access -->
+      <div id="nav-my-interviews" class="hidden">
+        <button class="nav-rail-btn" onclick="showPage('my-interviews');closeBurgerMenu();" data-page="my-interviews" title="My Interviews">
+          <svg class="nav-icon-chip" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          <span class="nav-rail-label">My Interviews</span>
+        </button>
+      </div>
       <!-- Leave -->
       <div id="nav-leave-group" class="hidden">
         <button class="nav-rail-btn" onclick="toggleNavGroup('leave')" title="Leave">
@@ -1467,6 +1474,13 @@
       </div>
 
       <!-- INTERVIEWS -->
+      <!-- MY INTERVIEWS (an interviewer's own list: when/where/who, read-only candidate brief, own score) -->
+      <div id="page-my-interviews" class="hidden">
+        <p class="text-sm text-slate-500 mb-4">Interviews you have been picked to interview for. Open the candidate's brief before you meet them and add your score afterwards. You only see your own score.</p>
+        <div id="myInterviewsList" class="space-y-3"></div>
+        <p id="myInterviewsEmpty" class="hidden text-center text-slate-400 text-sm py-12">You haven't been picked for any interviews.</p>
+      </div>
+
       <div id="page-interviews" class="hidden">
         <div class="flex flex-col sm:flex-row gap-3 mb-5">
           <select id="intStatusFilter" class="inp w-44" onchange="loadInterviews()">
@@ -5619,7 +5633,13 @@
         <div><label class="block text-sm font-medium text-slate-700 mb-1">Date <span class="text-red-500">*</span></label><input id="intDate" type="date" class="inp" required/></div>
         <div><label class="block text-sm font-medium text-slate-700 mb-1">Time <span class="text-red-500">*</span></label><input id="intTime" type="time" class="inp" required/></div>
         <div class="col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1">Location / Meeting Link</label><input id="intLocation" type="text" class="inp" placeholder="Meeting Room A or https://meet.google.com/…"/></div>
-        <div class="col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1">Interviewers (comma separated)</label><input id="intInterviewers" type="text" class="inp" placeholder="Ahmad, Siti, John"/></div>
+        <div class="col-span-2">
+          <label class="block text-sm font-medium text-slate-700 mb-1">Interviewers</label>
+          <div class="flex gap-2"><select id="intInterviewerPick" class="inp flex-1"></select><button type="button" onclick="addIntInterviewer()" class="btn-ghost text-sm shrink-0">Add</button></div>
+          <div id="intInterviewerChips" class="flex flex-wrap gap-1.5 mt-2"></div>
+          <p id="intInterviewerLegacy" class="hidden text-xs text-amber-600 mt-1"></p>
+          <p class="text-xs text-slate-400 mt-1">Search and add one or more active employees. Each person gets this interview on their Home To-Do and can score it from My Interviews.</p>
+        </div>
         <div class="col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1">Notes</label><textarea id="intNotes" class="inp" style="height:4rem;resize:none"></textarea></div>
       </div>
       <p id="intFormErr" class="hidden text-sm text-red-600"></p>
@@ -5628,6 +5648,18 @@
       <button type="button" onclick="closeIntModal()" class="btn-ghost">Cancel</button>
       <button type="submit" form="intForm" class="btn-primary">Save Interview</button>
     </div>
+  </div>
+</div>
+
+<!-- My Interviews: candidate brief (read-only) -->
+<div id="myIntBriefModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
+  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col" style="max-height:85vh">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
+      <div class="min-w-0"><h2 id="myIntBriefTitle" class="text-base font-semibold truncate">Candidate</h2><p id="myIntBriefSub" class="text-xs text-slate-500"></p></div>
+      <button onclick="closeMyIntBrief()" class="btn-close"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <div id="myIntBriefBody" class="p-6 space-y-4 overflow-y-auto flex-1 text-sm"></div>
+    <div class="flex justify-end px-6 py-4 border-t border-slate-200 shrink-0"><button type="button" onclick="closeMyIntBrief()" class="btn-ghost">Close</button></div>
   </div>
 </div>
 

@@ -54,6 +54,9 @@ class CurrentUserOut(BaseModel):
     can_manage_recruitment: bool = True
     can_view_candidate_history: bool = True
     can_view_candidate_stage_time: bool = True
+    # True when this person has been picked as an interviewer for any interview — shows the "My Interviews" nav
+    # item (they may have no Recruitment access at all).
+    is_interviewer: bool = False
 
 
 class TokenResponse(BaseModel):

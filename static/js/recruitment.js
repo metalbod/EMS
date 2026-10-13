@@ -2,6 +2,7 @@
 // ---------------------------------------------------------------------------
 let recruitMeta = {};
 let viewingReqId = null, viewingCandId = null, viewingIntId = null, viewingOfferId = null;
+let intRowsCache = [], intInterviewers = [];   // interviewers picked in the open Schedule/Edit Interview dialog: [{id,name,hasLogin}]
 let viewingCandData = null; // full candidate object currently open in detail modal
 let candExistingDocs = [];  // documents already saved for the candidate being edited
 let candPendingFiles = [];  // {file_name,mime_type,data_url} selected but not yet uploaded
@@ -991,9 +992,21 @@ function interviewScoreTitle(s) {
   if(s.recommendation) parts.push(`Recommendation: ${s.recommendation}`);
   return parts.join(' · ');
 }
-function interviewScoreChipsHtml(scores) {
-  if(!scores||!scores.length) return '<span class="text-slate-400 text-xs">Not scored yet</span>';
-  return scores.map(s=>`<span class="inline-flex items-center gap-1 rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-700 mr-1 mb-1" title="${esc(interviewScoreTitle(s))}">${esc(s.scored_by_name||s.scored_by)} <b class="font-semibold">${fmtInterviewScore(s.score)}</b></span>`).join('');
+// One chip per interviewer: scored (name + score), or — for people picked for the interview who haven't scored —
+// a muted "waiting" chip. Scores from anyone not picked (e.g. HR scoring on someone's behalf) follow as plain chips.
+function interviewScoreChipsHtml(scores, status) {
+  scores=scores||[]; status=status||[];
+  const chip=(label,score,title,extra)=>`<span class="inline-flex items-center gap-1 rounded-full border ${extra?'border-dashed border-slate-300 text-slate-400':'border-slate-200 text-slate-700'} px-2 py-0.5 text-xs mr-1 mb-1" title="${esc(title||'')}">${label}${score}</span>`;
+  const parts=[];
+  status.forEach(p=>{
+    if(p.scored) {
+      parts.push(chip(esc(p.name)+' ',`<b class="font-semibold">${fmtInterviewScore(p.score)}</b>`,interviewScoreTitle(p.score_detail||{})));
+    } else {
+      parts.push(chip(esc(p.name),' · waiting',p.has_login===false?'No login account, so they cannot see or score this interview':'Has not scored yet',true));
+    }
+  });
+  scores.filter(s=>!s.assigned).forEach(s=>parts.push(chip(esc(s.scored_by_name||s.scored_by)+' ',`<b class="font-semibold">${fmtInterviewScore(s.score)}</b>`,interviewScoreTitle(s))));
+  return parts.length?parts.join(''):'<span class="text-slate-400 text-xs">Not scored yet</span>';
 }
 
 async function loadInterviews() {
@@ -1002,6 +1015,7 @@ async function loadInterviews() {
   const res=await api('/api/recruitment/interviews'+(status?`?status=${encodeURIComponent(status)}`:''));
   if(!res||!res.ok) return;
   const rows=await res.json();
+  intRowsCache=rows;
   const canManage=canManageRecruitment();
   document.getElementById('addIntBtn')?.classList.toggle('hidden',!canManage);
   const body=document.getElementById('intTableBody');
@@ -1017,19 +1031,22 @@ async function loadInterviews() {
       <td class="px-4 py-3 text-slate-600 hidden md:table-cell">${esc(i.interview_type)}</td>
       <td class="px-4 py-3 text-slate-700">${fmtDate(i.scheduled_date)} ${esc(i.scheduled_time)}</td>
       <td class="px-4 py-3 text-slate-500 text-xs hidden lg:table-cell">${esc(i.interviewers||'—')}</td>
-      <td class="px-4 py-3 hidden md:table-cell">${interviewScoreChipsHtml(i.scores)}</td>
+      <td class="px-4 py-3 hidden md:table-cell">${interviewScoreChipsHtml(i.scores,i.interviewer_status)}</td>
       <td class="px-4 py-3 text-center text-slate-700 hidden sm:table-cell">${i.avg_score!=null?`<span class="font-semibold">${fmtInterviewScore(i.avg_score)}</span>/5<span class="block text-xs text-slate-400">${i.score_count} ${i.score_count===1?'scorer':'scorers'}</span>`:'—'}</td>
       <td class="px-4 py-3"><span class="badge ${interviewStatusBadge(i.status)}">${esc(i.status)}</span></td>
       <td class="px-4 py-3 text-right flex gap-1 justify-end">
         ${i.status==='Scheduled'?`<button class="btn-ghost text-xs" onclick="markIntStatus(${i.id},'Completed')">Done</button>`:''}
+        ${canManage?`<button class="btn-ghost text-xs" onclick="openIntModal(null,${i.id})">Edit</button>`:''}
         <button class="btn-ghost text-xs" onclick="openScoreModal(${i.id},'${esc(fmtDate(i.scheduled_date))} — ${esc(i.interview_type)}')">Score</button>
       </td>
     </tr>`).join('');
 }
 
-async function openIntModal(candId=null) {
+async function openIntModal(candId=null, editIntId=null) {
   await loadRecruitMeta();
-  document.getElementById('intId').value='';
+  const editing=editIntId?intRowsCache.find(x=>x.id===editIntId):null;
+  document.getElementById('intId').value=editing?editing.id:'';
+  document.getElementById('intModalTitle').textContent=editing?'Edit Interview':'Schedule Interview';
   const it=document.getElementById('intType');
   it.innerHTML=(recruitMeta.interview_types||['Phone','Video','In-Person','Technical','Panel']).map(t=>`<option>${esc(t)}</option>`).join('');
   // populate candidate select — always fetched fresh, unbounded (no
@@ -1044,6 +1061,7 @@ async function openIntModal(candId=null) {
   cs.innerHTML='<option value="">Select candidate…</option>';
   const candRes=await api('/api/recruitment/candidates');
   const cands=(candRes&&candRes.ok)?await candRes.json():[];
+  if(editing) candId=editing.candidate_id;
   cands.forEach(c=>{
     const o=document.createElement('option');
     o.value=c.id;
@@ -1052,16 +1070,42 @@ async function openIntModal(candId=null) {
     if(candId&&c.id===candId)o.selected=true;
     cs.appendChild(o);
   });
-  document.getElementById('intDate').value='';
-  document.getElementById('intTime').value='';
-  document.getElementById('intDuration').value=60;
-  document.getElementById('intLocation').value='';
-  document.getElementById('intInterviewers').value='';
-  document.getElementById('intNotes').value='';
+  // The candidate (and so the application) can't change on an existing interview.
+  if(editing){ cs.disabled=true; if(![...cs.options].some(o=>+o.value===editing.candidate_id)) cs.insertAdjacentHTML('beforeend',`<option value="${editing.candidate_id}" selected>${esc(editing.candidate_name)}</option>`); cs.value=editing.candidate_id; }
+  else cs.disabled=false;
+  document.getElementById('intType').value=editing?editing.interview_type:document.getElementById('intType').options[0]?.value;
+  document.getElementById('intDate').value=editing?editing.scheduled_date:'';
+  document.getElementById('intTime').value=editing?editing.scheduled_time:'';
+  document.getElementById('intDuration').value=editing?editing.duration_mins:60;
+  document.getElementById('intLocation').value=editing?(editing.location||''):'';
+  document.getElementById('intNotes').value=editing?(editing.notes||''):'';
+  // Interviewers: a searchable list of active employees; picks become removable chips.
+  const active=(typeof employees!=='undefined'?employees:[]).filter(e=>e.status==='Active');
+  document.getElementById('intInterviewerPick').innerHTML=active.map(e=>`<option value="${esc(e.employee_id)}">${esc(e.employee_id)} — ${esc(displayName(e.full_name,e.preferred_name))}</option>`).join('');
+  initEmployeeSearchSelect('intInterviewerPick','Search employee…');
+  intInterviewers=editing?(editing.interviewer_status||[]).map(p=>({id:p.employee_id,name:p.name,hasLogin:p.has_login})):[];
+  renderIntInterviewers();
+  const legacy=document.getElementById('intInterviewerLegacy');
+  const typed=editing&&!intInterviewers.length&&editing.interviewers;
+  legacy.classList.toggle('hidden',!typed);
+  if(typed) legacy.textContent=`Previously typed: ${editing.interviewers}. Pick the people above to replace it — saving without picking keeps this text.`;
   document.getElementById('intFormErr').classList.add('hidden');
   document.getElementById('intModal').classList.remove('hidden');
 }
 function closeIntModal(){closeModal('intModal');}
+
+function addIntInterviewer() {
+  const id=document.getElementById('intInterviewerPick').value;
+  if(!id||intInterviewers.some(x=>x.id===id)) return;
+  const e=(employees||[]).find(x=>x.employee_id===id);
+  intInterviewers.push({id,name:e?displayName(e.full_name,e.preferred_name):id,hasLogin:true});
+  renderIntInterviewers();
+}
+function removeIntInterviewer(id) { intInterviewers=intInterviewers.filter(x=>x.id!==id); renderIntInterviewers(); }
+function renderIntInterviewers() {
+  document.getElementById('intInterviewerChips').innerHTML=intInterviewers.map(x=>
+    `<span class="badge status-neutral text-xs" title="${x.hasLogin===false?'No login account — they will not see this interview in EMS':''}">${esc(x.name)}${x.hasLogin===false?' (no login)':''} <button type="button" onclick="removeIntInterviewer('${esc(x.id)}')" class="ml-1" aria-label="Remove ${esc(x.name)}">×</button></span>`).join('');
+}
 
 async function submitIntForm(e) {
   e.preventDefault();
@@ -1077,10 +1121,14 @@ async function submitIntForm(e) {
     scheduled_time:document.getElementById('intTime').value,
     duration_mins:parseInt(document.getElementById('intDuration').value)||60,
     location:document.getElementById('intLocation').value||null,
-    interviewers:document.getElementById('intInterviewers').value||null,
     notes:document.getElementById('intNotes').value||null,
   };
-  const res=await api('/api/recruitment/interviews',{method:'POST',body:JSON.stringify(body)});
+  // Picked people win; if none were picked on an old interview, leave its typed names alone (ids omitted).
+  const editId=document.getElementById('intId').value;
+  const old=editId?intRowsCache.find(x=>x.id===+editId):null;
+  if(intInterviewers.length||!old||old.interviewer_ids?.length) body.interviewer_ids=intInterviewers.map(x=>x.id);
+  else body.interviewers=old.interviewers||null;
+  const res=await api(editId?`/api/recruitment/interviews/${editId}`:'/api/recruitment/interviews',{method:editId?'PUT':'POST',body:JSON.stringify(body)});
   if(!res||!res.ok){const d=await res?.json();err.textContent=d?.detail||'Failed';err.classList.remove('hidden');return;}
   closeIntModal(); loadInterviews();
 }
@@ -1135,7 +1183,9 @@ async function submitScore(e) {
   closeScoreModal();
   // Refresh whatever is currently visible
   if(viewingCandId) await openCandDetail(viewingCandId);
-  loadInterviews();
+  if(!document.getElementById('page-my-interviews')?.classList.contains('hidden')) loadMyInterviews();
+  if(!document.getElementById('page-interviews')?.classList.contains('hidden')) loadInterviews();
+  if(typeof loadDashboardTodos==='function') loadDashboardTodos();
 }
 
 // ---------------------------------------------------------------------------
@@ -1409,3 +1459,66 @@ function onOfferCandChange() {
   if(reqId && [...reqSel.options].some(o=>o.value===reqId)) reqSel.value=reqId;
 }
 
+
+
+// ---------------------------------------------------------------------------
+// My Interviews — an interviewer's own list (routers/recruitment.py my_interviews)
+// ---------------------------------------------------------------------------
+let myInterviewsCache = [];
+async function loadMyInterviews() {
+  const res=await api('/api/recruitment/my-interviews');
+  myInterviewsCache=res&&res.ok?await res.json():[];
+  const list=document.getElementById('myInterviewsList');
+  document.getElementById('myInterviewsEmpty').classList.toggle('hidden',myInterviewsCache.length>0);
+  list.innerHTML=myInterviewsCache.map(i=>`
+    <div class="bg-white rounded-xl border border-slate-200 p-4 flex flex-wrap items-center justify-between gap-3" data-focus-id="${i.id}">
+      <div class="min-w-0">
+        <p class="font-semibold text-slate-800">${esc(i.candidate_name)}${i.requisition_title?` <span class="font-normal text-slate-500">· ${esc(i.requisition_title)}</span>`:''}</p>
+        <p class="text-sm text-slate-600">${esc(i.interview_type)} · ${fmtDate(i.scheduled_date)} ${esc(i.scheduled_time)} · ${i.duration_mins} min${i.location?` · ${esc(i.location)}`:''}</p>
+        ${i.notes?`<p class="text-xs text-slate-400 mt-1">${esc(i.notes)}</p>`:''}
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <span class="badge ${interviewStatusBadge(i.status)}">${esc(i.status)}</span>
+        ${i.scored?`<span class="badge status-positive" title="Your score">You scored ${fmtInterviewScore(i.my_score)}/5</span>`:''}
+        <button class="btn-ghost text-xs" onclick="openMyIntBrief(${i.id})">Candidate brief</button>
+        <button class="${i.scored?'btn-ghost':'btn-primary'} text-xs" onclick="openMyIntScore(${i.id})">${i.scored?'Edit score':'Score'}</button>
+      </div>
+    </div>`).join('');
+}
+function openMyIntScore(intId) {
+  const i=myInterviewsCache.find(x=>x.id===intId);
+  openScoreModal(intId,`${i?i.candidate_name+' — ':''}${i?fmtDate(i.scheduled_date)+' '+i.interview_type:''}`);
+}
+function closeMyIntBrief(){closeModal('myIntBriefModal');}
+
+async function openMyIntBrief(intId) {
+  const i=myInterviewsCache.find(x=>x.id===intId);
+  const res=await api(`/api/recruitment/my-interviews/${intId}/candidate`);
+  if(!res?.ok){ const d=await res?.json().catch(()=>null); alert(d?.detail?apiErrorText(d.detail):'Could not load the candidate.'); return; }
+  const b=await res.json(), c=b.candidate;
+  document.getElementById('myIntBriefTitle').textContent=c.full_name;
+  document.getElementById('myIntBriefSub').textContent=[c.current_position,c.current_company].filter(Boolean).join(' · ')||(i?i.requisition_title:'')||'';
+  const row=(label,val)=>val?`<div><p class="text-xs text-slate-400 mb-0.5">${esc(label)}</p><p class="whitespace-pre-wrap text-slate-700">${esc(val)}</p></div>`:'';
+  const qual=[c.highest_qualification,c.field_of_study,c.institution_name,c.graduation_year].filter(Boolean).join(' · ');
+  document.getElementById('myIntBriefBody').innerHTML=
+    row('Applying for',b.requisition_title)+row('Experience',+c.experience_years>0?`${c.experience_years} year${+c.experience_years===1?'':'s'}`:'')+
+    row('Education',qual)+row('Skills',c.skills)+row('Certifications',c.certifications)+row('Employment history',c.employment_history)+
+    (c.resume_text?row('Resume text',c.resume_text):'')+
+    (c.linkedin_url&&/^https?:\/\//i.test(c.linkedin_url)?`<div><p class="text-xs text-slate-400 mb-0.5">LinkedIn</p><a href="${esc(c.linkedin_url)}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline break-all">${esc(c.linkedin_url)}</a></div>`:'')+
+    (b.documents.length?`<div><p class="text-xs text-slate-400 mb-1">Documents</p><div class="flex flex-wrap gap-2">${b.documents.map(d=>`<button class="btn-ghost text-xs" onclick="openMyIntDoc(${intId},${d.id})">${esc(d.file_name)}</button>`).join('')}</div></div>`:'')+
+    '<p class="text-xs text-slate-400">Contact details, ID number and HR notes are not shown.</p>';
+  document.getElementById('myIntBriefModal').classList.remove('hidden');
+}
+async function openMyIntDoc(intId, docId) {
+  const win=window.open('','_blank');   // opened now so the popup blocker allows it
+  const res=await api(`/api/recruitment/my-interviews/${intId}/documents/${docId}`);
+  if(!res?.ok){ if(win) win.close(); alert('Could not open the document.'); return; }
+  const d=await res.json();
+  const m=/^data:([^;,]+)?(;base64)?,(.*)$/s.exec(d.data_url||'');
+  if(!m){ if(win) win.close(); alert('Could not open the document.'); return; }
+  const bytes=Uint8Array.from(atob(decodeURIComponent(m[3])),ch=>ch.charCodeAt(0));
+  const blob=new Blob([bytes],{type:m[1]||d.mime_type||'application/octet-stream'});
+  const url=URL.createObjectURL(blob);
+  if(win){ win.opener=null; win.location=url; }
+  setTimeout(()=>URL.revokeObjectURL(url),120000);
+}

@@ -878,6 +878,8 @@ async function loadDashboardTodos() {
       const body = await res.json();
       if (!Array.isArray(body)) throw new Error('unexpected /api/todos response');
       items = body;
+      // Picked as an interviewer since this session started: reveal My Interviews so the To-Do link opens.
+      if (items.some(t => t.page === 'my-interviews')) document.getElementById('nav-my-interviews')?.classList.remove('hidden');
     } else if (res.status === 403) {
       errorMsg = "You don't have access to your to-do list.";
     } else {

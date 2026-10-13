@@ -278,6 +278,33 @@ def get_todos(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, An
             todos.append({"key": "policy-ack", "label": f"{pol} polic{'ies' if pol != 1 else 'y'} waiting for your acknowledgement",
                           "page": "ld-trainings", "count": pol})
 
+        # Interviews this person was picked to interview for (Recruitment → Schedule Interview). Before the
+        # interview: "Interview X, date time"; once it is Completed or its time has passed and they haven't
+        # scored: "Score X's interview". Gone when they've scored, or the interview is cancelled/no-show.
+        now_local = datetime.now(tz)
+        now_hm = now_local.strftime("%H:%M")
+        for iv in conn.execute("""
+            SELECT i.id, i.status, i.scheduled_date, i.scheduled_time, c.full_name AS candidate_name,
+                   EXISTS (SELECT 1 FROM interview_scores s WHERE s.interview_id=i.id AND s.scored_by=?) AS scored
+            FROM interview_interviewers ii
+            JOIN interviews i ON i.id=ii.interview_id
+            JOIN candidates c ON c.id=i.candidate_id
+            WHERE ii.institution_id=? AND ii.employee_id=? AND i.status IN ('Scheduled','Completed')
+            ORDER BY i.scheduled_date, i.scheduled_time
+        """, (user["username"], inst_id, emp_id)).fetchall():
+            if iv["scored"]:
+                continue
+            over = iv["status"] == "Completed" or (iv["scheduled_date"], iv["scheduled_time"]) <= (today.isoformat(), now_hm)
+            when = f"{iv['scheduled_date']} {iv['scheduled_time']}"
+            todos.append({
+                "key": f"interview-{iv['id']}",
+                "label": (f"Score {iv['candidate_name']}'s interview" if over
+                          else f"Interview {iv['candidate_name']} — {when}"),
+                "page": "my-interviews", "count": 1,
+                "action_label": "Score" if over else "View",
+                "event_date": iv["scheduled_date"],
+            })
+
         if role in ("manager", "hr_manager"):
             frag, fp = subordinates_in_clause(inst_id, emp_id)
             cnt = conn.execute(f"""

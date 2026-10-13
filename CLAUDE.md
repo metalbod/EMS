@@ -853,6 +853,25 @@ wrapper everywhere.
   combinations the app uses (`.hidden.sm\:table-cell`, `.hidden.md\:table-cell`, `.hidden.lg\:table-cell`,
   `.hidden.sm\:inline`) at Tailwind's breakpoints (sm 40rem / md 48rem / lg 64rem). A new `hidden <bp>:<display>`
   combination needs its own line there.
+- **Interviewers are picked from the employee list, get a Home To-Do, and score from "My Interviews"**
+  (`interview_interviewers`, migration `20261016_0001`; `InterviewIn.interviewer_ids`, `_resolve_interviewers`/
+  `_save_interviewers`/`interview_scorecards` and the `my-interviews` endpoints in `routers/recruitment.py`; the To-Do
+  block in `routers/dashboard.py`; `is_interviewer` on `GET /api/auth/me`; `openIntModal`/`loadMyInterviews` in
+  `static/js/recruitment.js`): the Schedule Interview dialog's free-text box became a searchable multi-select of **active**
+  employees (chips; same dialog now also **edits** an interview — Edit button, `PUT`, candidate locked). `interviewer_ids`
+  is the source of truth when sent and rebuilds `interviews.interviewers` (display text) from the names; sending none
+  leaves the typed text alone (older interviews, shown as "Previously typed"). The Interviews table's scores column
+  shows each picked interviewer's score or a dashed "waiting" chip (+ "(no login)" tooltip when they have no account),
+  then scores from anyone not picked. **To-Do** (`interview-{id}`, kind reminder, page `my-interviews`): from the moment
+  they're picked "Interview X — date time" (action View); once the interview is Completed or its time has passed and
+  they haven't scored "Score X's interview" (action Score); gone once they've scored, or the interview is
+  Cancelled/No-Show. **My Interviews** (nav item shown when `is_interviewer`; also revealed when a To-Do points at it) lists
+  only the caller's interviews, a read-only **candidate brief** (professional background, skills, documents — never
+  contact details, IC number, DOB, address, expected salary or HR notes) and their own score via the existing score
+  dialog. Scoring is now gated: `POST .../scores` needs Recruitment manage permission **or** being a picked interviewer
+  (it used to accept any logged-in user), and `GET .../scores` returns everything to recruiters but only an
+  interviewer's **own** row to them (so colleagues' scores/comments stay unseen), 403 to anyone else. A picked
+  employee with no login account still appears on the interview but gets no To-Do.
 
 ## Recurring gotchas (hit more than once this project's history)
 

@@ -28,7 +28,7 @@ from db import get_db, IntegrityError
 from core.db_session import db_session
 from core.audit import diff_rows, write_entity_audit
 
-from core.permission_matrix import require_permission
+from core.permission_matrix import has_permission, require_permission
 
 logger = logging.getLogger("ems")
 
@@ -265,6 +265,10 @@ class InterviewIn(BaseModel):
     duration_mins: int = 60
     location: Optional[str] = None
     interviewers: Optional[str] = None
+    # The picked interviewers (employee ids). When given it is the source of truth: it replaces the people linked to
+    # the interview and `interviewers` (the display text) is rebuilt from their names. When omitted, `interviewers`
+    # is stored as typed — how interviews were scheduled before the picker existed.
+    interviewer_ids: Optional[List[str]] = None
     notes: Optional[str] = None
 
 
@@ -1214,6 +1218,8 @@ def get_candidate(conn, cand_id: int, user: dict = Depends(get_current_user)) ->
     for iv in interview_list:
         iv["avg_score"] = cards[iv["id"]]["avg_score"]
         iv["score_count"] = cards[iv["id"]]["score_count"]
+        iv["interviewer_ids"] = cards[iv["id"]]["interviewer_ids"]
+        iv["interviewer_status"] = cards[iv["id"]]["interviewer_status"]
         scores = conn.execute(
             "SELECT scored_by,technical_score,communication_score,attitude_score,culture_fit_score,overall_score,recommendation,comments FROM interview_scores WHERE interview_id=? AND institution_id=? ORDER BY created_at",
             (iv["id"], inst_id)
@@ -1424,11 +1430,51 @@ def interviewer_score(row) -> Optional[float]:
     return round(sum(given) / len(given), 1) if given else None
 
 
+def _resolve_interviewers(conn, inst_id: int, interview_id: Optional[int], ids: List[str]) -> List[Dict[str, Any]]:
+    """Validate picked interviewer ids: each must be an Active employee of this company (someone already on this
+    interview may stay even if they have since left). Returns [{employee_id, name}] in the order picked."""
+    keep = set()
+    if interview_id:
+        keep = {r["employee_id"] for r in conn.execute(
+            "SELECT employee_id FROM interview_interviewers WHERE interview_id=? AND institution_id=?", (interview_id, inst_id)).fetchall()}
+    people, seen = [], set()
+    for emp_id in ids:
+        if emp_id in seen:
+            continue
+        seen.add(emp_id)
+        row = conn.execute("SELECT employee_id, full_name, preferred_name, status FROM employees WHERE employee_id=? AND institution_id=?",
+                           (emp_id, inst_id)).fetchone()
+        if not row or (row["status"] != "Active" and emp_id not in keep):
+            raise HTTPException(400, f"{emp_id} is not an active employee, so they can't be an interviewer")
+        people.append({"employee_id": row["employee_id"], "name": row["preferred_name"] or row["full_name"]})
+    return people
+
+
+def _save_interviewers(conn, inst_id: int, interview_id: int, people: List[Dict[str, Any]]) -> str:
+    """Replace the interview's linked interviewers and refresh its display text. Returns that text."""
+    conn.execute("DELETE FROM interview_interviewers WHERE interview_id=? AND institution_id=?", (interview_id, inst_id))
+    for p in people:
+        conn.execute("INSERT INTO interview_interviewers (institution_id,interview_id,employee_id) VALUES (?,?,?)",
+                     (inst_id, interview_id, p["employee_id"]))
+    text = ", ".join(p["name"] for p in people) or None
+    conn.execute("UPDATE interviews SET interviewers=? WHERE id=? AND institution_id=?", (text, interview_id, inst_id))
+    return text or ""
+
+
+def is_assigned_interviewer(conn, inst_id: int, interview_id: int, user: dict) -> bool:
+    return bool(user.get("employee_id")) and conn.execute(
+        "SELECT 1 FROM interview_interviewers WHERE interview_id=? AND institution_id=? AND employee_id=?",
+        (interview_id, inst_id, user["employee_id"])).fetchone() is not None
+
+
 def interview_scorecards(conn, inst_id: int, interview_ids: List[int]) -> Dict[int, Dict[str, Any]]:
-    """{interview_id: {"scores": [one entry per interviewer who scored], "avg_score": float|None, "score_count": n}}.
-    `scores` entries carry the interviewer's display name (their account's full name), their score, the four
-    criteria and their recommendation; `avg_score` is the mean of the interviewers' scores (the 'general score')."""
-    out = {i: {"scores": [], "avg_score": None, "score_count": 0} for i in interview_ids}
+    """{interview_id: {"scores": [...], "avg_score", "score_count", "interviewer_ids", "interviewer_status"}}.
+    `scores` has one entry per interviewer who scored: their display name (account full name), score, the four
+    criteria and recommendation. `avg_score` is the mean of those scores (the 'general score').
+    `interviewer_status` lists the people picked for the interview, each marked scored (with their score) or
+    waiting; `interviewer_ids` is the same people as bare ids (for editing)."""
+    out = {i: {"scores": [], "avg_score": None, "score_count": 0, "interviewer_ids": [], "interviewer_status": []}
+           for i in interview_ids}
     if not interview_ids:
         return out
     marks = ",".join("?" * len(interview_ids))
@@ -1452,6 +1498,30 @@ def interview_scorecards(conn, inst_id: int, interview_ids: List[int]) -> Dict[i
         scores = [s["score"] for s in card["scores"]]
         card["score_count"] = len(scores)
         card["avg_score"] = round(sum(scores) / len(scores), 2) if scores else None
+
+    # The people picked as interviewers, matched to their scores through their login names.
+    assigned = conn.execute(
+        f"""SELECT ii.interview_id, ii.employee_id, e.full_name, e.preferred_name FROM interview_interviewers ii
+            LEFT JOIN employees e ON e.employee_id=ii.employee_id AND e.institution_id=ii.institution_id
+            WHERE ii.institution_id=? AND ii.interview_id IN ({marks}) ORDER BY ii.id""", [inst_id, *interview_ids]).fetchall()
+    usernames: Dict[str, set] = {}
+    if assigned:
+        emp_ids = sorted({a["employee_id"] for a in assigned})
+        emarks = ",".join("?" * len(emp_ids))
+        for u in conn.execute(f"SELECT employee_id, username FROM users WHERE institution_id=? AND employee_id IN ({emarks})",
+                              [inst_id, *emp_ids]).fetchall():
+            usernames.setdefault(u["employee_id"], set()).add(u["username"])
+    for a in assigned:
+        card = out[a["interview_id"]]
+        mine = next((s for s in card["scores"] if s["scored_by"] in usernames.get(a["employee_id"], ())), None)
+        if mine:
+            mine["assigned"] = True
+        card["interviewer_ids"].append(a["employee_id"])
+        card["interviewer_status"].append({
+            "employee_id": a["employee_id"], "name": a["preferred_name"] or a["full_name"] or a["employee_id"],
+            "scored": mine is not None, "score": mine["score"] if mine else None,
+            "score_detail": mine, "has_login": a["employee_id"] in usernames,
+        })
     return out
 
 
@@ -1495,6 +1565,9 @@ def schedule_interview(conn, body: InterviewIn, user: dict = Depends(get_current
     req_id = body.requisition_id
     if req_id is None:
         req_id = _sole_application_requisition_id(conn, inst_id, body.candidate_id)
+    people = _resolve_interviewers(conn, inst_id, None, body.interviewer_ids) if body.interviewer_ids is not None else []
+    if body.interviewer_ids is not None:
+        body.interviewers = ", ".join(p["name"] for p in people) or None
     conn.execute("""
         INSERT INTO interviews (institution_id,candidate_id,requisition_id,interview_type,
             scheduled_date,scheduled_time,duration_mins,location,interviewers,notes,created_by)
@@ -1503,6 +1576,8 @@ def schedule_interview(conn, body: InterviewIn, user: dict = Depends(get_current
           body.scheduled_date, body.scheduled_time, body.duration_mins,
           body.location, body.interviewers, body.notes, user["username"]))
     iid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    if body.interviewer_ids is not None:
+        body.interviewers = _save_interviewers(conn, inst_id, iid, people)
     # Auto-move candidate to Interview stage
     app = conn.execute(
         "SELECT stage FROM candidate_requisitions WHERE candidate_id=? AND requisition_id IS NOT DISTINCT FROM ? AND institution_id=?",
@@ -1530,12 +1605,18 @@ def update_interview(conn, int_id: int, body: InterviewIn, user: dict = Depends(
     old_int = conn.execute("SELECT * FROM interviews WHERE id=? AND institution_id=?", (int_id, inst_id)).fetchone()
     if not old_int:
         raise HTTPException(404, "Interview not found")
+    people = None
+    if body.interviewer_ids is not None:
+        people = _resolve_interviewers(conn, inst_id, int_id, body.interviewer_ids)
+        body.interviewers = ", ".join(p["name"] for p in people) or None
     conn.execute("""
         UPDATE interviews SET interview_type=?,scheduled_date=?,scheduled_time=?,
             duration_mins=?,location=?,interviewers=?,notes=?
         WHERE id=? AND institution_id=?
     """, (body.interview_type, body.scheduled_date, body.scheduled_time,
           body.duration_mins, body.location, body.interviewers, body.notes, int_id, inst_id))
+    if people is not None:
+        _save_interviewers(conn, inst_id, int_id, people)
     row = conn.execute("SELECT * FROM interviews WHERE id=?", (int_id,)).fetchone()
     changes = diff_rows(old_int, row)
     if changes:
@@ -1568,12 +1649,90 @@ def update_interview_status(conn, int_id: int, body: InterviewStatusIn,
     return dict(row)
 
 
+# ---------------------------------------------------------------------------
+# My Interviews — what a picked interviewer (often a manager with no Recruitment access) can see and do
+# ---------------------------------------------------------------------------
+def _assigned_interview_or_403(conn, inst_id: int, int_id: int, user: dict):
+    row = conn.execute("""SELECT i.*, c.full_name AS candidate_name, r.title AS requisition_title
+                          FROM interviews i JOIN candidates c ON c.id=i.candidate_id
+                          LEFT JOIN job_requisitions r ON r.id=i.requisition_id
+                          WHERE i.id=? AND i.institution_id=?""", (int_id, inst_id)).fetchone()
+    if not row or not is_assigned_interviewer(conn, inst_id, int_id, user):
+        raise HTTPException(404, "Interview not found")   # not revealing whether it exists to someone not on it
+    return row
+
+
+@router.get("/api/recruitment/my-interviews")
+@db_session
+def my_interviews(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
+    """The interviews the caller was picked to interview for: when/where/who, and whether they have scored.
+    Upcoming ones first (soonest first), then past ones (latest first)."""
+    inst_id = need_inst(user)
+    if not user.get("employee_id"):
+        return []
+    rows = conn.execute("""
+        SELECT i.id, i.candidate_id, c.full_name AS candidate_name, c.current_position, r.title AS requisition_title,
+               i.interview_type, i.scheduled_date, i.scheduled_time, i.duration_mins, i.location, i.status, i.notes
+        FROM interview_interviewers ii
+        JOIN interviews i ON i.id=ii.interview_id
+        JOIN candidates c ON c.id=i.candidate_id
+        LEFT JOIN job_requisitions r ON r.id=i.requisition_id
+        WHERE ii.institution_id=? AND ii.employee_id=?""", (inst_id, user["employee_id"])).fetchall()
+    mine = {s["interview_id"]: s for s in conn.execute(
+        "SELECT * FROM interview_scores WHERE institution_id=? AND scored_by=?", (inst_id, user["username"])).fetchall()}
+    out = []
+    for r in rows:
+        d = dict(r)
+        s = mine.get(d["id"])
+        d["scored"] = s is not None
+        d["my_score"] = interviewer_score(s) if s else None
+        out.append(d)
+    upcoming = sorted((d for d in out if d["status"] == "Scheduled"), key=lambda d: (d["scheduled_date"], d["scheduled_time"]))
+    past = sorted((d for d in out if d["status"] != "Scheduled"), key=lambda d: (d["scheduled_date"], d["scheduled_time"]), reverse=True)
+    return upcoming + past
+
+
+@router.get("/api/recruitment/my-interviews/{int_id}/candidate")
+@db_session
+def my_interview_candidate(conn, int_id: int, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    """A read-only brief on the candidate for an interviewer: professional background and the attached documents'
+    names. Deliberately leaves out contact details, IC number, date of birth, address, expected salary and HR's
+    internal notes."""
+    inst_id = need_inst(user)
+    iv = _assigned_interview_or_403(conn, inst_id, int_id, user)
+    c = conn.execute("SELECT * FROM candidates WHERE id=? AND institution_id=?", (iv["candidate_id"], inst_id)).fetchone()
+    fields = ("full_name", "current_position", "current_company", "experience_years", "highest_qualification",
+              "field_of_study", "institution_name", "graduation_year", "certifications", "skills", "employment_history",
+              "resume_text", "linkedin_url")
+    docs = conn.execute("SELECT id, file_name, mime_type FROM candidate_documents WHERE candidate_id=? AND institution_id=? ORDER BY created_at",
+                        (iv["candidate_id"], inst_id)).fetchall()
+    return {"interview_id": int_id, "requisition_title": iv["requisition_title"],
+            "candidate": {k: c[k] for k in fields}, "documents": [dict(d) for d in docs]}
+
+
+@router.get("/api/recruitment/my-interviews/{int_id}/documents/{doc_id}")
+@db_session
+def my_interview_document(conn, int_id: int, doc_id: int, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    """One of the candidate's attached documents (e.g. the resume), for an interviewer picked for this interview."""
+    inst_id = need_inst(user)
+    iv = _assigned_interview_or_403(conn, inst_id, int_id, user)
+    doc = conn.execute("SELECT file_name, mime_type, data_url FROM candidate_documents WHERE id=? AND candidate_id=? AND institution_id=?",
+                       (doc_id, iv["candidate_id"], inst_id)).fetchone()
+    if not doc:
+        raise HTTPException(404, "Document not found")
+    return dict(doc)
+
+
 @router.post("/api/recruitment/interviews/{int_id}/scores", status_code=201)
 @db_session
 def submit_score(conn, int_id: int, body: ScoreIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     inst_id = need_inst(user)
     if not conn.execute("SELECT id FROM interviews WHERE id=? AND institution_id=?", (int_id, inst_id)).fetchone():
         raise HTTPException(404, "Interview not found")
+    # Recruiters can score any interview; anyone else only one they were picked to interview for.
+    if not has_permission(conn, inst_id, user, "recruitment.create_edit_requisition_candidate_interview_offer") \
+            and not is_assigned_interviewer(conn, inst_id, int_id, user):
+        raise HTTPException(403, "Only the interviewers picked for this interview can score it")
     cand_row = conn.execute("SELECT candidate_id FROM interviews WHERE id=?", (int_id,)).fetchone()
     try:
         conn.execute("""
@@ -1609,7 +1768,13 @@ def get_scores(conn, int_id: int, user: dict = Depends(get_current_user)) -> Lis
         "SELECT * FROM interview_scores WHERE interview_id=? AND institution_id=? ORDER BY created_at",
         (int_id, inst_id)
     ).fetchall()
-    return [dict(r) for r in rows]
+    # Recruiters see every scorecard; an interviewer sees only their own (so they aren't swayed by, or can't
+    # read, their colleagues' scores and comments); anyone else gets nothing.
+    if has_permission(conn, inst_id, user, "recruitment.view_requisitions_candidates_interviews_offers"):
+        return [dict(r) for r in rows]
+    if is_assigned_interviewer(conn, inst_id, int_id, user):
+        return [dict(r) for r in rows if r["scored_by"] == user["username"]]
+    raise HTTPException(403, "Access denied")
 
 
 # ---------------------------------------------------------------------------

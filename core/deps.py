@@ -170,6 +170,9 @@ def build_current_user_out(conn, user: dict, role_override: str = None):
         can_manage_recruitment = _allowed("recruitment.create_edit_requisition_candidate_interview_offer")
         can_view_candidate_history = _allowed("recruitment.view_candidate_audit_log")
         can_view_candidate_stage_time = _allowed("recruitment.view_candidate_stage_timing")
+    is_interviewer = bool(user.get("institution_id") and user.get("employee_id") and conn.execute(
+        "SELECT 1 FROM interview_interviewers WHERE institution_id=? AND employee_id=? LIMIT 1",
+        (user["institution_id"], user["employee_id"])).fetchone())
     return CurrentUserOut(
         id=user["id"],
         username=user["username"],
@@ -185,6 +188,7 @@ def build_current_user_out(conn, user: dict, role_override: str = None):
         can_manage_recruitment=can_manage_recruitment,
         can_view_candidate_history=can_view_candidate_history,
         can_view_candidate_stage_time=can_view_candidate_stage_time,
+        is_interviewer=is_interviewer,
     )
 
 
