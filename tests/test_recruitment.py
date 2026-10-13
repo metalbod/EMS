@@ -1318,3 +1318,43 @@ def test_requisition_list_shows_who_a_pending_requisition_is_waiting_on(
         assert rows[draft["id"]]["pending_with"] is None
     finally:
         client.delete(f"/api/users/{user_id}", headers=hr_manager_auth)
+
+
+def test_interview_list_shows_each_interviewers_score_and_the_average(client, hr_manager_auth, make_test_user, test_institution):
+    cand = client.post("/api/recruitment/candidates", headers=hr_manager_auth,
+                       json={"full_name": "ZZ Scored Candidate", "email": f"zzpytest.scored.{os.urandom(4).hex()}@example.com"}).json()
+    iv = client.post("/api/recruitment/interviews", headers=hr_manager_auth, json={
+        "candidate_id": cand["id"], "interview_type": "Panel", "scheduled_date": "2030-01-01", "scheduled_time": "10:00"}).json()
+    token2, _ = make_test_user(role="hr_manager")
+    second = {"Authorization": f"Bearer {token2}", "X-Institution-Id": str(test_institution["id"])}
+    token3, _ = make_test_user(role="hr_manager")
+    third = {"Authorization": f"Bearer {token3}", "X-Institution-Id": str(test_institution["id"])}
+
+    def row():
+        return next(r for r in client.get("/api/recruitment/interviews", headers=hr_manager_auth).json() if r["id"] == iv["id"])
+
+    assert row()["scores"] == [] and row()["avg_score"] is None and row()["score_count"] == 0
+
+    url = f"/api/recruitment/interviews/{iv['id']}/scores"
+    assert client.post(url, headers=hr_manager_auth, json={"overall_score": 4, "technical_score": 5, "recommendation": "Yes"}).status_code == 201
+    assert client.post(url, headers=second, json={"overall_score": 5, "recommendation": "Strong Yes"}).status_code == 201
+    # a third interviewer left Overall blank: their score is the average of the criteria they did fill in (2 and 3 -> 2.5)
+    assert client.post(url, headers=third, json={"technical_score": 2, "communication_score": 3}).status_code == 201
+    # a fourth scorecard with no numbers at all does not count
+    token4, _ = make_test_user(role="hr_manager")
+    fourth = {"Authorization": f"Bearer {token4}", "X-Institution-Id": str(test_institution["id"])}
+    assert client.post(url, headers=fourth, json={"recommendation": "Maybe", "comments": "no numbers"}).status_code == 201
+
+    r = row()
+    assert sorted(s["score"] for s in r["scores"]) == [2.5, 4.0, 5.0]
+    assert r["score_count"] == 3
+    assert r["avg_score"] == round((4 + 5 + 2.5) / 3, 2)
+    first = next(s for s in r["scores"] if s["score"] == 4.0)
+    assert first["technical_score"] == 5 and first["recommendation"] == "Yes" and first["scored_by_name"]
+
+    # re-scoring replaces that interviewer's score rather than adding a row
+    client.post(url, headers=second, json={"overall_score": 3})
+    assert row()["score_count"] == 3 and row()["avg_score"] == round((4 + 3 + 2.5) / 3, 2)
+    # the candidate screen shows the same average
+    detail = client.get(f"/api/recruitment/candidates/{cand['id']}", headers=hr_manager_auth).json()
+    assert next(i for i in detail["interviews"] if i["id"] == iv["id"])["avg_score"] == row()["avg_score"]

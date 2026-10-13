@@ -1205,15 +1205,15 @@ def get_candidate(conn, cand_id: int, user: dict = Depends(get_current_user)) ->
     inst_id = need_inst(user)
     c = _candidate_with_derived_fields(conn, inst_id, cand_id)
     interviews = conn.execute("""
-        SELECT i.*, STRING_AGG(s.scored_by, ',') AS scored_by_list,
-               AVG(s.overall_score) AS avg_score
-        FROM interviews i
-        LEFT JOIN interview_scores s ON s.interview_id = i.id
+        SELECT i.* FROM interviews i
         WHERE i.candidate_id=? AND i.institution_id=?
-        GROUP BY i.id ORDER BY i.scheduled_date DESC, i.scheduled_time DESC
+        ORDER BY i.scheduled_date DESC, i.scheduled_time DESC
     """, (cand_id, inst_id)).fetchall()
     interview_list = [dict(i) for i in interviews]
+    cards = interview_scorecards(conn, inst_id, [i["id"] for i in interview_list])
     for iv in interview_list:
+        iv["avg_score"] = cards[iv["id"]]["avg_score"]
+        iv["score_count"] = cards[iv["id"]]["score_count"]
         scores = conn.execute(
             "SELECT scored_by,technical_score,communication_score,attitude_score,culture_fit_score,overall_score,recommendation,comments FROM interview_scores WHERE interview_id=? AND institution_id=? ORDER BY created_at",
             (iv["id"], inst_id)
@@ -1411,6 +1411,50 @@ def move_stage(conn, cand_id: int, body: CandidateStageIn, user: dict = Depends(
 # ---------------------------------------------------------------------------
 # Recruitment — Interviews
 # ---------------------------------------------------------------------------
+_CRITERIA_SCORE_COLUMNS = ("technical_score", "communication_score", "attitude_score", "culture_fit_score")
+
+
+def interviewer_score(row) -> Optional[float]:
+    """One interviewer's score for an interview: their Overall score, or — if they left Overall blank — the
+    average of the criteria they did fill in (technical / communication / attitude / culture fit). None if they
+    gave no number at all."""
+    if row["overall_score"] is not None:
+        return float(row["overall_score"])
+    given = [row[c] for c in _CRITERIA_SCORE_COLUMNS if row[c] is not None]
+    return round(sum(given) / len(given), 1) if given else None
+
+
+def interview_scorecards(conn, inst_id: int, interview_ids: List[int]) -> Dict[int, Dict[str, Any]]:
+    """{interview_id: {"scores": [one entry per interviewer who scored], "avg_score": float|None, "score_count": n}}.
+    `scores` entries carry the interviewer's display name (their account's full name), their score, the four
+    criteria and their recommendation; `avg_score` is the mean of the interviewers' scores (the 'general score')."""
+    out = {i: {"scores": [], "avg_score": None, "score_count": 0} for i in interview_ids}
+    if not interview_ids:
+        return out
+    marks = ",".join("?" * len(interview_ids))
+    rows = conn.execute(
+        f"""SELECT s.*, u.full_name AS scorer_name FROM interview_scores s
+            LEFT JOIN users u ON u.username = s.scored_by AND u.institution_id = s.institution_id
+            WHERE s.institution_id=? AND s.interview_id IN ({marks}) ORDER BY s.created_at""",
+        [inst_id, *interview_ids]
+    ).fetchall()
+    for r in rows:
+        score = interviewer_score(r)
+        if score is None:
+            continue
+        out[r["interview_id"]]["scores"].append({
+            "scored_by": r["scored_by"], "scored_by_name": r["scorer_name"] or r["scored_by"], "score": score,
+            "technical_score": r["technical_score"], "communication_score": r["communication_score"],
+            "attitude_score": r["attitude_score"], "culture_fit_score": r["culture_fit_score"],
+            "recommendation": r["recommendation"],
+        })
+    for card in out.values():
+        scores = [s["score"] for s in card["scores"]]
+        card["score_count"] = len(scores)
+        card["avg_score"] = round(sum(scores) / len(scores), 2) if scores else None
+    return out
+
+
 @router.get("/api/recruitment/interviews")
 @db_session
 def list_interviews(conn, 
@@ -1420,19 +1464,21 @@ def list_interviews(conn,
 ):
     require_permission(conn, user, "recruitment.view_requisitions_candidates_interviews_offers")
     inst_id = need_inst(user)
-    q = """SELECT i.*, c.full_name AS candidate_name, r.title AS requisition_title,
-                  COUNT(s.id) AS score_count, AVG(s.overall_score) AS avg_score
+    q = """SELECT i.*, c.full_name AS candidate_name, r.title AS requisition_title
            FROM interviews i
            JOIN candidates c ON c.id = i.candidate_id
            LEFT JOIN job_requisitions r ON r.id = i.requisition_id
-           LEFT JOIN interview_scores s ON s.interview_id = i.id
            WHERE i.institution_id=?"""
     p = [inst_id]
     if candidate_id: q += " AND i.candidate_id=?"; p.append(candidate_id)
     if status:       q += " AND i.status=?";       p.append(status)
-    q += " GROUP BY i.id, c.full_name, r.title ORDER BY i.scheduled_date DESC, i.scheduled_time DESC"
-    rows = conn.execute(q, p).fetchall()
-    return [dict(r) for r in rows]
+    q += " ORDER BY i.scheduled_date DESC, i.scheduled_time DESC"
+    rows = [dict(r) for r in conn.execute(q, p).fetchall()]
+    # Each interviewer's score, and the general (average) score — see interview_scorecards.
+    cards = interview_scorecards(conn, inst_id, [r["id"] for r in rows])
+    for r in rows:
+        r.update(cards[r["id"]])
+    return rows
 
 
 @router.post("/api/recruitment/interviews", status_code=201)

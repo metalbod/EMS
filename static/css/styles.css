@@ -382,6 +382,16 @@ tr.todo-row-urgent:hover,.todo-group.todo-row-urgent .todo-group-head:hover{back
    class — this is why. */
 .hidden{display:none}
 
+/* The unlayered .hidden above also beats Tailwind's responsive "show" variants (they live in a cascade layer), so
+   every "hidden md:table-cell" column header/cell stayed display:none at ALL widths — since the .hidden fix
+   (595b78b, 2026-09-10) the Interviewers / Avg Score / Type ... columns of ~50 tables were invisible even on a
+   desktop. Re-enable them at their own breakpoint (two classes beat .hidden's one). Only the combinations the app
+   uses; breakpoints are Tailwind 4's sm 40rem / md 48rem / lg 64rem. A new "hidden <bp>:<display>" combination needs
+   a line here. */
+@media (min-width:40rem){ .hidden.sm\:table-cell{display:table-cell} .hidden.sm\:inline{display:inline} }
+@media (min-width:48rem){ .hidden.md\:table-cell{display:table-cell} }
+@media (min-width:64rem){ .hidden.lg\:table-cell{display:table-cell} }
+
 /* Deep links (deep-link.js): the record a Home link landed on, and the status line
    that says what happened when it could not (or that the list is narrowed). */
 .focus-target{background:var(--accent-tint) !important;outline:2px solid var(--accent-ink);outline-offset:-2px}

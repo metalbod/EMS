@@ -826,7 +826,7 @@ async function openCandDetail(candId) {
       </div>
       ${(i.scores&&i.scores.length)?`
         <div class="border-t border-slate-100 pt-2">
-          <p class="text-xs font-medium text-slate-500 mb-1">Scorecard (${i.scores.length} scorer${i.scores.length>1?'s':''}${i.avg_score!=null?' · Avg '+parseFloat(i.avg_score).toFixed(1)+'/5':''})</p>
+          <p class="text-xs font-medium text-slate-500 mb-1">Scorecard (${i.scores.length} scorer${i.scores.length>1?'s':''}${i.avg_score!=null?' · Avg '+fmtInterviewScore(i.avg_score)+'/5':''})</p>
           <table class="w-full text-xs text-slate-600">
             <thead><tr class="text-slate-400"><th class="text-left pb-1 font-normal">Scorer</th><th class="pb-1 font-normal">Tech</th><th class="pb-1 font-normal">Comm</th><th class="pb-1 font-normal">Attitude</th><th class="pb-1 font-normal">Culture</th><th class="pb-1 font-normal">Overall</th><th class="text-left pb-1 font-normal">Rec</th></tr></thead>
             <tbody>${i.scores.map(s=>`<tr class="border-t border-slate-100">
@@ -978,6 +978,24 @@ async function convertToEmployee() {
 // ---------------------------------------------------------------------------
 // Recruitment — Interviews
 // ---------------------------------------------------------------------------
+// A score as shown in the table: whole numbers plain ("4"), averages to one decimal ("4.5").
+function fmtInterviewScore(n) {
+  if(n==null||isNaN(n)) return '—';
+  const v=Number(n);
+  return Number.isInteger(v)?String(v):v.toFixed(1);
+}
+// Hover text for one interviewer's chip: the criteria they scored and their recommendation.
+function interviewScoreTitle(s) {
+  const parts=[['Technical',s.technical_score],['Communication',s.communication_score],['Attitude',s.attitude_score],['Culture fit',s.culture_fit_score]]
+    .filter(([,v])=>v!=null).map(([k,v])=>`${k} ${v}`);
+  if(s.recommendation) parts.push(`Recommendation: ${s.recommendation}`);
+  return parts.join(' · ');
+}
+function interviewScoreChipsHtml(scores) {
+  if(!scores||!scores.length) return '<span class="text-slate-400 text-xs">Not scored yet</span>';
+  return scores.map(s=>`<span class="inline-flex items-center gap-1 rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-700 mr-1 mb-1" title="${esc(interviewScoreTitle(s))}">${esc(s.scored_by_name||s.scored_by)} <b class="font-semibold">${fmtInterviewScore(s.score)}</b></span>`).join('');
+}
+
 async function loadInterviews() {
   await loadRecruitMeta();
   const status=document.getElementById('intStatusFilter')?.value||'';
@@ -999,7 +1017,8 @@ async function loadInterviews() {
       <td class="px-4 py-3 text-slate-600 hidden md:table-cell">${esc(i.interview_type)}</td>
       <td class="px-4 py-3 text-slate-700">${fmtDate(i.scheduled_date)} ${esc(i.scheduled_time)}</td>
       <td class="px-4 py-3 text-slate-500 text-xs hidden lg:table-cell">${esc(i.interviewers||'—')}</td>
-      <td class="px-4 py-3 text-center text-slate-700 hidden sm:table-cell">${i.avg_score!=null?parseFloat(i.avg_score).toFixed(1)+'/5':'—'}</td>
+      <td class="px-4 py-3 hidden md:table-cell">${interviewScoreChipsHtml(i.scores)}</td>
+      <td class="px-4 py-3 text-center text-slate-700 hidden sm:table-cell">${i.avg_score!=null?`<span class="font-semibold">${fmtInterviewScore(i.avg_score)}</span>/5<span class="block text-xs text-slate-400">${i.score_count} ${i.score_count===1?'scorer':'scorers'}</span>`:'—'}</td>
       <td class="px-4 py-3"><span class="badge ${interviewStatusBadge(i.status)}">${esc(i.status)}</span></td>
       <td class="px-4 py-3 text-right flex gap-1 justify-end">
         ${i.status==='Scheduled'?`<button class="btn-ghost text-xs" onclick="markIntStatus(${i.id},'Completed')">Done</button>`:''}

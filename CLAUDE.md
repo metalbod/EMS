@@ -838,6 +838,21 @@ wrapper everywhere.
   `loadPublicApplyForm` (`static/js/public_careers.js`) rendered only `description`. It now shows a "Requirements"
   block under the description (plain text, `whitespace-pre-wrap`, hidden when empty). Covered by a vitest that runs
   the real function against a stubbed fetch.
+- **Interviews table shows each interviewer's score and the average** (`interview_scorecards` /
+  `interviewer_score` in `routers/recruitment.py`, `loadInterviews` + `interviewScoreChipsHtml` in
+  `static/js/recruitment.js`): `GET /api/recruitment/interviews` now returns, per interview, `scores` (one entry per
+  interviewer who scored — their account's full name, score, the four criteria, recommendation), `score_count` and
+  `avg_score`. An interviewer's score is their **Overall**, or — if they left Overall blank — the average of the
+  criteria they filled in; a scorecard with no numbers doesn't count. `avg_score` is the mean of those (the
+  "general score"), shown as "4.2/5 · 3 scorers"; the Candidate Detail interview cards use the same helper so the
+  numbers match. A re-score by the same interviewer replaces theirs.
+- **Gotcha (fixed 2026-10-13): every `hidden md:table-cell` / `hidden lg:table-cell` / `hidden sm:table-cell` column
+  was invisible at every width.** `styles.css`'s unlayered `.hidden{display:none}` (added 2026-09-10 so role-gated
+  nav items stay hidden) beats Tailwind 4's layered responsive "show" variants, so ~50 table columns (Interviews'
+  Type / Interviewers / Avg Score among them) never appeared even on a desktop. `styles.css` now re-enables the
+  combinations the app uses (`.hidden.sm\:table-cell`, `.hidden.md\:table-cell`, `.hidden.lg\:table-cell`,
+  `.hidden.sm\:inline`) at Tailwind's breakpoints (sm 40rem / md 48rem / lg 64rem). A new `hidden <bp>:<display>`
+  combination needs its own line there.
 
 ## Recurring gotchas (hit more than once this project's history)
 
