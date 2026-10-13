@@ -68,3 +68,43 @@ describe('Public apply form — session header inclusion', () => {
     expect(buildHeaders(null)).toEqual({ 'Content-Type': 'application/json' });
   });
 });
+
+
+// Runs the REAL loadPublicApplyForm (public_careers.js) against a stubbed fetch and a minimal DOM.
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { beforeEach, vi } from 'vitest';
+
+describe('Public apply page job details', () => {
+  const src = readFileSync(resolve(__dirname, '..', 'public_careers.js'), 'utf8');
+  const start = src.indexOf('async function loadPublicApplyForm(');
+  const end = src.indexOf('\nfunction loadTurnstileWidget', start);
+  const load = new Function('fetch', 'showGlobalLoading', 'hideGlobalLoading', 'esc', 'loadTurnstileWidget', 'localStorage',
+    `${src.slice(start, end)}\nreturn loadPublicApplyForm;`);
+
+  beforeEach(() => {
+    document.body.innerHTML = `
+      <div id="careersApplyView" class="hidden"></div><div id="careersApplyNotFound" class="hidden"></div>
+      <div id="careersApplyForm" class="hidden"></div>
+      <h1 id="careersJobTitle"></h1><p id="careersJobMeta"></p><p id="careersJobDescription"></p>
+      <div id="careersJobRequirementsWrap" class="hidden"><p id="careersJobRequirements"></p></div>`;
+  });
+
+  const run = job => load(
+    async () => ({ ok: true, json: async () => job }), () => {}, () => {}, s => s, () => {},
+    { getItem: () => null })('tok');
+
+  it('shows the requirements under the description when the job has them', async () => {
+    await run({ title: 'Dev', department: 'IT', employment_type: 'Permanent', description: 'About the role', requirements: '  * Python\n* SQL  ' });
+    expect(document.getElementById('careersJobDescription').textContent).toBe('About the role');
+    expect(document.getElementById('careersJobRequirements').textContent).toBe('* Python\n* SQL');
+    expect(document.getElementById('careersJobRequirementsWrap').classList.contains('hidden')).toBe(false);
+  });
+
+  it('hides the Requirements block when there are none', async () => {
+    await run({ title: 'Dev', department: 'IT', employment_type: 'Permanent', description: 'About the role', requirements: null });
+    expect(document.getElementById('careersJobRequirementsWrap').classList.contains('hidden')).toBe(true);
+    await run({ title: 'Dev', department: 'IT', employment_type: 'Permanent', description: 'x', requirements: '   ' });
+    expect(document.getElementById('careersJobRequirementsWrap').classList.contains('hidden')).toBe(true);
+  });
+});

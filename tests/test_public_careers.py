@@ -121,6 +121,14 @@ def test_get_public_requisition_returns_public_safe_fields(client, hr_manager_au
     assert "id" not in body and "institution_id" not in body, "must never leak internal ids to an anonymous caller"
 
 
+def test_public_requisition_returns_the_description_and_requirements_keyed_in_by_hr(client, hr_manager_auth):
+    req = _approved_requisition(client, hr_manager_auth, description="About the role", requirements="* Python\n* SQL")
+    token = _enable_public_link(client, hr_manager_auth, req["id"])
+    body = client.get(f"/api/public/careers/apply/{token}").json()
+    assert body["description"] == "About the role"
+    assert body["requirements"] == "* Python\n* SQL"
+
+
 # ---------------------------------------------------------------------------
 # Submitting an application (anonymous)
 # ---------------------------------------------------------------------------

@@ -87,7 +87,11 @@
       <div id="careersApplyForm" class="hidden">
         <h1 id="careersJobTitle" class="text-2xl font-bold text-slate-800 mb-1">—</h1>
         <p id="careersJobMeta" class="text-slate-500 mb-6">—</p>
-        <p id="careersJobDescription" class="text-sm text-slate-600 whitespace-pre-wrap mb-8"></p>
+        <p id="careersJobDescription" class="text-sm text-slate-600 whitespace-pre-wrap mb-6"></p>
+        <div id="careersJobRequirementsWrap" class="hidden mb-8">
+          <h2 class="text-sm font-semibold text-slate-800 mb-2">Requirements</h2>
+          <p id="careersJobRequirements" class="text-sm text-slate-600 whitespace-pre-wrap"></p>
+        </div>
         <form onsubmit="submitPublicApplication(event)" class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-4">
           <div><label class="lbl">Full Name <span class="text-red-500">*</span></label><input id="careersFullName" type="text" class="inp" required/></div>
           <div><label class="lbl">Email <span class="text-red-500">*</span></label><input id="careersEmail" type="email" class="inp" required/></div>

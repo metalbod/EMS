@@ -64,6 +64,11 @@ async function loadPublicApplyForm(token) {
   document.getElementById('careersJobTitle').textContent = job.title;
   document.getElementById('careersJobMeta').textContent = `${job.department} · ${job.employment_type}`;
   document.getElementById('careersJobDescription').textContent = job.description || '';
+  // The Requirements entered on the requisition (shown only when there are some). The page used to render the
+  // description alone, so a job's requirements never reached applicants.
+  const requirements = (job.requirements || '').trim();
+  document.getElementById('careersJobRequirements').textContent = requirements;
+  document.getElementById('careersJobRequirementsWrap').classList.toggle('hidden', !requirements);
   document.getElementById('careersApplyForm').classList.remove('hidden');
   if (job.turnstile_site_key) loadTurnstileWidget(job.turnstile_site_key);
 

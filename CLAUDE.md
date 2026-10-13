@@ -833,6 +833,11 @@ wrapper everywhere.
   2026-10-13 the roster released every employee's date of birth regardless of consent and relied on the kiosk to
   ignore it. Employee IDs are numbered per company, so the same ID can exist in two companies; a test must compare
   the person, not just the status code, when checking tenant isolation.
+- **The public (no-login) job page shows the requisition's Requirements** (live report 2026-10-13, institution 4:
+  the JD showed the description only): `GET /api/public/careers/apply/{token}` always returned `requirements`, but
+  `loadPublicApplyForm` (`static/js/public_careers.js`) rendered only `description`. It now shows a "Requirements"
+  block under the description (plain text, `whitespace-pre-wrap`, hidden when empty). Covered by a vitest that runs
+  the real function against a stubbed fetch.
 
 ## Recurring gotchas (hit more than once this project's history)
 
