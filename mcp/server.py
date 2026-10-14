@@ -77,7 +77,7 @@ mcp = FastMCP(
     "EMS",
     instructions=(
         "Self-service for the signed-in employee in EMS (their company's HR system): clock in and out, see today's "
-        "attendance, and see leave balances. Everything acts only as that one person. Clocking in/out records real "
+        "attendance, see leave balances, log hours to their draft timesheet and see the week's clocked and missing hours. Everything acts only as that one person. Clocking in/out records real "
         "attendance, so only do it when the person clearly asks."
     ),
     token_verifier=EmsTokenVerifier(),
@@ -235,6 +235,38 @@ async def leave_balance(year: Optional[int] = None) -> dict:
                     "used_days": b.get("used_days") or 0, "year": b.get("year")})
     return {"year": (out[0]["year"] if out else year), "balances": out,
             "message": ("; ".join(f"{o['leave_type']}: {o['available_days']} day(s)" for o in out)) or "No leave balances found."}
+
+
+@mcp.tool(annotations=ToolAnnotations(title="My projects and tasks", readOnlyHint=True, openWorldHint=False))
+async def my_projects() -> dict:
+    """List the projects (and their tasks) the signed-in employee can log hours against, with the ids log_hours needs. Call this before log_hours so the person can pick the project and task. Safe to call any time."""
+    rows = await ems("GET", "/api/me/timesheet/projects")
+    return {"projects": rows, "message": ("; ".join(f"{p['project_name']} ({len(p['tasks'])} task(s))" for p in rows)) or "No projects to log hours against."}
+
+
+@mcp.tool(
+    description=(
+        "Add hours the signed-in employee worked on one project task to their DRAFT timesheet for this week (default: today; any earlier day "
+        "this week is allowed, future days and other weeks are not). If that task already has hours that day, these are added to them. "
+        "Ask the person which project and task and how many hours; call my_projects for the choices and ids. Never guess a project, task or "
+        "number of hours. This only saves a draft: it never submits the timesheet, which the person does in EMS."),
+    annotations=ToolAnnotations(title="Log hours", readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False))
+async def log_hours(project_id: int, task_id: int, hours: float, date: Optional[str] = None) -> dict:
+    rec = await ems("POST", "/api/me/timesheet/log-hours", json={"project_id": project_id, "task_id": task_id, "hours": hours, "date": date})
+    more = " (added to hours already logged there)" if rec["added_to_existing"] else ""
+    return {**rec, "message": (f"Logged {rec['hours_added']}h on {rec['project_name']} / {rec['task_name']} for {rec['date']}{more}. "
+                               f"That task: {rec['task_hours_that_day']}h that day. All tasks that day: {rec['day_total_hours']}h. "
+                               f"This week logged: {rec['week_logged_hours']}h. Timesheet status: {rec['timesheet_status']} (not submitted).")}
+
+
+@mcp.tool(annotations=ToolAnnotations(title="This week's hours", readOnlyHint=True, openWorldHint=False))
+async def week_hours(date: Optional[str] = None) -> dict:
+    """The signed-in employee's hours for a Monday-to-Sunday week (default: this week; pass any date in the week as YYYY-MM-DD): hours clocked in, hours logged on the timesheet, public-holiday and approved-leave hours, expected hours and the missing hours still to be accounted for (the same figure as My Timesheet), plus a per-day breakdown. Safe to call any time."""
+    w = await ems("GET", "/api/me/week-hours", params={"date": date} if date else None)
+    now_note = " Currently clocked in (counted so far)." if w.get("clocked_in_now") else ""
+    return {**w, "message": (f"Week {w['week_start']} to {w['week_end']}: clocked {w['clocked_hours']}h, logged {w['logged_hours']}h, "
+                             f"holidays {w['holiday_hours']}h, leave {w['leave_hours']}h, expected {w['expected_hours']}h, "
+                             f"missing {w['missing_hours']}h. Timesheet: {w['timesheet_status']}.{now_note}")}
 
 
 if __name__ == "__main__":

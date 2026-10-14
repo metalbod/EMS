@@ -267,16 +267,12 @@ def list_timesheets(
     return page
 
 
-@router.post("/api/timesheets", status_code=201)
-@db_session
-def start_timesheet(conn, body: TimesheetStartIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
-    """Get-or-create the Draft timesheet for an employee's period (idempotent)."""
-    inst_id = need_inst(user)
-    if user["role"] == "employee" and user.get("employee_id") != body.employee_id:
-        raise HTTPException(403, "You can only manage your own timesheet")
+def get_or_create_timesheet(conn, inst_id: int, employee_id: str, period_start: str, period_end: str, user: dict) -> Dict[str, Any]:
+    """The Draft timesheet for an employee's period, created if there isn't one (idempotent). Shared by the My Timesheet
+    screen's POST /api/timesheets and the Claude self-service endpoints (routers/me_timesheet.py)."""
     existing = conn.execute(
         "SELECT * FROM timesheets WHERE employee_id=? AND period_start=? AND period_end=? AND institution_id=?",
-        (body.employee_id, body.period_start, body.period_end, inst_id)
+        (employee_id, period_start, period_end, inst_id)
     ).fetchone()
     if existing:
         return dict(existing)
@@ -284,28 +280,38 @@ def start_timesheet(conn, body: TimesheetStartIn, user: dict = Depends(get_curre
     # in UTC+ zones). For a Monday-start week, return that employee's legacy Sunday-start
     # timesheet for the same week instead of creating an empty, overlapping Draft beside it.
     try:
-        start_d = datetime.strptime(body.period_start, "%Y-%m-%d").date()
-        end_d = datetime.strptime(body.period_end, "%Y-%m-%d").date()
+        start_d = datetime.strptime(period_start, "%Y-%m-%d").date()
+        end_d = datetime.strptime(period_end, "%Y-%m-%d").date()
     except ValueError:
         start_d = end_d = None
     if start_d and start_d.weekday() == 0:
         legacy = conn.execute(
             "SELECT * FROM timesheets WHERE employee_id=? AND period_start=? AND period_end=? AND institution_id=?",
-            (body.employee_id, (start_d - timedelta(days=1)).isoformat(),
+            (employee_id, (start_d - timedelta(days=1)).isoformat(),
              (end_d - timedelta(days=1)).isoformat(), inst_id)
         ).fetchone()
         if legacy:
             return dict(legacy)
     conn.execute(
         "INSERT INTO timesheets (institution_id,employee_id,period_start,period_end) VALUES (?,?,?,?)",
-        (inst_id, body.employee_id, body.period_start, body.period_end)
+        (inst_id, employee_id, period_start, period_end)
     )
     ts_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-    _log_timesheet(conn, inst_id, ts_id, body.employee_id, "Created",
-                    f"Timesheet created for {body.period_start} to {body.period_end}", user)
+    _log_timesheet(conn, inst_id, ts_id, employee_id, "Created",
+                    f"Timesheet created for {period_start} to {period_end}", user)
     conn.commit()
     row = conn.execute("SELECT * FROM timesheets WHERE id=?", (ts_id,)).fetchone()
     return dict(row)
+
+
+@router.post("/api/timesheets", status_code=201)
+@db_session
+def start_timesheet(conn, body: TimesheetStartIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    """Get-or-create the Draft timesheet for an employee's period (idempotent)."""
+    inst_id = need_inst(user)
+    if user["role"] == "employee" and user.get("employee_id") != body.employee_id:
+        raise HTTPException(403, "You can only manage your own timesheet")
+    return get_or_create_timesheet(conn, inst_id, body.employee_id, body.period_start, body.period_end, user)
 
 
 TIMESHEET_SETTINGS_MANAGE_ROLES = ("superadmin", "hr_manager", "hr_admin")
@@ -472,15 +478,9 @@ def get_timesheet(conn, ts_id: int, user: dict = Depends(get_current_user)) -> D
     return result
 
 
-@router.post("/api/timesheets/{ts_id}/entries", status_code=201)
-@db_session
-def add_timesheet_entry(conn, ts_id: int, body: TimesheetEntryIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
-    inst_id = need_inst(user)
-    ts = conn.execute("SELECT * FROM timesheets WHERE id=? AND institution_id=?", (ts_id, inst_id)).fetchone()
-    if not ts:
-        raise HTTPException(404, "Timesheet not found")
-    if user["role"] == "employee" and user.get("employee_id") != ts["employee_id"]:
-        raise HTTPException(403, "Access denied")
+def validate_new_timesheet_entry(conn, inst_id: int, ts, body: "TimesheetEntryIn") -> None:
+    """Every rule a new entry must pass (editable, task belongs to the project, member of the project, hours, date in the
+    period). Raises HTTPException. Shared by add_timesheet_entry and the Claude self-service endpoint."""
     _check_timesheet_entry_editable(conn, ts, body.project_id)
     task = conn.execute(
         "SELECT id FROM project_tasks WHERE id=? AND project_id=? AND institution_id=?",
@@ -496,6 +496,8 @@ def add_timesheet_entry(conn, ts_id: int, body: TimesheetEntryIn, user: dict = D
         "SELECT is_open_to_all FROM projects WHERE id=? AND institution_id=?",
         (body.project_id, inst_id)
     ).fetchone()
+    if not project:
+        raise HTTPException(400, "Selected project not found")
     if not project["is_open_to_all"] and not conn.execute(
         "SELECT id FROM project_members WHERE project_id=? AND employee_id=?",
         (body.project_id, ts["employee_id"])
@@ -505,6 +507,19 @@ def add_timesheet_entry(conn, ts_id: int, body: TimesheetEntryIn, user: dict = D
         raise HTTPException(400, "Hours must be between 0 and 24")
     if not (ts["period_start"] <= body.date <= ts["period_end"]):
         raise HTTPException(400, "Entry date must fall within the timesheet's period")
+
+
+
+@router.post("/api/timesheets/{ts_id}/entries", status_code=201)
+@db_session
+def add_timesheet_entry(conn, ts_id: int, body: TimesheetEntryIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    inst_id = need_inst(user)
+    ts = conn.execute("SELECT * FROM timesheets WHERE id=? AND institution_id=?", (ts_id, inst_id)).fetchone()
+    if not ts:
+        raise HTTPException(404, "Timesheet not found")
+    if user["role"] == "employee" and user.get("employee_id") != ts["employee_id"]:
+        raise HTTPException(403, "Access denied")
+    validate_new_timesheet_entry(conn, inst_id, ts, body)
 
     conn.execute(
         "INSERT INTO timesheet_entries (institution_id,timesheet_id,project_id,task_id,date,hours,description) VALUES (?,?,?,?,?,?,?)",

@@ -376,3 +376,29 @@ def test_leave_balances_through_claude_are_own_only_even_for_hr(client, mcp_on, 
         assert {r["employee_id"] for r in rows} <= {mine["employee_id"]}
     finally:
         client.delete(f"/api/users/{res.json()['id']}", headers=hr_manager_auth)
+
+
+def test_timesheet_tools_through_claude_respect_their_scopes(client, mcp_on, employee_with_login, make_test_project, make_test_project_task):
+    emp, headers = employee_with_login(full_name="ZZ MCP Timesheet")
+    project = make_test_project(name="ZZ MCP Project", is_open_to_all=True)
+    task = make_test_project_task(project["id"])
+    log = {"project_id": project["id"], "task_id": task["id"], "hours": 2}
+
+    # a connection made before timesheets existed (read-only attendance) is told to reconnect, and nothing is written
+    old, _ = _connect(client, headers, scope="attendance:read")
+    res = client.post("/api/me/timesheet/log-hours", headers=_bearer(old), json=log)
+    assert res.status_code == 403 and "reconnect" in res.json()["detail"]
+    assert client.get("/api/me/week-hours", headers=_bearer(old)).status_code == 403
+
+    read_only, _ = _connect(client, headers, scope="timesheet:read")
+    assert client.get("/api/me/timesheet/projects", headers=_bearer(read_only)).status_code == 200
+    assert client.get("/api/me/week-hours", headers=_bearer(read_only)).status_code == 200
+    assert client.post("/api/me/timesheet/log-hours", headers=_bearer(read_only), json=log).status_code == 403
+
+    full, _ = _connect(client, headers)                                           # default scopes include both
+    res = client.post("/api/me/timesheet/log-hours", headers=_bearer(full), json=log)
+    assert res.status_code == 201, res.text
+    assert client.get("/api/me/week-hours", headers=_bearer(full)).json()["logged_hours"] == 2
+    # the general timesheet endpoints stay closed to a Claude token
+    assert client.get("/api/timesheets", headers=_bearer(full)).status_code == 403
+    assert client.post("/api/timesheets", headers=_bearer(full), json={"employee_id": emp["employee_id"], "period_start": "2026-01-05", "period_end": "2026-01-11"}).status_code == 403

@@ -234,7 +234,7 @@ async def _authenticate_oauth(request: Request, token: str) -> dict:
         raise HTTPException(403, "Claude access is turned off for your company. Ask HR to enable it in Settings.")
     scopes = ctx["scope"].split()
     if not oauth_core.scope_allows(scopes, request.method, request.url.path):
-        raise HTTPException(403, "This connection isn't allowed to do that")
+        raise HTTPException(403, "This Claude connection doesn't have permission for that. Disconnect and reconnect the EMS connector in Claude to grant it.")
     u = await asyncio.to_thread(_load_current_user_row, ctx["user_id"])
     if u is None or u.get("institution_id") != ctx["institution_id"] or u["role"] == "superadmin" or not u.get("employee_id"):
         raise HTTPException(401, "Invalid or expired access token", headers={"WWW-Authenticate": 'Bearer error="invalid_token"'})

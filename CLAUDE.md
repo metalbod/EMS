@@ -948,6 +948,16 @@ wrapper everywhere.
   tools forward the caller's own token to the normal EMS API, and Claude is told in the tool descriptions to ask the person for
   their location (never guess). The folder is named `mcp`: **never add `mcp/__init__.py`**, the installed `mcp` package must keep
   winning the import. Root `pytest.ini` only collects `tests/`; the MCP's own 12 unit tests run from `mcp/` (`pytest`, EMS faked).
+  **Timesheet tools** (`my_projects`, `log_hours`, `week_hours`; scopes `timesheet:read`/`timesheet:write`; `routers/me_timesheet.py`):
+  deliberately small purpose-built endpoints under `/api/me/...` (exact paths in `SCOPE_ROUTES`) instead of opening the general
+  `/api/timesheets/...` ones, which have ids in their paths. `log_hours` adds to the *Draft* of the current Mon–Sun week (company
+  timezone), **adds** to hours already on that task that day (decided 2026-10-14), allows any earlier day this week but not future days
+  or other weeks, runs the same validation as the web grid (`validate_new_timesheet_entry`, `get_or_create_timesheet` were extracted
+  from `routers/timesheets.py` for this), and never submits (submitting starts approvals + overtime detection; stays in the web app).
+  It writes a `timesheet_audit_log` row "Hours logged … (via Claude)". `week_hours` = clocked hours (attendance, in-progress counted
+  so far) + logged + My Timesheet's own expected/holiday/leave/**missing** figure (`_weekly_hours_breakdown`; "missing" is EMS's
+  figure only, by decision). Scopes are fixed at consent: a connection made before these existed gets a 403 telling the person to
+  reconnect once. Sunday logging into a legacy Sunday-start timesheet is refused, as it always was in the web grid.
   Connector address staff paste into Claude: `https://ems-mcp.fly.dev/mcp` (no custom domain, by decision). The OAuth/registration
   rate limits are in-memory per machine, same tradeoff as the login limiter (prod runs 2 machines, so limits are per machine).
   The metadata `issuer` has a trailing slash on purpose (the MCP server's advertised issuer is a pydantic `AnyHttpUrl`, which

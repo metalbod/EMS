@@ -133,3 +133,35 @@ def test_leave_balance_matches_the_web_screens_arithmetic(fake_ems):
     assert sick["available_days"] == 13.0
     assert fake_ems["calls"][0][2] == {"year": "2026"}
     assert "Annual: 6.0 day(s)" in out["message"]
+
+
+def test_log_hours_forwards_ids_and_reports_totals_without_submitting(fake_ems):
+    fake_ems["handlers"][("POST", "/api/me/timesheet/log-hours")] = (201, {
+        "entry_id": 5, "date": "2026-10-14", "project_name": "Apollo", "task_name": "Build", "hours_added": 2.5,
+        "task_hours_that_day": 4.0, "day_total_hours": 6.0, "week_logged_hours": 12.5, "timesheet_status": "Draft", "added_to_existing": True})
+    out = run(server.log_hours(7, 9, 2.5))
+    assert "Logged 2.5h on Apollo / Build for 2026-10-14 (added to hours already logged there)" in out["message"]
+    assert "not submitted" in out["message"] and out["week_logged_hours"] == 12.5
+    method, path, _, auth, body = fake_ems["calls"][0]
+    assert (method, path, auth) == ("POST", "/api/me/timesheet/log-hours", "Bearer emsat_abc")
+    assert b'"project_id":7' in body.replace(b" ", b"") and b'"task_id":9' in body.replace(b" ", b"")
+
+
+def test_log_hours_errors_and_reconnect_hint_pass_through(fake_ems):
+    fake_ems["handlers"][("POST", "/api/me/timesheet/log-hours")] = (400, {"detail": "You can't log hours for a future day."})
+    with pytest.raises(ToolError, match="future day"):
+        run(server.log_hours(1, 1, 1, "2099-01-01"))
+    fake_ems["handlers"][("POST", "/api/me/timesheet/log-hours")] = (403, {"detail": "This Claude connection doesn't have permission for that. Disconnect and reconnect the EMS connector in Claude to grant it."})
+    with pytest.raises(ToolError, match="reconnect"):
+        run(server.log_hours(1, 1, 1))
+
+
+def test_week_hours_summary_and_my_projects(fake_ems):
+    fake_ems["handlers"][("GET", "/api/me/week-hours")] = (200, {
+        "week_start": "2026-10-12", "week_end": "2026-10-18", "days": [], "clocked_hours": 31.5, "clocked_in_now": None, "logged_hours": 12.0,
+        "holiday_hours": 0, "leave_hours": 8.0, "expected_hours": 40.0, "missing_hours": 20.0, "timesheet_status": "Draft"})
+    out = run(server.week_hours("2026-10-14"))
+    assert "clocked 31.5h, logged 12.0h" in out["message"] and "missing 20.0h" in out["message"]
+    assert fake_ems["calls"][0][2] == {"date": "2026-10-14"}
+    fake_ems["handlers"][("GET", "/api/me/timesheet/projects")] = (200, [{"project_id": 1, "project_name": "Apollo", "tasks": [{"task_id": 2, "task_name": "Build", "status": "Not Started"}]}])
+    assert "Apollo (1 task(s))" in run(server.my_projects())["message"]

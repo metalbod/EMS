@@ -26,14 +26,18 @@ SCOPES = {
     "attendance:clock": "Clock you in and out",
     "attendance:read": "See your own attendance",
     "leave:read": "See your own leave balances",
+    "timesheet:read": "See your own timesheet hours and projects",
+    "timesheet:write": "Add hours to your own draft timesheet (it never submits it)",
 }
-DEFAULT_SCOPES = ("attendance:clock", "attendance:read", "leave:read")
+DEFAULT_SCOPES = ("attendance:clock", "attendance:read", "leave:read", "timesheet:read", "timesheet:write")
 
 # scope -> the only (METHOD, exact path) pairs a token holding that scope may call.
 SCOPE_ROUTES = {
     "attendance:clock": {("POST", "/api/attendance/clock-in"), ("POST", "/api/attendance/clock-out")},
     "attendance:read": {("GET", "/api/attendance/mine")},
     "leave:read": {("GET", "/api/leave/balances")},
+    "timesheet:read": {("GET", "/api/me/timesheet/projects"), ("GET", "/api/me/week-hours")},
+    "timesheet:write": {("POST", "/api/me/timesheet/log-hours")},
 }
 
 _REDIRECT_OK = re.compile(r"^(https://[^\s#]+|http://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(/[^\s#]*)?)$")
