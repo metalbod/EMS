@@ -47,6 +47,12 @@ def _require_employee(current_user: dict) -> str:
     return employee_id
 
 
+def _self_service_source(current_user: dict) -> str:
+    """'mcp' when Claude is clocking on the employee's behalf (an OAuth token, see core/oauth.py), else 'web'. The
+    coordinates there are whatever the person told Claude - or none - so HR can tell those records apart."""
+    return "mcp" if current_user.get("oauth_scopes") else "web"
+
+
 def _haversine_meters(lat1: float, lng1: float, lat2: float, lng2: float) -> int:
     r = 6371000
     p1, p2 = math.radians(lat1), math.radians(lat2)
@@ -440,6 +446,7 @@ def _shift_deadline(work_date: str, shift) -> datetime:
 def _record_response(row) -> AttendanceRecordResponse:
     d = dict(row)
     d["outside_geofence"] = bool(d["outside_geofence"])
+    d["clock_in_has_location"] = d.get("clock_in_lat") is not None and d.get("clock_in_lng") is not None
     return AttendanceRecordResponse(**d)
 
 
@@ -688,7 +695,7 @@ def clock_in(
     employee_id = _require_employee(current_user)
     inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
     client_ip = request.client.host if request.client else None
-    rec = _do_clock_in(conn, inst_id, employee_id, payload.lat, payload.lng, client_ip, "web")
+    rec = _do_clock_in(conn, inst_id, employee_id, payload.lat, payload.lng, client_ip, _self_service_source(current_user))
     return _record_response(rec)
 
 
@@ -703,7 +710,7 @@ def clock_out(
     employee_id = _require_employee(current_user)
     inst_id = current_user.get("active_institution_id") or current_user.get("institution_id")
     client_ip = request.client.host if request.client else None
-    rec = _do_clock_out(conn, inst_id, employee_id, payload.lat, payload.lng, client_ip, "web")
+    rec = _do_clock_out(conn, inst_id, employee_id, payload.lat, payload.lng, client_ip, _self_service_source(current_user))
     return _record_response(rec)
 
 

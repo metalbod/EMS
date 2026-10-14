@@ -115,6 +115,8 @@ class AttendanceRecordResponse(BaseModel):
     clock_out_at: Optional[str] = None
     clock_in_distance_meters: Optional[int] = None
     outside_geofence: bool
+    # False when the clock-in carried no coordinates (e.g. Claude clocking in for someone who didn't share a location).
+    clock_in_has_location: bool = False
     clock_in_source: str = "web"
     clock_out_source: Optional[str] = None
     worked_minutes: Optional[int] = None

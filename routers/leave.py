@@ -623,7 +623,9 @@ def list_leave_balances(conn, employee_id: Optional[str] = None, year: Optional[
         WHERE b.institution_id=? AND b.year=?
     """
     p: list = [inst_id, year]
-    if user["role"] == "employee":
+    # A Claude/MCP token (core/oauth.py) only ever sees the person's own balances, whatever their role: an HR manager's
+    # normal view of this endpoint is every employee in the company.
+    if user["role"] == "employee" or user.get("oauth_scopes"):
         q += " AND b.employee_id=?"; p.append(user.get("employee_id", ""))
     elif user["role"] == "manager" and team:
         # Explicit team view (e.g. the AI assistant's "my team's leave
@@ -646,7 +648,7 @@ def list_leave_balances(conn, employee_id: Optional[str] = None, year: Optional[
     rows = conn.execute(q, p).fetchall()
     # Ensure every active leave type has a balance row for the employees being viewed, so
     # a type created after an employee joined still shows up with its default entitlement.
-    if user["role"] in ("employee",) and user.get("employee_id"):
+    if (user["role"] in ("employee",) or user.get("oauth_scopes")) and user.get("employee_id"):
         # Types that share entitlement with another type never get their own
         # balance row — their pool is the shared type's row, which is already
         # covered by that type's own entry in this loop.

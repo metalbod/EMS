@@ -82,7 +82,7 @@ function renderAttHistory() {
       <td class="px-4 py-2 text-sm">${r.clock_in_at ? parseUTC(r.clock_in_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '—'}</td>
       <td class="px-4 py-2 text-sm">${r.clock_out_at ? parseUTC(r.clock_out_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '—'}</td>
       <td class="px-4 py-2 text-sm text-right">${r.worked_minutes != null ? r.worked_minutes + ' min' : '—'}</td>
-      <td class="px-4 py-2">${attStatusBadge(r.status)}${r.outside_geofence ? ' <span class="text-xs text-amber-600">(outside geofence)</span>' : ''}</td>
+      <td class="px-4 py-2">${attStatusBadge(r.status)}${r.outside_geofence ? ' <span class="text-xs text-amber-600">(outside geofence)</span>' : ''}${r.clock_in_source === 'mcp' && !r.clock_in_has_location ? ' <span class="text-xs text-amber-600" title="Clocked in through Claude without sharing a location">(no location)</span>' : ''}</td>
     </tr>`).join('');
 }
 

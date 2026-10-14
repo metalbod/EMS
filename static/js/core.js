@@ -25,7 +25,7 @@ const HR_STAFF_ROLES = ['hr_manager','hr_admin'];                  // no superad
 const HR_MANAGER_ONLY_ROLES = ['superadmin','hr_manager'];         // no hr_admin
 const COMPENSATION_STAFF_ROLES = ['hr_manager','payroll_manager','compensation_manager'];
 const BENEFITS_DASHBOARD_ROLES = ['hr_manager','compensation_manager','manager'];
-const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','my-interviews','leave-my','leave-approvals','leave-holidays','resignation-approvals','projects','timesheet-my','timesheet-approvals','overtime-my','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','comp-paygrades','comp-joblevels','comp-jobroles','comp-meritcycles','comp-bonusplans','comp-commissions','comp-equity','comp-totalrewards','comp-payequity','ben-plans','ben-periods','ben-lifeevents','ben-claims','ben-compliance','payroll-runs','payroll-my','payroll-myrewards','payroll-mybenefits','perf-my','perf-team','perf-cycles','perf-calibration','attendance-clock','attendance-review','settings-attendance','settings-approval-workflow','settings-roles','settings-document-types','settings-offer-letter-templates','settings-performance','settings-ai-assistant','settings-sso','coming-soon'];
+const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','my-interviews','leave-my','leave-approvals','leave-holidays','resignation-approvals','projects','timesheet-my','timesheet-approvals','overtime-my','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','comp-paygrades','comp-joblevels','comp-jobroles','comp-meritcycles','comp-bonusplans','comp-commissions','comp-equity','comp-totalrewards','comp-payequity','ben-plans','ben-periods','ben-lifeevents','ben-claims','ben-compliance','payroll-runs','payroll-my','payroll-myrewards','payroll-mybenefits','perf-my','perf-team','perf-cycles','perf-calibration','attendance-clock','attendance-review','settings-attendance','settings-approval-workflow','settings-roles','settings-document-types','settings-offer-letter-templates','settings-performance','settings-ai-assistant','settings-sso','settings-mcp','coming-soon'];
 
 // ---------------------------------------------------------------------------
 // Lazy module loading (Speed Audit item 7)
@@ -74,6 +74,7 @@ const LAZY_PAGE_MODULES = {
   'settings-document-types': 'employee-documents',
   'settings-ai-assistant': 'ai-assistant-settings',
   'settings-sso': 'sso-settings',
+  'settings-mcp': 'mcp-settings',
   // 'email-notification-settings' is no longer a page-level lazy module —
   // it's now the SMTP Settings tab inside 'settings-notifications', loaded
   // on demand by switchNotifTab() (static/js/notifications.js) the first
@@ -672,6 +673,16 @@ function isPageReachableFromNav(page) {
 }
 
 async function bootApp() {
+  // Signed in with Microsoft while connecting Claude (the /oauth/authorize page stashes where it was before leaving for
+  // Microsoft): go back there to finish the "Allow" step instead of opening the app. Ignored if stale or not ours.
+  try {
+    const resume = JSON.parse(localStorage.getItem('oauth_resume') || 'null');
+    localStorage.removeItem('oauth_resume');
+    if (resume && Date.now() - resume.at < 10 * 60 * 1000 && String(resume.url).startsWith(location.origin + '/oauth/authorize?')) {
+      location.href = resume.url;
+      return;
+    }
+  } catch { /* malformed value: just boot normally */ }
   document.getElementById('loginScreen').classList.add('hidden');
   document.getElementById('appShell').classList.remove('hidden');
   // meta, roles, and (for a regular login) the employee roster are three
@@ -941,6 +952,7 @@ function applyRoleUI() {
   document.getElementById('nav-settings-performance')?.classList.toggle('hidden', role !== 'hr_manager');
   document.getElementById('nav-ai-assistant-settings')?.classList.toggle('hidden', !canAiSettings);
   document.getElementById('nav-sso-settings')?.classList.toggle('hidden', role !== 'hr_manager');   // routers/sso.py SETTINGS_ROLES
+  document.getElementById('nav-mcp-settings')?.classList.toggle('hidden', role !== 'hr_manager');   // routers/oauth.py SETTINGS_ROLES
 
   // Compensation: its own top-level menu, visible to HR Manager, Payroll
   // Manager, and the dedicated Compensation Manager role — explicitly
@@ -1094,7 +1106,8 @@ async function showPage(page, opts = {}) {
     'settings-offer-letter-templates':'Settings — Letter Templates',
     'settings-performance':'Settings — Performance',
     'settings-ai-assistant':'Settings — AI Assistant',
-    'settings-sso':'Settings — Single Sign-On'
+    'settings-sso':'Settings — Single Sign-On',
+    'settings-mcp':'Settings — Claude Access'
   };
   document.getElementById('pageTitle').textContent = titles[page] || page;
   const lazyModule = LAZY_PAGE_MODULES[page];
@@ -1161,6 +1174,7 @@ async function showPage(page, opts = {}) {
   if (page === 'settings-performance') loadProbationGoalTemplatePage();
   if (page === 'settings-ai-assistant') loadAiAssistantSettingsPage();
   if (page === 'settings-sso') loadSsoSettingsPage();
+  if (page === 'settings-mcp') loadMcpSettingsPage();
   if (focusOpensModal(page)) openFocusedRecord(page);
 }
 

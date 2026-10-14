@@ -33,4 +33,5 @@ module.exports = [
   'onboarding.js',
   'email-notification-settings.js',
   'sso-settings.js',
+  'mcp-settings.js',
 ];

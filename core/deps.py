@@ -19,6 +19,7 @@ from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from db import get_db, set_rls_context
+from core import oauth as oauth_core
 
 JWT_SECRET = os.environ.get("JWT_SECRET")
 if not JWT_SECRET:
@@ -200,6 +201,51 @@ def build_current_user_out(conn, user: dict, role_override: str = None):
     )
 
 
+def _load_oauth_context(token: str) -> dict | None:
+    """Look up a Claude/MCP access token (core/oauth.py). Returns the grant + company switch, or None when the token is
+    unknown, expired or its grant was revoked. Runs before any request-scoped RLS context exists, like the password
+    login does, so it sees across tenants."""
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT t.expires_at, g.id AS grant_id, g.institution_id, g.user_id, g.scope, g.revoked_at, g.last_used_at, "
+            "i.mcp_enabled, i.status AS institution_status "
+            "FROM oauth_tokens t JOIN oauth_grants g ON g.id = t.grant_id "
+            "JOIN institutions i ON i.id = g.institution_id "
+            "WHERE t.token_hash=? AND t.kind='access'", (oauth_core.hash_token(token),)
+        ).fetchone()
+        if not row or row["revoked_at"] or row["expires_at"] < oauth_core.now_str():
+            return None
+        ctx = dict(row)
+        # "Last used" for HR's list - throttled, since this runs on every call Claude makes.
+        if ctx["last_used_at"] < oauth_core.now_str(-300):
+            conn.execute("UPDATE oauth_grants SET last_used_at=? WHERE id=?", (oauth_core.now_str(), ctx["grant_id"]))
+            conn.commit()
+        return ctx
+    finally:
+        conn.close()
+
+
+async def _authenticate_oauth(request: Request, token: str) -> dict:
+    ctx = await asyncio.to_thread(_load_oauth_context, token)
+    if ctx is None:
+        raise HTTPException(401, "Invalid or expired access token", headers={"WWW-Authenticate": 'Bearer error="invalid_token"'})
+    if not ctx["mcp_enabled"] or ctx["institution_status"] != "Active":
+        raise HTTPException(403, "Claude access is turned off for your company. Ask HR to enable it in Settings.")
+    scopes = ctx["scope"].split()
+    if not oauth_core.scope_allows(scopes, request.method, request.url.path):
+        raise HTTPException(403, "This connection isn't allowed to do that")
+    u = await asyncio.to_thread(_load_current_user_row, ctx["user_id"])
+    if u is None or u.get("institution_id") != ctx["institution_id"] or u["role"] == "superadmin" or not u.get("employee_id"):
+        raise HTTPException(401, "Invalid or expired access token", headers={"WWW-Authenticate": 'Bearer error="invalid_token"'})
+    u["active_institution_id"] = u["institution_id"]
+    u["oauth_scopes"] = scopes
+    u["oauth_grant_id"] = ctx["grant_id"]
+    u["oauth_expires_at"] = ctx["expires_at"]
+    set_rls_context(u["active_institution_id"], bypass_rls=False)
+    return u
+
+
 async def get_current_user(
     request: Request,
     creds: HTTPAuthorizationCredentials = Depends(bearer),
@@ -220,6 +266,8 @@ async def get_current_user(
     # context, after the thread's result comes back.
     if not creds:
         raise HTTPException(401, "Authentication required")
+    if creds.credentials.startswith(oauth_core.ACCESS_PREFIX):
+        return await _authenticate_oauth(request, creds.credentials)
     payload = decode_token(creds.credentials)
     u = await asyncio.to_thread(_load_current_user_row, payload["sub"])
     if u is None:

@@ -409,6 +409,10 @@
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
             Single Sign-On
           </div>
+          <div id="nav-mcp-settings" class="hidden nav-sub-item" onclick="showPage('settings-mcp');closeBurgerMenu();" data-page="settings-mcp">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            Claude Access
+          </div>
           <div id="nav-ai-assistant-settings" class="hidden nav-sub-item" onclick="showPage('settings-ai-assistant');closeBurgerMenu();" data-page="settings-ai-assistant">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
             AI Assistant
@@ -2811,6 +2815,29 @@
 
       <!-- SETTINGS: AI Assistant (hr_manager only — BYOK Anthropic key) -->
       <!-- SETTINGS: Single Sign-On (Microsoft Entra ID) — HR Manager -->
+      <div id="page-settings-mcp" class="hidden">
+        <div class="max-w-2xl space-y-5">
+          <div class="bg-white rounded-xl border border-slate-200 p-5">
+            <div class="flex items-center justify-between gap-3 mb-1">
+              <h3 class="text-lg font-semibold">Claude access</h3>
+              <label class="inline-flex items-center gap-2 text-sm"><input id="mcpEnabledToggle" type="checkbox" onchange="toggleMcpEnabled(this.checked)"/> <span id="mcpEnabledLabel">Off</span></label>
+            </div>
+            <p class="text-sm text-slate-500">Lets your staff connect Claude to their own EMS account, so they can ask it to clock them in or out and check their leave balance. Each person signs in and approves the connection themselves; Claude can only do what they could do for themselves, and nothing else. Turning this off stops every connection at once.</p>
+            <p id="mcpMsg" class="text-xs mt-2"></p>
+          </div>
+          <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
+            <h4 class="font-semibold text-sm">How staff connect</h4>
+            <p class="text-sm text-slate-500">In Claude, go to Settings → Connectors → Add custom connector and paste this address. Claude then asks them to sign in to EMS (password or Microsoft) and allow it.</p>
+            <div class="flex gap-2"><input id="mcpUrl" class="inp flex-1 font-mono text-xs" readonly/><button onclick="copyMcpUrl()" class="btn-ghost text-sm shrink-0">Copy</button></div>
+            <p class="text-xs text-slate-400">Clocking in asks the person for their location. If they don't share it, the clock-in is still recorded, marked "no location", so you can follow up.</p>
+          </div>
+          <div class="bg-white rounded-xl border border-slate-200 p-5">
+            <h4 class="font-semibold text-sm mb-3">Connected people</h4>
+            <div id="mcpConnections"></div>
+          </div>
+        </div>
+      </div>
+
       <div id="page-settings-sso" class="hidden">
         <div class="max-w-2xl space-y-5">
           <div class="bg-white rounded-xl border border-slate-200 p-5">

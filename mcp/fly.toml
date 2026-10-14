@@ -1,0 +1,30 @@
+# EMS MCP server (Claude connector). Separate Fly app from ems-app; deploy from this folder:
+#   cd mcp && fly launch --no-deploy --copy-config --name ems-mcp --region nrt   (first time only)
+#   fly deploy --app ems-mcp
+# It holds no secrets and no database: it forwards each person's own EMS-issued token to the EMS API.
+app = 'ems-mcp'
+primary_region = 'nrt'
+
+[build]
+
+[env]
+  EMS_BASE_URL = 'https://ems-app.fly.dev'
+  MCP_PUBLIC_URL = 'https://ems-mcp.fly.dev/mcp'
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '20s'
+    method = 'GET'
+    path = '/health'
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '256mb'
