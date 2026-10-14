@@ -123,14 +123,14 @@ def list_users(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, A
         inst_id = user.get("active_institution_id")
         if inst_id:
             rows = conn.execute(
-                "SELECT id,institution_id,username,full_name,email,role,roles,employee_id,is_active,created_at,must_change_password "
+                "SELECT id,institution_id,username,full_name,email,role,roles,employee_id,is_active,created_at,must_change_password,(sso_oid IS NOT NULL) AS sso_linked "
                 "FROM users WHERE institution_id=? ORDER BY created_at DESC", (inst_id,)
             ).fetchall()
         else:
             # Global view — return all non-superadmin users with institution info
             rows = conn.execute("""
                 SELECT u.id, u.institution_id, u.username, u.full_name, u.email, u.role, u.roles,
-                       u.employee_id, u.is_active, u.created_at, u.must_change_password,
+                       u.employee_id, u.is_active, u.created_at, u.must_change_password, (u.sso_oid IS NOT NULL) AS sso_linked,
                        i.name AS institution_name, i.code AS institution_code
                 FROM users u
                 LEFT JOIN institutions i ON i.id = u.institution_id
@@ -139,7 +139,7 @@ def list_users(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, A
     else:
         inst_id = user["institution_id"]
         rows = conn.execute(
-            "SELECT id,institution_id,username,full_name,email,role,roles,employee_id,is_active,created_at,must_change_password "
+            "SELECT id,institution_id,username,full_name,email,role,roles,employee_id,is_active,created_at,must_change_password,(sso_oid IS NOT NULL) AS sso_linked "
             "FROM users WHERE institution_id=? ORDER BY created_at DESC", (inst_id,)
         ).fetchall()
     result = []

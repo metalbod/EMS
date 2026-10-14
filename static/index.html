@@ -43,7 +43,7 @@
     <form onsubmit="doLogin(event)" class="space-y-4">
       <div>
         <label class="block text-sm font-medium text-slate-700 mb-1">Company Code</label>
-        <input id="loginCode" type="text" class="inp" placeholder="e.g. ACME  (leave blank for platform admin)" autocomplete="organization" style="text-transform:uppercase"/>
+        <input id="loginCode" type="text" class="inp" placeholder="e.g. ACME  (leave blank for platform admin)" autocomplete="organization" style="text-transform:uppercase" oninput="onLoginCodeInput()"/>
         <p class="text-xs text-slate-400 mt-1">Leave blank if you are a platform administrator.</p>
       </div>
       <div>
@@ -60,6 +60,13 @@
       <p id="loginErr" class="hidden text-sm text-red-600"></p>
       <button type="submit" class="btn-primary w-full py-2.5">Sign In</button>
     </form>
+    <div id="loginSsoWrap" class="hidden mt-5">
+      <div class="flex items-center gap-3 text-xs text-slate-400 mb-3"><div class="h-px bg-slate-200 flex-1"></div>or<div class="h-px bg-slate-200 flex-1"></div></div>
+      <button type="button" onclick="startSsoLogin()" class="btn-ghost w-full py-2.5 flex items-center justify-center gap-2">
+        <svg class="w-4 h-4" viewBox="0 0 21 21" aria-hidden="true"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg>
+        Sign in with Microsoft
+      </button>
+    </div>
   </div>
 </div>
 
@@ -396,6 +403,10 @@
           <div id="nav-settings-performance" class="hidden nav-sub-item" onclick="showPage('settings-performance');closeBurgerMenu();" data-page="settings-performance">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
             Performance
+          </div>
+          <div id="nav-sso-settings" class="hidden nav-sub-item" onclick="showPage('settings-sso');closeBurgerMenu();" data-page="settings-sso">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
+            Single Sign-On
           </div>
           <div id="nav-ai-assistant-settings" class="hidden nav-sub-item" onclick="showPage('settings-ai-assistant');closeBurgerMenu();" data-page="settings-ai-assistant">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
@@ -2798,6 +2809,45 @@
       </div>
 
       <!-- SETTINGS: AI Assistant (hr_manager only — BYOK Anthropic key) -->
+      <!-- SETTINGS: Single Sign-On (Microsoft Entra ID) — HR Manager -->
+      <div id="page-settings-sso" class="hidden">
+        <div class="max-w-2xl space-y-5">
+          <div class="bg-white rounded-xl border border-slate-200 p-5">
+            <div class="flex items-center justify-between gap-3 mb-1">
+              <h3 class="text-lg font-semibold">Sign in with Microsoft</h3>
+              <span id="ssoStatusBadge" class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500">Loading…</span>
+            </div>
+            <p class="text-sm text-slate-500">Lets your staff sign in to EMS with their Microsoft (Entra ID) work account. Passwords keep working alongside it. Nobody is created by signing in: a Microsoft account has to match a user HR has already set up, by email.</p>
+            <p id="ssoLinkedNote" class="text-xs text-slate-400 mt-2"></p>
+          </div>
+
+          <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
+            <h4 class="font-semibold text-sm">1. Register EMS in Microsoft Entra</h4>
+            <p class="text-sm text-slate-500">Your Entra admin creates an app registration (single tenant) and adds this redirect URI as a <strong>Web</strong> platform:</p>
+            <div class="flex gap-2"><input id="ssoRedirectUri" class="inp flex-1 font-mono text-xs" readonly/><button onclick="copySsoRedirect()" class="btn-ghost text-sm shrink-0">Copy</button></div>
+            <p class="text-xs text-slate-400">Then create a client secret and note the Directory (tenant) ID, Application (client) ID and the secret <em>value</em>. Keep only the <code>openid</code>, <code>profile</code> and <code>email</code> permissions, and add the <code>email</code> and <code>upn</code> optional claims to the ID token.</p>
+          </div>
+
+          <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+            <h4 class="font-semibold text-sm">2. Enter the details</h4>
+            <div><label class="lbl">Directory (tenant) ID</label><input id="ssoTenantId" class="inp font-mono text-xs" placeholder="11111111-2222-3333-4444-555555555555" autocomplete="off"/></div>
+            <div><label class="lbl">Application (client) ID</label><input id="ssoClientId" class="inp font-mono text-xs" placeholder="11111111-2222-3333-4444-555555555555" autocomplete="off"/></div>
+            <div><label class="lbl">Client secret value</label><input id="ssoClientSecret" type="password" class="inp" placeholder="Paste the secret value" autocomplete="new-password"/>
+              <p id="ssoSecretHint" class="text-xs text-slate-400 mt-1"></p></div>
+            <div class="flex items-center gap-3"><button onclick="saveSsoSettings()" class="btn-primary text-sm">Save</button><p id="ssoSaveMsg" class="text-xs"></p></div>
+          </div>
+
+          <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
+            <h4 class="font-semibold text-sm">3. Test, then turn it on</h4>
+            <p class="text-sm text-slate-500">A test sign-in opens Microsoft in this window. It changes nothing for anyone else. Microsoft sign-in can only be turned on once a test has worked.</p>
+            <div class="flex items-center gap-3"><button id="ssoTestBtn" onclick="testSsoSignIn()" class="btn-ghost text-sm">Test sign-in</button><p id="ssoTestResult" class="text-xs"></p></div>
+            <label class="flex items-start gap-2 text-sm pt-2 border-t border-slate-100"><input type="checkbox" id="ssoEnabledToggle" class="mt-0.5" onchange="toggleSsoEnabled()"/><span>Show <strong>Sign in with Microsoft</strong> on the login screen for this company<span id="ssoEnabledNote" class="block text-xs text-slate-400"></span></span></label>
+            <p id="ssoEnabledMsg" class="text-xs"></p>
+          </div>
+          <p class="text-xs"><button onclick="removeSsoSettings()" class="text-red-600 hover:underline">Remove Microsoft sign-in settings</button></p>
+        </div>
+      </div>
+
       <div id="page-settings-ai-assistant" class="hidden">
         <div class="flex items-center gap-3 mb-1"><h3 class="text-lg font-semibold">AI Assistant</h3><button onclick="openEntityHistory({title:'AI assistant key history',module:'Institution',entity_type:'ai_assistant_key'})" class="hist-btn hidden btn-ghost text-sm">History</button></div>
         <div class="flex items-center gap-1 flex-wrap mb-1">

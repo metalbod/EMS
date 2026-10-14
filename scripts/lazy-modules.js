@@ -32,4 +32,5 @@ module.exports = [
   'recruitment.js',
   'onboarding.js',
   'email-notification-settings.js',
+  'sso-settings.js',
 ];

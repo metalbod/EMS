@@ -25,15 +25,23 @@ function renderUserTable() {
       </td>
       <td class="px-4 py-3 hidden md:table-cell"><span class="badge ${statusColor(ROLE_BADGE_COLORS, u.role)}">${meta.role_labels?.[u.role]||u.role}</span></td>
       <td class="px-4 py-3 hidden lg:table-cell text-xs text-slate-500">${esc(u.institution_name||u.institution_code||'Platform Admin')}</td>
-      <td class="px-4 py-3"><span class="badge ${u.is_active?'status-positive':'status-neutral'}">${u.is_active?'Active':'Inactive'}</span></td>
+      <td class="px-4 py-3"><span class="badge ${u.is_active?'status-positive':'status-neutral'}">${u.is_active?'Active':'Inactive'}</span>${u.sso_linked?' <span class="badge status-info" style="font-size:.65rem" title="Has signed in with Microsoft">Microsoft</span>':''}</td>
       <td class="px-4 py-3">
         <div class="flex justify-end gap-1">
           <button onclick="openUserModal(this.dataset.u)" data-u='${JSON.stringify(u).replace(/'/g,"&apos;")}' class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Edit</button>
           ${canViewActivityLog()?`<button onclick="openEntityHistory({title:'User history — '+this.dataset.name,entity_type:'user',entity_id:${u.id}})" data-name="${esc(u.username)}" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">History</button>`:''}
+          ${u.sso_linked&&!u.institution_name?`<button onclick="unlinkUserSso(${u.id})" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem" title="Forget this user's Microsoft account; their next Microsoft sign-in matches by email again">Unlink Microsoft</button>`:''}
           ${u.id!==currentUser.id?`<button onclick="deleteUser(${u.id})" class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem;color:#dc2626">Delete</button>`:''}
         </div>
       </td>
     </tr>`).join('');
+}
+
+async function unlinkUserSso(id) {
+  if(!confirm("Unlink this user's Microsoft account? Their next Microsoft sign-in will match them by email again.")) return;
+  const res=await api(`/api/users/${id}/sso-unlink`,{method:'POST'});
+  if(!res?.ok){ const d=await res?.json().catch(()=>null); alert(d?.detail?apiErrorText(d.detail):'Could not unlink.'); return; }
+  loadUsers();
 }
 
 function openUserModal(uData=null) {

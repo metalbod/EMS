@@ -872,6 +872,28 @@ wrapper everywhere.
   (it used to accept any logged-in user), and `GET .../scores` returns everything to recruiters but only an
   interviewer's **own** row to them (so colleagues' scores/comments stay unseen), 403 to anyone else. A picked
   employee with no login account still appears on the interview but gets no To-Do.
+- **Sign in with Microsoft (Entra ID), phase 1** (`routers/sso.py`, `core/sso.py`, migration `20261017_0001`,
+  `static/js/sso-settings.js` (lazy), the login-screen block in `static/js/core.js`, `docs/SSO_ENTRA_SETUP.md`,
+  `tests/test_sso.py`, `static/js/__tests__/sso-login.test.js`): **per-company, bring-your-own Entra app registration**
+  (`institution_sso`: tenant id, client id, client secret **encrypted** with `core/secrets_encryption`, `enabled`, last test
+  result), saved on **Settings → Single Sign-On** (hr_manager only). OIDC authorization-code flow with **PKCE**: `GET
+  /api/auth/sso/start?institution_code=` → Microsoft → `GET /api/auth/sso/callback` (exchanges the code server-side, then
+  verifies the ID token: RS256 signature from the tenant's published keys via `jwt.PyJWKClient`, `iss`, `aud` = our client
+  id, `tid` = the company's tenant, `nonce`, expiry) → redirect to `/?sso_code=` (a one-time code, 60 s) → the page POSTs
+  `/api/auth/sso/exchange` for the **same EMS token a password login issues** (so roles, role switching, permissions, audit
+  are untouched) and strips the code from the address bar. In-flight state lives in `sso_pending` (hashed tokens, 10-min state,
+  single use, so it works across Fly machines); the pre-login routes run with the default bypass RLS context like the password
+  login. **Nobody is created by signing in**: first time, the account's `email`/`preferred_username`/`upn` must match
+  **exactly one** EMS user (`users.email` or the linked employee's `work_email`, case-insensitive) that isn't already linked,
+  which stores `users.sso_tenant_id` + `sso_oid`; afterwards the **oid** is what counts (email changes don't matter). No match,
+  ambiguous, or linked to someone else → `?sso_error=no_account`. Inactive user / suspended company are refused. SSO logins skip
+  the forced temp-password change (`must_change_password` false in that response). The switch can **only be turned on after a
+  successful Test sign-in** (`test-start` → `/#settings-sso`), and changing tenant/client/secret turns it off and clears the test.
+  Password login is unchanged and still works (phase 2 would add "SSO required" with break-glass accounts; phase 3 groups→roles /
+  auto-provisioning — not built, owner chose EMS-managed roles and HR-created accounts). `POST /api/users/{id}/sso-unlink` clears a
+  link; the Users list shows a "Microsoft" badge. Login audit reasons: `sso`, `sso_no_account`, `sso_ambiguous`, `sso_inactive`,
+  `sso_invalid_token`, …. Tests fake Microsoft (patched `core.sso.exchange_code` / `signing_key`, ID tokens signed with a
+  throwaway RSA key) so every other check runs for real; the one thing not covered is a real round trip to Microsoft.
 
 ## Recurring gotchas (hit more than once this project's history)
 

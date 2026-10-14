@@ -25,7 +25,7 @@ const HR_STAFF_ROLES = ['hr_manager','hr_admin'];                  // no superad
 const HR_MANAGER_ONLY_ROLES = ['superadmin','hr_manager'];         // no hr_admin
 const COMPENSATION_STAFF_ROLES = ['hr_manager','payroll_manager','compensation_manager'];
 const BENEFITS_DASHBOARD_ROLES = ['hr_manager','compensation_manager','manager'];
-const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','my-interviews','leave-my','leave-approvals','leave-holidays','resignation-approvals','projects','timesheet-my','timesheet-approvals','overtime-my','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','comp-paygrades','comp-joblevels','comp-jobroles','comp-meritcycles','comp-bonusplans','comp-commissions','comp-equity','comp-totalrewards','comp-payequity','ben-plans','ben-periods','ben-lifeevents','ben-claims','ben-compliance','payroll-runs','payroll-my','payroll-myrewards','payroll-mybenefits','perf-my','perf-team','perf-cycles','perf-calibration','attendance-clock','attendance-review','settings-attendance','settings-approval-workflow','settings-roles','settings-document-types','settings-offer-letter-templates','settings-performance','settings-ai-assistant','coming-soon'];
+const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','my-interviews','leave-my','leave-approvals','leave-holidays','resignation-approvals','projects','timesheet-my','timesheet-approvals','overtime-my','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','comp-paygrades','comp-joblevels','comp-jobroles','comp-meritcycles','comp-bonusplans','comp-commissions','comp-equity','comp-totalrewards','comp-payequity','ben-plans','ben-periods','ben-lifeevents','ben-claims','ben-compliance','payroll-runs','payroll-my','payroll-myrewards','payroll-mybenefits','perf-my','perf-team','perf-cycles','perf-calibration','attendance-clock','attendance-review','settings-attendance','settings-approval-workflow','settings-roles','settings-document-types','settings-offer-letter-templates','settings-performance','settings-ai-assistant','settings-sso','coming-soon'];
 
 // ---------------------------------------------------------------------------
 // Lazy module loading (Speed Audit item 7)
@@ -73,6 +73,7 @@ const LAZY_PAGE_MODULES = {
   'settings-roles': 'roles',
   'settings-document-types': 'employee-documents',
   'settings-ai-assistant': 'ai-assistant-settings',
+  'settings-sso': 'sso-settings',
   // 'email-notification-settings' is no longer a page-level lazy module —
   // it's now the SMTP Settings tab inside 'settings-notifications', loaded
   // on demand by switchNotifTab() (static/js/notifications.js) the first
@@ -493,6 +494,60 @@ function prefillRememberedLogin() {
 // fresh browser with no token at all.
 prefillRememberedLogin();
 
+// ---------------------------------------------------------------------------
+// Sign in with Microsoft (Entra ID) — routers/sso.py. The button shows once the typed company code has it switched on;
+// the flow leaves the app for Microsoft and comes back to "/?sso_code=…" (one-time code) or "/?sso_error=…".
+// ---------------------------------------------------------------------------
+const SSO_ERROR_MESSAGES = {
+  not_enabled: "Microsoft sign-in isn't turned on for this company.",
+  failed: "Microsoft sign-in didn't complete. Please try again.",
+  expired: 'That sign-in took too long or was already used. Please try again.',
+  denied: 'Microsoft sign-in was cancelled.',
+  no_account: "Your Microsoft account isn't set up in EMS yet. Ask HR to add you, using the same email address.",
+  inactive: 'Your EMS account is deactivated. Please contact HR.',
+  suspended: 'Your company account has been suspended. Please contact platform support.',
+};
+function ssoErrorMessage(code) { return SSO_ERROR_MESSAGES[code] || SSO_ERROR_MESSAGES.failed; }
+
+let _ssoOptionsTimer = null, _ssoOptionsSeq = 0;
+function onLoginCodeInput() { clearTimeout(_ssoOptionsTimer); _ssoOptionsTimer = setTimeout(refreshSsoButton, 350); }
+async function refreshSsoButton() {
+  const wrap = document.getElementById('loginSsoWrap');
+  if (!wrap) return;
+  const code = document.getElementById('loginCode').value.trim();
+  if (!code) { wrap.classList.add('hidden'); return; }
+  const seq = ++_ssoOptionsSeq;
+  try {
+    const res = await fetch('/api/auth/sso/options?institution_code=' + encodeURIComponent(code));
+    const d = res.ok ? await res.json() : {};
+    if (seq === _ssoOptionsSeq) wrap.classList.toggle('hidden', !d.sso_enabled);
+  } catch { if (seq === _ssoOptionsSeq) wrap.classList.add('hidden'); }
+}
+function startSsoLogin() {
+  const code = document.getElementById('loginCode').value.trim();
+  if (code) window.location.href = '/api/auth/sso/start?institution_code=' + encodeURIComponent(code);
+}
+// Called first thing at boot (app-init.js). Returns true when the page was opened by a Microsoft redirect.
+async function handleSsoReturn() {
+  const sp = new URLSearchParams(location.search);
+  const code = sp.get('sso_code'), err = sp.get('sso_error');
+  if (!code && !err) return false;
+  history.replaceState(null, '', location.pathname + location.hash);    // never leave the one-time code in the address bar
+  const errEl = document.getElementById('loginErr');
+  if (err) { errEl.textContent = ssoErrorMessage(err); errEl.classList.remove('hidden'); return true; }
+  showGlobalLoading();
+  try {
+    const res = await fetch('/api/auth/sso/exchange', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { errEl.textContent = data.detail || ssoErrorMessage('failed'); errEl.classList.remove('hidden'); return true; }
+    localStorage.setItem('token', data.access_token);
+    currentUser = data.user;
+    bootApp();
+  } finally { hideGlobalLoading(); }
+  return true;
+}
+if (document.getElementById('loginCode')?.value) refreshSsoButton();
+
 async function doLogin(e) {
   e.preventDefault();
   const err = document.getElementById('loginErr');
@@ -860,6 +915,7 @@ function applyRoleUI() {
   // (every other Performance admin action in this app is gated the same way).
   document.getElementById('nav-settings-performance')?.classList.toggle('hidden', role !== 'hr_manager');
   document.getElementById('nav-ai-assistant-settings')?.classList.toggle('hidden', !canAiSettings);
+  document.getElementById('nav-sso-settings')?.classList.toggle('hidden', role !== 'hr_manager');   // routers/sso.py SETTINGS_ROLES
 
   // Compensation: its own top-level menu, visible to HR Manager, Payroll
   // Manager, and the dedicated Compensation Manager role — explicitly
@@ -1012,7 +1068,8 @@ async function showPage(page, opts = {}) {
     'settings-document-types':'Settings — Document Types',
     'settings-offer-letter-templates':'Settings — Letter Templates',
     'settings-performance':'Settings — Performance',
-    'settings-ai-assistant':'Settings — AI Assistant'
+    'settings-ai-assistant':'Settings — AI Assistant',
+    'settings-sso':'Settings — Single Sign-On'
   };
   document.getElementById('pageTitle').textContent = titles[page] || page;
   const lazyModule = LAZY_PAGE_MODULES[page];
@@ -1078,6 +1135,7 @@ async function showPage(page, opts = {}) {
   if (page === 'settings-offer-letter-templates') loadOfferTemplates();
   if (page === 'settings-performance') loadProbationGoalTemplatePage();
   if (page === 'settings-ai-assistant') loadAiAssistantSettingsPage();
+  if (page === 'settings-sso') loadSsoSettingsPage();
   if (focusOpensModal(page)) openFocusedRecord(page);
 }
 
