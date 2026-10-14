@@ -919,6 +919,41 @@ wrapper everywhere.
   made on purpose), or for emergency users. The Test sign-in reports how many groups the token carried. The Entra app needs a
   *groups* claim (Token configuration → security groups, group ID) for this. Not covered by tests: real Microsoft.
 
+- **Claude access (MCP) — staff clock in/out and check leave from Claude** (shipped 2026-10-14, EMS v0.72; `routers/oauth.py`,
+  `core/oauth.py`, migration `20261019_0001`, `static/js/mcp-settings.js` (Settings → **Claude Access**, hr_manager only),
+  `tests/test_mcp_oauth.py`, and the separate Fly app in `mcp/`): **EMS itself is the OAuth 2.1 authorization server**, so the
+  existing sign-in (password, Microsoft, require-Microsoft, emergency access) is what proves who someone is and the MCP server
+  never sees a password. Flow: Claude registers itself (`POST /oauth/register`, public clients only, PKCE S256 mandatory,
+  redirect URIs must be https or localhost) → `/oauth/authorize` (a standalone page, not the SPA: login form, Microsoft button,
+  consent) → `POST /api/oauth/authorize/approve` (needs the person's normal EMS login) → one-time code → `POST /oauth/token`
+  → `emsat_` access token (1 h) + `emsrt_` refresh token (30 days, **sliding**: every refresh rotates it and starts a new 30
+  days; presenting an already-used refresh token revokes the whole grant). Everything is stored hashed in `oauth_clients`/
+  `oauth_codes`/`oauth_grants`/`oauth_tokens` (a *grant* = "this person allowed this app", what HR revokes). A person who signs in
+  with Microsoft leaves the page: it stashes `oauth_resume` in localStorage and `bootApp()` (core.js) sends them back to finish
+  "Allow" instead of opening the app. **Authorization is fail-closed and lives in `core/deps.py`'s `get_current_user`**: a token
+  starting `emsat_` is looked up there, refused if the grant is revoked, the company's **`institutions.mcp_enabled`** is off (the
+  default; HR's per-company switch, takes effect on the very next call) or the user is a superadmin / has no linked employee,
+  and may only call the exact (method, path) pairs listed for its scopes in **`core/oauth.py`'s `SCOPE_ROUTES`** (clock-in,
+  clock-out, `GET /api/attendance/mine`, `GET /api/leave/balances`) plus `GET /api/oauth/whoami` — **a new endpoint is
+  unreachable from Claude until someone adds it there on purpose**. When adding one, also check what the endpoint returns for an
+  HR/manager role: `list_leave_balances` returns the whole company to HR, so it now forces own-only whenever
+  `user["oauth_scopes"]` is set (found in testing, would have leaked everyone's balances through an HR person's token). Clock-ins
+  through Claude are recorded with `clock_in_source='mcp'`; coordinates are whatever the person told Claude, or none — the
+  decision (2026-10-14) is that declining to share a location is **allowed and recorded as such** (`clock_in_has_location` false →
+  "(no location)" in My attendance history), not refused. `apply_leave` was deliberately **not** built (a write; deferred).
+  **`mcp/`** is its own Fly app `ems-mcp` (region nrt, `mcp/fly.toml`, deploy with `cd mcp && fly deploy --app ems-mcp` — not part
+  of `./deploy.sh`, which only deploys EMS; deploy EMS first since it carries the migration and OAuth endpoints): a FastMCP
+  (`mcp>=1.30,<2`; 2.x renamed the API) streamable-HTTP **resource server** with `clock_in`, `clock_out`, `attendance_today`,
+  `leave_balance`. It holds no data and no secrets — `EmsTokenVerifier` checks each token with `GET /api/oauth/whoami` (10 s cache),
+  tools forward the caller's own token to the normal EMS API, and Claude is told in the tool descriptions to ask the person for
+  their location (never guess). The folder is named `mcp`: **never add `mcp/__init__.py`**, the installed `mcp` package must keep
+  winning the import. Root `pytest.ini` only collects `tests/`; the MCP's own 12 unit tests run from `mcp/` (`pytest`, EMS faked).
+  Connector address staff paste into Claude: `https://ems-mcp.fly.dev/mcp` (no custom domain, by decision). The OAuth/registration
+  rate limits are in-memory per machine, same tradeoff as the login limiter (prod runs 2 machines, so limits are per machine).
+  The metadata `issuer` has a trailing slash on purpose (the MCP server's advertised issuer is a pydantic `AnyHttpUrl`, which
+  always serializes a bare origin that way; the two must match). Not covered by tests: a real Claude client against a real
+  Microsoft login — verify with one test company before announcing.
+
 ## Recurring gotchas (hit more than once this project's history)
 
 - **RLS fails closed, not open.** A table gets RLS auto-enabled by an
