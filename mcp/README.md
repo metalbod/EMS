@@ -29,3 +29,9 @@ fly deploy --app ems-mcp
 ```
 Connector address for staff: `https://ems-mcp.fly.dev/mcp` (Claude → Settings → Connectors → Add custom connector).
 Deploy EMS first (`./deploy.sh`) — it carries the migration and the OAuth endpoints this server depends on.
+
+## Claude skill
+`skill/ems-attendance/SKILL.md` teaches Claude how to use these tools (check status first, ask for location, confirm clock-out,
+report results as returned). `skill/ems-attendance.zip` is the same folder zipped for upload in Claude → Settings → Capabilities →
+Skills. Rebuild the zip after editing: `cd mcp/skill && rm -f ems-attendance.zip && zip -qr ems-attendance.zip ems-attendance`.
+For Claude Code, copy the folder to `~/.claude/skills/`.
