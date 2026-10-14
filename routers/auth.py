@@ -111,6 +111,13 @@ def _find_login_user(conn, identifier: str, inst_id: Optional[int]):
     return rows[0] if len(rows) == 1 else None
 
 
+def _password_signin_blocked(conn, inst_id: int, user) -> bool:
+    """True when the company requires Microsoft sign-in (switched on, tested and 'required') and this user isn't one of the
+    emergency-access accounts. Platform admins have no company, so never reach this."""
+    s = conn.execute("SELECT enabled, enforce FROM institution_sso WHERE institution_id=?", (inst_id,)).fetchone()
+    return bool(s and s["enabled"] and s["enforce"] and not user["sso_password_ok"] and user["role"] != "superadmin")
+
+
 @router.post("/api/auth/login", response_model=TokenResponse, tags=["auth"])
 @db_session
 def login(conn, body: LoginIn, request: Request) -> dict:
@@ -150,6 +157,9 @@ def login(conn, body: LoginIn, request: Request) -> dict:
     if inst and inst["status"] != "Active":
         _record_login_audit(conn, request, inst["id"], body.username, user["id"], False, "institution_suspended")
         raise HTTPException(403, "Your company account has been suspended. Please contact platform support.")
+    if inst and _password_signin_blocked(conn, inst["id"], user):
+        _record_login_audit(conn, request, inst["id"], body.username, user["id"], False, "sso_required")
+        raise HTTPException(403, "Your company requires Microsoft sign-in. Use the Sign in with Microsoft button.")
     _clear_login_failures(rate_key)
     _record_login_audit(conn, request, inst["id"] if inst else None, body.username, user["id"], True)
     now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")

@@ -25,7 +25,7 @@ function renderUserTable() {
       </td>
       <td class="px-4 py-3 hidden md:table-cell"><span class="badge ${statusColor(ROLE_BADGE_COLORS, u.role)}">${meta.role_labels?.[u.role]||u.role}</span></td>
       <td class="px-4 py-3 hidden lg:table-cell text-xs text-slate-500">${esc(u.institution_name||u.institution_code||'Platform Admin')}</td>
-      <td class="px-4 py-3"><span class="badge ${u.is_active?'status-positive':'status-neutral'}">${u.is_active?'Active':'Inactive'}</span>${u.sso_linked?' <span class="badge status-info" style="font-size:.65rem" title="Has signed in with Microsoft">Microsoft</span>':''}</td>
+      <td class="px-4 py-3"><span class="badge ${u.is_active?'status-positive':'status-neutral'}">${u.is_active?'Active':'Inactive'}</span>${u.sso_linked?' <span class="badge status-info" style="font-size:.65rem" title="Has signed in with Microsoft">Microsoft</span>':''}${u.sso_password_ok?' <span class="badge status-pending" style="font-size:.65rem" title="Can sign in with a password even when Microsoft sign-in is required">Emergency password</span>':''}</td>
       <td class="px-4 py-3">
         <div class="flex justify-end gap-1">
           <button onclick="openUserModal(this.dataset.u)" data-u='${JSON.stringify(u).replace(/'/g,"&apos;")}' class="btn-ghost" style="font-size:.75rem;padding:.25rem .5rem">Edit</button>
@@ -73,6 +73,9 @@ function openUserModal(uData=null) {
     :'This user has no email address. Add one and save first.';
   loadUserEmailOptions(!!u);
   document.getElementById('uIsActive').checked=u?!!u.is_active:true;
+  // Emergency password access (only HR Manager / platform admin can grant it; the server enforces the same).
+  document.getElementById('uEmergencyWrap').classList.toggle('hidden',!HR_MANAGER_ONLY_ROLES.includes(currentUser.role));
+  document.getElementById('uSsoPasswordOk').checked=!!u?.sso_password_ok;
   populateMetaSelects();
   // Set role checkboxes
   const userRoles=u?.roles||(u?.role?[u.role]:['employee']);
@@ -168,6 +171,7 @@ async function submitUserForm(e) {
     employee_id:document.getElementById('uEmployeeId').value||null,
     is_active:document.getElementById('uIsActive').checked,
   };
+  if(HR_MANAGER_ONLY_ROLES.includes(currentUser.role)) body.sso_password_ok=document.getElementById('uSsoPasswordOk').checked;
   if(!isEdit) delete body.is_active;
   else { delete body.send_password; delete body.cc_sender; }
   if(currentUser.role==='superadmin'&&!currentInstitution){

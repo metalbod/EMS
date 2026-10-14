@@ -173,6 +173,13 @@ def build_current_user_out(conn, user: dict, role_override: str = None):
     is_interviewer = bool(user.get("institution_id") and user.get("employee_id") and conn.execute(
         "SELECT 1 FROM interview_interviewers WHERE institution_id=? AND employee_id=? LIMIT 1",
         (user["institution_id"], user["employee_id"])).fetchone())
+    sso_enabled = sso_linked = password_signin_blocked = False
+    if user.get("institution_id") and effective_role != "superadmin":
+        s = conn.execute("SELECT enabled, enforce FROM institution_sso WHERE institution_id=?", (user["institution_id"],)).fetchone()
+        link = conn.execute("SELECT sso_oid, sso_password_ok FROM users WHERE id=?", (user["id"],)).fetchone()
+        sso_enabled = bool(s and s["enabled"])
+        sso_linked = bool(link and link["sso_oid"])
+        password_signin_blocked = bool(sso_enabled and s["enforce"] and not (link and link["sso_password_ok"]))
     return CurrentUserOut(
         id=user["id"],
         username=user["username"],
@@ -189,6 +196,7 @@ def build_current_user_out(conn, user: dict, role_override: str = None):
         can_view_candidate_history=can_view_candidate_history,
         can_view_candidate_stage_time=can_view_candidate_stage_time,
         is_interviewer=is_interviewer,
+        sso_enabled=sso_enabled, sso_linked=sso_linked, password_signin_blocked=password_signin_blocked,
     )
 
 

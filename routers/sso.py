@@ -12,6 +12,7 @@ after which it is linked by Entra's permanent ids (tenant id + object id). The p
 default (bypass) RLS context, like the password login.
 """
 import logging
+import secrets
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 from urllib.parse import quote
@@ -23,8 +24,9 @@ from pydantic import BaseModel
 from core import sso
 from core.audit import write_entity_audit
 from core.db_session import db_session
-from core.deps import build_current_user_out, get_current_user, make_token, need_inst, require_roles
+from core.deps import build_current_user_out, get_current_user, hash_password, make_token, need_inst, require_roles
 from core.permission_matrix import require_permission
+from core.roles import get_valid_roles
 from core.secrets_encryption import decrypt_secret, encrypt_secret
 from routers.auth import _check_login_rate_limit, _record_login_audit, _record_login_failure
 
@@ -60,18 +62,20 @@ def _sso_row(conn, inst_id: int):
     return conn.execute("SELECT * FROM institution_sso WHERE institution_id=?", (inst_id,)).fetchone()
 
 
-def _begin(conn, request: Request, inst_id: int, row, mode: str, started_by: Optional[str]) -> str:
-    """Create the single-use 'state' record and return the Microsoft authorize URL."""
+def _begin(conn, request: Request, inst_id: int, row, mode: str, started_by: Optional[str], *,
+           prompt: str = "select_account", login_hint: str = "", user_id: Optional[int] = None) -> str:
+    """Create the single-use 'state' record and return the Microsoft authorize URL. mode: 'login', 'test', or 'reauth'
+    (re-confirm an already signed-in user — `started_by` then carries the purpose, e.g. 'policy_ack:12')."""
     state, nonce = sso.new_token(), sso.new_token()
     verifier, challenge = sso.pkce_pair()
     redirect_uri = _redirect_uri(request)
     conn.execute("DELETE FROM sso_pending WHERE expires_at < ?", (_now(-86400),))
     conn.execute(
-        "INSERT INTO sso_pending (institution_id,kind,token_hash,mode,nonce,code_verifier,redirect_uri,started_by,expires_at) "
-        "VALUES (?,?,?,?,?,?,?,?,?)",
-        (inst_id, "state", sso.hash_token(state), mode, nonce, verifier, redirect_uri, started_by, _now(sso.PENDING_TTL_SECONDS)))
+        "INSERT INTO sso_pending (institution_id,kind,token_hash,mode,nonce,code_verifier,redirect_uri,started_by,user_id,expires_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (inst_id, "state", sso.hash_token(state), mode, nonce, verifier, redirect_uri, started_by, user_id, _now(sso.PENDING_TTL_SECONDS)))
     conn.commit()
-    return sso.build_authorize_url(row["tenant_id"], row["client_id"], redirect_uri, state, nonce, challenge)
+    return sso.build_authorize_url(row["tenant_id"], row["client_id"], redirect_uri, state, nonce, challenge, prompt, login_hint)
 
 
 # ---------------------------------------------------------------------------
@@ -84,11 +88,12 @@ def sso_options(conn, institution_code: Optional[str] = None) -> Dict[str, Any]:
     doesn't reveal which codes exist."""
     code = (institution_code or "").strip().upper()
     if not code:
-        return {"sso_enabled": False}
+        return {"sso_enabled": False, "sso_required": False}
     row = conn.execute(
-        "SELECT s.enabled FROM institution_sso s JOIN institutions i ON i.id=s.institution_id WHERE i.code=? AND i.status='Active'",
+        "SELECT s.enabled, s.enforce FROM institution_sso s JOIN institutions i ON i.id=s.institution_id WHERE i.code=? AND i.status='Active'",
         (code,)).fetchone()
-    return {"sso_enabled": bool(row and row["enabled"])}
+    on = bool(row and row["enabled"])
+    return {"sso_enabled": on, "sso_required": bool(on and row["enforce"])}
 
 
 @router.get("/api/auth/sso/start", tags=["auth"])
@@ -110,6 +115,8 @@ def _fail(conn, request, inst_id, username, user_id, reason, redirect_code, mode
         conn.commit()
         return _go(request, "/#settings-sso")
     _record_login_audit(conn, request, inst_id, username or "(microsoft)", user_id, False, reason)
+    if mode == "reauth":
+        return _go(request, "/?sso_reauth_error=1")
     return _go(request, f"/?sso_error={redirect_code}")
 
 
@@ -137,6 +144,61 @@ def _resolve_user(conn, inst_id: int, claims: Dict[str, Any]):
     return conn.execute("SELECT * FROM users WHERE id=?", (next(iter(ids)),)).fetchone(), "email", None
 
 
+def _auto_create_user(conn, inst_id: int, claims: Dict[str, Any]):
+    """Create the EMS login for a first-time Microsoft sign-in — only when the account's address is the WORK email of exactly
+    one active employee who has no login yet and the address isn't already someone's username. Basic Employee role, linked to
+    that employee and to this Microsoft identity, with a random password nobody knows. Returns the new user row or None."""
+    emails = sso.candidate_emails(claims)
+    if not emails:
+        return None
+    marks = ",".join("?" * len(emails))
+    emps = conn.execute(
+        f"SELECT employee_id, full_name, department FROM employees WHERE institution_id=? AND status='Active' AND LOWER(work_email) IN ({marks})",
+        [inst_id, *emails]).fetchall()
+    if len(emps) != 1:
+        return None
+    emp = emps[0]
+    if conn.execute("SELECT 1 FROM users WHERE institution_id=? AND employee_id=?", (inst_id, emp["employee_id"])).fetchone():
+        return None
+    username = emails[0]
+    if conn.execute("SELECT 1 FROM users WHERE LOWER(username)=?", (username,)).fetchone():   # usernames are unique across all companies
+        return None
+    conn.execute(
+        "INSERT INTO users (institution_id, username, full_name, email, password_hash, role, roles, employee_id, department, "
+        "must_change_password, sso_tenant_id, sso_oid) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        (inst_id, username, emp["full_name"], username, hash_password(secrets.token_urlsafe(32)), "employee", "employee",
+         emp["employee_id"], emp["department"], 0, claims["tid"], claims["oid"]))
+    user = conn.execute("SELECT * FROM users WHERE institution_id=? AND username=?", (inst_id, username)).fetchone()
+    write_entity_audit(conn, {"id": user["id"], "username": user["username"], "role": "employee"}, inst_id, "Users", "user", user["id"],
+                       "Created", detail=f"Account created on first Microsoft sign-in for employee {emp['employee_id']}", entity_label=username)
+    return user
+
+
+def _apply_group_roles(conn, inst_id: int, user, groups, groups_available: bool) -> None:
+    """Set the user's EMS roles from their Entra group membership using the company's mapping. Fail-safe: nothing changes when the
+    token has no group list, when none of their groups is mapped, or for emergency-access accounts (so Entra can never demote the
+    people who are there to recover from an Entra problem)."""
+    if not groups_available or user["sso_password_ok"]:
+        return
+    mapping = conn.execute("SELECT group_id, role FROM institution_sso_group_roles WHERE institution_id=? ORDER BY position, id", (inst_id,)).fetchall()
+    mapped = []
+    for m in mapping:
+        if m["group_id"].lower() in groups and m["role"] not in mapped:
+            mapped.append(m["role"])
+    if not mapped:
+        return
+    new_role = user["role"] if user["role"] in mapped else mapped[0]
+    new_roles = ",".join(mapped)
+    old_roles = user["roles"] or user["role"]
+    if new_role == user["role"] and new_roles == old_roles:
+        return
+    conn.execute("UPDATE users SET role=?, roles=? WHERE id=?", (new_role, new_roles, user["id"]))
+    write_entity_audit(conn, {"id": user["id"], "username": user["username"], "role": user["role"]}, inst_id, "Users", "user", user["id"],
+                       "Roles set from Microsoft groups", detail=f"Roles {old_roles} → {new_roles} (active role {new_role})",
+                       entity_label=user["username"],
+                       changes=[{"field": "roles", "label": "Roles", "old": old_roles, "new": new_roles}])
+
+
 @router.get("/api/auth/sso/callback", tags=["auth"])
 @db_session
 def sso_callback(conn, request: Request, code: Optional[str] = None, state: Optional[str] = None,
@@ -155,8 +217,8 @@ def sso_callback(conn, request: Request, code: Optional[str] = None, state: Opti
     inst_id, mode = pend["institution_id"], pend["mode"]
     inst = conn.execute("SELECT id, status FROM institutions WHERE id=?", (inst_id,)).fetchone()
     row = _sso_row(conn, inst_id)
-    if not inst or not row or (mode == "login" and not row["enabled"]):
-        return _go(request, "/?sso_error=not_enabled")
+    if not inst or not row or (mode in ("login", "reauth") and not row["enabled"]):
+        return _go(request, "/?sso_reauth_error=1" if mode == "reauth" else "/?sso_error=not_enabled")
     if error or not code:
         return _fail(conn, request, inst_id, None, None, "sso_denied", "denied", mode,
                      detail=f"Microsoft returned: {error or 'no code'} {(error_description or '')[:150]}")
@@ -172,15 +234,36 @@ def sso_callback(conn, request: Request, code: Optional[str] = None, state: Opti
         return _fail(conn, request, inst_id, None, None, "sso_bad_secret", "failed", mode, detail="The saved client secret could not be read; save it again")
 
     who = (sso.candidate_emails(claims) or [claims.get("name") or claims["oid"]])[0]
+    groups, groups_available = sso.token_groups(claims)
     if mode == "test":
+        groups_note = (f"{len(groups)} group{'s' if len(groups) != 1 else ''} in the token" if groups_available
+                       else "no group list in the token (the groups claim isn't set up, or you are in too many groups)")
         conn.execute("UPDATE institution_sso SET last_test_at=?, last_test_ok=1, last_test_detail=? WHERE institution_id=?",
-                     (_now(), f"Signed in as {who}", inst_id))
+                     (_now(), f"Signed in as {who}; {groups_note}", inst_id))
         write_entity_audit(conn, {"username": pend["started_by"], "role": "hr_manager"}, inst_id, "Settings", "sso", inst_id,
                            "Test sign-in OK", detail=f"Test sign-in succeeded as {who}", entity_label="Single sign-on")
         conn.commit()
         return _go(request, "/#settings-sso")
 
+    if mode == "reauth":
+        # An already signed-in person proving it is still them: must be the very Microsoft identity linked to that user.
+        who_user = conn.execute("SELECT * FROM users WHERE id=? AND institution_id=?", (pend["user_id"], inst_id)).fetchone()
+        if (not who_user or not who_user["is_active"] or who_user["sso_oid"] != claims["oid"]
+                or who_user["sso_tenant_id"] != claims["tid"]):
+            return _fail(conn, request, inst_id, who, pend["user_id"], "sso_reauth_mismatch", "failed", mode)
+        proof = sso.new_token()
+        conn.execute("INSERT INTO sso_pending (institution_id,kind,token_hash,mode,user_id,expires_at) VALUES (?,?,?,?,?,?)",
+                     (inst_id, "proof", sso.hash_token(proof), pend["started_by"], who_user["id"], _now(sso.PROOF_TTL_SECONDS)))
+        _record_login_audit(conn, request, inst_id, who_user["username"], who_user["id"], True, "sso_reauth")
+        conn.commit()
+        purpose, _, ref = (pend["started_by"] or "").partition(":")
+        return _go(request, f"/?sso_reauth={quote(proof)}&sso_for={quote(purpose)}&sso_ref={quote(ref)}")
+
     user, how, problem = _resolve_user(conn, inst_id, claims)
+    if problem == "no_account" and row["auto_create"]:
+        user = _auto_create_user(conn, inst_id, claims)
+        if user:
+            how, problem = "created", None
     if problem:
         return _fail(conn, request, inst_id, who, None, f"sso_{problem}", "no_account", mode)
     if not user["is_active"]:
@@ -191,7 +274,9 @@ def sso_callback(conn, request: Request, code: Optional[str] = None, state: Opti
         conn.execute("UPDATE users SET sso_tenant_id=?, sso_oid=? WHERE id=?", (claims["tid"], claims["oid"], user["id"]))
         write_entity_audit(conn, {"id": user["id"], "username": user["username"], "role": user["role"]}, inst_id, "Users", "user", user["id"],
                            "Microsoft account linked", detail=f"Linked to {who} on first Microsoft sign-in", entity_label=user["username"])
-    _record_login_audit(conn, request, inst_id, user["username"], user["id"], True, "sso")
+    if row["role_sync"]:
+        _apply_group_roles(conn, inst_id, user, groups, groups_available)
+    _record_login_audit(conn, request, inst_id, user["username"], user["id"], True, "sso_created" if how == "created" else "sso")
     login_code = sso.new_token()
     conn.execute("INSERT INTO sso_pending (institution_id,kind,token_hash,user_id,expires_at) VALUES (?,?,?,?,?)",
                  (inst_id, "code", sso.hash_token(login_code), user["id"], _now(sso.CODE_TTL_SECONDS)))
@@ -237,6 +322,35 @@ class SsoEnabledIn(BaseModel):
     enabled: bool
 
 
+class SsoEnforceIn(BaseModel):
+    enforce: bool
+    confirm_unmatched: bool = False
+
+
+class SsoOptionsIn(BaseModel):
+    auto_create: Optional[bool] = None
+    role_sync: Optional[bool] = None
+
+
+class GroupRoleIn(BaseModel):
+    group_id: str
+    role: str
+
+
+class GroupRolesIn(BaseModel):
+    mappings: list[GroupRoleIn]
+
+
+class ReauthStartIn(BaseModel):
+    purpose: str
+    ref: str = ""
+
+
+def _group_roles(conn, inst_id: int):
+    return [{"group_id": r["group_id"], "role": r["role"]} for r in conn.execute(
+        "SELECT group_id, role FROM institution_sso_group_roles WHERE institution_id=? ORDER BY position, id", (inst_id,)).fetchall()]
+
+
 def _settings_out(conn, request: Request, inst_id: int) -> Dict[str, Any]:
     row = _sso_row(conn, inst_id)
     linked = conn.execute("SELECT COUNT(*) FROM users WHERE institution_id=? AND sso_oid IS NOT NULL", (inst_id,)).fetchone()[0]
@@ -251,6 +365,13 @@ def _settings_out(conn, request: Request, inst_id: int) -> Dict[str, Any]:
         "last_test_detail": row["last_test_detail"] if row else None,
         "redirect_uri": _redirect_uri(request),
         "linked_users": linked, "active_users": total,
+        "enforce": bool(row and row["enforce"]),
+        "auto_create": bool(row and row["auto_create"]),
+        "role_sync": bool(row and row["role_sync"]),
+        "group_roles": _group_roles(conn, inst_id),
+        "emergency_users": [dict(r) for r in conn.execute(
+            "SELECT id, username, full_name FROM users WHERE institution_id=? AND sso_password_ok=1 AND is_active=1 ORDER BY full_name",
+            (inst_id,)).fetchall()],
     }
 
 
@@ -313,10 +434,141 @@ def set_sso_enabled(conn, request: Request, body: SsoEnabledIn, user: dict = Dep
         raise HTTPException(400, "Run a test sign-in successfully before turning Microsoft sign-in on")
     conn.execute("UPDATE institution_sso SET enabled=?, updated_by=?, updated_at=? WHERE institution_id=?",
                  (1 if body.enabled else 0, user["username"], _now(), inst_id))
+    if not body.enabled:   # with Microsoft sign-in off, passwords must work again
+        conn.execute("UPDATE institution_sso SET enforce=0 WHERE institution_id=?", (inst_id,))
     write_entity_audit(conn, user, inst_id, "Settings", "sso", inst_id, "Enabled" if body.enabled else "Disabled",
                        detail=f"Microsoft sign-in turned {'on' if body.enabled else 'off'}", entity_label="Single sign-on")
     conn.commit()
     return _settings_out(conn, request, inst_id)
+
+
+@router.put("/api/settings/sso/enforce")
+@db_session
+def set_sso_enforce(conn, request: Request, body: SsoEnforceIn, user: dict = Depends(require_roles(*SETTINGS_ROLES))) -> Dict[str, Any]:
+    """'Require Microsoft sign-in': password sign-in is refused for everyone except emergency-access users and platform admins.
+    Safeguards so nobody locks the company out: Microsoft sign-in must be on and tested, at least one emergency-access user
+    must exist, the person turning it on must be able to get back in, and users who could never match a Microsoft account
+    are listed first (409) until confirmed."""
+    inst_id = need_inst(user)
+    row = _sso_row(conn, inst_id)
+    if not row or not row["enabled"]:
+        raise HTTPException(400, "Turn Microsoft sign-in on first")
+    if body.enforce:
+        if not row["last_test_ok"]:
+            raise HTTPException(400, "Run a successful test sign-in first")
+        if not conn.execute("SELECT 1 FROM users WHERE institution_id=? AND sso_password_ok=1 AND is_active=1", (inst_id,)).fetchone():
+            raise HTTPException(400, "Mark at least one person for emergency password access (Users → Edit) before requiring Microsoft sign-in, "
+                                     "so there is a way in if Microsoft is unavailable")
+        me = conn.execute("SELECT sso_oid, sso_password_ok FROM users WHERE id=?", (user["id"],)).fetchone() if user.get("id") else None
+        if user.get("role") != "superadmin" and not (me and (me["sso_oid"] or me["sso_password_ok"])):
+            raise HTTPException(400, "Sign in with Microsoft yourself once first (log out and use the Microsoft button), "
+                                     "so you aren't locked out when this is turned on")
+        stuck = conn.execute(
+            """SELECT u.username, u.full_name FROM users u LEFT JOIN employees e ON e.institution_id=u.institution_id AND e.employee_id=u.employee_id
+               WHERE u.institution_id=? AND u.is_active=1 AND u.sso_oid IS NULL AND u.sso_password_ok=0 AND u.role<>'superadmin'
+                 AND COALESCE(NULLIF(TRIM(u.email),''), NULLIF(TRIM(e.work_email),'')) IS NULL
+               ORDER BY u.full_name""", (inst_id,)).fetchall()
+        if stuck and not body.confirm_unmatched:
+            raise HTTPException(409, detail={"message": "These people have no email address, so they could not be matched to a Microsoft account "
+                                                        "and would be unable to sign in.",
+                                             "users": [{"username": r["username"], "full_name": r["full_name"]} for r in stuck]})
+    conn.execute("UPDATE institution_sso SET enforce=?, updated_by=?, updated_at=? WHERE institution_id=?",
+                 (1 if body.enforce else 0, user["username"], _now(), inst_id))
+    write_entity_audit(conn, user, inst_id, "Settings", "sso", inst_id, "Required" if body.enforce else "Not required",
+                       detail=f"Microsoft sign-in is {'now required' if body.enforce else 'no longer required'}", entity_label="Single sign-on")
+    conn.commit()
+    return _settings_out(conn, request, inst_id)
+
+
+@router.put("/api/settings/sso/options")
+@db_session
+def set_sso_options(conn, request: Request, body: SsoOptionsIn, user: dict = Depends(require_roles(*SETTINGS_ROLES))) -> Dict[str, Any]:
+    """Phase 3 switches (both off by default): create accounts on first Microsoft sign-in; set roles from Entra groups."""
+    inst_id = need_inst(user)
+    row = _sso_row(conn, inst_id)
+    if not row:
+        raise HTTPException(400, "Save the Entra details first")
+    changes = []
+    if body.auto_create is not None and bool(row["auto_create"]) != body.auto_create:
+        conn.execute("UPDATE institution_sso SET auto_create=? WHERE institution_id=?", (1 if body.auto_create else 0, inst_id))
+        changes.append(f"account creation {'on' if body.auto_create else 'off'}")
+    if body.role_sync is not None and bool(row["role_sync"]) != body.role_sync:
+        if body.role_sync and not _group_roles(conn, inst_id):
+            raise HTTPException(400, "Add at least one group → role mapping first")
+        conn.execute("UPDATE institution_sso SET role_sync=? WHERE institution_id=?", (1 if body.role_sync else 0, inst_id))
+        changes.append(f"roles from groups {'on' if body.role_sync else 'off'}")
+    if changes:
+        write_entity_audit(conn, user, inst_id, "Settings", "sso", inst_id, "Options changed", detail="; ".join(changes), entity_label="Single sign-on")
+    conn.commit()
+    return _settings_out(conn, request, inst_id)
+
+
+@router.put("/api/settings/sso/group-roles")
+@db_session
+def save_group_roles(conn, request: Request, body: GroupRolesIn, user: dict = Depends(require_roles(*SETTINGS_ROLES))) -> Dict[str, Any]:
+    """Replace the Entra group → EMS role list. Earlier rows win when a person is in several mapped groups (their first
+    role becomes the active one). Never maps to superadmin."""
+    inst_id = need_inst(user)
+    if not _sso_row(conn, inst_id):
+        raise HTTPException(400, "Save the Entra details first")
+    valid = set(get_valid_roles(conn, inst_id)) - {"superadmin"}
+    seen, rows = set(), []
+    for m in body.mappings:
+        gid, role = m.group_id.strip().lower(), m.role.strip()
+        if not sso.is_guid(gid):
+            raise HTTPException(400, f"'{m.group_id}' is not a group Object ID (a GUID like 11111111-2222-3333-4444-555555555555)")
+        if role not in valid:
+            raise HTTPException(400, f"'{role}' is not a role that can be assigned from a group")
+        if gid in seen:
+            raise HTTPException(400, f"Group {gid} is listed twice")
+        seen.add(gid)
+        rows.append((gid, role))
+    old = _group_roles(conn, inst_id)
+    conn.execute("DELETE FROM institution_sso_group_roles WHERE institution_id=?", (inst_id,))
+    for i, (gid, role) in enumerate(rows):
+        conn.execute("INSERT INTO institution_sso_group_roles (institution_id, group_id, role, position) VALUES (?,?,?,?)", (inst_id, gid, role, i))
+    if not rows:   # nothing to sync from
+        conn.execute("UPDATE institution_sso SET role_sync=0 WHERE institution_id=?", (inst_id,))
+    if old != [{"group_id": g, "role": r} for g, r in rows]:
+        write_entity_audit(conn, user, inst_id, "Settings", "sso", inst_id, "Group roles saved",
+                           detail=f"{len(rows)} group → role mapping(s)", entity_label="Single sign-on")
+    conn.commit()
+    return _settings_out(conn, request, inst_id)
+
+
+# ---------------------------------------------------------------------------
+# "Confirm with Microsoft" for a signed-in person (e.g. a policy acknowledgement when passwords are switched off)
+# ---------------------------------------------------------------------------
+@router.post("/api/auth/sso/reauth-start")
+@db_session
+def sso_reauth_start(conn, request: Request, body: ReauthStartIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    inst_id = user.get("institution_id")
+    row = _sso_row(conn, inst_id) if inst_id else None
+    if not row or not row["enabled"]:
+        raise HTTPException(400, "Microsoft sign-in isn't turned on")
+    me = conn.execute("SELECT email, sso_oid FROM users WHERE id=?", (user["id"],)).fetchone()
+    if not me or not me["sso_oid"]:
+        raise HTTPException(400, "Your account isn't linked to Microsoft yet. Sign out and sign in with the Microsoft button once.")
+    if body.purpose not in REAUTH_PURPOSES:
+        raise HTTPException(400, "Unknown purpose")
+    url = _begin(conn, request, inst_id, row, "reauth", f"{body.purpose}:{body.ref}", prompt="login",
+                 login_hint=me["email"] or "", user_id=user["id"])
+    return {"authorize_url": url}
+
+
+REAUTH_PURPOSES = ("policy_ack",)
+
+
+def consume_reauth_proof(conn, user: dict, proof: str, purpose: str, ref) -> bool:
+    """Spend a 'Microsoft confirmed it is you' proof (single use, 5 minutes, only for that user and purpose/ref)."""
+    if not proof:
+        return False
+    pend = conn.execute("SELECT * FROM sso_pending WHERE token_hash=? AND kind='proof'", (sso.hash_token(proof),)).fetchone()
+    if (not pend or pend["used_at"] or pend["expires_at"] < _now() or pend["user_id"] != user["id"]
+            or pend["mode"] != f"{purpose}:{ref}"):
+        return False
+    conn.execute("UPDATE sso_pending SET used_at=? WHERE id=?", (_now(), pend["id"]))
+    return True
 
 
 @router.delete("/api/settings/sso", status_code=204)
@@ -325,6 +577,7 @@ def delete_sso_settings(conn, user: dict = Depends(require_roles(*SETTINGS_ROLES
     """Remove the company's Microsoft sign-in configuration (and so the button). Linked users stay linked."""
     inst_id = need_inst(user)
     conn.execute("DELETE FROM institution_sso WHERE institution_id=?", (inst_id,))
+    conn.execute("DELETE FROM institution_sso_group_roles WHERE institution_id=?", (inst_id,))
     write_entity_audit(conn, user, inst_id, "Settings", "sso", inst_id, "Removed", detail="Single sign-on settings removed", entity_label="Single sign-on")
     conn.commit()
 

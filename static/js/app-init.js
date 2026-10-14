@@ -103,7 +103,8 @@ document.querySelectorAll('[data-page]').forEach(el => {
   }
   if(!res.ok){localStorage.removeItem('token');return;}
   currentUser=await res.json();
-  bootApp();
+  await bootApp();
+  await resumeSsoReauth();
 })();
 
 // ---------------------------------------------------------------------------

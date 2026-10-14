@@ -1,8 +1,8 @@
 # Sign in with Microsoft (Entra ID) — setup
 
-Each company connects **its own** Entra app registration; EMS stores nothing shared between companies. Phase 1: Microsoft
-sign-in works **alongside** passwords. Nobody is created by signing in — a Microsoft account must match a user HR has
-already set up in EMS.
+Each company connects **its own** Entra app registration; EMS stores nothing shared between companies. Microsoft sign-in
+works **alongside** passwords unless you choose to require it (section 4). By default nobody is created by signing in — a
+Microsoft account must match a user HR has already set up in EMS (section 5 has opt-in alternatives).
 
 ## 1. In Microsoft Entra (your Entra admin)
 1. **App registrations → New registration.** Name: `EMS`. Supported account types: **Accounts in this organizational
@@ -32,3 +32,25 @@ different Microsoft identity → "Your Microsoft account isn't set up in EMS yet
 - Roles and access stay managed in EMS; MFA and conditional access stay in Entra.
 - Deactivating a user in EMS stops their Microsoft sign-in at once. An EMS session already open lasts up to 8 hours.
 - Every sign-in is in the login audit log with reason `sso`; settings changes, links and unlinks are in the activity log.
+
+## 4. Requiring Microsoft sign-in (optional)
+**Settings → Single Sign-On → Require Microsoft sign-in.** Once on, `/api/auth/login` refuses passwords for everyone except
+platform admins and people marked **Emergency password access** (Users → Edit user; HR Manager only). Do this in order:
+1. Let everyone sign in with Microsoft at least once (the page shows "N of M users have signed in").
+2. Mark **one or two** trusted people for emergency password access — they are your way in if Microsoft or the client secret
+   has a problem. EMS refuses to turn the requirement on until at least one exists, and until you yourself have signed in with
+   Microsoft or hold emergency access.
+3. People with no email address can never be matched; EMS lists them and asks you to confirm.
+Turning Microsoft sign-in off also turns the requirement off. Reading and acknowledging a **policy** normally confirms with the
+login password; while passwords are off, people are sent through Microsoft once more ("Confirm with Microsoft") and the
+acknowledgement records that method.
+
+## 5. Accounts and roles (optional, off by default)
+- **Create the EMS account on first Microsoft sign-in** — only when the Microsoft email is the **work email** of exactly one
+  active employee who has no login yet. They get the basic Employee role; anyone else is still refused.
+- **Set roles from Entra groups** — map an Entra security group's **Object ID** to an EMS role. At each sign-in the person's EMS
+  roles follow the mapped groups they belong to. Nothing changes for someone in no mapped group, for emergency-access people, or
+  when Microsoft's token has no group list. In the app registration open **Token configuration → Add groups claim → Security
+  groups → Group ID**. If a person is in more than 200 groups Microsoft omits the list from the token; EMS then leaves their roles
+  alone (it does not call Microsoft Graph). Superadmin can't be assigned from a group. The **Test sign-in** result tells you how many
+  groups the token carried.

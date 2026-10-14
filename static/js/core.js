@@ -520,7 +520,9 @@ async function refreshSsoButton() {
   try {
     const res = await fetch('/api/auth/sso/options?institution_code=' + encodeURIComponent(code));
     const d = res.ok ? await res.json() : {};
-    if (seq === _ssoOptionsSeq) wrap.classList.toggle('hidden', !d.sso_enabled);
+    if (seq !== _ssoOptionsSeq) return;
+    wrap.classList.toggle('hidden', !d.sso_enabled);
+    document.getElementById('loginSsoRequiredNote')?.classList.toggle('hidden', !d.sso_required);
   } catch { if (seq === _ssoOptionsSeq) wrap.classList.add('hidden'); }
 }
 function startSsoLogin() {
@@ -528,8 +530,18 @@ function startSsoLogin() {
   if (code) window.location.href = '/api/auth/sso/start?institution_code=' + encodeURIComponent(code);
 }
 // Called first thing at boot (app-init.js). Returns true when the page was opened by a Microsoft redirect.
+// A "Confirm with Microsoft" round trip (a signed-in person proving it is them) comes back as ?sso_reauth=<proof>&sso_for=<purpose>
+// &sso_ref=<id>, or ?sso_reauth_error=1. Unlike a sign-in the session already exists, so normal boot carries on and
+// resumeSsoReauth() finishes the job once the app is up.
+let pendingSsoReauth = null;
 async function handleSsoReturn() {
   const sp = new URLSearchParams(location.search);
+  if (sp.get('sso_reauth') || sp.get('sso_reauth_error')) {
+    pendingSsoReauth = sp.get('sso_reauth')
+      ? { proof: sp.get('sso_reauth'), purpose: sp.get('sso_for') || '', ref: sp.get('sso_ref') || '' } : { error: true };
+    history.replaceState(null, '', location.pathname + location.hash);
+    return false;
+  }
   const code = sp.get('sso_code'), err = sp.get('sso_error');
   if (!code && !err) return false;
   history.replaceState(null, '', location.pathname + location.hash);    // never leave the one-time code in the address bar
@@ -545,6 +557,19 @@ async function handleSsoReturn() {
     bootApp();
   } finally { hideGlobalLoading(); }
   return true;
+}
+async function resumeSsoReauth() {
+  const p = pendingSsoReauth;
+  pendingSsoReauth = null;
+  if (!p) return;
+  if (p.error) { alert("Microsoft couldn't confirm it's you. Sign in with the same Microsoft account you normally use and try again."); return; }
+  if (p.purpose === 'policy_ack') {
+    showPage('ld-trainings');
+    const res = await api(`/api/policies/versions/${encodeURIComponent(p.ref)}/acknowledge`, { method: 'POST', body: JSON.stringify({ sso_proof: p.proof }) });
+    if (!res?.ok) { const d = await res?.json().catch(() => null); alert(d?.detail ? apiErrorText(d.detail) : 'Could not record your acknowledgement.'); return; }
+    if (typeof loadLdMyPolicies === 'function') loadLdMyPolicies();
+    alert('Thank you. Your acknowledgement has been recorded.');
+  }
 }
 if (document.getElementById('loginCode')?.value) refreshSsoButton();
 

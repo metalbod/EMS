@@ -27,7 +27,7 @@ CAN_MANAGE_USERS = ("superadmin", "hr_manager")
 
 _USER_AUDIT_LABELS = {
     "full_name": "Full name", "email": "Email", "role": "Role", "roles": "Roles",
-    "employee_id": "Linked employee", "is_active": "Active",
+    "employee_id": "Linked employee", "is_active": "Active", "sso_password_ok": "Emergency password access",
 }
 
 
@@ -47,6 +47,9 @@ class UserIn(BaseModel):
     roles: Optional[List[str]] = None  # multi-role list; defaults to [role]
     employee_id: Optional[str] = None
     institution_id: Optional[int] = None  # superadmin can specify
+    # Emergency access: may still sign in with a password while the company requires Microsoft sign-in.
+    # HR Manager / platform admin only (checked in create_user).
+    sso_password_ok: Optional[bool] = None
 
     # role is validated in create_user's body instead of a static
     # field_validator — the valid set is per-institution (built-ins plus
@@ -102,6 +105,7 @@ class UserUpdate(BaseModel):
     roles: Optional[List[str]] = None  # multi-role list
     employee_id: Optional[str] = None
     is_active: bool = True
+    sso_password_ok: Optional[bool] = None      # None = leave as is; HR Manager / platform admin only
 
     # role validated in update_user's body — see UserIn's note above.
 
@@ -123,14 +127,14 @@ def list_users(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, A
         inst_id = user.get("active_institution_id")
         if inst_id:
             rows = conn.execute(
-                "SELECT id,institution_id,username,full_name,email,role,roles,employee_id,is_active,created_at,must_change_password,(sso_oid IS NOT NULL) AS sso_linked "
+                "SELECT id,institution_id,username,full_name,email,role,roles,employee_id,is_active,created_at,must_change_password,(sso_oid IS NOT NULL) AS sso_linked,sso_password_ok "
                 "FROM users WHERE institution_id=? ORDER BY created_at DESC", (inst_id,)
             ).fetchall()
         else:
             # Global view — return all non-superadmin users with institution info
             rows = conn.execute("""
                 SELECT u.id, u.institution_id, u.username, u.full_name, u.email, u.role, u.roles,
-                       u.employee_id, u.is_active, u.created_at, u.must_change_password, (u.sso_oid IS NOT NULL) AS sso_linked,
+                       u.employee_id, u.is_active, u.created_at, u.must_change_password, (u.sso_oid IS NOT NULL) AS sso_linked, u.sso_password_ok,
                        i.name AS institution_name, i.code AS institution_code
                 FROM users u
                 LEFT JOIN institutions i ON i.id = u.institution_id
@@ -139,7 +143,7 @@ def list_users(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, A
     else:
         inst_id = user["institution_id"]
         rows = conn.execute(
-            "SELECT id,institution_id,username,full_name,email,role,roles,employee_id,is_active,created_at,must_change_password,(sso_oid IS NOT NULL) AS sso_linked "
+            "SELECT id,institution_id,username,full_name,email,role,roles,employee_id,is_active,created_at,must_change_password,(sso_oid IS NOT NULL) AS sso_linked,sso_password_ok "
             "FROM users WHERE institution_id=? ORDER BY created_at DESC", (inst_id,)
         ).fetchall()
     result = []
@@ -147,6 +151,7 @@ def list_users(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, A
         d = dict(r)
         d["roles"] = [x.strip() for x in (d.get("roles") or d["role"]).split(",") if x.strip()]
         d["must_change_password"] = bool(d["must_change_password"])
+        d["sso_password_ok"] = bool(d.get("sso_password_ok"))
         result.append(d)
     return result
 
@@ -283,8 +288,13 @@ def create_user(conn, body: UserIn, user: dict = Depends(get_current_user)) -> D
             "SELECT id,institution_id,username,full_name,email,role,roles,employee_id,is_active,created_at "
             "FROM users WHERE id=last_insert_rowid()"
         ).fetchone()
+        if body.sso_password_ok:
+            if user["role"] not in ("hr_manager", "superadmin"):
+                raise HTTPException(403, "Only an HR Manager can grant emergency password access")
+            conn.execute("UPDATE users SET sso_password_ok=1 WHERE id=?", (row["id"],))
         write_entity_audit(conn, user, inst_id, "Users", "user", row["id"], "Created",
-                           detail=f"User '{body.username}' created with role {body.role}",
+                           detail=f"User '{body.username}' created with role {body.role}"
+                                  + (" (emergency password access)" if body.sso_password_ok else ""),
                            entity_label=body.username)
         if body.send_password and not _email_user_password(
                 conn, inst_id, full_name=body.full_name, username=body.username, email=body.email,
@@ -336,13 +346,18 @@ def update_user(conn, user_id: int, body: UserUpdate, user: dict = Depends(get_c
     # forced-rotation flag — see main.py's superadmin seeding.
     must_change_password = 0 if body.password else target["must_change_password"]
     roles_str = ",".join(body.roles) if body.roles else body.role
+    sso_password_ok = target["sso_password_ok"]
+    if body.sso_password_ok is not None and bool(body.sso_password_ok) != bool(target["sso_password_ok"]):
+        if user["role"] not in ("hr_manager", "superadmin"):
+            raise HTTPException(403, "Only an HR Manager can change emergency password access")
+        sso_password_ok = 1 if body.sso_password_ok else 0
     conn.execute("""
-        UPDATE users SET full_name=?,email=?,password_hash=?,role=?,roles=?,employee_id=?,is_active=?,must_change_password=?
+        UPDATE users SET full_name=?,email=?,password_hash=?,role=?,roles=?,employee_id=?,is_active=?,must_change_password=?,sso_password_ok=?
         WHERE id=?
     """, (body.full_name, body.email, new_hash, body.role, roles_str,
-          body.employee_id, 1 if body.is_active else 0, must_change_password, user_id))
+          body.employee_id, 1 if body.is_active else 0, must_change_password, sso_password_ok, user_id))
     row = conn.execute(
-        "SELECT id,institution_id,username,full_name,email,role,roles,employee_id,is_active,created_at "
+        "SELECT id,institution_id,username,full_name,email,role,roles,employee_id,is_active,created_at,sso_password_ok "
         "FROM users WHERE id=?", (user_id,)
     ).fetchone()
     changes = diff_fields(dict(target), dict(row), _USER_AUDIT_LABELS)

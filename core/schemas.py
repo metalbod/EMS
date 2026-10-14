@@ -57,6 +57,11 @@ class CurrentUserOut(BaseModel):
     # True when this person has been picked as an interviewer for any interview — shows the "My Interviews" nav
     # item (they may have no Recruitment access at all).
     is_interviewer: bool = False
+    # Microsoft sign-in (routers/sso.py): the company has it on; this user has signed in with it (is linked); and password
+    # sign-in / password confirmations are closed to them because the company requires Microsoft sign-in.
+    sso_enabled: bool = False
+    sso_linked: bool = False
+    password_signin_blocked: bool = False
 
 
 class TokenResponse(BaseModel):

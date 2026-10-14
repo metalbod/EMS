@@ -16,6 +16,7 @@ import requests
 AUTH_BASE = "https://login.microsoftonline.com"
 PENDING_TTL_SECONDS = 600       # a redirect to Microsoft must come back within 10 minutes
 CODE_TTL_SECONDS = 60           # the one-time code EMS hands the browser afterwards
+PROOF_TTL_SECONDS = 300         # a "Microsoft confirmed it is you" proof (e.g. for a policy acknowledgement)
 _GUID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
 
@@ -50,13 +51,17 @@ def issuer(tenant_id: str) -> str:
     return f"{AUTH_BASE}/{tenant_id}/v2.0"
 
 
-def build_authorize_url(tenant_id: str, client_id: str, redirect_uri: str, state: str, nonce: str, challenge: str) -> str:
-    return f"{AUTH_BASE}/{tenant_id}/oauth2/v2.0/authorize?" + urlencode({
+def build_authorize_url(tenant_id: str, client_id: str, redirect_uri: str, state: str, nonce: str, challenge: str,
+                        prompt: str = "select_account", login_hint: str = "") -> str:
+    """`prompt='login'` forces a fresh Microsoft sign-in (used to re-confirm an already signed-in person)."""
+    params = {
         "client_id": client_id, "response_type": "code", "redirect_uri": redirect_uri, "response_mode": "query",
         "scope": "openid profile email", "state": state, "nonce": nonce,
-        "code_challenge": challenge, "code_challenge_method": "S256",
-        "prompt": "select_account",
-    })
+        "code_challenge": challenge, "code_challenge_method": "S256", "prompt": prompt,
+    }
+    if login_hint:
+        params["login_hint"] = login_hint
+    return f"{AUTH_BASE}/{tenant_id}/oauth2/v2.0/authorize?" + urlencode(params)
 
 
 def exchange_code(tenant_id: str, client_id: str, client_secret: str, code: str, redirect_uri: str, verifier: str) -> Dict[str, Any]:
@@ -121,3 +126,13 @@ def candidate_emails(claims: Dict[str, Any]) -> List[str]:
         if "@" in v and v not in out:
             out.append(v)
     return out
+
+
+def token_groups(claims: Dict[str, Any]):
+    """(group object ids in the ID token, available). `available` is False when the token carries no group list at all —
+    the 'groups' claim isn't configured on the app, or the person is in too many groups and Microsoft sends an 'overage'
+    marker instead (which would need a Graph call this app deliberately doesn't make)."""
+    groups = claims.get("groups")
+    if isinstance(groups, list):
+        return [str(g).lower() for g in groups], True
+    return [], False

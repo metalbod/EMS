@@ -30,7 +30,8 @@ from core.email_engine import _cooldown_cutoff, _smtp_settings, queue_email
 from core.ob_ld_shared import complete_linked_ob_items
 from core.org_queries import subordinates_in_clause
 from core.permission_matrix import has_permission, require_permission
-from routers.auth import _check_login_rate_limit, _clear_login_failures, _record_login_failure
+from routers.auth import _check_login_rate_limit, _clear_login_failures, _password_signin_blocked, _record_login_failure
+from routers.sso import consume_reauth_proof
 from core.deps import verify_password
 from core.policies import (
     AUDIENCE_TYPES, MANUAL_REMIND_COOLDOWN_DAYS, POLICY_CATEGORY, REMINDER_CATEGORY, ack_status, assign_version,
@@ -66,6 +67,7 @@ class PolicyAssignIn(BaseModel):
 
 class PolicyAcknowledgeIn(BaseModel):
     password: str = ""                     # the employee's own login password confirms the acknowledgement
+    sso_proof: str = ""                    # ...or, where passwords are switched off, a "Confirm with Microsoft" proof
 
 
 def _check_audience(conn, inst_id: int, body: PolicyPublishIn) -> List[str]:
@@ -407,21 +409,31 @@ def acknowledge_policy(conn, version_id: int, body: PolicyAcknowledgeIn, user: d
         raise HTTPException(400, "A newer version of this policy has been published. Please read that one.")
     if ver["require_open"] and not ack["first_opened_at"]:
         raise HTTPException(400, "Open the document first, then acknowledge it")
-    if not body.password:
-        raise HTTPException(400, "Enter your password to confirm")
-    # The caller's own password is the confirmation. Wrong guesses are rate-limited like logins (and
-    # answered with 403, not 401 — the app signs a user out on 401).
-    rate_key = f"policy-ack:{user['id']}"
-    _check_login_rate_limit(rate_key)
-    pw = conn.execute("SELECT password_hash FROM users WHERE id=?", (user["id"],)).fetchone()
-    if not pw or not verify_password(body.password, pw["password_hash"]):
-        _record_login_failure(rate_key)
-        raise HTTPException(403, "That password isn't right")
-    _clear_login_failures(rate_key)
-    statement = f"I have read and understood {course['title']} (v{ver['version']}) and confirm this with my login password."
+    me = conn.execute("SELECT password_hash, role, sso_password_ok FROM users WHERE id=?", (user["id"],)).fetchone()
+    if me and _password_signin_blocked(conn, inst_id, me):
+        # Passwords are switched off for this person (company requires Microsoft sign-in): the confirmation is a fresh
+        # Microsoft sign-in (a one-time proof), not a password they can't use anywhere else.
+        if not consume_reauth_proof(conn, user, body.sso_proof, "policy_ack", version_id):
+            raise HTTPException(403, "Confirm with Microsoft to acknowledge this policy")
+        method = "microsoft"
+        how = "my Microsoft sign-in"
+    else:
+        if not body.password:
+            raise HTTPException(400, "Enter your password to confirm")
+        # The caller's own password is the confirmation. Wrong guesses are rate-limited like logins (and
+        # answered with 403, not 401 — the app signs a user out on 401).
+        rate_key = f"policy-ack:{user['id']}"
+        _check_login_rate_limit(rate_key)
+        if not me or not verify_password(body.password, me["password_hash"]):
+            _record_login_failure(rate_key)
+            raise HTTPException(403, "That password isn't right")
+        _clear_login_failures(rate_key)
+        method = "password"
+        how = "my login password"
+    statement = f"I have read and understood {course['title']} (v{ver['version']}) and confirm this with {how}."
     conn.execute(
         "UPDATE policy_acknowledgements SET acknowledged_at=to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'), "
-        "statement=?, acknowledged_by=?, method='password' WHERE id=?", (statement, user["username"], ack["id"])
+        "statement=?, acknowledged_by=?, method=? WHERE id=?", (statement, user["username"], method, ack["id"])
     )
     complete_linked_ob_items(conn, inst_id, emp_id, ver["course_id"], user)
     write_entity_audit(conn, user, inst_id, "L&D", "policy", ver["course_id"], "Acknowledged",
@@ -518,7 +530,7 @@ def export_policy_csv(conn, course_id: int, version_id: Optional[int] = None, us
             a["employee_id"], a["full_name"], a["department"], course["title"], f"v{ver['version']}", ver["link_url"] or "",
             ver["due_date"] or "", labels[ack_status(a, ver["due_date"], today)], local(a["assigned_at"]),
             local(a["first_opened_at"]), local(a["acknowledged_at"]),
-            ("Password" if a["method"] == "password" else "Tick box") if a["acknowledged_at"] else "",
+            ({"password": "Password", "microsoft": "Microsoft"}.get(a["method"], "Tick box")) if a["acknowledged_at"] else "",
             a["statement"] or ""]))
     safe = "".join(ch if ch.isalnum() else "-" for ch in course["title"]).strip("-")[:60] or "policy"
     return Response(

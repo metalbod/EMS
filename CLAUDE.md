@@ -889,11 +889,35 @@ wrapper everywhere.
   ambiguous, or linked to someone else → `?sso_error=no_account`. Inactive user / suspended company are refused. SSO logins skip
   the forced temp-password change (`must_change_password` false in that response). The switch can **only be turned on after a
   successful Test sign-in** (`test-start` → `/#settings-sso`), and changing tenant/client/secret turns it off and clears the test.
-  Password login is unchanged and still works (phase 2 would add "SSO required" with break-glass accounts; phase 3 groups→roles /
-  auto-provisioning — not built, owner chose EMS-managed roles and HR-created accounts). `POST /api/users/{id}/sso-unlink` clears a
+  Password login is unchanged unless "Require" is on (phase 2, below). `POST /api/users/{id}/sso-unlink` clears a
   link; the Users list shows a "Microsoft" badge. Login audit reasons: `sso`, `sso_no_account`, `sso_ambiguous`, `sso_inactive`,
   `sso_invalid_token`, …. Tests fake Microsoft (patched `core.sso.exchange_code` / `signing_key`, ID tokens signed with a
   throwaway RSA key) so every other check runs for real; the one thing not covered is a real round trip to Microsoft.
+  **Phases 2 and 3** (migration `20261018_0001`; shipped 2026-10-14 while no company had SSO switched on, **all new switches
+  default off**): **Require Microsoft sign-in** (`institution_sso.enforce`, `PUT /api/settings/sso/enforce`) — `routers/auth.py`
+  `_password_signin_blocked` makes `/api/auth/login` answer 403 "company requires Microsoft sign-in" (audit reason `sso_required`)
+  for everyone except platform superadmins and users with **`users.sso_password_ok`** ("Emergency password access", Edit User;
+  only hr_manager/superadmin may set it — the server 403s hr_admin). Safeguards before enforce can be turned on: SSO enabled +
+  tested, at least one active emergency user exists, the person turning it on is themself linked or emergency (else they'd lock
+  themselves out), and active users with **no email at all** (can never match) come back as a 409 list until
+  `confirm_unmatched`. Turning SSO **off** also clears enforce. `GET /api/auth/sso/options` adds `sso_required`; `/api/auth/me`
+  adds `sso_enabled`/`sso_linked`/`password_signin_blocked`. **Policy acknowledgement uses the login password**, which an
+  enforced user can't use, so for them (`password_signin_blocked`) the modal says **Confirm with Microsoft**:
+  `POST /api/auth/sso/reauth-start {purpose:'policy_ack', ref: version_id}` → Microsoft with `prompt=login` + `login_hint` →
+  callback mode `reauth` (must be the user's own linked tid+oid) mints a 5-min single-use `sso_pending` kind `proof` whose `mode`
+  is `purpose:ref` → redirect `/?sso_reauth=&sso_for=&sso_ref=` → `handleSsoReturn` stashes it, boot continues (the session
+  already exists), `resumeSsoReauth()` (core.js, awaited in app-init) posts `{sso_proof}` to the acknowledge endpoint, which spends
+  it via `consume_reauth_proof` (right user, right policy version, once) and stores `method='microsoft'` (CSV "Microsoft").
+  New purposes = add to `REAUTH_PURPOSES` and handle in `resumeSsoReauth`. **Auto-create** (`auto_create`): on a first Microsoft
+  sign-in with no matching user, an account is created **only** if the account's email is the `work_email` of exactly one
+  *Active* employee with no login yet and the address isn't an existing username (usernames are unique across all companies);
+  role `employee`, random unknowable password, linked, audited (`Created`, login reason `sso_created`). **Roles from groups**
+  (`role_sync` + `institution_sso_group_roles`, `PUT .../group-roles`, validated against `get_valid_roles`, never superadmin):
+  at each sign-in the user's `roles` become the mapped roles of the Entra groups in the ID token (first mapping decides the
+  active role unless they already hold a mapped one). Fail-safe — nothing changes when no mapped group matches, when the token
+  has no `groups` claim or Microsoft sent the >200-groups *overage* marker (`token_groups` → `available` False; no Graph call is
+  made on purpose), or for emergency users. The Test sign-in reports how many groups the token carried. The Entra app needs a
+  *groups* claim (Token configuration → security groups, group ID) for this. Not covered by tests: real Microsoft.
 
 ## Recurring gotchas (hit more than once this project's history)
 

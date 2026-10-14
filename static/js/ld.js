@@ -1142,8 +1142,12 @@ function openPolicyRead(versionId) {
     (p.link_url?row(policyLinkHost(p.link_url),'Open link','policyOpenLinkFromModal'):'')+
     (p.file_name?row(p.link_url?`PDF copy — ${p.file_name}`:p.file_name,p.link_url?'View copy':'Open document','policyOpenFromModal'):'');
   document.getElementById('policyReadPassword').value='';
+  const viaMicrosoft=!!currentUser?.password_signin_blocked;
+  document.getElementById('policyReadPasswordWrap').classList.toggle('hidden',viaMicrosoft);
+  document.getElementById('policyReadAckBtn').textContent=viaMicrosoft?'Confirm with Microsoft':'Acknowledge';
   document.getElementById('policyReadStatement').textContent=`I have read and understood ${p.title} (v${p.version}).`;
-  document.getElementById('policyReadHint').textContent=(p.require_open?'Open the document first. ':'')+"Entering your password confirms it's you. Your acknowledgement is recorded with today's date and time.";
+  document.getElementById('policyReadHint').textContent=(p.require_open?'Open the document first. ':'')+(viaMicrosoft?"Microsoft will ask you to sign in again to confirm it's you. Your acknowledgement is recorded with today's date and time."
+    :"Entering your password confirms it's you. Your acknowledgement is recorded with today's date and time.");
   document.getElementById('policyReadAckBlock').classList.toggle('hidden',done||!p.is_current);
   document.getElementById('policyReadAckBtn').classList.toggle('hidden',done||!p.is_current);
   const msg=document.getElementById('policyReadDone');
@@ -1158,7 +1162,8 @@ function closePolicyReadModal() {
 
 function policyMarkOpened() {
   policyRead.first_opened_at=policyRead.first_opened_at||new Date().toISOString();   // the server has recorded it
-  document.getElementById('policyReadHint').textContent='Thanks for opening it. Enter your password and acknowledge when you have read it.';
+  document.getElementById('policyReadHint').textContent=currentUser?.password_signin_blocked
+    ?'Thanks for opening it. Confirm with Microsoft when you have read it.':'Thanks for opening it. Enter your password and acknowledge when you have read it.';
 }
 
 async function policyOpenFromModal() {
@@ -1196,6 +1201,17 @@ async function policyOpenLinkFromModal() {
 
 const submitPolicyAcknowledge = guardAsync(async function() {
   const p=policyRead; if(!p) return;
+  if(currentUser?.password_signin_blocked){
+    if(p.require_open&&!p.first_opened_at){ alert('Open the document first, then confirm.'); return; }
+    const start=await api('/api/auth/sso/reauth-start',{method:'POST',body:JSON.stringify({purpose:'policy_ack',ref:String(p.version_id)})});
+    if(!start?.ok){
+      const d=await start?.json().catch(()=>null);
+      alert(d?.detail?apiErrorText(d.detail):'Could not start the Microsoft confirmation.');
+      return;
+    }
+    window.location.href=(await start.json()).authorize_url;   // comes back via resumeSsoReauth() in core.js
+    return;
+  }
   const password=document.getElementById('policyReadPassword').value;
   if(!password){ alert('Enter your password to confirm.'); return; }
   const res=await api(`/api/policies/versions/${p.version_id}/acknowledge`,{method:'POST',body:JSON.stringify({password})});

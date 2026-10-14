@@ -10,14 +10,15 @@ const settings = readFileSync(resolve(__dirname, '..', 'sso-settings.js'), 'utf8
 const ssoStatus = new Function(`${settings.slice(settings.indexOf('function ssoStatus('), settings.indexOf('function renderSsoSettings('))}\nreturn ssoStatus;`)();
 
 function loadLogin(fetchImpl) {
-  const ctx = { fetch: fetchImpl, showGlobalLoading() {}, hideGlobalLoading() {}, bootApp: vi.fn(), localStorage: { setItem: vi.fn() }, history: { replaceState: vi.fn() }, currentUser: null };
-  const fn = new Function('fetch', 'showGlobalLoading', 'hideGlobalLoading', 'bootApp', 'localStorage', 'history', 'location',
-    `let currentUser = null;\n${core.slice(start, end)}\nreturn { ssoErrorMessage, refreshSsoButton, handleSsoReturn, getUser: () => currentUser };`);
-  return { ctx, api: (loc) => fn(ctx.fetch, ctx.showGlobalLoading, ctx.hideGlobalLoading, ctx.bootApp, ctx.localStorage, ctx.history, loc) };
+  const ctx = { fetch: fetchImpl, showGlobalLoading() {}, hideGlobalLoading() {}, bootApp: vi.fn(), localStorage: { setItem: vi.fn() }, history: { replaceState: vi.fn() }, currentUser: null,
+    api: vi.fn(), showPage: vi.fn(), alert: vi.fn(), apiErrorText: d => String(d) };
+  const fn = new Function('fetch', 'showGlobalLoading', 'hideGlobalLoading', 'bootApp', 'localStorage', 'history', 'location', 'api', 'showPage', 'alert', 'apiErrorText',
+    `let currentUser = null;\n${core.slice(start, end)}\nreturn { ssoErrorMessage, refreshSsoButton, handleSsoReturn, resumeSsoReauth, getUser: () => currentUser };`);
+  return { ctx, api: (loc) => fn(ctx.fetch, ctx.showGlobalLoading, ctx.hideGlobalLoading, ctx.bootApp, ctx.localStorage, ctx.history, loc, ctx.api, ctx.showPage, ctx.alert, ctx.apiErrorText) };
 }
 
 beforeEach(() => {
-  document.body.innerHTML = `<input id="loginCode" value=""/><div id="loginSsoWrap" class="hidden"></div><p id="loginErr" class="hidden"></p>`;
+  document.body.innerHTML = `<input id="loginCode" value=""/><div id="loginSsoWrap" class="hidden"></div><p id="loginSsoRequiredNote" class="hidden"></p><p id="loginErr" class="hidden"></p>`;
 });
 
 describe('ssoErrorMessage', () => {
@@ -97,5 +98,55 @@ describe('SSO settings status badge', () => {
     expect(ssoStatus({ configured: true, enabled: false, last_test_ok: false }).text).toBe('Saved, not tested');
     expect(ssoStatus({ configured: true, enabled: false, last_test_ok: true }).text).toBe('Tested, off');
     expect(ssoStatus({ configured: true, enabled: true, last_test_ok: true }).text).toBe('On');
+  });
+});
+
+
+describe('when Microsoft sign-in is required', () => {
+  it('shows the note under the Microsoft button only for a company that requires it', async () => {
+    const fetchImpl = vi.fn(async url => ({ ok: true, json: async () => ({ sso_enabled: true, sso_required: url.includes('STRICT') }) }));
+    const { api } = loadLogin(fetchImpl);
+    const { refreshSsoButton } = api({ search: '', pathname: '/', hash: '' });
+    const note = document.getElementById('loginSsoRequiredNote');
+    document.getElementById('loginCode').value = 'STRICT';
+    await refreshSsoButton();
+    expect(note.classList.contains('hidden')).toBe(false);
+    document.getElementById('loginCode').value = 'RELAXED';
+    await refreshSsoButton();
+    expect(note.classList.contains('hidden')).toBe(true);
+  });
+});
+
+describe('confirming with Microsoft while signed in', () => {
+  it('keeps the proof, cleans the address and lets normal boot carry on', async () => {
+    const { ctx, api } = loadLogin(vi.fn());
+    const loc = { search: '?sso_reauth=PROOF&sso_for=policy_ack&sso_ref=12', pathname: '/', hash: '' };
+    const m = api(loc);
+    expect(await m.handleSsoReturn()).toBe(false);                        // not a sign-in: the session already exists
+    expect(ctx.history.replaceState).toHaveBeenCalled();
+    ctx.api.mockResolvedValue({ ok: true });
+    await m.resumeSsoReauth();
+    const [url, opts] = ctx.api.mock.calls[0];
+    expect(url).toBe('/api/policies/versions/12/acknowledge');
+    expect(JSON.parse(opts.body)).toEqual({ sso_proof: 'PROOF' });
+    expect(ctx.showPage).toHaveBeenCalledWith('ld-trainings');
+    await m.resumeSsoReauth();
+    expect(ctx.api).toHaveBeenCalledTimes(1);                             // the proof is only ever used once
+  });
+
+  it('tells the person plainly when Microsoft could not confirm them, or the server refuses', async () => {
+    let { ctx, api } = loadLogin(vi.fn());
+    let m = api({ search: '?sso_reauth_error=1', pathname: '/', hash: '' });
+    await m.handleSsoReturn();
+    await m.resumeSsoReauth();
+    expect(ctx.alert.mock.calls[0][0]).toContain('same Microsoft account');
+    expect(ctx.api).not.toHaveBeenCalled();
+
+    ({ ctx, api } = loadLogin(vi.fn()));
+    m = api({ search: '?sso_reauth=P&sso_for=policy_ack&sso_ref=3', pathname: '/', hash: '' });
+    await m.handleSsoReturn();
+    ctx.api.mockResolvedValue({ ok: false, json: async () => ({ detail: 'Confirm with Microsoft to acknowledge this policy' }) });
+    await m.resumeSsoReauth();
+    expect(ctx.alert.mock.calls[0][0]).toContain('Confirm with Microsoft');
   });
 });
