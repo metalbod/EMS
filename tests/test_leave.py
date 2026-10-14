@@ -1342,3 +1342,54 @@ def test_holiday_on_half_day_boundary_deducts_half_day_and_credits_half_day(
                      params={"employee_id": emp["employee_id"], "year": monday.year}).json()
     bal_row = next(b for b in bal if b["leave_type_id"] == lt["id"])
     assert bal_row["used_days"] == 4.0
+
+
+# --------------------------------------------------------------------------- changing a type's days vs balances that already exist
+def test_changing_days_offers_to_update_untouched_balances_only(client, hr_manager_auth, employee_with_login, make_test_leave_type):
+    from datetime import datetime
+    year = datetime.now().year
+    lt = make_test_leave_type(name="ZZ Stale Balance Type", annual_entitlement=0)
+    emp_a, headers_a = employee_with_login(full_name="ZZ Stale A")
+    emp_b, headers_b = employee_with_login(full_name="ZZ Stale B")
+    emp_c, headers_c = employee_with_login(full_name="ZZ Stale C")
+
+    def mine(headers):
+        rows = client.get("/api/leave/balances", headers=headers, params={"year": year}).json()
+        return next(r for r in rows if r["leave_type_id"] == lt["id"])
+
+    # all three get a balance row while the type is still at 0 days
+    bal_a, bal_b, bal_c = mine(headers_a), mine(headers_b), mine(headers_c)
+    assert bal_a["entitled_days"] == 0
+    # B was adjusted by hand to 5, C has taken leave from theirs (simulated directly: used_days > 0)
+    assert client.patch(f"/api/leave/balances/{bal_b['id']}", headers=hr_manager_auth, json={"entitled_days": 5}).status_code == 200
+    from db import get_admin_db
+    conn = get_admin_db()
+    try:
+        conn.execute("UPDATE leave_balances SET used_days=1 WHERE id=?", (bal_c["id"],))
+        conn.commit()
+    finally:
+        conn.close()
+
+    body = {k: lt[k] for k in ("name", "requires_approval", "requires_attachment", "is_paid", "is_active", "count_calendar_days", "allow_half_day", "accrual_mode")}
+    res = client.put(f"/api/leave/types/{lt['id']}", headers=hr_manager_auth, json={**body, "annual_entitlement": 52})
+    assert res.status_code == 200, res.text
+    saved = res.json()
+    assert saved["previous_annual_entitlement"] == 0 and saved["stale_balances"] == 1       # only A: B was adjusted, C used some
+
+    # saving without touching the days offers nothing
+    again = client.put(f"/api/leave/types/{lt['id']}", headers=hr_manager_auth, json={**body, "annual_entitlement": 52}).json()
+    assert again["stale_balances"] == 0
+
+    sync = client.post(f"/api/leave/types/{lt['id']}/sync-balances", headers=hr_manager_auth, json={"from_days": 0})
+    assert sync.status_code == 200 and sync.json() == {"updated": 1, "from_days": 0, "to_days": 52}
+    assert mine(headers_a)["entitled_days"] == 52
+    assert mine(headers_b)["entitled_days"] == 5 and mine(headers_c)["entitled_days"] == 0      # left alone
+    # a second run finds nothing, and pointing it at the current figure is refused
+    assert client.post(f"/api/leave/types/{lt['id']}/sync-balances", headers=hr_manager_auth, json={"from_days": 0}).json()["updated"] == 0
+    assert client.post(f"/api/leave/types/{lt['id']}/sync-balances", headers=hr_manager_auth, json={"from_days": 52}).status_code == 400
+
+
+def test_sync_balances_needs_leave_type_permission(client, employee_with_login, make_test_leave_type):
+    lt = make_test_leave_type(name="ZZ Sync Perm", annual_entitlement=10)
+    _, headers = employee_with_login(full_name="ZZ Sync Plain")
+    assert client.post(f"/api/leave/types/{lt['id']}/sync-balances", headers=headers, json={"from_days": 5}).status_code == 403

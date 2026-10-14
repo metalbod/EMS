@@ -944,7 +944,16 @@ async function submitLeaveType(e) {
   };
   const url=id?`/api/leave/types/${id}`:'/api/leave/types';
   const res=await api(url,{method:id?'PUT':'POST',body:JSON.stringify(body)});
-  if(res?.ok){ closeLeaveTypeModal(); loadLeaveTypesForManage(); }
+  if(res?.ok){
+    const saved=await res.json().catch(()=>({}));
+    closeLeaveTypeModal();
+    // Balances already created keep the old days; offer to bring the untouched ones (nothing used, not adjusted) along.
+    if(id && saved.stale_balances>0 && confirm(`${saved.stale_balances} balance(s) for this year or later are still on the old ${saved.previous_annual_entitlement} days with nothing used.\n\nUpdate them to ${saved.annual_entitlement} days too?`)){
+      const sync=await api(`/api/leave/types/${id}/sync-balances`,{method:'POST',body:JSON.stringify({from_days:saved.previous_annual_entitlement})});
+      if(!sync?.ok){ const d=await sync?.json().catch(()=>({})); alert(d?.detail||'Could not update the balances.'); }
+    }
+    loadLeaveTypesForManage();
+  }
   else if(res){ const d=await res.json().catch(()=>({})); alert(d.detail||'Failed to save leave type'); }
 }
 

@@ -560,7 +560,51 @@ def update_leave_type(conn, type_id: int, body: LeaveTypeIn, user: dict = Depend
         write_entity_audit(conn, user, inst_id, "Leave", "leave_type", type_id, "Updated", changes=changes,
                            entity_label=row["name"])
     conn.commit()
-    return dict(row)
+    out = dict(row)
+    # Balances are created once per person per year, with the type's days at that moment, so changing the days here leaves
+    # people who already have a balance on the old figure. Tell the screen how many, so it can offer to bring them along
+    # (POST .../sync-balances) - it is never done silently.
+    out["previous_annual_entitlement"] = old_row["annual_entitlement"]
+    out["stale_balances"] = 0
+    if not row["shares_entitlement_with_id"] and old_row["annual_entitlement"] != row["annual_entitlement"]:
+        out["stale_balances"] = len(_untouched_balances(conn, inst_id, type_id, old_row["annual_entitlement"]))
+    return out
+
+
+def _untouched_balances(conn, inst_id: int, type_id: int, from_days: float):
+    """This year's and later years' balances of a type that still sit at `from_days` with nothing used: nobody has adjusted
+    them by hand or taken leave from them, so they are simply stale. (Carry-forward is separate and left alone.)"""
+    return conn.execute(
+        "SELECT * FROM leave_balances WHERE institution_id=? AND leave_type_id=? AND year>=? AND entitled_days=? AND used_days=0",
+        (inst_id, type_id, datetime.now().year, from_days)).fetchall()
+
+
+class SyncBalancesIn(BaseModel):
+    from_days: float
+
+
+@router.post("/api/leave/types/{type_id}/sync-balances")
+@db_session
+def sync_leave_type_balances(conn, type_id: int, body: SyncBalancesIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    """Move untouched balances (this year onwards, nothing used) from `from_days` to the type's current yearly days."""
+    require_permission(conn, user, "leave.manage_leave_types")
+    inst_id = need_inst(user)
+    lt = conn.execute("SELECT * FROM leave_types WHERE id=? AND institution_id=?", (type_id, inst_id)).fetchone()
+    if not lt:
+        raise HTTPException(404, "Leave type not found")
+    if lt["shares_entitlement_with_id"]:
+        raise HTTPException(400, "This leave type draws on another type's balance; it has no balances of its own.")
+    if body.from_days == lt["annual_entitlement"]:
+        raise HTTPException(400, "Those balances already match this leave type.")
+    rows = _untouched_balances(conn, inst_id, type_id, body.from_days)
+    for b in rows:
+        conn.execute("UPDATE leave_balances SET entitled_days=? WHERE id=?", (lt["annual_entitlement"], b["id"]))
+        write_entity_audit(conn, user, inst_id, "Leave", "leave_balance", b["id"], "Balance adjusted",
+                           detail=f"{lt['name']} balance ({b['year']}) brought in line with the leave type's new {lt['annual_entitlement']} days",
+                           changes=[{"field": "entitled_days", "label": "Entitled days", "old": b["entitled_days"], "new": lt["annual_entitlement"]}],
+                           entity_label=b["employee_id"])
+    conn.commit()
+    return {"updated": len(rows), "from_days": body.from_days, "to_days": lt["annual_entitlement"]}
 
 
 @router.delete("/api/leave/types/{type_id}", status_code=204)
