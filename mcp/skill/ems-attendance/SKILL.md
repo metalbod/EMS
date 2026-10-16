@@ -38,6 +38,16 @@ attendance that HR and payroll rely on.
 - Leave balance: call `leave_balance`. List each leave type with its available days. Mention
   carried-forward days and their expiry date when present. Do not guess types the tool didn't return.
 
+## Projects, tasks and who is on them
+
+- "Which projects am I on?", "who manages EZFY?", "who is on the Asia Food City team?": call `my_projects` (pass `search` with
+  part of the project name to narrow it). It returns each project's tasks, its **project managers** and its **team members**
+  (names, designations), and whether the user is a manager or member of it.
+- A project marked `open_to_all` lets any employee log time without being on the team: say so instead of listing nobody.
+- EMS has no individual assignee on a task, only the project team. Never say who is "assigned" to a particular task.
+- It only covers projects the user can log hours to. If a project isn't in the list, say it isn't one they can log to
+  (it may still exist).
+
 ## Logging hours to the timesheet
 
 1. Only log hours when the user asks ("log 3 hours on Apollo", "add my hours for today").

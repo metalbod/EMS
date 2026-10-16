@@ -138,3 +138,36 @@ def test_logging_hours_leaves_an_audit_entry(client, employee_with_login, open_p
     finally:
         conn.close()
     assert row and "1.5h on ZZ Self Service Project" in row["detail"]
+
+
+def test_projects_include_managers_members_and_task_details(client, hr_manager_auth, employee_with_login, make_test_employee,
+                                                             make_test_project, make_test_project_task):
+    me, headers = employee_with_login(full_name="ZZ Proj Me")
+    boss = make_test_employee(full_name="ZZ Proj Boss", designation="Lead")
+    mate = make_test_employee(full_name="ZZ Proj Mate")
+    gone = make_test_employee(full_name="ZZ Proj Gone")
+    project = make_test_project(name="ZZ Teamed Project", customer="ZZ Client", manager_ids=[boss["employee_id"]],
+                                member_ids=[me["employee_id"], mate["employee_id"], gone["employee_id"]])
+    task = make_test_project_task(project["id"], name="ZZ Teamed Task", estimated_hours=12)
+    assert client.patch(f"/api/employees/{gone['employee_id']}/status", headers=hr_manager_auth, json={"status": "Inactive"}).status_code == 200
+
+    rows = client.get("/api/me/timesheet/projects", headers=headers).json()
+    p = next(r for r in rows if r["project_id"] == project["id"])
+    assert [m["full_name"] for m in p["managers"]] == ["ZZ Proj Boss"] and p["managers"][0]["designation"] == "Lead"
+    assert sorted(m["full_name"] for m in p["members"]) == ["ZZ Proj Mate", "ZZ Proj Me"]        # the inactive employee is left out
+    assert p["you_are_member"] is True and p["you_are_manager"] is False and p["open_to_all"] is False and p["customer"] == "ZZ Client"
+    t = next(t for t in p["tasks"] if t["task_id"] == task["id"])
+    assert t["estimated_hours"] == 12 and t["task_name"] == "ZZ Teamed Task"
+    # names and roles only: no contact details or ids of the people
+    assert set(p["managers"][0]) == {"name", "full_name", "designation", "department"}
+
+    only = client.get("/api/me/timesheet/projects", headers=headers, params={"search": "teamed proj"}).json()
+    assert [r["project_id"] for r in only] == [project["id"]]
+    assert client.get("/api/me/timesheet/projects", headers=headers, params={"search": "no such project xyz"}).json() == []
+
+
+def test_open_to_all_project_is_flagged_and_not_a_membership(client, employee_with_login, open_project):
+    _, headers = employee_with_login(full_name="ZZ Proj Open")
+    project, _, _ = open_project
+    p = next(r for r in client.get("/api/me/timesheet/projects", headers=headers).json() if r["project_id"] == project["id"])
+    assert p["open_to_all"] is True and p["you_are_member"] is False and p["you_are_manager"] is False

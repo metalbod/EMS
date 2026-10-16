@@ -43,23 +43,48 @@ def _parse_date(value: str) -> date:
         raise HTTPException(400, "Dates must look like 2026-10-14")
 
 
+def _people(conn, inst_id: int, table: str, project_id: int) -> List[Dict[str, Any]]:
+    """Active employees in project_managers / project_members (table is one of those two, never user input)."""
+    rows = conn.execute(
+        f"SELECT e.full_name, e.preferred_name, e.designation, e.department FROM {table} x "
+        "JOIN employees e ON e.employee_id = x.employee_id AND e.institution_id = ? "
+        "WHERE x.project_id=? AND e.status='Active' ORDER BY e.full_name", (inst_id, project_id)).fetchall()
+    return [{"name": r["preferred_name"] or r["full_name"], "full_name": r["full_name"],
+             "designation": r["designation"], "department": r["department"]} for r in rows]
+
+
 @router.get("/api/me/timesheet/projects", tags=["timesheet"])
 @db_session
-def my_timesheet_projects(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
-    """Active projects the caller can log time against (open to all, or they're a member), each with its tasks."""
+def my_timesheet_projects(conn, search: Optional[str] = None, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
+    """Active projects the caller can log time against (open to all, or they're a member), each with its tasks, project managers and
+    team members. Names only for the people (no contact details). EMS already shows every employee each project's managers and
+    members (GET /api/projects), so this exposes nothing new; tasks have no individual assignee in EMS, only the project team.
+    `search` narrows by project name (case-insensitive contains)."""
     inst_id = need_inst(user)
     emp = _employee(user)
     projects = conn.execute("""
-        SELECT DISTINCT p.id, p.name FROM projects p
+        SELECT DISTINCT p.id, p.name, p.status, p.description, p.customer, p.start_date, p.end_date, p.is_open_to_all FROM projects p
         WHERE p.institution_id=? AND p.status='Active' AND (
             p.is_open_to_all OR EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id=p.id AND pm.employee_id=?))
         ORDER BY p.name""", (inst_id, emp)).fetchall()
+    if search and search.strip():
+        projects = [p for p in projects if search.strip().lower() in (p["name"] or "").lower()]
     out = []
     for p in projects:
-        tasks = conn.execute("SELECT id, name, status FROM project_tasks WHERE project_id=? AND institution_id=? "
-                             "ORDER BY start_date NULLS LAST, created_at", (p["id"], inst_id)).fetchall()
-        out.append({"project_id": p["id"], "project_name": p["name"],
-                    "tasks": [{"task_id": t["id"], "task_name": t["name"], "status": t["status"]} for t in tasks]})
+        tasks = conn.execute("SELECT id, name, status, estimated_hours, start_date, end_date FROM project_tasks "
+                             "WHERE project_id=? AND institution_id=? ORDER BY start_date NULLS LAST, created_at",
+                             (p["id"], inst_id)).fetchall()
+        is_manager = bool(conn.execute("SELECT 1 FROM project_managers WHERE project_id=? AND employee_id=?", (p["id"], emp)).fetchone())
+        is_member = bool(conn.execute("SELECT 1 FROM project_members WHERE project_id=? AND employee_id=?", (p["id"], emp)).fetchone())
+        out.append({
+            "project_id": p["id"], "project_name": p["name"], "status": p["status"], "customer": p["customer"],
+            "description": (p["description"] or None) and p["description"][:500],
+            "start_date": p["start_date"], "end_date": p["end_date"],
+            "open_to_all": bool(p["is_open_to_all"]), "you_are_manager": is_manager, "you_are_member": is_member,
+            "managers": _people(conn, inst_id, "project_managers", p["id"]),
+            "members": _people(conn, inst_id, "project_members", p["id"]),
+            "tasks": [{"task_id": t["id"], "task_name": t["name"], "status": t["status"], "estimated_hours": t["estimated_hours"],
+                       "start_date": t["start_date"], "end_date": t["end_date"]} for t in tasks]})
     return out
 
 

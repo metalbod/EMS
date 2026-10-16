@@ -972,6 +972,14 @@ wrapper everywhere.
   day a public holiday?". It is the list every employee already sees (`GET /api/holidays`, still closed to Claude tokens), so
   nothing new is exposed; the skill tells Claude not to add holidays from its own knowledge. Own scope again; added in the same
   release as `leave:colleagues` so people reconnect once, not twice.
+  **`my_projects` also returns each project's managers and team members** (names/designation/department only, Active employees only,
+  plus `you_are_manager`/`you_are_member`/`open_to_all`, task estimated hours and dates, and an optional `search` by project name).
+  EMS already shows every employee every project's managers and members (`GET /api/projects` returns `manager_ids`/`member_ids` to all
+  roles), so nothing new is exposed — but it widens what `timesheet:read` returns, so that scope's consent text now says "projects you
+  can log to with their tasks, managers and team members" (existing connections keep the old text they approved; the data is the same
+  they already see in EMS). Tasks have **no individual assignee** in EMS (`project_tasks` has no assignee column), only the project
+  team, so the tool and skill never claim who is assigned to a task. Only projects the person can log to are listed (Active, open to
+  all or they're a member).
   Connector address staff paste into Claude: `https://ems-mcp.fly.dev/mcp` (no custom domain, by decision). The OAuth/registration
   rate limits are in-memory per machine, same tradeoff as the login limiter (prod runs 2 machines, so limits are per machine).
   The metadata `issuer` has a trailing slash on purpose (the MCP server's advertised issuer is a pydantic `AnyHttpUrl`, which

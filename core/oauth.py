@@ -26,7 +26,7 @@ SCOPES = {
     "attendance:clock": "Clock you in and out",
     "attendance:read": "See your own attendance",
     "leave:read": "See your own leave balances",
-    "timesheet:read": "See your own timesheet hours and projects",
+    "timesheet:read": "See your own timesheet hours, and the projects you can log to with their tasks, managers and team members",
     "timesheet:write": "Add hours to your own draft timesheet (it never submits it)",
     "leave:colleagues": "See which colleagues are on approved leave (names and dates only, never the type of leave)",
     "holidays:read": "See your company's public holidays",

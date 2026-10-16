@@ -163,8 +163,18 @@ def test_week_hours_summary_and_my_projects(fake_ems):
     out = run(server.week_hours("2026-10-14"))
     assert "clocked 31.5h, logged 12.0h" in out["message"] and "missing 20.0h" in out["message"]
     assert fake_ems["calls"][0][2] == {"date": "2026-10-14"}
-    fake_ems["handlers"][("GET", "/api/me/timesheet/projects")] = (200, [{"project_id": 1, "project_name": "Apollo", "tasks": [{"task_id": 2, "task_name": "Build", "status": "Not Started"}]}])
-    assert "Apollo (1 task(s))" in run(server.my_projects())["message"]
+    fake_ems["handlers"][("GET", "/api/me/timesheet/projects")] = (200, [
+        {"project_id": 1, "project_name": "Apollo", "open_to_all": False, "managers": [{"name": "Dana"}, {"name": "Eli"}],
+         "members": [{"name": "Dana"}, {"name": "Fay"}, {"name": "Gus"}], "tasks": [{"task_id": 2, "task_name": "Build", "status": "Not Started"}]},
+        {"project_id": 3, "project_name": "Everyone", "open_to_all": True, "managers": [], "members": [], "tasks": []}])
+    msg = run(server.my_projects())["message"]
+    assert "Apollo: managers Dana, Eli; 3 member(s); 1 task(s)" in msg
+    assert "Everyone: managers none set; open to all employees; 0 task(s)" in msg
+    assert fake_ems["calls"][-1][2] == {}
+    run(server.my_projects("apol"))
+    assert fake_ems["calls"][-1][2] == {"search": "apol"}
+    fake_ems["handlers"][("GET", "/api/me/timesheet/projects")] = (200, [])
+    assert run(server.my_projects("zzz"))["message"] == "No projects matching 'zzz'."
 
 
 def test_colleagues_on_leave_message_and_params(fake_ems):

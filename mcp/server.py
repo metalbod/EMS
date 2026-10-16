@@ -237,11 +237,20 @@ async def leave_balance(year: Optional[int] = None) -> dict:
             "message": ("; ".join(f"{o['leave_type']}: {o['available_days']} day(s)" for o in out)) or "No leave balances found."}
 
 
-@mcp.tool(annotations=ToolAnnotations(title="My projects and tasks", readOnlyHint=True, openWorldHint=False))
-async def my_projects() -> dict:
-    """List the projects (and their tasks) the signed-in employee can log hours against, with the ids log_hours needs. Call this before log_hours so the person can pick the project and task. Safe to call any time."""
-    rows = await ems("GET", "/api/me/timesheet/projects")
-    return {"projects": rows, "message": ("; ".join(f"{p['project_name']} ({len(p['tasks'])} task(s))" for p in rows)) or "No projects to log hours against."}
+@mcp.tool(
+    description=(
+        "List the projects the signed-in employee can log hours against, each with its tasks (with the ids log_hours needs), its project "
+        "managers and its team members (names only), and whether the person is a manager or member of it. Pass search to narrow by project "
+        "name, e.g. to answer who the managers or team of one project are. Call this before log_hours so the person can pick the project "
+        "and task. Tasks have no individual assignee in EMS, only the project team: don't say who is assigned to a task. Safe to call any time."),
+    annotations=ToolAnnotations(title="My projects, tasks and teams", readOnlyHint=True, openWorldHint=False))
+async def my_projects(search: Optional[str] = None) -> dict:
+    rows = await ems("GET", "/api/me/timesheet/projects", params={"search": search} if search else None)
+    def line(p):
+        mg = ", ".join(m["name"] for m in p["managers"]) or "none set"
+        team = f"{len(p['members'])} member(s)" if p["members"] else ("open to all employees" if p["open_to_all"] else "no members set")
+        return f"{p['project_name']}: managers {mg}; {team}; {len(p['tasks'])} task(s)"
+    return {"projects": rows, "message": ("\n".join(line(p) for p in rows)) or (f"No projects matching '{search}'." if search else "No projects to log hours against.")}
 
 
 @mcp.tool(
