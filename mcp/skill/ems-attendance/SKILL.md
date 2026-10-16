@@ -1,11 +1,11 @@
 ---
 name: ems-attendance
-description: Clock the user in or out of work in EMS, check whether they are clocked in, check their leave balance, log hours worked to their timesheet, and show their clocked and missing hours for the week. Use when the user says things like "clock me in", "clock out", "am I clocked in", "how many leave days do I have", "log 3 hours on Project X", "add my hours for today", "what hours am I missing this week", or asks about their timesheet or hours. Requires the EMS connector.
+description: Clock the user in or out of work in EMS, check whether they are clocked in, check their leave balance, log hours worked to their timesheet, show their clocked and missing hours for the week, say which colleagues are on leave on a day, and tell them about the company's public holidays. Use when the user says things like "clock me in", "clock out", "am I clocked in", "how many leave days do I have", "log 3 hours on Project X", "add my hours for today", "what hours am I missing this week", "who is on leave tomorrow", "is anyone from Sales off Friday", "is tomorrow a public holiday", "when is the next public holiday", or asks about their timesheet or hours. Requires the EMS connector.
 ---
 
 # EMS attendance, leave and timesheet
 
-Uses the EMS connector's tools: `attendance_today`, `clock_in`, `clock_out`, `leave_balance`, `my_projects`, `log_hours`, `week_hours`.
+Uses the EMS connector's tools: `attendance_today`, `clock_in`, `clock_out`, `leave_balance`, `my_projects`, `log_hours`, `week_hours`, `colleagues_on_leave`, `public_holidays`.
 These act only as the signed-in user, on their own record. Clocking in or out writes real
 attendance that HR and payroll rely on.
 
@@ -60,6 +60,26 @@ attendance that HR and payroll rely on.
   clocked more than they logged, point out the gap, but call only EMS's "missing hours" figure "missing".
 - If `clocked_in_now` is set, clocked hours include the time so far today.
 - For another week, pass a date in that week.
+
+## Who is on leave
+
+- "Who's on leave on Friday?", "is anyone off next week?": call `colleagues_on_leave` with the day as `YYYY-MM-DD`
+  (`end_date` for a range of up to 31 days, `department` to narrow it). Work out dates like "tomorrow" or "Friday" from today.
+- List the names it returns for each day. Say when a person is only off for half a day (morning or afternoon).
+- It only knows **approved** leave. If someone has asked but isn't approved yet, it won't show them: say "approved leave"
+  rather than "everyone who is off".
+- It never says what kind of leave anyone is on, and you must not guess or speculate about why anyone is away.
+- Weekends and public holidays come back as non-working days with nobody listed: say so instead of "nobody is on leave".
+- The person asking is not in the list. Use `leave_balance` / ask EMS for their own leave.
+
+## Public holidays
+
+- "Is tomorrow a public holiday?": call `public_holidays` with `date` and `end_date` both set to that day (as `YYYY-MM-DD`).
+  An empty list means it is not a public holiday. If it is a Saturday or Sunday, say it's a weekend too.
+- "When is the next public holiday?": call it with no arguments (it returns the next 5 from today); answer with the first one
+  and mention how far away it is. "Which holidays are left this year?": set `end_date` to 31 December.
+- These are the company's own holiday list in EMS, so don't add holidays from your own knowledge. If the list looks empty
+  for a year, say EMS has no holidays set up for it and suggest checking with HR.
 
 ## Rules
 

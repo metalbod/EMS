@@ -28,8 +28,10 @@ SCOPES = {
     "leave:read": "See your own leave balances",
     "timesheet:read": "See your own timesheet hours and projects",
     "timesheet:write": "Add hours to your own draft timesheet (it never submits it)",
+    "leave:colleagues": "See which colleagues are on approved leave (names and dates only, never the type of leave)",
+    "holidays:read": "See your company's public holidays",
 }
-DEFAULT_SCOPES = ("attendance:clock", "attendance:read", "leave:read", "timesheet:read", "timesheet:write")
+DEFAULT_SCOPES = ("attendance:clock", "attendance:read", "leave:read", "timesheet:read", "timesheet:write", "leave:colleagues", "holidays:read")
 
 # scope -> the only (METHOD, exact path) pairs a token holding that scope may call.
 SCOPE_ROUTES = {
@@ -38,6 +40,8 @@ SCOPE_ROUTES = {
     "leave:read": {("GET", "/api/leave/balances")},
     "timesheet:read": {("GET", "/api/me/timesheet/projects"), ("GET", "/api/me/week-hours")},
     "timesheet:write": {("POST", "/api/me/timesheet/log-hours")},
+    "leave:colleagues": {("GET", "/api/me/leave-colleagues")},
+    "holidays:read": {("GET", "/api/me/public-holidays")},
 }
 
 _REDIRECT_OK = re.compile(r"^(https://[^\s#]+|http://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(/[^\s#]*)?)$")

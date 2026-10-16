@@ -77,7 +77,7 @@ mcp = FastMCP(
     "EMS",
     instructions=(
         "Self-service for the signed-in employee in EMS (their company's HR system): clock in and out, see today's "
-        "attendance, see leave balances, log hours to their draft timesheet and see the week's clocked and missing hours. Everything acts only as that one person. Clocking in/out records real "
+        "attendance, see leave balances, log hours to their draft timesheet, see the week's clocked and missing hours, and see which colleagues are on approved leave. Everything acts only as that one person. Clocking in/out records real "
         "attendance, so only do it when the person clearly asks."
     ),
     token_verifier=EmsTokenVerifier(),
@@ -267,6 +267,50 @@ async def week_hours(date: Optional[str] = None) -> dict:
     return {**w, "message": (f"Week {w['week_start']} to {w['week_end']}: clocked {w['clocked_hours']}h, logged {w['logged_hours']}h, "
                              f"holidays {w['holiday_hours']}h, leave {w['leave_hours']}h, expected {w['expected_hours']}h, "
                              f"missing {w['missing_hours']}h. Timesheet: {w['timesheet_status']}.{now_note}")}
+
+
+@mcp.tool(
+    description=(
+        "Say which colleagues in the company are on approved leave on a day (default: today) or over a short range of up to 31 days "
+        "(date and end_date, YYYY-MM-DD). Optionally limit to one department. Returns names, departments and whether the leave is "
+        "only half a day, for each day. It never says what kind of leave anyone is on, and it can't see pending requests: don't "
+        "guess or speculate about reasons. Weekends and public holidays are reported as non-working days with nobody listed. "
+        "The person asking is left out of the list."),
+    annotations=ToolAnnotations(title="Colleagues on leave", readOnlyHint=True, openWorldHint=False))
+async def colleagues_on_leave(date: Optional[str] = None, end_date: Optional[str] = None, department: Optional[str] = None) -> dict:
+    params = {k: v for k, v in {"date": date, "end_date": end_date, "department": department}.items() if v}
+    res = await ems("GET", "/api/me/leave-colleagues", params=params or None)
+    lines = []
+    for day in res["days"]:
+        if day["non_working_day"]:
+            lines.append(f"{day['weekday']} {day['date']}: {day['non_working_day']}")
+        elif not day["on_leave"]:
+            lines.append(f"{day['weekday']} {day['date']}: nobody on approved leave")
+        else:
+            who = ", ".join(p["name"] + (f" ({p['half_day']} only)" if p["half_day"] else "") for p in day["on_leave"])
+            lines.append(f"{day['weekday']} {day['date']}: {who}")
+    scope = f" in {department}" if department else ""
+    return {**res, "message": f"On approved leave{scope}:\n" + "\n".join(lines)}
+
+
+@mcp.tool(
+    description=(
+        "The company's public holidays. With no arguments: the next 5 from today. Use date (YYYY-MM-DD) to start from another day and "
+        "limit (up to 50) for more; give end_date to list every holiday up to that day, e.g. the rest of the year. To check whether one "
+        "particular day is a public holiday, pass the same day as date and end_date: an empty list means it isn't."),
+    annotations=ToolAnnotations(title="Public holidays", readOnlyHint=True, openWorldHint=False))
+async def public_holidays(date: Optional[str] = None, end_date: Optional[str] = None, limit: int = 5) -> dict:
+    params = {k: v for k, v in {"date": date, "end_date": end_date, "limit": limit if not end_date else None}.items() if v}
+    res = await ems("GET", "/api/me/public-holidays", params=params)
+    def when(h):
+        n = h["days_from_start"]
+        rel = "on the start day" if n == 0 and (date or end_date) else "today" if n == 0 else "tomorrow" if n == 1 else f"in {n} days"
+        return f"{h['weekday']} {h['date']}: {h['name']} ({rel})"
+    if res["holidays"]:
+        msg = "Public holidays:\n" + "\n".join(when(h) for h in res["holidays"])
+    else:
+        msg = f"No public holidays {'on ' + res['from'] if res['to'] == res['from'] else 'between ' + res['from'] + ' and ' + res['to'] if res['to'] else 'listed from ' + res['from'] + ' onward'}."
+    return {**res, "message": msg}
 
 
 if __name__ == "__main__":

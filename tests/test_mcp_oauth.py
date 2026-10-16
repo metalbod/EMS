@@ -402,3 +402,25 @@ def test_timesheet_tools_through_claude_respect_their_scopes(client, mcp_on, emp
     # the general timesheet endpoints stay closed to a Claude token
     assert client.get("/api/timesheets", headers=_bearer(full)).status_code == 403
     assert client.post("/api/timesheets", headers=_bearer(full), json={"employee_id": emp["employee_id"], "period_start": "2026-01-05", "period_end": "2026-01-11"}).status_code == 403
+
+
+def test_colleagues_on_leave_needs_its_own_scope(client, mcp_on, employee_with_login):
+    _, headers = employee_with_login(full_name="ZZ MCP Colleagues")
+    narrow, _ = _connect(client, headers, scope="leave:read")
+    res = client.get("/api/me/leave-colleagues", headers=_bearer(narrow))
+    assert res.status_code == 403 and "reconnect" in res.json()["detail"]
+    scoped, _ = _connect(client, headers, scope="leave:colleagues")
+    assert client.get("/api/me/leave-colleagues", headers=_bearer(scoped)).status_code == 200
+    # holding it doesn't open anything else about other people
+    assert client.get("/api/leave/calendar", headers=_bearer(scoped), params={"year": 2031, "month": 3}).status_code == 403
+    assert client.get("/api/leave/applications", headers=_bearer(scoped)).status_code == 403
+
+
+def test_public_holidays_needs_its_own_scope(client, mcp_on, employee_with_login):
+    _, headers = employee_with_login(full_name="ZZ MCP Holidays")
+    narrow, _ = _connect(client, headers, scope="leave:read")
+    res = client.get("/api/me/public-holidays", headers=_bearer(narrow))
+    assert res.status_code == 403 and "reconnect" in res.json()["detail"]
+    scoped, _ = _connect(client, headers, scope="holidays:read")
+    assert client.get("/api/me/public-holidays", headers=_bearer(scoped)).status_code == 200
+    assert client.get("/api/holidays", headers=_bearer(scoped)).status_code == 403       # the general list stays closed to Claude

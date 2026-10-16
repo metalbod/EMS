@@ -165,3 +165,38 @@ def test_week_hours_summary_and_my_projects(fake_ems):
     assert fake_ems["calls"][0][2] == {"date": "2026-10-14"}
     fake_ems["handlers"][("GET", "/api/me/timesheet/projects")] = (200, [{"project_id": 1, "project_name": "Apollo", "tasks": [{"task_id": 2, "task_name": "Build", "status": "Not Started"}]}])
     assert "Apollo (1 task(s))" in run(server.my_projects())["message"]
+
+
+def test_colleagues_on_leave_message_and_params(fake_ems):
+    fake_ems["handlers"][("GET", "/api/me/leave-colleagues")] = (200, {"from": "2026-10-16", "to": "2026-10-19", "department": "Sales", "days": [
+        {"date": "2026-10-16", "weekday": "Fri", "non_working_day": None, "on_leave": [
+            {"name": "Amy", "full_name": "Amy Tan", "department": "Sales", "half_day": None},
+            {"name": "Ben", "full_name": "Ben Lee", "department": "Sales", "half_day": "morning"}]},
+        {"date": "2026-10-17", "weekday": "Sat", "non_working_day": "Weekend", "on_leave": []},
+        {"date": "2026-10-19", "weekday": "Mon", "non_working_day": None, "on_leave": []}]})
+    out = run(server.colleagues_on_leave("2026-10-16", "2026-10-19", "Sales"))
+    assert "Fri 2026-10-16: Amy, Ben (morning only)" in out["message"]
+    assert "Sat 2026-10-17: Weekend" in out["message"] and "Mon 2026-10-19: nobody on approved leave" in out["message"]
+    assert "in Sales" in out["message"]
+    assert fake_ems["calls"][0][2] == {"date": "2026-10-16", "end_date": "2026-10-19", "department": "Sales"}
+    run(server.colleagues_on_leave())
+    assert fake_ems["calls"][1][2] == {}                       # no filters sent when none are given
+
+
+def test_public_holidays_messages_and_params(fake_ems):
+    path = ("GET", "/api/me/public-holidays")
+    fake_ems["handlers"][path] = (200, {"from": "2026-10-16", "to": None, "holidays": [
+        {"date": "2026-10-16", "weekday": "Fri", "name": "Founders Day", "days_from_start": 0},
+        {"date": "2026-10-17", "weekday": "Sat", "name": "Open Day", "days_from_start": 1},
+        {"date": "2026-10-30", "weekday": "Fri", "name": "Big Day", "days_from_start": 14}]})
+    out = run(server.public_holidays())
+    assert "Fri 2026-10-16: Founders Day (today)" in out["message"] and "Sat 2026-10-17: Open Day (tomorrow)" in out["message"]
+    assert "Big Day (in 14 days)" in out["message"]
+    assert fake_ems["calls"][0][2] == {"limit": "5"}
+    # a one-day check: an empty answer says plainly that the day isn't a holiday
+    fake_ems["handlers"][path] = (200, {"from": "2026-10-20", "to": "2026-10-20", "holidays": []})
+    out = run(server.public_holidays("2026-10-20", "2026-10-20"))
+    assert out["message"] == "No public holidays on 2026-10-20."
+    assert fake_ems["calls"][1][2] == {"date": "2026-10-20", "end_date": "2026-10-20"}     # limit isn't sent alongside an end date
+    fake_ems["handlers"][path] = (200, {"from": "2026-10-16", "to": None, "holidays": []})
+    assert "listed from 2026-10-16 onward" in run(server.public_holidays())["message"]

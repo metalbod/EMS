@@ -958,6 +958,20 @@ wrapper everywhere.
   so far) + logged + My Timesheet's own expected/holiday/leave/**missing** figure (`_weekly_hours_breakdown`; "missing" is EMS's
   figure only, by decision). Scopes are fixed at consent: a connection made before these existed gets a 403 telling the person to
   reconnect once. Sunday logging into a legacy Sunday-start timesheet is refused, as it always was in the web grid.
+  **`colleagues_on_leave`** (scope `leave:colleagues`, `routers/me_leave.py`, `GET /api/me/leave-colleagues?date=&end_date=&department=`):
+  who else is on **Approved** leave on a day or a range of up to 31 days, for anyone with a linked employee record — the same audience
+  the Home leave calendar already has (`get_leave_calendar` shows approved leave company-wide to every employee) — but **never the
+  leave type, even to HR** (decided 2026-10-14: what Claude says gets pasted into chats; the EMS calendar still shows HR the type).
+  Whole company with an optional case-insensitive department filter (by decision). Weekends and public holidays come back as
+  `non_working_day` with nobody listed (an approved Fri–Mon range isn't "away" on the Saturday), half days as `half_day`
+  morning/afternoon (`AM`/`PM`), the caller is excluded, Pending/Rejected and inactive employees never appear. It gets its own scope
+  rather than reusing `leave:read` ("your own balances") so the consent screen says what it does; as with the timesheet scopes, a
+  connection made before it existed gets a 403 telling the person to reconnect once.
+  **`public_holidays`** (scope `holidays:read`, `GET /api/me/public-holidays?date=&end_date=&limit=`, same router): the company's
+  own `holidays` list from a day onward (next `limit`, default 5, max 50) or up to `end_date`; `date`=`end_date` answers "is that
+  day a public holiday?". It is the list every employee already sees (`GET /api/holidays`, still closed to Claude tokens), so
+  nothing new is exposed; the skill tells Claude not to add holidays from its own knowledge. Own scope again; added in the same
+  release as `leave:colleagues` so people reconnect once, not twice.
   Connector address staff paste into Claude: `https://ems-mcp.fly.dev/mcp` (no custom domain, by decision). The OAuth/registration
   rate limits are in-memory per machine, same tradeoff as the login limiter (prod runs 2 machines, so limits are per machine).
   The metadata `issuer` has a trailing slash on purpose (the MCP server's advertised issuer is a pydantic `AnyHttpUrl`, which
