@@ -5003,6 +5003,7 @@
     </div>
     <form id="resignForm" onsubmit="submitResignation(event)" class="p-6 space-y-4 overflow-y-auto flex-1">
       <input type="hidden" id="resignEmpId"/>
+      <input type="hidden" id="resignEditId"/>
       <p id="resignForEmpName" class="hidden text-sm text-slate-600"></p>
       <div><label class="lbl">Reason <span class="text-red-500">*</span></label><textarea id="resignReason" class="inp" rows="2" required placeholder="Reason for resignation…"></textarea></div>
       <div class="grid grid-cols-2 gap-3">
@@ -5012,13 +5013,18 @@
       <p class="text-xs text-slate-400 -mt-2">Last working day must be on or after the effective date.</p>
       <div>
         <label class="lbl">Resignation Letter (optional)</label>
+        <div id="resignCurrentAttach" class="hidden text-xs text-slate-600 mb-1">
+          Current: <span id="resignCurrentAttachName" class="font-medium"></span>
+          <label class="ml-2 inline-flex items-center gap-1"><input id="resignRemoveAttach" type="checkbox"/> Remove it</label>
+          <span class="text-slate-400"> — or choose a file below to replace it.</span>
+        </div>
         <input id="resignAttachFile" type="file" class="text-xs" onchange="handleResignAttachFile(event)"/>
         <p class="text-xs text-slate-400 mt-1">PDF, Word, text, or image. Max ~6MB.</p>
       </div>
       <p id="resignErr" class="hidden text-xs text-red-600"></p>
     </form>
     <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
-      <button type="submit" form="resignForm" class="btn-primary">Submit Resignation</button>
+      <button id="resignSubmitBtn" type="submit" form="resignForm" class="btn-primary">Submit Resignation</button>
       <button type="button" onclick="closeResignModal()" class="btn-ghost">Cancel</button>
     </div>
   </div>

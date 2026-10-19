@@ -272,3 +272,119 @@ def test_list_resignations_can_be_filtered_to_one_employee(client, hr_manager_au
     # A rejected request no longer counts as on file, but it is still listed.
     rows = client.get("/api/resignations", headers=hr_manager_auth, params={"employee_id": a["employee_id"]}).json()
     assert [r["status"] for r in rows] == ["Rejected"]
+
+
+# ---------------------------------------------------------------------------
+# HR edits a filed resignation while it is still Pending
+# ---------------------------------------------------------------------------
+_TINY_PDF = "data:application/pdf;base64,JVBERi0xLjQKJSVFT0YK"
+
+
+def _file_pending(client, headers, **extra):
+    res = client.post("/api/resignations", headers=headers, json={
+        "reason": "Original reason", "effective_date": "2027-06-01", "last_working_day": "2027-06-30", **extra,
+    })
+    assert res.status_code == 201, res.text
+    return res.json()["id"]
+
+
+def test_hr_can_edit_pending_resignation_dates_and_reason(client, employee_with_login, hr_manager_auth):
+    emp, headers = employee_with_login(full_name="ZZ Resign Edit")
+    req_id = _file_pending(client, headers)
+
+    res = client.put(f"/api/resignations/{req_id}", headers=hr_manager_auth, json={
+        "reason": "  Agreed shorter notice  ", "effective_date": "2027-06-01", "last_working_day": "2027-06-15",
+    })
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["last_working_day"] == "2027-06-15"
+    assert body["reason"] == "Agreed shorter notice"
+    assert body["status"] == "Pending"
+    # Approval progress is untouched by an edit.
+    before = client.get("/api/resignations", headers=hr_manager_auth).json()
+    row = next(r for r in before if r["id"] == req_id)
+    assert row["approval_step"] is not None
+
+    rows = client.get("/api/entity-audit-log", headers=hr_manager_auth,
+                      params={"entity_type": "resignation", "entity_id": str(req_id)}).json()
+    edited = [a for a in rows if a.get("action") == "Edited"]
+    assert edited, rows
+    fields = {c["field"] for c in edited[0]["changes"]}
+    assert fields == {"reason", "last_working_day"}
+
+    client.patch(f"/api/resignations/{req_id}", headers=hr_manager_auth, json={"status": "Rejected"})
+
+
+def test_edit_then_approve_stamps_the_edited_last_working_day(client, employee_with_login, hr_manager_auth):
+    emp, headers = employee_with_login(full_name="ZZ Resign EditApprove")
+    req_id = _file_pending(client, headers)
+    assert client.put(f"/api/resignations/{req_id}", headers=hr_manager_auth, json={
+        "reason": "Original reason", "effective_date": "2027-06-01", "last_working_day": "2027-06-20",
+    }).status_code == 200
+
+    approved = client.patch(f"/api/resignations/{req_id}", headers=hr_manager_auth, json={"status": "Approved"})
+    assert approved.status_code == 200, approved.text
+    emp_row = client.get(f"/api/employees/{emp['employee_id']}", headers=hr_manager_auth).json()
+    assert emp_row["last_working_day"] == "2027-06-20"
+    client.delete(f"/api/ob/checklists/{approved.json()['ob_checklist_id']}", headers=hr_manager_auth)
+
+
+def test_edit_rejects_bad_dates(client, employee_with_login, hr_manager_auth):
+    emp, headers = employee_with_login(full_name="ZZ Resign EditBad")
+    req_id = _file_pending(client, headers)
+    bad_order = client.put(f"/api/resignations/{req_id}", headers=hr_manager_auth, json={
+        "reason": "x", "effective_date": "2027-06-15", "last_working_day": "2027-06-01"})
+    assert bad_order.status_code == 400
+    bad_format = client.put(f"/api/resignations/{req_id}", headers=hr_manager_auth, json={
+        "reason": "x", "effective_date": "15/06/2027", "last_working_day": "2027-06-30"})
+    assert bad_format.status_code == 422
+    blank_reason = client.put(f"/api/resignations/{req_id}", headers=hr_manager_auth, json={
+        "reason": "   ", "effective_date": "2027-06-01", "last_working_day": "2027-06-30"})
+    assert blank_reason.status_code == 422
+    client.patch(f"/api/resignations/{req_id}", headers=hr_manager_auth, json={"status": "Rejected"})
+
+
+def test_cannot_edit_after_decision(client, employee_with_login, hr_manager_auth):
+    emp, headers = employee_with_login(full_name="ZZ Resign EditDecided")
+    req_id = _file_pending(client, headers)
+    rejected = client.patch(f"/api/resignations/{req_id}", headers=hr_manager_auth, json={"status": "Rejected"})
+    assert rejected.status_code == 200
+    res = client.put(f"/api/resignations/{req_id}", headers=hr_manager_auth, json={
+        "reason": "Too late", "effective_date": "2027-06-01", "last_working_day": "2027-06-30"})
+    assert res.status_code == 400, res.text
+
+
+def test_employee_cannot_edit_even_their_own_request(client, employee_with_login, hr_manager_auth):
+    emp, headers = employee_with_login(full_name="ZZ Resign EditSelf")
+    req_id = _file_pending(client, headers)
+    res = client.put(f"/api/resignations/{req_id}", headers=headers, json={
+        "reason": "Sneaky", "effective_date": "2027-06-01", "last_working_day": "2027-06-02"})
+    assert res.status_code == 403, res.text
+    client.patch(f"/api/resignations/{req_id}", headers=hr_manager_auth, json={"status": "Rejected"})
+
+
+def test_edit_unknown_request_is_404(client, hr_manager_auth):
+    res = client.put("/api/resignations/999999999", headers=hr_manager_auth, json={
+        "reason": "x", "effective_date": "2027-06-01", "last_working_day": "2027-06-02"})
+    assert res.status_code == 404
+
+
+def test_edit_keeps_replaces_and_removes_the_letter(client, employee_with_login, hr_manager_auth):
+    emp, headers = employee_with_login(full_name="ZZ Resign EditLetter")
+    req_id = _file_pending(client, headers, attachment={
+        "file_name": "letter.pdf", "mime_type": "application/pdf", "data_url": _TINY_PDF})
+    base = {"reason": "Original reason", "effective_date": "2027-06-01", "last_working_day": "2027-06-30"}
+
+    kept = client.put(f"/api/resignations/{req_id}", headers=hr_manager_auth, json=base).json()
+    assert kept["attachment_file_name"] == "letter.pdf"
+
+    replaced = client.put(f"/api/resignations/{req_id}", headers=hr_manager_auth, json={
+        **base, "attachment": {"file_name": "new.pdf", "mime_type": "application/pdf", "data_url": _TINY_PDF}}).json()
+    assert replaced["attachment_file_name"] == "new.pdf"
+
+    removed = client.put(f"/api/resignations/{req_id}", headers=hr_manager_auth, json={
+        **base, "remove_attachment": True}).json()
+    assert removed["attachment_file_name"] is None
+    assert removed["attachment_data_url"] is None
+
+    client.patch(f"/api/resignations/{req_id}", headers=hr_manager_auth, json={"status": "Rejected"})

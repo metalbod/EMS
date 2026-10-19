@@ -23,7 +23,7 @@ from core.resignation import file_resignation, apply_resignation_outcome
 
 from db import get_db
 
-from core.audit import write_entity_audit
+from core.audit import diff_fields, write_entity_audit
 
 from core.db_session import db_session
 
@@ -59,6 +59,32 @@ class ResignationIn(BaseModel):
         if not v or not v.strip():
             raise ValueError("reason is required")
         return v.strip()
+
+
+class ResignationEditIn(BaseModel):
+    reason: str
+    effective_date: str
+    last_working_day: str
+    # Omitted/null = keep the letter already on file; a new one replaces it;
+    # remove_attachment=true drops it (ignored when a replacement is sent).
+    attachment: Optional[ResignationAttachmentIn] = None
+    remove_attachment: bool = False
+
+    @field_validator("reason")
+    @classmethod
+    def _validate_reason(cls, v):
+        if not v or not v.strip():
+            raise ValueError("reason is required")
+        return v.strip()
+
+    @field_validator("effective_date", "last_working_day")
+    @classmethod
+    def _validate_date(cls, v):
+        try:
+            datetime.strptime(v, "%Y-%m-%d")
+        except (TypeError, ValueError):
+            raise ValueError("dates must be YYYY-MM-DD")
+        return v
 
 
 class ResignationDecisionIn(BaseModel):
@@ -131,6 +157,55 @@ def list_resignations(conn, status: Optional[str] = None, employee_id: Optional[
     if user["role"] != "employee":
         result = annotate_actionability(conn, inst_id, "resignation", result, user)
     return result
+
+
+@router.put("/api/resignations/{request_id}")
+@db_session
+def edit_resignation(conn, request_id: int, body: ResignationEditIn,
+                     user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    """HR corrects a filed resignation (e.g. a new last working day) while it
+    is still Pending. Approval progress is deliberately left where it is —
+    nobody is re-asked — the change is recorded in the audit log instead.
+    Once Approved the employee's resign_date/last_working_day have already
+    been stamped (and an Offboarding checklist started), so editing then is
+    refused rather than half-synced."""
+    inst_id = need_inst(user)
+    if user["role"] not in RESIGNATION_ON_BEHALF_ROLES:
+        raise HTTPException(403, "Only HR can edit a resignation request")
+    row = conn.execute("SELECT * FROM resignation_requests WHERE id=? AND institution_id=?",
+                       (request_id, inst_id)).fetchone()
+    if not row:
+        raise HTTPException(404, "Resignation request not found")
+    if row["status"] != "Pending":
+        raise HTTPException(400, f"Only a pending request can be edited (this one is {row['status']})")
+    if body.last_working_day < body.effective_date:
+        raise HTTPException(400, "Last working day cannot be before the effective date")
+
+    if body.attachment:
+        att = body.attachment.model_dump()
+        att_cols = (att["file_name"], att["mime_type"], att["data_url"])
+    elif body.remove_attachment:
+        att_cols = (None, None, None)
+    else:
+        att_cols = (row["attachment_file_name"], row["attachment_mime_type"], row["attachment_data_url"])
+    conn.execute(
+        "UPDATE resignation_requests SET reason=?,effective_date=?,last_working_day=?,"
+        "attachment_file_name=?,attachment_mime_type=?,attachment_data_url=? WHERE id=? AND institution_id=?",
+        (body.reason, body.effective_date, body.last_working_day, *att_cols, request_id, inst_id)
+    )
+    changes = diff_fields(
+        dict(row),
+        {"reason": body.reason, "effective_date": body.effective_date,
+         "last_working_day": body.last_working_day, "attachment_file_name": att_cols[0]},
+        {"reason": "Reason", "effective_date": "Effective Date",
+         "last_working_day": "Last Working Day", "attachment_file_name": "Resignation Letter"})
+    if changes:
+        write_entity_audit(conn, user, inst_id, "Resignation", "resignation", request_id, "Edited",
+                           detail="Pending resignation request edited by HR: "
+                                  + ", ".join(c["label"] for c in changes),
+                           entity_label=row["employee_id"], changes=changes)
+    conn.commit()
+    return dict(conn.execute("SELECT * FROM resignation_requests WHERE id=?", (request_id,)).fetchone())
 
 
 @router.patch("/api/resignations/{request_id}")

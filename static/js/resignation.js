@@ -17,6 +17,10 @@ function todayStr() { return localDateStr(); }
 
 function openResignModal(empId, empName) {
   document.getElementById('resignModalTitle').textContent = empId ? 'File Resignation' : 'Submit Resignation';
+  document.getElementById('resignSubmitBtn').textContent = 'Submit Resignation';
+  document.getElementById('resignEditId').value = '';
+  document.getElementById('resignCurrentAttach').classList.add('hidden');
+  document.getElementById('resignRemoveAttach').checked = false;
   document.getElementById('resignEmpId').value = empId || '';
   const nameEl = document.getElementById('resignForEmpName');
   if (empId) { nameEl.textContent = `For: ${empName}`; nameEl.classList.remove('hidden'); }
@@ -29,6 +33,27 @@ function openResignModal(empId, empName) {
   document.getElementById('resignErr').classList.add('hidden');
   document.getElementById('resignModal').classList.remove('hidden');
 }
+// HR edits a still-Pending request (e.g. a new last working day) — same form
+// as filing, pre-filled; saved with PUT instead of POST (see submitResignation).
+function openEditResignation(id) {
+  const r = resignApprovalRowsCache.find(x => x.id === id);
+  if (!r) return;
+  openResignModal(null, null);
+  document.getElementById('resignModalTitle').textContent = 'Edit Resignation';
+  document.getElementById('resignSubmitBtn').textContent = 'Save Changes';
+  document.getElementById('resignEditId').value = String(id);
+  const nameEl = document.getElementById('resignForEmpName');
+  nameEl.textContent = `For: ${displayName(r.employee_name, r.employee_preferred_name)}`;
+  nameEl.classList.remove('hidden');
+  document.getElementById('resignReason').value = r.reason || '';
+  document.getElementById('resignEffectiveDate').value = r.effective_date;
+  document.getElementById('resignLastDay').value = r.last_working_day;
+  if (r.attachment_file_name) {
+    document.getElementById('resignCurrentAttachName').textContent = r.attachment_file_name;
+    document.getElementById('resignCurrentAttach').classList.remove('hidden');
+  }
+}
+
 function closeResignModal() { closeModal('resignModal', () => { _resignAttachment = null; }); }
 
 // Why "File Resignation" can't be used for an employee, from that employee's
@@ -94,6 +119,25 @@ const submitResignation = guardAsync(async function(e) {
   if (lastDay < effectiveDate) {
     err.textContent = 'Last working day must be on or after the effective date.';
     err.classList.remove('hidden');
+    return;
+  }
+  const editId = document.getElementById('resignEditId').value;
+  if (editId) {
+    const res = await api(`/api/resignations/${editId}`, { method: 'PUT', body: JSON.stringify({
+      reason: document.getElementById('resignReason').value,
+      effective_date: effectiveDate,
+      last_working_day: lastDay,
+      attachment: _resignAttachment,
+      remove_attachment: document.getElementById('resignRemoveAttach').checked,
+    }) });
+    if (!res || !res.ok) {
+      const d = await res?.json().catch(() => ({}));
+      err.textContent = (typeof d?.detail === 'string' ? d.detail : '') || 'Failed to save changes';
+      err.classList.remove('hidden');
+      return;
+    }
+    closeResignModal();
+    await loadResignationApprovals();
     return;
   }
   const empId = document.getElementById('resignEmpId').value;
@@ -199,6 +243,7 @@ function renderResignationApprovalTable() {
         <p class="text-xs text-slate-400">by ${esc(r.submitted_by)}</p>
       </td>
       <td class="px-4 py-3 text-right">
+        ${r.status === 'Pending' && HR_MANAGE_ROLES.includes(currentUser?.role) ? `<button onclick="openEditResignation(${r.id})" class="text-xs text-blue-700 hover:underline mr-3">Edit</button>` : ''}
         ${r.status === 'Pending' ? (r.is_actionable ? `
           <button onclick="reviewResignationRequest(${r.id},'Approved')" class="text-xs text-emerald-700 hover:underline mr-3">Approve</button>
           <button onclick="reviewResignationRequest(${r.id},'Rejected')" class="text-xs text-red-700 hover:underline">Reject</button>
