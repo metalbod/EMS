@@ -547,12 +547,20 @@ async function handleSsoReturn() {
   if (!code && !err) return false;
   history.replaceState(null, '', location.pathname + location.hash);    // never leave the one-time code in the address bar
   const errEl = document.getElementById('loginErr');
-  if (err) { errEl.textContent = ssoErrorMessage(err); errEl.classList.remove('hidden'); return true; }
+  if (err) {
+    // A failed Microsoft sign-in that began on the Claude "Allow" page must not leave its return note behind: the next
+    // ordinary login would otherwise jump to that stale Allow screen.
+    try { localStorage.removeItem('oauth_resume'); } catch { /* storage unavailable */ }
+    errEl.textContent = ssoErrorMessage(err); errEl.classList.remove('hidden'); return true;
+  }
   showGlobalLoading();
   try {
     const res = await fetch('/api/auth/sso/exchange', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) { errEl.textContent = data.detail || ssoErrorMessage('failed'); errEl.classList.remove('hidden'); return true; }
+    if (!res.ok) {
+      try { localStorage.removeItem('oauth_resume'); } catch { /* storage unavailable */ }
+      errEl.textContent = data.detail || ssoErrorMessage('failed'); errEl.classList.remove('hidden'); return true;
+    }
     localStorage.setItem('token', data.access_token);
     currentUser = data.user;
     bootApp();

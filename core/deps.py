@@ -208,13 +208,15 @@ def _load_oauth_context(token: str) -> dict | None:
     conn = get_db()
     try:
         row = conn.execute(
-            "SELECT t.expires_at, g.id AS grant_id, g.institution_id, g.user_id, g.scope, g.revoked_at, g.last_used_at, "
+            "SELECT t.expires_at, g.id AS grant_id, g.institution_id, g.user_id, g.scope, g.revoked_at, g.last_used_at, g.created_at, "
             "i.mcp_enabled, i.status AS institution_status "
             "FROM oauth_tokens t JOIN oauth_grants g ON g.id = t.grant_id "
             "JOIN institutions i ON i.id = g.institution_id "
             "WHERE t.token_hash=? AND t.kind='access'", (oauth_core.hash_token(token),)
         ).fetchone()
         if not row or row["revoked_at"] or row["expires_at"] < oauth_core.now_str():
+            return None
+        if row["created_at"] < oauth_core.grant_cutoff():      # past the hard limit: the person has to connect again
             return None
         ctx = dict(row)
         # "Last used" for HR's list - throttled, since this runs on every call Claude makes.

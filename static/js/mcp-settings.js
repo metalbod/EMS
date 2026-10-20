@@ -23,12 +23,13 @@ function renderMcpSettings(s) {
     return;
   }
   el.innerHTML = `<table class="w-full text-sm"><thead><tr class="text-left text-xs text-slate-500">
-    <th class="py-1 pr-3">Person</th><th class="py-1 pr-3">App</th><th class="py-1 pr-3">Can</th><th class="py-1 pr-3">Last used</th><th></th></tr></thead><tbody>`
+    <th class="py-1 pr-3">Person</th><th class="py-1 pr-3">App</th><th class="py-1 pr-3">Can</th><th class="py-1 pr-3">Last used</th><th class="py-1 pr-3">Reconnect by</th><th></th></tr></thead><tbody>`
     + s.connections.map(c => `<tr class="border-t border-slate-100">
       <td class="py-2 pr-3">${esc(c.person || c.username || '—')}</td>
       <td class="py-2 pr-3">${esc(c.app || '—')}</td>
       <td class="py-2 pr-3 text-slate-500">${esc(mcpScopeLabel(c.scope))}</td>
       <td class="py-2 pr-3 text-slate-500">${c.last_used_at ? esc(fmtDateTime(c.last_used_at)) : '—'}</td>
+      <td class="py-2 pr-3 text-slate-500">${c.reconnect_by ? esc(fmtDate(c.reconnect_by)) : '—'}</td>
       <td class="py-2 text-right"><button class="btn-ghost text-xs" onclick="disconnectMcp(${Number(c.id)})">Disconnect</button></td></tr>`).join('')
     + '</tbody></table>';
 }

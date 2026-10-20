@@ -13,6 +13,10 @@ Claude ──► ems-mcp (this folder) ──► ems-app (/api/...)         OAut
   before clocking; if they decline, EMS records the clock-in as "no location".
 - HR turns it on per company in EMS: Settings → Claude Access (off by default).
 
+## Connection lifetime
+A connection stops by itself 30 days after the person approved it (however often it is used), then they connect again. HR sees each
+connection's "Reconnect by" date in Settings -> Claude Access. Staff reconnect from the Claude connector settings.
+
 ## Run locally
 ```bash
 cd mcp && python -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt pytest

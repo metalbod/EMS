@@ -2822,7 +2822,7 @@
               <h3 class="text-lg font-semibold">Claude access</h3>
               <label class="inline-flex items-center gap-2 text-sm"><input id="mcpEnabledToggle" type="checkbox" onchange="toggleMcpEnabled(this.checked)"/> <span id="mcpEnabledLabel">Off</span></label>
             </div>
-            <p class="text-sm text-slate-500">Lets your staff connect Claude to their own EMS account, so they can ask it to clock them in or out and check their leave balance. Each person signs in and approves the connection themselves; Claude can only do what they could do for themselves, and nothing else. Turning this off stops every connection at once.</p>
+            <p class="text-sm text-slate-500">Lets your staff connect Claude to their own EMS account, so they can ask it to clock them in or out and check their leave balance. Each person signs in and approves the connection themselves; Claude can only do what they could do for themselves, and nothing else. Turning this off stops every connection at once. Each connection also stops by itself 30 days after the person approved it, and they connect again, so someone who has left stops working even if they are only disabled in Microsoft.</p>
             <p id="mcpMsg" class="text-xs mt-2"></p>
           </div>
           <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3">

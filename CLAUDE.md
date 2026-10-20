@@ -980,6 +980,18 @@ wrapper everywhere.
   they already see in EMS). Tasks have **no individual assignee** in EMS (`project_tasks` has no assignee column), only the project
   team, so the tool and skill never claim who is assigned to a task. Only projects the person can log to are listed (Active, open to
   all or they're a member).
+  **Hard 30-day limit** (`core/oauth.py`'s `GRANT_MAX_DAYS`, decided 2026-10-20 when Entra sign-in went live): a connection stops
+  **30 days after the person approved it, however often it is used**, and they connect again — the refresh window is still sliding,
+  but the grant's own `created_at` caps it (`_load_oauth_context` refuses the access token, `_refresh` revokes the grant with
+  `revoked_by='system: 30-day limit'`, HR's list hides it and shows a "Reconnect by" date per connection). Why: EMS is not told when a
+  person is disabled in Microsoft Entra, so without a cap a leaver who is only disabled there could keep a Claude connection alive
+  indefinitely (EMS deactivation still cuts it at once). Change the constant to change the limit; existing grants are judged by
+  their original `created_at`. **Entra and the Allow page**: tokens are EMS-issued, so turning Entra on or "Require Microsoft" on
+  never touches existing connections; the Allow page (`routers/oauth.py`'s `_AUTH_PAGE`) offers the Microsoft button when the typed
+  company has it on and, when it is *required*, hides the password fields behind "Use emergency password access" (the server still
+  enforces it: `/api/auth/login` 403s a non-emergency user). A failed Microsoft sign-in (`sso_error`, or a refused one-time code) now
+  clears `oauth_resume` (`handleSsoReturn`) so the next ordinary login isn't sent to a stale Allow screen. Real Microsoft round trip
+  still untested; verify with one connect through the Microsoft button.
   Connector address staff paste into Claude: `https://ems-mcp.fly.dev/mcp` (no custom domain, by decision). The OAuth/registration
   rate limits are in-memory per machine, same tradeoff as the login limiter (prod runs 2 machines, so limits are per machine).
   The metadata `issuer` has a trailing slash on purpose (the MCP server's advertised issuer is a pydantic `AnyHttpUrl`, which

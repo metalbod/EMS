@@ -21,6 +21,9 @@ CLIENT_PREFIX = "emscl_"
 CODE_TTL_SECONDS = 300
 ACCESS_TTL_SECONDS = 3600
 REFRESH_TTL_DAYS = 30           # sliding: every refresh starts a new 30 days
+# Hard limit: a connection stops working this long after the person approved it, however often it is used, and they sign in again
+# (so a person disabled in Microsoft Entra, which EMS isn't told about, can't keep a Claude connection alive forever).
+GRANT_MAX_DAYS = 30
 
 SCOPES = {
     "attendance:clock": "Clock you in and out",
@@ -49,6 +52,16 @@ _REDIRECT_OK = re.compile(r"^(https://[^\s#]+|http://(localhost|127\.0\.0\.1|\[:
 
 def now_str(delta_seconds: int = 0) -> str:
     return (datetime.utcnow() + timedelta(seconds=delta_seconds)).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def grant_cutoff() -> str:
+    """Grants created before this moment have passed GRANT_MAX_DAYS."""
+    return now_str(-GRANT_MAX_DAYS * 86400)
+
+
+def grant_reconnect_by(created_at: str) -> str:
+    """The date (YYYY-MM-DD, UTC) a grant created at `created_at` stops working."""
+    return (datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S") + timedelta(days=GRANT_MAX_DAYS)).strftime("%Y-%m-%d")
 
 
 def hash_token(token: str) -> str:

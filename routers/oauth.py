@@ -5,6 +5,9 @@ emergency access) on an EMS page, so none of that is re-implemented and the MCP 
 server (mcp/) is only a resource server; it forwards the access token and core/deps.py's get_current_user does the rest
 (grant not revoked, company switch on, scope allows this exact route). See core/oauth.py.
 
+A connection also has a HARD limit (core/oauth.py's GRANT_MAX_DAYS, 30): that long after the person approved it, it stops
+working however often it is used and they connect again.
+
 Flow: Claude registers itself (POST /oauth/register) -> opens /oauth/authorize in the browser -> the page signs the person
 in and asks them to allow -> POST /api/oauth/authorize/approve returns a redirect carrying a one-time code -> Claude trades
 it at POST /oauth/token (PKCE S256, public client) for a 1-hour access token + a refresh token. Every refresh rotates the
@@ -151,10 +154,14 @@ _AUTH_PAGE = """<!doctype html>
  <h1>Sign in to EMS</h1><p><b id="clientNameL"></b> wants to connect to your EMS account. Sign in first.</p>
  <form id="loginForm">
   <label for="code">Company code</label><input id="code" autocomplete="organization" required>
-  <label for="user">Username or email</label><input id="user" autocomplete="username" required>
-  <label for="pass">Password</label><input id="pass" type="password" autocomplete="current-password" required>
-  <div class="row"><button class="primary" type="submit">Sign in</button>
+  <p id="ssoNote" class="muted hidden">Your company requires Microsoft sign-in.</p>
+  <div id="pwFields">
+   <label for="user">Username or email</label><input id="user" autocomplete="username" required>
+   <label for="pass">Password</label><input id="pass" type="password" autocomplete="current-password" required>
+  </div>
+  <div class="row"><button class="primary" type="submit" id="signInBtn">Sign in</button>
   <button type="button" id="msBtn" class="hidden">Sign in with Microsoft</button></div>
+  <p class="muted hidden" id="emergencyWrap"><a href="#" id="emergencyLink">Use emergency password access</a></p>
  </form><div id="loginErr" class="err hidden"></div>
 </div>
 <div id="viewConsent" class="hidden">
@@ -187,6 +194,7 @@ async function init(){
 }
 $('loginForm').addEventListener('submit', async e => {
   e.preventDefault(); $('loginErr').classList.add('hidden');
+  if($('pwFields').classList.contains('hidden')) return;
   const r = await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({username:$('user').value.trim(),password:$('pass').value,institution_code:$('code').value.trim()||null})});
   const d = await r.json().catch(()=>({}));
@@ -194,10 +202,21 @@ $('loginForm').addEventListener('submit', async e => {
   localStorage.setItem('token', d.access_token); $('pass').value=''; init();
 });
 let ssoTimer=null;
+function showLoginMode(enabled, required, showPw){
+  $('msBtn').classList.toggle('hidden', !enabled);
+  $('ssoNote').classList.toggle('hidden', !(enabled && required));
+  const hidePw = enabled && required && !showPw;
+  $('pwFields').classList.toggle('hidden', hidePw);
+  $('signInBtn').classList.toggle('hidden', hidePw);
+  $('user').required = $('pass').required = !hidePw;
+  $('emergencyWrap').classList.toggle('hidden', !hidePw);
+  if(enabled && required) $('msBtn').classList.add('primary');
+}
 $('code').addEventListener('input', () => { clearTimeout(ssoTimer); ssoTimer=setTimeout(async()=>{
-  const c=$('code').value.trim(); if(!c){ $('msBtn').classList.add('hidden'); return; }
+  const c=$('code').value.trim(); if(!c){ showLoginMode(false,false,true); return; }
   try{ const r=await fetch('/api/auth/sso/options?institution_code='+encodeURIComponent(c)); const d=r.ok?await r.json():{};
-    $('msBtn').classList.toggle('hidden', !d.sso_enabled);}catch(_){ $('msBtn').classList.add('hidden'); } }, 350); });
+    showLoginMode(!!d.sso_enabled, !!d.sso_required, false);}catch(_){ showLoginMode(false,false,true); } }, 350); });
+$('emergencyLink').addEventListener('click', e => { e.preventDefault(); showLoginMode(true, true, true); $('emergencyWrap').classList.add('hidden'); $('user').focus(); });
 $('msBtn').addEventListener('click', () => {
   localStorage.setItem('oauth_resume', JSON.stringify({url: location.href, at: Date.now()}));
   location.href = '/api/auth/sso/start?institution_code='+encodeURIComponent($('code').value.trim());
@@ -419,11 +438,15 @@ def _exchange_code(conn, form: dict, client: dict):
 
 def _refresh(conn, form: dict, client: dict):
     tok = conn.execute(
-        "SELECT t.*, g.client_id AS g_client, g.scope AS g_scope, g.user_id AS g_user, g.revoked_at "
+        "SELECT t.*, g.client_id AS g_client, g.scope AS g_scope, g.user_id AS g_user, g.revoked_at, g.created_at AS g_created "
         "FROM oauth_tokens t JOIN oauth_grants g ON g.id = t.grant_id WHERE t.token_hash=? AND t.kind='refresh'",
         (oauth.hash_token(form.get("refresh_token", "")),)).fetchone()
     if not tok or tok["g_client"] != client["client_id"] or tok["revoked_at"]:
         return _oauth_error("invalid_grant", "The refresh token is invalid.")
+    if tok["g_created"] < oauth.grant_cutoff():
+        _revoke_grant(conn, tok["grant_id"], f"system: {oauth.GRANT_MAX_DAYS}-day limit")
+        conn.commit()
+        return _oauth_error("invalid_grant", f"This connection reached its {oauth.GRANT_MAX_DAYS}-day limit. Connect again.")
     # An already-used refresh token coming back means it leaked (or the app lost track of rotation): kill the grant.
     if tok["used_at"] or tok["expires_at"] < oauth.now_str():
         if tok["used_at"]:
@@ -475,13 +498,15 @@ def _settings_out(conn, inst_id: int) -> dict:
         "SELECT g.id, g.client_name, g.scope, g.created_at, g.last_used_at, u.username, u.full_name, e.full_name AS employee_name "
         "FROM oauth_grants g LEFT JOIN users u ON u.id = g.user_id "
         "LEFT JOIN employees e ON e.institution_id = g.institution_id AND e.employee_id = u.employee_id "
-        "WHERE g.institution_id=? AND g.revoked_at IS NULL ORDER BY g.last_used_at DESC", (inst_id,)).fetchall()
+        "WHERE g.institution_id=? AND g.revoked_at IS NULL AND g.created_at>=? ORDER BY g.last_used_at DESC",
+        (inst_id, oauth.grant_cutoff())).fetchall()
     return {
         "enabled": bool(inst and inst["mcp_enabled"]),
         "mcp_url": os.environ.get("MCP_PUBLIC_URL", DEFAULT_MCP_URL),
         "connections": [{
             "id": g["id"], "person": g["employee_name"] or g["full_name"] or g["username"], "username": g["username"],
             "app": g["client_name"], "scope": g["scope"], "connected_at": g["created_at"], "last_used_at": g["last_used_at"],
+            "reconnect_by": oauth.grant_reconnect_by(g["created_at"]),
         } for g in grants],
     }
 

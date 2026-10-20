@@ -10,7 +10,7 @@ const settings = readFileSync(resolve(__dirname, '..', 'sso-settings.js'), 'utf8
 const ssoStatus = new Function(`${settings.slice(settings.indexOf('function ssoStatus('), settings.indexOf('function renderSsoSettings('))}\nreturn ssoStatus;`)();
 
 function loadLogin(fetchImpl) {
-  const ctx = { fetch: fetchImpl, showGlobalLoading() {}, hideGlobalLoading() {}, bootApp: vi.fn(), localStorage: { setItem: vi.fn() }, history: { replaceState: vi.fn() }, currentUser: null,
+  const ctx = { fetch: fetchImpl, showGlobalLoading() {}, hideGlobalLoading() {}, bootApp: vi.fn(), localStorage: { setItem: vi.fn(), removeItem: vi.fn() }, history: { replaceState: vi.fn() }, currentUser: null,
     api: vi.fn(), showPage: vi.fn(), alert: vi.fn(), apiErrorText: d => String(d) };
   const fn = new Function('fetch', 'showGlobalLoading', 'hideGlobalLoading', 'bootApp', 'localStorage', 'history', 'location', 'api', 'showPage', 'alert', 'apiErrorText',
     `let currentUser = null;\n${core.slice(start, end)}\nreturn { ssoErrorMessage, refreshSsoButton, handleSsoReturn, resumeSsoReauth, getUser: () => currentUser };`);
@@ -89,6 +89,24 @@ describe('coming back from Microsoft', () => {
     expect(document.getElementById('loginErr').textContent).toContain('expired');
     expect(ctx.bootApp).not.toHaveBeenCalled();
     expect(ctx.localStorage.setItem).not.toHaveBeenCalled();
+  });
+});
+
+describe('a Microsoft sign-in that began on the Claude Allow page', () => {
+  it('forgets the note about going back there when the sign-in fails, so the next login does not jump to a stale Allow screen', async () => {
+    const { ctx, api } = loadLogin(vi.fn());
+    await api({ search: '?sso_error=denied', pathname: '/', hash: '' }).handleSsoReturn();
+    expect(ctx.localStorage.removeItem).toHaveBeenCalledWith('oauth_resume');
+  });
+
+  it('forgets it when the one-time code is refused too, but keeps it when the sign-in works (bootApp uses it)', async () => {
+    const bad = loadLogin(vi.fn(async () => ({ ok: false, json: async () => ({ detail: 'expired' }) })));
+    await bad.api({ search: '?sso_code=old', pathname: '/', hash: '' }).handleSsoReturn();
+    expect(bad.ctx.localStorage.removeItem).toHaveBeenCalledWith('oauth_resume');
+    const good = loadLogin(vi.fn(async () => ({ ok: true, json: async () => ({ access_token: 'tok', user: {} }) })));
+    await good.api({ search: '?sso_code=ok', pathname: '/', hash: '' }).handleSsoReturn();
+    expect(good.ctx.localStorage.removeItem).not.toHaveBeenCalled();
+    expect(good.ctx.bootApp).toHaveBeenCalled();
   });
 });
 

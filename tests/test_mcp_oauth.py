@@ -424,3 +424,58 @@ def test_public_holidays_needs_its_own_scope(client, mcp_on, employee_with_login
     scoped, _ = _connect(client, headers, scope="holidays:read")
     assert client.get("/api/me/public-holidays", headers=_bearer(scoped)).status_code == 200
     assert client.get("/api/holidays", headers=_bearer(scoped)).status_code == 403       # the general list stays closed to Claude
+
+
+# --------------------------------------------------------------------------- hard 30-day limit
+def _age_grant(token_json, days):
+    """Make the grant behind these tokens `days` old, the way time passing would (used_at/expiry columns are untouched)."""
+    from db import get_admin_db
+    conn = get_admin_db()
+    try:
+        row = conn.execute("SELECT grant_id FROM oauth_tokens WHERE token_hash=?", (oauth_core.hash_token(token_json["access_token"]),)).fetchone()
+        conn.execute("UPDATE oauth_grants SET created_at=? WHERE id=?", (oauth_core.now_str(-days * 86400), row["grant_id"]))
+        conn.commit()
+        return row["grant_id"]
+    finally:
+        conn.close()
+
+
+def test_a_connection_stops_at_the_hard_limit_however_often_it_is_used(client, mcp_on, hr_manager_auth, employee_with_login):
+    _, headers = employee_with_login(full_name="ZZ MCP Old")
+    tokens, client_id = _connect(client, headers)
+    assert oauth_core.GRANT_MAX_DAYS == 30
+    _age_grant(tokens, 29)
+    assert client.get("/api/attendance/mine", headers=_bearer(tokens)).status_code == 200          # day 29: still fine
+    refreshed = client.post("/oauth/token", data={"grant_type": "refresh_token", "refresh_token": tokens["refresh_token"], "client_id": client_id})
+    assert refreshed.status_code == 200
+    fresh = refreshed.json()
+
+    _age_grant(fresh, 31)                                                                           # day 31, in constant use
+    assert client.get("/api/attendance/mine", headers=_bearer(fresh)).status_code == 401
+    again = client.post("/oauth/token", data={"grant_type": "refresh_token", "refresh_token": fresh["refresh_token"], "client_id": client_id})
+    assert again.status_code == 400 and again.json()["error"] == "invalid_grant" and "30-day limit" in again.json()["error_description"]
+    # and it is gone from HR's list rather than lingering as a dead connection
+    assert not [c for c in client.get("/api/settings/mcp", headers=hr_manager_auth).json()["connections"] if c["person"] == "ZZ MCP Old"]
+
+
+def test_connecting_again_after_the_limit_starts_a_fresh_window(client, mcp_on, hr_manager_auth, employee_with_login):
+    _, headers = employee_with_login(full_name="ZZ MCP Again")
+    old, _ = _connect(client, headers)
+    _age_grant(old, 40)
+    assert client.get("/api/attendance/mine", headers=_bearer(old)).status_code == 401
+    new, _ = _connect(client, headers)
+    assert client.get("/api/attendance/mine", headers=_bearer(new)).status_code == 200
+    mine = [c for c in client.get("/api/settings/mcp", headers=hr_manager_auth).json()["connections"] if c["person"] == "ZZ MCP Again"]
+    assert len(mine) == 1
+    from datetime import datetime, timedelta
+    assert mine[0]["reconnect_by"] == (datetime.utcnow() + timedelta(days=30)).strftime("%Y-%m-%d")
+
+
+def test_authorize_page_handles_a_company_that_requires_microsoft(client):
+    """The Allow page itself is server-sent HTML: check the pieces the Microsoft-required mode relies on are in it."""
+    client_id = _register(client).json()["client_id"]
+    _, challenge = _pkce()
+    page = client.get("/oauth/authorize", params={"client_id": client_id, "redirect_uri": REDIRECT, "response_type": "code",
+                                                  "code_challenge": challenge, "code_challenge_method": "S256"}).text
+    for marker in ("sso_required", "pwFields", "emergencyLink", "Use emergency password access", "Your company requires Microsoft sign-in."):
+        assert marker in page
