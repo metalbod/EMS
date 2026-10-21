@@ -794,7 +794,8 @@ def submit_requisition(conn, req_id: int, user: dict = Depends(get_current_user)
     # don't need an employee at all, so this must NOT be treated as "no
     # resolvable step anywhere" up front.
     requester_employee_id = _requisition_requester_employee_id(conn, inst_id, r)
-    workflow_id, step_order, auto_approved = start_workflow(conn, inst_id, "requisition", requester_employee_id)
+    workflow_id, step_order, auto_approved = start_workflow(conn, inst_id, "requisition", requester_employee_id,
+                                                         detail=r["title"])
     new_status = "Approved" if auto_approved else "Pending Approval"
     conn.execute("UPDATE job_requisitions SET status=?,approval_workflow_id=?,approval_step=? WHERE id=?",
                  (new_status, workflow_id, step_order, req_id))

@@ -12,6 +12,11 @@ function renderUserTable() {
   const empty=document.getElementById('userEmpty');
   if(!users.length){tbody.innerHTML='';empty.classList.remove('hidden');return;}
   empty.classList.add('hidden');
+  // The server only sends institution_name/code in the superadmin's all-companies
+  // view; inside a single company the column would be the same value on every
+  // row (and used to fall back to a misleading "Platform Admin"), so it's hidden.
+  const showInstitution=users.some(u=>'institution_name' in u);
+  document.getElementById('userInstitutionTh').style.display=showInstitution?'':'none';
   tbody.innerHTML=users.map(u=>`
     <tr class="hover:bg-slate-50 transition">
       <td class="px-4 py-3">
@@ -24,7 +29,7 @@ function renderUserTable() {
         </div>
       </td>
       <td class="px-4 py-3 hidden md:table-cell"><span class="badge ${statusColor(ROLE_BADGE_COLORS, u.role)}">${meta.role_labels?.[u.role]||u.role}</span></td>
-      <td class="px-4 py-3 hidden lg:table-cell text-xs text-slate-500">${esc(u.institution_name||u.institution_code||'Platform Admin')}</td>
+      ${showInstitution?`<td class="px-4 py-3 hidden lg:table-cell text-xs text-slate-500">${esc(u.institution_name||u.institution_code||'Platform Admin')}</td>`:''}
       <td class="px-4 py-3"><span class="badge ${u.is_active?'status-positive':'status-neutral'}">${u.is_active?'Active':'Inactive'}</span>${u.sso_linked?' <span class="badge status-info" style="font-size:.65rem" title="Has signed in with Microsoft">Microsoft</span>':''}${u.sso_password_ok?' <span class="badge status-pending" style="font-size:.65rem" title="Can sign in with a password even when Microsoft sign-in is required">Emergency password</span>':''}</td>
       <td class="px-4 py-3">
         <div class="flex justify-end gap-1">

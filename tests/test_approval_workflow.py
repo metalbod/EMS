@@ -874,3 +874,83 @@ def test_leave_rejection_sends_requester_notification_email(
     log = client.get("/api/notifications/email-log", headers=hr_manager_auth).json()
     decided = next(r for r in log if r["recipient_email"] == report_email and r["category"] == "approval_decided")
     assert decided["status"] == "sent"
+
+
+# ---------------------------------------------------------------------------
+# Job Requisition emails name the job — "Your Job Requisition has been
+# Approved" alone doesn't say *which* job.
+# ---------------------------------------------------------------------------
+def test_requisition_emails_name_the_job_title(client, hr_manager_auth, make_test_employee, test_institution,
+                                               configured_email_settings):
+    title = f"ZZ Mailer Engineer {os.urandom(3).hex()}"
+    requester_email = f"zzreq_{os.urandom(4).hex()}@zzpytest.example.com"
+    emp = make_test_employee(full_name="ZZ Req Mailer Owner", personal_email=requester_email)
+    username = f"zzreqmailer_{emp['employee_id'].lower()}"
+    created = client.post("/api/users", headers=hr_manager_auth, json={
+        "username": username, "full_name": "ZZ Req Mailer Owner", "password": "ZzPytest@123",
+        "role": "hr_manager", "employee_id": emp["employee_id"],
+    })
+    assert created.status_code == 201, created.text
+    user_id = created.json()["id"]
+    try:
+        login = client.post("/api/auth/login", json={
+            "username": username, "password": "ZzPytest@123", "institution_code": test_institution["code"]})
+        assert login.status_code == 200
+        owner = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+        with patch("core.email_engine.smtplib.SMTP"):
+            req = client.post("/api/recruitment/requisitions", headers=owner,
+                              json={"title": title, "department": "IT"}).json()
+            assert client.patch(f"/api/recruitment/requisitions/{req['id']}/submit", headers=owner).status_code == 200
+            # A different HR manager decides it (a requester can't approve their own).
+            done = client.patch(f"/api/recruitment/requisitions/{req['id']}/approve", headers=hr_manager_auth,
+                                json={"action": "approve"})
+        assert done.status_code == 200, done.text
+        assert done.json()["status"] == "Approved"
+
+        log = client.get("/api/notifications/email-log", headers=hr_manager_auth).json()
+        decided = next(r for r in log if r["recipient_email"] == requester_email and r["category"] == "approval_decided")
+        assert decided["subject"] == f"Your Job Requisition for {title} has been Approved"
+    finally:
+        client.delete(f"/api/users/{user_id}", headers=hr_manager_auth)
+
+
+def test_approval_email_text_for_requisition_vs_other_modules(monkeypatch):
+    """Pure composition check: a title (when given) goes into subject and body,
+    HTML-escaped and whitespace-collapsed; modules that pass none read as before."""
+    import core.approval_workflow as aw
+    sent = []
+    monkeypatch.setattr(aw, "queue_email", lambda conn, inst, to, subj, body, cat, mod: sent.append((to, subj, body)))
+    monkeypatch.setattr(aw, "_employee_contact", lambda conn, inst, eid: ("Req Name", "req@example.com"))
+    monkeypatch.setattr(aw, "_recipient_contacts_for_step", lambda *a, **k: [("Appr", "appr@example.com")])
+
+    aw._notify_step_recipients(None, 1, "requisition", "E1", {}, None, "Senior\n  <b>Dev</b>")
+    to, subj, body = sent[-1]
+    assert subj == "Job Requisition awaiting your approval: Senior <b>Dev</b>"
+    assert "\n" not in subj
+    assert "for <strong>Senior &lt;b&gt;Dev&lt;/b&gt;</strong>" in body
+
+    aw._notify_requester_outcome(None, 1, "requisition", "E1", "rejected", "Data Analyst")
+    assert sent[-1][1] == "Your Job Requisition for Data Analyst has been Rejected"
+
+    # unchanged wording without a detail (every other module)
+    aw._notify_step_recipients(None, 1, "leave", "E1", {}, None)
+    assert sent[-1][1] == "Leave Application awaiting your approval"
+    aw._notify_requester_outcome(None, 1, "leave", "E1", "approved")
+    assert sent[-1][1] == "Your Leave Application has been Approved"
+
+
+def test_request_detail_is_only_looked_up_for_requisitions():
+    import core.approval_workflow as aw
+
+    class _Conn:
+        def __init__(self): self.sql = []
+        def execute(self, sql, params=()):
+            self.sql.append(sql)
+            return self
+        def fetchone(self): return {"title": "  Head   of Ops "}
+
+    c = _Conn()
+    assert aw._request_detail(c, 1, "leave", "leave_applications", 5) is None
+    assert c.sql == []
+    assert aw._request_detail(c, 1, "requisition", "job_requisitions", 5) == "Head of Ops"

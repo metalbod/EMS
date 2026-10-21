@@ -18,6 +18,7 @@ terminal, same as sequential). Flat mode's per-step decisions are
 recorded in approval_step_decisions, since a request row's own single
 `approval_step` column can't represent "several steps open at once."
 """
+import html
 import logging
 import os
 from typing import Any, Dict, FrozenSet, List, Optional, Set, Tuple
@@ -403,33 +404,56 @@ def _recipient_contacts_for_step(conn, inst_id: int, module: str, employee_id: s
     return out
 
 
+def _clean_detail(detail: Optional[str]) -> Optional[str]:
+    """Collapses whitespace/newlines (a title is free text and ends up in an
+    email *subject*, where a line break would corrupt the header)."""
+    return " ".join(detail.split()) if detail and detail.strip() else None
+
+
+def _request_detail(conn, inst_id: int, module: str, request_table: str, request_id: int) -> Optional[str]:
+    """What an approval email should name so the reader knows *which*
+    request it is — today only a Job Requisition's title (a person's name
+    alone says nothing about which job was approved). None for every other
+    module, whose emails read exactly as before."""
+    if module != "requisition":
+        return None
+    row = conn.execute(f"SELECT title FROM {request_table} WHERE id=? AND institution_id=?",
+                       (request_id, inst_id)).fetchone()
+    return _clean_detail(row["title"]) if row else None
+
+
 def _notify_step_recipients(conn, inst_id: int, module: str, employee_id: str, step,
-                            project_ids: Optional[Set[int]]) -> None:
+                            project_ids: Optional[Set[int]], detail: Optional[str] = None) -> None:
     contacts = _recipient_contacts_for_step(conn, inst_id, module, employee_id, step, project_ids)
     if not contacts:
         return
     requester_name, _ = _employee_contact(conn, inst_id, employee_id)
     label = MODULE_DISPLAY_NAME.get(module, module)
-    subject = f"{label} awaiting your approval"
+    detail = _clean_detail(detail)
+    subject = f"{label} awaiting your approval" + (f": {detail}" if detail else "")
+    what = f"A {label}" + (f" for <strong>{html.escape(detail)}</strong>" if detail else "")
     for name, email in contacts:
         body = (
             f"<p>Hi {name or 'there'},</p>"
-            f"<p>A {label} from {requester_name or 'an employee'} is awaiting your approval.</p>"
+            f"<p>{what} from {requester_name or 'an employee'} is awaiting your approval.</p>"
             f'<p><a href="{APP_BASE_URL}">Open EMS</a> to review it.</p>'
         )
         queue_email(conn, inst_id, email, subject, body, "approval_needed", module)
 
 
-def _notify_requester_outcome(conn, inst_id: int, module: str, employee_id: str, outcome: str) -> None:
+def _notify_requester_outcome(conn, inst_id: int, module: str, employee_id: str, outcome: str,
+                              detail: Optional[str] = None) -> None:
     name, email = _employee_contact(conn, inst_id, employee_id)
     if not email:
         return
     label = MODULE_DISPLAY_NAME.get(module, module)
     decision = "Approved" if outcome == "approved" else "Rejected"
-    subject = f"Your {label} has been {decision}"
+    detail = _clean_detail(detail)
+    subject = f"Your {label}" + (f" for {detail}" if detail else "") + f" has been {decision}"
+    what = f"Your {label}" + (f" for <strong>{html.escape(detail)}</strong>" if detail else "")
     body = (
         f"<p>Hi {name or 'there'},</p>"
-        f"<p>Your {label} has been <strong>{decision}</strong>.</p>"
+        f"<p>{what} has been <strong>{decision}</strong>.</p>"
         f'<p><a href="{APP_BASE_URL}">Open EMS</a> to view details.</p>'
     )
     queue_email(conn, inst_id, email, subject, body, "approval_decided", module)
@@ -607,7 +631,8 @@ def _first_resolvable_step(conn, inst_id: int, module: str, employee_id: str, st
 
 
 def start_workflow(conn, inst_id: int, module: str, employee_id: str,
-                   project_ids: Optional[Set[int]] = None) -> Tuple[int, Optional[int], bool]:
+                   project_ids: Optional[Set[int]] = None,
+                   detail: Optional[str] = None) -> Tuple[int, Optional[int], bool]:
     """Called when a request is first submitted. Returns
     (approval_workflow_id, approval_step_order_or_None, auto_approved) —
     approval_step is None (and auto_approved True) if no step in the whole
@@ -615,7 +640,9 @@ def start_workflow(conn, inst_id: int, module: str, employee_id: str,
     HR steps configured), so a request never gets permanently stuck with
     nobody able to act on it. `project_ids` only matters for a workflow
     that has a project_manager step configured; pass the requester's
-    selected/logged project(s) — see project_ids_for_row."""
+    selected/logged project(s) — see project_ids_for_row. `detail` names the
+    request in the approvers' notification email (a requisition's job title);
+    the request row doesn't exist yet at this point, so the caller passes it."""
     workflow = get_or_create_default_workflow(conn, inst_id, module)
     steps = get_steps(conn, workflow["id"])
     first = _first_resolvable_step(conn, inst_id, module, employee_id, steps, project_ids)
@@ -626,9 +653,9 @@ def start_workflow(conn, inst_id: int, module: str, employee_id: str,
         # their approvers needs telling now, not just the first one.
         for step in steps:
             if _step_pool_nonempty(conn, inst_id, module, employee_id, step, project_ids):
-                _safe_notify(_notify_step_recipients, conn, inst_id, module, employee_id, step, project_ids)
+                _safe_notify(_notify_step_recipients, conn, inst_id, module, employee_id, step, project_ids, detail)
     else:
-        _safe_notify(_notify_step_recipients, conn, inst_id, module, employee_id, first, project_ids)
+        _safe_notify(_notify_step_recipients, conn, inst_id, module, employee_id, first, project_ids, detail)
     return workflow["id"], first["step_order"], False
 
 
@@ -664,6 +691,7 @@ def advance_or_finalize(conn, inst_id: int, module: str, employee_id: str,
     switched from sequential to flat later without a gap in history."""
     steps = get_steps(conn, workflow_id)
     mode = _get_workflow_mode(conn, workflow_id)
+    detail = _request_detail(conn, inst_id, module, request_table, request_id)
 
     if mode != "flat":
         current = next((s for s in steps if s["step_order"] == current_step_order), None)
@@ -672,14 +700,14 @@ def advance_or_finalize(conn, inst_id: int, module: str, employee_id: str,
         if not is_eligible_approver(conn, inst_id, module, employee_id, current, acting_user, project_ids):
             raise PermissionError("You are not an eligible approver for this request's current step")
         if action == "reject":
-            _safe_notify(_notify_requester_outcome, conn, inst_id, module, employee_id, "rejected")
+            _safe_notify(_notify_requester_outcome, conn, inst_id, module, employee_id, "rejected", detail)
             return "rejected", None
         remaining = [s for s in steps if s["step_order"] > current_step_order]
         nxt = _first_resolvable_step(conn, inst_id, module, employee_id, remaining, project_ids)
         if nxt is None:
-            _safe_notify(_notify_requester_outcome, conn, inst_id, module, employee_id, "approved")
+            _safe_notify(_notify_requester_outcome, conn, inst_id, module, employee_id, "approved", detail)
             return "approved", None
-        _safe_notify(_notify_step_recipients, conn, inst_id, module, employee_id, nxt, project_ids)
+        _safe_notify(_notify_step_recipients, conn, inst_id, module, employee_id, nxt, project_ids, detail)
         return "advanced", nxt["step_order"]
 
     # Flat: every step with a non-empty pool is open simultaneously,
@@ -695,12 +723,12 @@ def advance_or_finalize(conn, inst_id: int, module: str, employee_id: str,
     for s in my_steps:
         _record_decision(conn, inst_id, module, request_table, request_id, s["step_order"], decision, acting_user["username"])
     if action == "reject":
-        _safe_notify(_notify_requester_outcome, conn, inst_id, module, employee_id, "rejected")
+        _safe_notify(_notify_requester_outcome, conn, inst_id, module, employee_id, "rejected", detail)
         return "rejected", None
     my_orders = {s["step_order"] for s in my_steps}
     still_open = [s for s in open_steps if s["step_order"] not in my_orders]
     if not still_open:
-        _safe_notify(_notify_requester_outcome, conn, inst_id, module, employee_id, "approved")
+        _safe_notify(_notify_requester_outcome, conn, inst_id, module, employee_id, "approved", detail)
         return "approved", None
     # No notification here — every still-open step's approver was already
     # told at submission time (flat mode notifies everyone up front), so
