@@ -24,6 +24,14 @@ const CAND_SORT_FIELDS = ['full_name','requisition_title','requisition_status','
 let candPage = 1, candPageSize = 50, candTotal = 0, candPageRows = [];
 let candSearchDebounceTimer = null, candRequestSeq = 0;
 
+// Requisitions a resume can be added to: still open, or closed/filled — HR keeps
+// capturing resumes for a closed job on purpose (the public apply link is separate
+// and still stops at close).
+const CAND_ADDABLE_REQ_STATUSES = 'Approved,Closed,Filled';
+// Picker label: a closed/filled job says so, so HR adding a resume to it knows.
+function reqPickerLabel(req) { return `${esc(req.title)} (${esc(req.department)})${req.status==='Approved'?'':' — '+esc(req.status)}`; }
+function reqAcceptsCandidates(status) { return CAND_ADDABLE_REQ_STATUSES.split(',').includes(status); }
+
 function stageBadgeClass(stage) {
   const m = {New:'status-neutral',Screening:'status-info',
     Interview:'status-special','Pending Checks':'status-pending',
@@ -105,7 +113,7 @@ async function loadRequisitions() {
       <td class="px-4 py-3"><span class="badge ${reqStatusBadge(r.status)}">${esc(r.status)}</span>
         ${r.status==='Pending Approval'&&r.pending_with?`<div class="text-xs text-slate-500 mt-1">Pending with ${pendingWithLabel(r)}</div>`:''}</td>
       <td class="px-4 py-3 text-right whitespace-nowrap">
-        ${r.status==='Approved'?`<button class="btn-ghost text-xs" onclick="event.stopPropagation();openCandModal(null,${r.id})">Add Candidate</button>`:''}
+        ${reqAcceptsCandidates(r.status)?`<button class="btn-ghost text-xs" onclick="event.stopPropagation();openCandModal(null,${r.id})">Add Candidate</button>`:''}
         <button class="btn-ghost text-xs" onclick="event.stopPropagation();openReqDetail(${r.id})">View</button>
       </td>
     </tr>`).join('');
@@ -433,11 +441,11 @@ function openCandModal(candData=null, presetReqId=null) {
   ss.innerHTML=(recruitMeta.sources||['Direct','JobStreet','LinkedIn','Referral','Agency','Other']).map(s=>`<option${c?.source===s?' selected':''}>${esc(s)}</option>`).join('');
   const rsel=document.getElementById('candReqId');
   rsel.innerHTML='<option value="">General / No specific requisition</option>';
-  api('/api/recruitment/requisitions?status=Approved').then(async r=>{
+  api('/api/recruitment/requisitions?status='+CAND_ADDABLE_REQ_STATUSES).then(async r=>{
     if(!r||!r.ok) return;
     const reqs=await r.json();
     const selectedReqId=c?.requisition_id||presetReqId;
-    reqs.forEach(req=>{const o=document.createElement('option');o.value=req.id;o.textContent=`${esc(req.title)} (${esc(req.department)})`;if(selectedReqId===req.id)o.selected=true;rsel.appendChild(o);});
+    reqs.forEach(req=>{const o=document.createElement('option');o.value=req.id;o.textContent=reqPickerLabel(req);if(selectedReqId===req.id)o.selected=true;rsel.appendChild(o);});
   });
   // Education
   const qs=document.getElementById('candQual');
@@ -554,12 +562,12 @@ async function openApplyModal() {
   document.getElementById('applyForName').textContent=`Applying ${viewingCandData?.full_name||'this candidate'} to:`;
   const rsel=document.getElementById('applyReqId');
   rsel.innerHTML='<option value="">General / No specific requisition</option>';
-  const r=await api('/api/recruitment/requisitions?status=Approved');
+  const r=await api('/api/recruitment/requisitions?status='+CAND_ADDABLE_REQ_STATUSES);
   if(r&&r.ok){
     const reqs=await r.json();
     const appliedIds=new Set((viewingCandData?.applications||[]).map(a=>a.requisition_id));
     reqs.filter(req=>!appliedIds.has(req.id)).forEach(req=>{
-      const o=document.createElement('option');o.value=req.id;o.textContent=`${esc(req.title)} (${esc(req.department)})`;rsel.appendChild(o);
+      const o=document.createElement('option');o.value=req.id;o.textContent=reqPickerLabel(req);rsel.appendChild(o);
     });
   }
   const ss=document.getElementById('applySource');

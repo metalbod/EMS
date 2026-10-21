@@ -1358,3 +1358,56 @@ def test_interview_list_shows_each_interviewers_score_and_the_average(client, hr
     # the candidate screen shows the same average
     detail = client.get(f"/api/recruitment/candidates/{cand['id']}", headers=hr_manager_auth).json()
     assert next(i for i in detail["interviews"] if i["id"] == iv["id"])["avg_score"] == row()["avg_score"]
+
+
+# ---------------------------------------------------------------------------
+# Resumes can still be added to a closed job (HR keeps capturing them regardless)
+# ---------------------------------------------------------------------------
+def test_requisition_list_accepts_comma_separated_statuses(client, hr_manager_auth):
+    open_req = _approved_req(client, hr_manager_auth)
+    closed_req = _approved_req(client, hr_manager_auth)
+    draft = client.post("/api/recruitment/requisitions", headers=hr_manager_auth,
+                        json={"title": _unique_title(), "department": "Sales"}).json()
+    assert client.patch(f"/api/recruitment/requisitions/{closed_req['id']}/close",
+                        headers=hr_manager_auth).status_code == 200
+
+    rows = client.get("/api/recruitment/requisitions", headers=hr_manager_auth,
+                      params={"status": "Approved,Closed,Filled"}).json()
+    ids = {r["id"] for r in rows}
+    assert {open_req["id"], closed_req["id"]} <= ids
+    assert draft["id"] not in ids
+    assert {r["status"] for r in rows} <= {"Approved", "Closed", "Filled"}
+
+    # a single status still works exactly as before
+    only_closed = client.get("/api/recruitment/requisitions", headers=hr_manager_auth,
+                             params={"status": "Closed"}).json()
+    assert closed_req["id"] in {r["id"] for r in only_closed}
+    assert open_req["id"] not in {r["id"] for r in only_closed}
+
+
+def test_can_add_and_apply_candidates_to_a_closed_requisition(client, hr_manager_auth):
+    import uuid
+    tag = uuid.uuid4().hex[:8]
+    closed_req = _approved_req(client, hr_manager_auth)
+    other_req = _approved_req(client, hr_manager_auth)
+    assert client.patch(f"/api/recruitment/requisitions/{closed_req['id']}/close",
+                        headers=hr_manager_auth).status_code == 200
+
+    created = client.post("/api/recruitment/candidates", headers=hr_manager_auth, json={
+        "full_name": "ZZ Late Resume", "email": f"zzpytest.late.{tag}@example.com",
+        "requisition_id": closed_req["id"]})
+    assert created.status_code == 201, created.text
+    cand = created.json()
+
+    # An existing person can be applied to a closed job too.
+    other = client.post("/api/recruitment/candidates", headers=hr_manager_auth, json={
+        "full_name": "ZZ Late Resume Two", "email": f"zzpytest.late2.{tag}@example.com",
+        "requisition_id": other_req["id"]}).json()
+    applied = client.post(f"/api/recruitment/candidates/{other['id']}/apply", headers=hr_manager_auth,
+                          json={"requisition_id": closed_req["id"]})
+    assert applied.status_code in (200, 201), applied.text
+
+    row = next(r for r in client.get("/api/recruitment/requisitions", headers=hr_manager_auth).json()
+               if r["id"] == closed_req["id"])
+    assert row["status"] == "Closed"
+    assert row["candidate_count"] == 2

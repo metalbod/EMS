@@ -708,7 +708,11 @@ def list_requisitions(conn,
         FROM job_requisitions r WHERE r.institution_id=?
     """
     p = [inst_id]
-    if status:     q += " AND r.status=?";     p.append(status)
+    # `status` may be a comma-separated list (e.g. "Approved,Closed,Filled" — the
+    # requisitions a resume can still be added to).
+    statuses = [x.strip() for x in status.split(",") if x.strip()] if status else []
+    if statuses:
+        q += f" AND r.status IN ({','.join('?' * len(statuses))})"; p.extend(statuses)
     if department: q += " AND r.department=?"; p.append(department)
     q += " ORDER BY r.created_at DESC"
     rows = conn.execute(q, p).fetchall()
