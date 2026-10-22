@@ -464,6 +464,7 @@ function openCandModal(candData=null, presetReqId=null) {
   document.getElementById('candFormErr').classList.add('hidden');
   candExistingDocs=c?.documents||[];
   candPendingFiles=[];
+  candAiFilled={};
   document.getElementById('candFilesInput').value='';
   document.getElementById('candExtractAiStatus').className='hidden text-xs mt-1.5';
   renderCandFileList();
@@ -632,8 +633,30 @@ function renderCandFileList() {
   document.getElementById('candExtractAiWrap').classList.toggle('hidden', !(isNewCandidate && hasExtractableFile));
 }
 
+// Fields the AI extraction filled in, as inputId -> the value it put there.
+// Attaching/removing a resume (or extracting again) first undoes those fills — but
+// only for a field still holding exactly what the AI wrote: anything HR typed or
+// edited since is theirs and stays. Without this, a second resume's details were
+// blended with the first one's leftovers (extraction only ever fills blanks).
+let candAiFilled = {};
+// An input that isn't blank by default goes back to its markup default, not ''.
+const CAND_AI_FIELD_DEFAULTS = {candExp:'0', candNationality:'Malaysian'};
+
+function resetCandAiFilled() {
+  const hadFills=Object.keys(candAiFilled).length>0;
+  for(const [inputId,val] of Object.entries(candAiFilled)){
+    const el=document.getElementById(inputId);
+    if(el&&el.value===val) el.value=CAND_AI_FIELD_DEFAULTS[inputId]??'';
+  }
+  candAiFilled={};
+  const status=document.getElementById('candExtractAiStatus');
+  if(status){ status.textContent=''; status.className='hidden text-xs mt-1.5'; }
+  if(hadFills) onCandIdentityInput(); // name/email/IC may have been cleared — re-run the duplicate check
+}
+
 async function extractCandidateResumeWithAI() {
-  const file=candPendingFiles.find(f=>CAND_AI_EXTRACTABLE_MIMES.includes(f.mime_type));
+  // The most recently attached readable file — the one the user just added.
+  const file=[...candPendingFiles].reverse().find(f=>CAND_AI_EXTRACTABLE_MIMES.includes(f.mime_type));
   if(!file) return;
   const btn=document.getElementById('candExtractAiBtn');
   const status=document.getElementById('candExtractAiStatus');
@@ -649,6 +672,7 @@ async function extractCandidateResumeWithAI() {
     return;
   }
   const {fields}=await res.json();
+  resetCandAiFilled(); // drop the previous extraction's leftovers first
   const filled=fillBlankCandidateFields(fields);
   status.textContent=filled>0
     ? `Filled ${filled} field${filled===1?'':'s'} from the resume — please review before saving.`
@@ -684,6 +708,7 @@ function fillBlankCandidateFields(fields) {
     const isBlank=el&&(el.value===''||el.value===BLANK_SENTINELS[inputId]);
     if(!isBlank) continue; // already blank-checked — skip anything HR already typed over the default
     el.value=value;
+    candAiFilled[inputId]=el.value;
     filled++;
   }
   return filled;
@@ -699,6 +724,7 @@ function handleCandFilesSelected(e) {
     }
     const reader=new FileReader();
     reader.onload=() => {
+      if(CAND_AI_EXTRACTABLE_MIMES.includes(file.type)) resetCandAiFilled(); // a new resume starts from a clean form
       candPendingFiles.push({file_name:file.name, mime_type:file.type||'application/octet-stream', data_url:reader.result});
       renderCandFileList();
     };
@@ -707,6 +733,7 @@ function handleCandFilesSelected(e) {
 }
 
 function removeCandPendingFile(idx) {
+  if(CAND_AI_EXTRACTABLE_MIMES.includes(candPendingFiles[idx]?.mime_type)) resetCandAiFilled();
   candPendingFiles.splice(idx,1);
   renderCandFileList();
 }
