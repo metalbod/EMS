@@ -536,8 +536,7 @@ function dismissCandDupPanel() {
 // filled in the Add Candidate form, instead of creating a duplicate
 // candidates row — the actual feature this whole panel exists for.
 async function applyExistingCandidateFromModal(candId) {
-  const err=document.getElementById('candFormErr');
-  err.classList.add('hidden');
+  document.getElementById('candFormErr').classList.add('hidden');
   const body={
     requisition_id:parseInt(document.getElementById('candReqId').value)||null,
     source:document.getElementById('candSource').value||'Direct',
@@ -547,7 +546,7 @@ async function applyExistingCandidateFromModal(candId) {
     referral_by:document.getElementById('candReferral').value||null,
   };
   const res=await api(`/api/recruitment/candidates/${candId}/apply`,{method:'POST',body:JSON.stringify(body)});
-  if(!res||!res.ok){const d=await res?.json();err.textContent=d?.detail||'Failed to apply this candidate';err.classList.remove('hidden');return;}
+  if(!res||!res.ok){const d=await res?.json().catch(()=>null);showToast(apiErrorText(d?.detail,'Failed to apply this candidate'));return;}
   closeCandModal();
   loadCandidates();
   openCandDetail(candId);
@@ -721,10 +720,45 @@ async function removeCandExistingDoc(docId) {
   renderCandFileList();
 }
 
+// What's wrong with the Add/Edit Candidate form, as [{msg, field, tab}] in tab
+// order — empty when it's fine. `v` is the raw field values. Mirrors the server's
+// own rules (CandidateIn) plus the native min/max/type hints on the inputs; the
+// form is `novalidate` so the browser never blocks silently on a field in a tab
+// that isn't showing — every problem is reported as a pop-up instead.
+function candFormProblems(v) {
+  const out=[];
+  const add=(msg,field,tab)=>out.push({msg,field,tab});
+  if(!(v.full_name||'').trim()) add('Full Name is required','candFullName','cm-personal');
+  const email=(v.email||'').trim();
+  if(!email) add('Email is required','candEmail','cm-personal');
+  else if(!email.includes('@')||email.startsWith('@')||email.endsWith('@')||/\s/.test(email))
+    add('Email must be a valid email address','candEmail','cm-personal');
+  const num=x=>x===''||x==null?null:Number(x);
+  const exp=num(v.experience_years);
+  if(exp!=null&&(Number.isNaN(exp)||exp<0)) add('Years of Experience cannot be negative','candExp','cm-employment');
+  const gy=num(v.graduation_year);
+  if(gy!=null&&(Number.isNaN(gy)||gy<1970||gy>2030)) add('Graduation Year must be between 1970 and 2030','candGradYear','cm-education');
+  const sal=num(v.expected_salary);
+  if(sal!=null&&(Number.isNaN(sal)||sal<0)) add('Expected Salary cannot be negative','candExpSalary','cm-others');
+  const url=(v.linkedin_url||'').trim();
+  if(url&&!/^https?:\/\/\S+$/i.test(url)) add('LinkedIn / Portfolio URL must start with http:// or https://','candLinkedin','cm-others');
+  return out;
+}
+
+// Reports each problem as its own pop-up, jumps to the tab of the first one and
+// focuses its field.
+function showCandFormProblems(problems) {
+  problems.forEach(p=>showToast(p.msg,'error'));
+  const first=problems[0];
+  if(first){
+    switchCandFormTab(first.tab);
+    document.getElementById(first.field)?.focus();
+  }
+}
+
 async function submitCandForm(e) {
   e.preventDefault();
-  const err=document.getElementById('candFormErr');
-  err.classList.add('hidden');
+  document.getElementById('candFormErr').classList.add('hidden');
   const id=document.getElementById('candId').value;
   const body={
     full_name:document.getElementById('candFullName').value.trim(),
@@ -754,14 +788,21 @@ async function submitCandForm(e) {
     referral_by:document.getElementById('candReferral').value||null,
     notes:document.getElementById('candNotes').value||null,
   };
+  const problems=candFormProblems({
+    ...body,
+    experience_years:document.getElementById('candExp').value,
+    graduation_year:document.getElementById('candGradYear').value,
+    expected_salary:document.getElementById('candExpSalary').value,
+  });
+  if(problems.length){ showCandFormProblems(problems); return; }
   const res=await api(id?`/api/recruitment/candidates/${id}`:`/api/recruitment/candidates`,
     {method:id?'PUT':'POST',body:JSON.stringify(body)});
-  if(!res||!res.ok){const d=await res?.json();err.textContent=d?.detail||'Failed';err.classList.remove('hidden');return;}
+  if(!res||!res.ok){const d=await res?.json().catch(()=>null);showToast(apiErrorText(d?.detail,'Could not save the candidate'));return;}
   const saved=await res.json();
   if(candPendingFiles.length){
     const docRes=await api(`/api/recruitment/candidates/${saved.id}/documents`,
       {method:'POST',body:JSON.stringify(candPendingFiles.map(({file_name,mime_type,data_url})=>({file_name,mime_type,data_url})))});
-    if(!docRes||!docRes.ok){const d=await docRes?.json();err.textContent=d?.detail||'Candidate saved, but file upload failed';err.classList.remove('hidden');return;}
+    if(!docRes||!docRes.ok){const d=await docRes?.json().catch(()=>null);showToast('Candidate saved, but the file upload failed: '+apiErrorText(d?.detail,'please try attaching again'));return;}
   }
   candPendingFiles=[];
   closeCandModal(); loadCandidates();

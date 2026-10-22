@@ -469,6 +469,29 @@ function apiErrorText(detail, fallback = 'Failed') {
   return fallback;
 }
 
+// Temporary pop-up message that fades away on its own (click to dismiss sooner).
+// type: 'error' | 'success' | 'info'. Sits above open modals, so a form's
+// problems stay visible whichever tab/section of it is showing. Text only
+// (textContent), so server-supplied messages can never inject markup.
+function showToast(message, type = 'error', ms = 6000) {
+  if (!message) return;
+  let host = document.getElementById('toastHost');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'toastHost';
+    document.body.appendChild(host);
+  }
+  const t = document.createElement('div');
+  t.className = `toast toast-${type}`;
+  t.setAttribute('role', type === 'error' ? 'alert' : 'status');
+  t.textContent = message;
+  host.appendChild(t);
+  const dismiss = () => { t.classList.add('toast-out'); setTimeout(() => t.remove(), 350); };
+  const timer = setTimeout(dismiss, ms);
+  t.addEventListener('click', () => { clearTimeout(timer); dismiss(); });
+  while (host.children.length > 6) host.firstChild.remove();
+}
+
 // ---------------------------------------------------------------------------
 // Auth
 // ---------------------------------------------------------------------------

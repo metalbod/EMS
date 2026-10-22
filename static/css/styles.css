@@ -451,3 +451,13 @@ input[type="checkbox"]:not(:disabled),input[type="radio"]:not(:disabled),input[t
    alone so Delete/Reject stay red and Approve stays green. */
 button[class~="text-xs"][class*="hover:underline"]{padding:.15rem .7rem;border:1px solid var(--line-strong);border-radius:var(--radius-pill);background:transparent;font-weight:500;line-height:1.4;transition:background .15s}
 button[class~="text-xs"][class*="hover:underline"]:hover{background:var(--surface-2);text-decoration:none}
+
+/* Toast pop-ups (showToast in core.js) — top-centre, above modals (z-50), fade away. */
+#toastHost{position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:200;display:flex;flex-direction:column;gap:8px;align-items:center;width:min(92vw,440px);pointer-events:none}
+.toast{pointer-events:auto;cursor:pointer;width:100%;padding:10px 14px;border-radius:var(--radius-sm);font-size:.875rem;line-height:1.35;background:var(--surface);color:var(--ink);border:1px solid var(--line-strong,#8C979E);border-left-width:4px;box-shadow:0 8px 24px rgba(20,24,28,.18);animation:toastIn .22s ease-out;transition:opacity .3s,transform .3s}
+.toast-error{border-left-color:#DC2626}
+.toast-success{border-left-color:var(--accent)}
+.toast-info{border-left-color:#2563EB}
+.toast-out{opacity:0;transform:translateY(-6px)}
+@keyframes toastIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.toast{animation:none;transition:none}}
