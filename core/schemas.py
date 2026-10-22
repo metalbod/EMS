@@ -39,6 +39,9 @@ class CurrentUserOut(BaseModel):
     employee_id: Optional[str] = None
     institution: Optional[InstitutionBrief] = None
     must_change_password: bool = False
+    # True when this person is listed as a manager of at least one project: shows them the Projects page in the sidebar, limited to the
+    # projects they manage and to its Tasks (routers/projects.py's require_task_manage).
+    manages_projects: bool = False
     # Drives the frontend's Recruitment nav-group/KPI-tile visibility
     # (static/js/core.js's applyRoleUI) — computed server-side via
     # has_permission() for the "recruitment.view_requisitions_candidates_

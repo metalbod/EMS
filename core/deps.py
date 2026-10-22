@@ -174,6 +174,9 @@ def build_current_user_out(conn, user: dict, role_override: str = None):
     is_interviewer = bool(user.get("institution_id") and user.get("employee_id") and conn.execute(
         "SELECT 1 FROM interview_interviewers WHERE institution_id=? AND employee_id=? LIMIT 1",
         (user["institution_id"], user["employee_id"])).fetchone())
+    manages_projects = bool(user.get("institution_id") and user.get("employee_id") and conn.execute(
+        "SELECT 1 FROM project_managers pm JOIN projects p ON p.id = pm.project_id WHERE p.institution_id=? AND pm.employee_id=? LIMIT 1",
+        (user["institution_id"], user["employee_id"])).fetchone())
     sso_enabled = sso_linked = password_signin_blocked = False
     if user.get("institution_id") and effective_role != "superadmin":
         s = conn.execute("SELECT enabled, enforce FROM institution_sso WHERE institution_id=?", (user["institution_id"],)).fetchone()
@@ -196,7 +199,7 @@ def build_current_user_out(conn, user: dict, role_override: str = None):
         can_manage_recruitment=can_manage_recruitment,
         can_view_candidate_history=can_view_candidate_history,
         can_view_candidate_stage_time=can_view_candidate_stage_time,
-        is_interviewer=is_interviewer,
+        is_interviewer=is_interviewer, manages_projects=manages_projects,
         sso_enabled=sso_enabled, sso_linked=sso_linked, password_signin_blocked=password_signin_blocked,
     )
 

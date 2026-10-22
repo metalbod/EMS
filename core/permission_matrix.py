@@ -320,7 +320,7 @@ MATRIX: List[Dict[str, Any]] = [
     {
         "module": "Projects & Tasks",
         "actions": [
-            _action("Manage projects, tasks, assignments", "routers/projects.py", _flat(*_PROJECT_MANAGE), note="No hr_admin."),
+            _action("Manage projects, tasks, assignments", "routers/projects.py", _flat(*_PROJECT_MANAGE), note="No hr_admin. Separately from this permission, a project's own listed managers can add/edit/delete THAT project's tasks (routers/projects.py require_task_manage)."),
             _action("Utilization report", "GET /api/projects/utilization", _flat(*_PROJECT_MANAGE)),
             _action("View my projects / project tasks / assignments", "GET endpoints", _no_restriction(), note="Scoped to the caller's own assignments."),
             _action("Get task by id", "GET /api/tasks/{id} (routers/tasks.py, not routers/projects.py)", _no_restriction(),

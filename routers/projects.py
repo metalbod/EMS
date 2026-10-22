@@ -13,13 +13,34 @@ from core.db_session import db_session
 
 from core.audit import diff_rows, summarize, write_entity_audit
 
-from core.permission_matrix import require_permission
+from core.permission_matrix import has_permission, require_permission
 
 from routers.timesheets import _weekly_hours_breakdown
 
 router = APIRouter()
 
 PROJECT_MANAGE_ROLES = ("superadmin", "hr_manager")
+TASK_MANAGE_KEY = "projects_tasks.manage_projects_tasks_assignments"
+TASK_STATUSES = ("Not Started", "In Progress", "Completed")
+
+
+def is_project_manager_of(conn, inst_id: int, employee_id: Optional[str], project_id: int) -> bool:
+    """True when this employee is listed as a manager of this project (project_managers)."""
+    return bool(employee_id and conn.execute(
+        "SELECT 1 FROM project_managers pm JOIN projects p ON p.id = pm.project_id "
+        "WHERE pm.project_id=? AND pm.employee_id=? AND p.institution_id=?", (project_id, employee_id, inst_id)).fetchone())
+
+
+def require_task_manage(conn, user: dict, project_id: int) -> None:
+    """Who may add, edit and delete a project's tasks: whoever holds the 'Manage projects, tasks, assignments' permission (HR
+    Manager / superadmin by default) OR someone listed as a manager of THAT project - not of projects they merely belong to or
+    manage elsewhere. (Added 2026-10-22: before this only the permission mattered, so a project's own manager couldn't add a task.)"""
+    if user["role"] == "superadmin":
+        return
+    inst_id = need_inst(user)
+    if has_permission(conn, inst_id, user, TASK_MANAGE_KEY) or is_project_manager_of(conn, inst_id, user.get("employee_id"), project_id):
+        return
+    raise HTTPException(403, "Insufficient permissions")
 
 
 class ProjectIn(BaseModel):
@@ -455,7 +476,8 @@ def list_project_tasks(conn, project_id: int, user: dict = Depends(get_current_u
         "SELECT id FROM project_members WHERE project_id=? AND employee_id=?",
         (project_id, user.get("employee_id"))
     ).fetchone()
-    if user["role"] not in PROJECT_MANAGE_ROLES and not is_member and not project["is_open_to_all"]:
+    if (user["role"] not in PROJECT_MANAGE_ROLES and not is_member and not project["is_open_to_all"]
+            and not is_project_manager_of(conn, inst_id, user.get("employee_id"), project_id)):
         return []
     sql = """
         SELECT t.*, COALESCE(SUM(te.hours),0) AS logged_hours
@@ -468,64 +490,79 @@ def list_project_tasks(conn, project_id: int, user: dict = Depends(get_current_u
     return [dict(r) for r in rows]
 
 
-@router.post("/api/projects/{project_id}/tasks", status_code=201)
-@db_session
-def create_project_task(conn, project_id: int, body: ProjectTaskIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
-    require_permission(conn, user, "projects_tasks.manage_projects_tasks_assignments")
-    inst_id = need_inst(user)
-    project = conn.execute("SELECT * FROM projects WHERE id=? AND institution_id=?", (project_id, inst_id)).fetchone()
-    if not project:
-        raise HTTPException(404, "Project not found")
+def create_task_record(conn, user: dict, inst_id: int, project, body: "ProjectTaskIn", via: Optional[str] = None) -> Dict[str, Any]:
+    """The one place a project task is created (the web screen and the Claude endpoints both end up here), so the date rules
+    and the audit entry can't drift apart. Commits."""
     if body.start_date and body.end_date and body.end_date < body.start_date:
         raise HTTPException(400, "End date must be on or after start date")
     _check_task_dates_within_project(project, body)
     conn.execute(
         "INSERT INTO project_tasks (institution_id,project_id,name,description,estimated_hours,start_date,end_date,status,created_by) "
         "VALUES (?,?,?,?,?,?,?,?,?)",
-        (inst_id, project_id, body.name, body.description, body.estimated_hours,
+        (inst_id, project["id"], body.name, body.description, body.estimated_hours,
          body.start_date, body.end_date, body.status, user["username"])
     )
     row = conn.execute("SELECT * FROM project_tasks WHERE id=last_insert_rowid()").fetchone()
-    write_entity_audit(conn, user, inst_id, "Projects", "project", project_id, "Task added", detail=f"Task '{body.name}' added ({body.status})",
-                       entity_label=project["name"])
+    write_entity_audit(conn, user, inst_id, "Projects", "project", project["id"], "Task added",
+                       detail=f"Task '{body.name}' added ({body.status})" + (f" (via {via})" if via else ""), entity_label=project["name"])
     conn.commit()
     return dict(row)
 
 
-@router.put("/api/projects/{project_id}/tasks/{task_id}")
-@db_session
-def update_project_task(conn, project_id: int, task_id: int, body: ProjectTaskIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
-    require_permission(conn, user, "projects_tasks.manage_projects_tasks_assignments")
-    inst_id = need_inst(user)
-    old_task = conn.execute("SELECT * FROM project_tasks WHERE id=? AND project_id=? AND institution_id=?", (task_id, project_id, inst_id)).fetchone()
-    if not old_task:
-        raise HTTPException(404, "Task not found")
-    project = conn.execute("SELECT * FROM projects WHERE id=? AND institution_id=?", (project_id, inst_id)).fetchone()
+def update_task_record(conn, user: dict, inst_id: int, project, old_task, body: "ProjectTaskIn", via: Optional[str] = None) -> Dict[str, Any]:
     if body.start_date and body.end_date and body.end_date < body.start_date:
         raise HTTPException(400, "End date must be on or after start date")
     _check_task_dates_within_project(project, body)
     conn.execute(
         "UPDATE project_tasks SET name=?,description=?,estimated_hours=?,start_date=?,end_date=?,status=? WHERE id=?",
-        (body.name, body.description, body.estimated_hours, body.start_date, body.end_date, body.status, task_id)
+        (body.name, body.description, body.estimated_hours, body.start_date, body.end_date, body.status, old_task["id"])
     )
-    row = conn.execute("SELECT * FROM project_tasks WHERE id=?", (task_id,)).fetchone()
+    row = conn.execute("SELECT * FROM project_tasks WHERE id=?", (old_task["id"],)).fetchone()
     changes = diff_rows(old_task, row)
     if changes:
-        write_entity_audit(conn, user, inst_id, "Projects", "project", project_id, "Task updated", changes=changes,
-                           detail=f"Task '{old_task['name']}'", entity_label=project["name"])
+        write_entity_audit(conn, user, inst_id, "Projects", "project", project["id"], "Task updated", changes=changes,
+                           detail=f"Task '{old_task['name']}'" + (f" (via {via})" if via else ""), entity_label=project["name"])
     conn.commit()
     return dict(row)
 
 
-@router.delete("/api/projects/{project_id}/tasks/{task_id}", status_code=204)
-@db_session
-def delete_project_task(conn, project_id: int, task_id: int, user: dict = Depends(get_current_user)) -> None:
-    require_permission(conn, user, "projects_tasks.manage_projects_tasks_assignments")
-    inst_id = need_inst(user)
+def delete_task_record(conn, user: dict, inst_id: int, project_id: int, task_id: int, via: Optional[str] = None) -> None:
     if conn.execute("SELECT id FROM timesheet_entries WHERE task_id=? AND institution_id=?", (task_id, inst_id)).fetchone():
         raise HTTPException(400, "Cannot delete a task that already has logged timesheet hours — mark it Completed instead")
     task = conn.execute("SELECT name FROM project_tasks WHERE id=? AND project_id=? AND institution_id=?", (task_id, project_id, inst_id)).fetchone()
     conn.execute("DELETE FROM project_tasks WHERE id=? AND project_id=? AND institution_id=?", (task_id, project_id, inst_id))
     if task:
-        write_entity_audit(conn, user, inst_id, "Projects", "project", project_id, "Task deleted", detail=f"Task '{task['name']}' deleted")
+        write_entity_audit(conn, user, inst_id, "Projects", "project", project_id, "Task deleted",
+                           detail=f"Task '{task['name']}' deleted" + (f" (via {via})" if via else ""))
     conn.commit()
+
+
+@router.post("/api/projects/{project_id}/tasks", status_code=201)
+@db_session
+def create_project_task(conn, project_id: int, body: ProjectTaskIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    require_task_manage(conn, user, project_id)
+    inst_id = need_inst(user)
+    project = conn.execute("SELECT * FROM projects WHERE id=? AND institution_id=?", (project_id, inst_id)).fetchone()
+    if not project:
+        raise HTTPException(404, "Project not found")
+    return create_task_record(conn, user, inst_id, project, body)
+
+
+@router.put("/api/projects/{project_id}/tasks/{task_id}")
+@db_session
+def update_project_task(conn, project_id: int, task_id: int, body: ProjectTaskIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    require_task_manage(conn, user, project_id)
+    inst_id = need_inst(user)
+    old_task = conn.execute("SELECT * FROM project_tasks WHERE id=? AND project_id=? AND institution_id=?", (task_id, project_id, inst_id)).fetchone()
+    if not old_task:
+        raise HTTPException(404, "Task not found")
+    project = conn.execute("SELECT * FROM projects WHERE id=? AND institution_id=?", (project_id, inst_id)).fetchone()
+    return update_task_record(conn, user, inst_id, project, old_task, body)
+
+
+@router.delete("/api/projects/{project_id}/tasks/{task_id}", status_code=204)
+@db_session
+def delete_project_task(conn, project_id: int, task_id: int, user: dict = Depends(get_current_user)) -> None:
+    require_task_manage(conn, user, project_id)
+    inst_id = need_inst(user)
+    delete_task_record(conn, user, inst_id, project_id, task_id)

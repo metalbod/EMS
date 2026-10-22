@@ -992,6 +992,21 @@ wrapper everywhere.
   enforces it: `/api/auth/login` 403s a non-emergency user). A failed Microsoft sign-in (`sso_error`, or a refused one-time code) now
   clears `oauth_resume` (`handleSsoReturn`) so the next ordinary login isn't sent to a stale Allow screen. Real Microsoft round trip
   still untested; verify with one connect through the Microsoft button.
+  **Project managers manage their own projects' tasks — in EMS and in Claude** (2026-10-22): `routers/projects.py`'s
+  `require_task_manage()` now lets create/update/delete of a task through when the caller holds the "Manage projects, tasks,
+  assignments" permission (HR Manager/superadmin by default) **or is a listed manager (`project_managers`) of THAT project**; being a
+  member, or a manager of a different project, is still refused. The three web endpoints and the Claude ones share
+  `create_task_record`/`update_task_record`/`delete_task_record` (date rules, "can't delete a task with logged hours — mark it
+  Completed", audit; Claude's rows say "(via Claude)"). `list_project_tasks` now also shows every task to a project's manager who isn't a
+  member (its comment always said so, its code didn't). `GET /api/auth/me` has `manages_projects`; `applyRoleUI()` then shows a
+  non-HR project manager the **Projects** nav item, and `timesheet.js` limits that page to their own projects (`myManagedProjects`) and
+  opens a **Tasks-only** dialog (`openProjectTasksOnly`: no Details/team/delete/duplicate/Add Project; `isProjectAdmin()` = HR/superadmin
+  gets everything as before). Claude side (`routers/me_projects.py`, scope `projects:write`, tools `my_managed_projects` /
+  `add_project_task` / `update_project_task` / `delete_project_task`): **narrower than the web rule on purpose** — only a project's
+  *listed manager* (an HR Manager who isn't one is sent to the web screen), same 403 whether the project exists or not, exact paths with
+  ids in the body, partial updates (`model_fields_set`; null clears), status must be Not Started/In Progress/Completed, exact duplicate
+  task names in a project refused (Claude path only; the web grid still allows them), and the tool descriptions + skill make Claude
+  read the change back and wait for a yes before every write, with an extra warning on delete. Scope added → everyone reconnects once.
   Connector address staff paste into Claude: `https://ems-mcp.fly.dev/mcp` (no custom domain, by decision). The OAuth/registration
   rate limits are in-memory per machine, same tradeoff as the login limiter (prod runs 2 machines, so limits are per machine).
   The metadata `issuer` has a trailing slash on purpose (the MCP server's advertised issuer is a pydantic `AnyHttpUrl`, which

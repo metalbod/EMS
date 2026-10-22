@@ -77,7 +77,7 @@ mcp = FastMCP(
     "EMS",
     instructions=(
         "Self-service for the signed-in employee in EMS (their company's HR system): clock in and out, see today's "
-        "attendance, see leave balances, log hours to their draft timesheet, see the week's clocked and missing hours, and see which colleagues are on approved leave. Everything acts only as that one person. Clocking in/out records real "
+        "attendance, see leave balances, log hours to their draft timesheet, see the week's clocked and missing hours, see which colleagues are on approved leave, and (for projects they manage) add, edit and delete project tasks. Everything acts only as that one person. Clocking in/out records real "
         "attendance, so only do it when the person clearly asks."
     ),
     token_verifier=EmsTokenVerifier(),
@@ -320,6 +320,65 @@ async def public_holidays(date: Optional[str] = None, end_date: Optional[str] = 
     else:
         msg = f"No public holidays {'on ' + res['from'] if res['to'] == res['from'] else 'between ' + res['from'] + ' and ' + res['to'] if res['to'] else 'listed from ' + res['from'] + ' onward'}."
     return {**res, "message": msg}
+
+
+CONFIRM_FIRST = (
+    "This changes real project data that other people see. Never call it until the person has confirmed the exact change you read back to "
+    "them in this conversation (project, task, and what changes). Only for projects the person is a listed manager of.")
+
+
+@mcp.tool(annotations=ToolAnnotations(title="Projects I manage", readOnlyHint=True, openWorldHint=False))
+async def my_managed_projects() -> dict:
+    """List the projects the signed-in employee is a listed project MANAGER of (including On Hold and Completed ones), with every task: its id, status, estimated hours, dates, hours already logged on it, and whether it can be deleted (a task with logged hours can't be). Call this to find ids before adding, editing or deleting a task. Safe to call any time."""
+    rows = await ems("GET", "/api/me/managed-projects")
+    def line(p):
+        tasks = ", ".join(f"{t['task_name']} ({t['status']})" for t in p["tasks"]) or "no tasks yet"
+        return f"{p['project_name']} [{p['status']}]: {tasks}"
+    return {"projects": rows, "message": ("\n".join(line(p) for p in rows)) or "You aren't listed as a manager of any project."}
+
+
+@mcp.tool(
+    description=("Add a task to a project the signed-in employee manages. " + CONFIRM_FIRST + " Needs the project_id from my_managed_projects and a "
+                 "name; description, estimated_hours, start_date and end_date (YYYY-MM-DD, within the project's own dates) are optional; status is "
+                 "'Not Started' (default), 'In Progress' or 'Completed'. A task with the same name already in the project is refused."),
+    annotations=ToolAnnotations(title="Add a project task", readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False))
+async def add_project_task(project_id: int, name: str, description: Optional[str] = None, estimated_hours: Optional[float] = None,
+                           start_date: Optional[str] = None, end_date: Optional[str] = None, status: str = "Not Started") -> dict:
+    body = {k: v for k, v in {"project_id": project_id, "name": name, "description": description, "estimated_hours": estimated_hours,
+                              "start_date": start_date, "end_date": end_date, "status": status}.items() if v is not None}
+    res = await ems("POST", "/api/me/project-tasks/add", json=body)
+    bits = [res["status"]] + ([f"{res['estimated_hours']}h estimated"] if res.get("estimated_hours") else []) + (
+        [f"{res['start_date']} to {res['end_date'] or '?'}"] if res.get("start_date") else [])
+    return {**res, "message": f"Added task '{res['task_name']}' to {res['project_name']} ({', '.join(bits)})."}
+
+
+@mcp.tool(
+    description=("Change a task in a project the signed-in employee manages: only the fields you pass are changed. " + CONFIRM_FIRST + " "
+                 "Pass project_id and task_id (from my_managed_projects) and any of name, description, estimated_hours, start_date, end_date, status. "
+                 "To empty a field (description, estimated_hours, start_date, end_date) list its name in clear_fields instead of passing a value."),
+    annotations=ToolAnnotations(title="Edit a project task", readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False))
+async def update_project_task(project_id: int, task_id: int, name: Optional[str] = None, description: Optional[str] = None,
+                              estimated_hours: Optional[float] = None, start_date: Optional[str] = None, end_date: Optional[str] = None,
+                              status: Optional[str] = None, clear_fields: Optional[list[str]] = None) -> dict:
+    body: dict = {"project_id": project_id, "task_id": task_id}
+    body.update({k: v for k, v in {"name": name, "description": description, "estimated_hours": estimated_hours, "start_date": start_date,
+                                   "end_date": end_date, "status": status}.items() if v is not None})
+    for f in clear_fields or []:
+        if f not in ("description", "estimated_hours", "start_date", "end_date"):
+            raise ToolError("clear_fields can only list: description, estimated_hours, start_date, end_date.")
+        body[f] = None
+    res = await ems("POST", "/api/me/project-tasks/update", json=body)
+    renamed = f" (was '{res['previous_name']}')" if "name" in res["changed"] else ""
+    return {**res, "message": f"Updated task '{res['task_name']}'{renamed} in {res['project_name']}: changed {', '.join(res['changed'])}."}
+
+
+@mcp.tool(
+    description=("Permanently delete a task from a project the signed-in employee manages. " + CONFIRM_FIRST + " Deleting can't be undone, so say "
+                 "so when you ask. A task that already has hours logged on it can't be deleted: set its status to 'Completed' instead."),
+    annotations=ToolAnnotations(title="Delete a project task", readOnlyHint=False, destructiveHint=True, idempotentHint=False, openWorldHint=False))
+async def delete_project_task(project_id: int, task_id: int) -> dict:
+    res = await ems("POST", "/api/me/project-tasks/delete", json={"project_id": project_id, "task_id": task_id})
+    return {**res, "message": f"Deleted task '{res['task_name']}' from {res['project_name']}."}
 
 
 if __name__ == "__main__":

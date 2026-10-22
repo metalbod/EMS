@@ -9,7 +9,7 @@ function mcpSetMsg(text, ok) {
 }
 
 function mcpScopeLabel(scope) {
-  const names = { 'attendance:clock': 'clock in/out', 'attendance:read': 'attendance', 'leave:read': 'leave balance', 'timesheet:read': 'see timesheet hours, projects and their teams', 'timesheet:write': 'log hours (draft)', 'leave:colleagues': 'see who is on leave', 'holidays:read': 'see public holidays' };
+  const names = { 'attendance:clock': 'clock in/out', 'attendance:read': 'attendance', 'leave:read': 'leave balance', 'timesheet:read': 'see timesheet hours, projects and their teams', 'timesheet:write': 'log hours (draft)', 'leave:colleagues': 'see who is on leave', 'holidays:read': 'see public holidays', 'projects:write': 'manage tasks in projects you manage' };
   return String(scope || '').split(' ').filter(Boolean).map(s => names[s] || s).join(', ');
 }
 

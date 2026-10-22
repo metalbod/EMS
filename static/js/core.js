@@ -931,7 +931,8 @@ function applyRoleUI() {
   document.getElementById('nav-leave-approvals')?.classList.toggle('hidden', !HR_AND_MANAGER_ROLES.includes(role));
   document.getElementById('nav-timesheet-group')?.classList.toggle('hidden', hideEmp);
   document.getElementById('nav-timesheet-approvals')?.classList.toggle('hidden', !HR_AND_MANAGER_ROLES.includes(role));
-  document.getElementById('nav-projects')?.classList.toggle('hidden', !HR_MANAGER_ONLY_ROLES.includes(role));
+  // HR sees the whole Projects screen; a listed project manager sees it too, limited to their own projects' tasks (timesheet.js).
+  document.getElementById('nav-projects')?.classList.toggle('hidden', !(HR_MANAGER_ONLY_ROLES.includes(role) || currentUser?.manages_projects));
   // Clock In/Out is self-service for anyone with an employee record; the
   // employee_id-linked check happens on load (see attendance.js), the nav
   // toggle here just hides it from superadmin (no employee record at all).

@@ -2035,7 +2035,7 @@
           <div class="flex items-center gap-3">
             <input id="projectSearch" type="text" placeholder="Search projects…" class="inp" style="width:220px" oninput="filterProjectsBySearch(this.value)"/>
             <button onclick="openEntityHistory({title:'Project history',module:'Projects',entity_type:'project'})" class="hist-btn hidden btn-ghost text-sm mr-2">History</button>
-            <button onclick="openProjectModal()" class="btn-primary text-sm flex items-center gap-2 shrink-0">
+            <button id="projectAddBtn" onclick="openProjectModal()" class="btn-primary text-sm flex items-center gap-2 shrink-0">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
               Add Project
             </button>
@@ -5214,7 +5214,7 @@
 
     <!-- Tabs: Tasks only relevant once the project exists -->
     <div id="projectModalTabs" class="flex border-b border-slate-200 px-6 shrink-0">
-      <button class="project-tab-btn project-tab-active px-3 py-2.5 text-sm" data-ptab="details" onclick="switchProjectTab('details')">Details</button>
+      <button id="projectTabDetailsBtn" class="project-tab-btn project-tab-active px-3 py-2.5 text-sm" data-ptab="details" onclick="switchProjectTab('details')">Details</button>
       <button id="projectTabTasksBtn" class="project-tab-btn hidden px-3 py-2.5 text-sm text-slate-500" data-ptab="tasks" onclick="switchProjectTab('tasks')">Tasks</button>
     </div>
 

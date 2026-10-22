@@ -36,8 +36,15 @@ const PROJECT_MANAGER_ELIGIBLE_ROLES=['manager','hr_manager','hr_admin'];
 // loadProjectManagerEligibility() each time the Edit Project modal opens.
 let projectManagerEligibleIds=new Set();
 
-function isProjectManager() {
+// HR Manager / superadmin run the whole Projects screen. Anyone else who reaches it is a listed project manager
+// (currentUser.manages_projects): they get only their own projects, and for each one just its Tasks.
+function isProjectAdmin() {
   return HR_MANAGER_ONLY_ROLES.includes(currentUser?.role);
+}
+
+function myManagedProjects(rows) {
+  const me=currentUser?.employee_id;
+  return rows.filter(p=>me && (p.manager_ids||[]).includes(me));
 }
 
 // ---------------------------------------------------------------------------
@@ -61,8 +68,10 @@ async function loadProjects() {
   if(projectFilter) url+=`?status=${encodeURIComponent(projectFilter)}`;
   const res=await api(url);
   if(!res?.ok){ listEl.innerHTML=''; return; }
-  const rows=await res.json();
+  const allRows=await res.json();
+  const rows=isProjectAdmin()?allRows:myManagedProjects(allRows);
   projectsCache=rows;
+  document.getElementById('projectAddBtn')?.classList.toggle('hidden', !isProjectAdmin());
   populateProjectCustomerOptions();
   if(!rows.length){ listEl.innerHTML=''; emptyEl?.classList.remove('hidden'); renderProjectTableHead(); return; }
   emptyEl?.classList.add('hidden');
@@ -147,9 +156,9 @@ function renderProjectTable() {
       <td class="px-4 py-3 text-slate-600">${p.total_allocated_hours}h</td>
       <td class="px-4 py-3 text-slate-600">${p.total_logged_hours}h</td>
       <td class="px-4 py-3 text-right">
-        <button onclick="event.stopPropagation();openDuplicateProjectModal(${p.id})" class="text-slate-400 hover:text-slate-600 p-1" title="Duplicate project">
+        ${isProjectAdmin()?`<button onclick="event.stopPropagation();openDuplicateProjectModal(${p.id})" class="text-slate-400 hover:text-slate-600 p-1" title="Duplicate project">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V5a2 2 0 012-2h9a2 2 0 012 2v9a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v9a2 2 0 002 2h9a2 2 0 002-2v-2M8 7h6a2 2 0 012 2v6"/></svg>
-        </button>
+        </button>`:''}
       </td>
     </tr>${expanded?projectTaskSubRows(p.id):''}`;
   }).join('');
@@ -390,7 +399,22 @@ function toggleAllProjectMembers() {
   visibleProjectMemberCheckboxes().forEach(b=>b.checked=checked);
 }
 
+// A project manager who isn't HR: just the Tasks tab for one of their projects (no project details, team or delete).
+async function openProjectTasksOnly(projectId) {
+  const p=projectsCache.find(x=>x.id===projectId);
+  document.getElementById('projectId').value=projectId;
+  document.getElementById('projectModalTitle').textContent=`Tasks: ${p?.name||'Project'}`;
+  document.getElementById('projectTabDetailsBtn').classList.add('hidden');
+  document.getElementById('projectTabTasksBtn').classList.remove('hidden');
+  switchProjectTab('tasks');
+  await loadProjectTasksForManage(projectId);
+  resetProjectTaskForm();
+  document.getElementById('projectModal').classList.remove('hidden');
+}
+
 async function openProjectModal(projectId) {
+  if(!isProjectAdmin()) { if(projectId) await openProjectTasksOnly(projectId); return; }
+  document.getElementById('projectTabDetailsBtn')?.classList.remove('hidden');
   document.getElementById('projectId').value=projectId||'';
   document.getElementById('projectModalTitle').textContent=projectId?'Edit Project':'Add Project';
   const tasksBtn=document.getElementById('projectTabTasksBtn');

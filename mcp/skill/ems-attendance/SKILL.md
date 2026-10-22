@@ -1,11 +1,11 @@
 ---
 name: ems-attendance
-description: Clock the user in or out of work in EMS, check whether they are clocked in, check their leave balance, log hours worked to their timesheet, show their clocked and missing hours for the week, say which colleagues are on leave on a day, and tell them about the company's public holidays. Use when the user says things like "clock me in", "clock out", "am I clocked in", "how many leave days do I have", "log 3 hours on Project X", "add my hours for today", "what hours am I missing this week", "who is on leave tomorrow", "is anyone from Sales off Friday", "is tomorrow a public holiday", "when is the next public holiday", or asks about their timesheet or hours. Requires the EMS connector.
+description: Clock the user in or out of work in EMS, check whether they are clocked in, check their leave balance, log hours worked to their timesheet, show their clocked and missing hours for the week, say which colleagues are on leave on a day, tell them about the company's public holidays, and (for projects they manage) add, edit or delete project tasks. Use when the user says things like "clock me in", "clock out", "am I clocked in", "how many leave days do I have", "log 3 hours on Project X", "add my hours for today", "what hours am I missing this week", "who is on leave tomorrow", "is anyone from Sales off Friday", "is tomorrow a public holiday", "when is the next public holiday", "add a task to EZFY", "rename that task", "delete the Townhall task", or asks about their timesheet or hours. Requires the EMS connector.
 ---
 
 # EMS attendance, leave and timesheet
 
-Uses the EMS connector's tools: `attendance_today`, `clock_in`, `clock_out`, `leave_balance`, `my_projects`, `log_hours`, `week_hours`, `colleagues_on_leave`, `public_holidays`.
+Uses the EMS connector's tools: `attendance_today`, `clock_in`, `clock_out`, `leave_balance`, `my_projects`, `log_hours`, `week_hours`, `colleagues_on_leave`, `public_holidays`, `my_managed_projects`, `add_project_task`, `update_project_task`, `delete_project_task`.
 These act only as the signed-in user, on their own record. Clocking in or out writes real
 attendance that HR and payroll rely on.
 
@@ -81,6 +81,22 @@ attendance that HR and payroll rely on.
 - It never says what kind of leave anyone is on, and you must not guess or speculate about why anyone is away.
 - Weekends and public holidays come back as non-working days with nobody listed: say so instead of "nobody is on leave".
 - The person asking is not in the list. Use `leave_balance` / ask EMS for their own leave.
+
+## Managing project tasks (project managers only)
+
+- Only for projects the user is a **listed manager** of. Call `my_managed_projects` first: it lists those projects with every task's
+  id, status, estimated hours, dates and logged hours. If a project isn't in the list, say they aren't a manager of it and that
+  HR can add tasks in the EMS web app. Never try the tools for a project that isn't listed.
+- **Always confirm before changing anything.** Read back the exact change ("Add task 'UAT support' to EZFY, Not Started, 12 hours,
+  from 2 Nov to 13 Nov. Go ahead?") and wait for a clear yes. This changes data other people see. Don't batch several changes behind
+  one yes unless the user approved that whole list.
+- `add_project_task`: needs a project and a name. Don't invent hours, dates or a description. Ask if they matter, or leave them out.
+  Dates are `YYYY-MM-DD` and must fall inside the project's own dates. A task with the same name already in the project is refused.
+- `update_project_task`: send only what changes. To empty a description, estimated hours or a date, list it in `clear_fields`.
+  To close off a task people have logged hours on, set its status to `Completed`.
+- `delete_project_task`: permanent. Say so when you ask for confirmation. A task that already has logged hours can't be deleted
+  (`my_managed_projects` shows this as `can_delete: false`): offer to mark it Completed instead.
+- Report exactly what happened afterwards, in the tool's words. If EMS refuses, say why and don't retry with other values.
 
 ## Public holidays
 

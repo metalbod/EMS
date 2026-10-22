@@ -210,3 +210,42 @@ def test_public_holidays_messages_and_params(fake_ems):
     assert fake_ems["calls"][1][2] == {"date": "2026-10-20", "end_date": "2026-10-20"}     # limit isn't sent alongside an end date
     fake_ems["handlers"][path] = (200, {"from": "2026-10-16", "to": None, "holidays": []})
     assert "listed from 2026-10-16 onward" in run(server.public_holidays())["message"]
+
+
+def test_project_task_tools_send_only_what_was_given_and_summarise(fake_ems):
+    fake_ems["handlers"][("GET", "/api/me/managed-projects")] = (200, [
+        {"project_id": 1, "project_name": "Apollo", "status": "Active", "tasks": [{"task_name": "Build", "status": "In Progress"}]},
+        {"project_id": 2, "project_name": "Quiet", "status": "On Hold", "tasks": []}])
+    msg = run(server.my_managed_projects())["message"]
+    assert "Apollo [Active]: Build (In Progress)" in msg and "Quiet [On Hold]: no tasks yet" in msg
+    fake_ems["handlers"][("GET", "/api/me/managed-projects")] = (200, [])
+    assert run(server.my_managed_projects())["message"] == "You aren't listed as a manager of any project."
+
+    fake_ems["handlers"][("POST", "/api/me/project-tasks/add")] = (201, {
+        "task_id": 9, "task_name": "Design", "project_id": 1, "project_name": "Apollo", "status": "Not Started", "estimated_hours": 6,
+        "start_date": "2026-11-02", "end_date": None})
+    out = run(server.add_project_task(1, "Design", estimated_hours=6, start_date="2026-11-02"))
+    assert out["message"] == "Added task 'Design' to Apollo (Not Started, 6h estimated, 2026-11-02 to ?)."
+    sent = fake_ems["calls"][-1][4].replace(b" ", b"")
+    assert b'"name":"Design"' in sent and b"description" not in sent and b"end_date" not in sent      # unset options aren't sent
+
+    fake_ems["handlers"][("POST", "/api/me/project-tasks/update")] = (200, {
+        "task_id": 9, "task_name": "Design v2", "previous_name": "Design", "project_id": 1, "project_name": "Apollo", "changed": ["estimated_hours", "name"]})
+    out = run(server.update_project_task(1, 9, name="Design v2", clear_fields=["estimated_hours"]))
+    assert out["message"] == "Updated task 'Design v2' (was 'Design') in Apollo: changed estimated_hours, name."
+    sent = fake_ems["calls"][-1][4].replace(b" ", b"")
+    assert b'"estimated_hours":null' in sent and b'"name":"Designv2"' in sent and b"status" not in sent       # (spaces stripped above)
+    with pytest.raises(ToolError, match="clear_fields can only list"):
+        run(server.update_project_task(1, 9, clear_fields=["name"]))
+
+    fake_ems["handlers"][("POST", "/api/me/project-tasks/delete")] = (200, {"deleted": True, "task_name": "Design v2", "project_name": "Apollo"})
+    assert run(server.delete_project_task(1, 9))["message"] == "Deleted task 'Design v2' from Apollo."
+
+
+def test_project_task_errors_pass_through(fake_ems):
+    fake_ems["handlers"][("POST", "/api/me/project-tasks/add")] = (403, {"detail": "Only a project's own managers can change its tasks through Claude."})
+    with pytest.raises(ToolError, match="own managers"):
+        run(server.add_project_task(1, "X"))
+    fake_ems["handlers"][("POST", "/api/me/project-tasks/delete")] = (400, {"detail": "Cannot delete a task that already has logged timesheet hours — mark it Completed instead"})
+    with pytest.raises(ToolError, match="Completed"):
+        run(server.delete_project_task(1, 2))

@@ -479,3 +479,126 @@ def test_authorize_page_handles_a_company_that_requires_microsoft(client):
                                                   "code_challenge": challenge, "code_challenge_method": "S256"}).text
     for marker in ("sso_required", "pwFields", "emergencyLink", "Use emergency password access", "Your company requires Microsoft sign-in."):
         assert marker in page
+
+
+# --------------------------------------------------------------------------- project managers' task tools
+def _task_setup(client, employee_with_login, make_test_project):
+    boss, boss_h = employee_with_login(full_name="ZZ MCP Pm Boss")
+    project = make_test_project(name="ZZ MCP Pm Project", manager_ids=[boss["employee_id"]], is_open_to_all=False, start_date="2027-01-01", end_date="2027-06-30")
+    return boss, boss_h, project
+
+
+def test_project_manager_adds_edits_and_deletes_tasks_through_claude(client, mcp_on, employee_with_login, make_test_project):
+    from db import get_admin_db
+    boss, boss_h, project = _task_setup(client, employee_with_login, make_test_project)
+    tokens, _ = _connect(client, boss_h)
+    auth = _bearer(tokens)
+
+    managed = client.get("/api/me/managed-projects", headers=auth).json()
+    mine = next(p for p in managed if p["project_id"] == project["id"])          # listed although the boss isn't a member of it
+    assert mine["tasks"] == [] and mine["start_date"] == "2027-01-01"
+
+    add = client.post("/api/me/project-tasks/add", headers=auth, json={"project_id": project["id"], "name": "  ZZ Claude Task  ", "estimated_hours": 8,
+                                                                       "start_date": "2027-02-01", "description": "Built by Claude"})
+    assert add.status_code == 201, add.text
+    tid = add.json()["task_id"]
+    assert add.json()["task_name"] == "ZZ Claude Task" and add.json()["status"] == "Not Started"
+
+    dup = client.post("/api/me/project-tasks/add", headers=auth, json={"project_id": project["id"], "name": "zz claude task"})
+    assert dup.status_code == 400 and "already has a task" in dup.json()["detail"]
+
+    # partial update: only the status changes, the rest stays; null clears a field
+    upd = client.post("/api/me/project-tasks/update", headers=auth, json={"project_id": project["id"], "task_id": tid, "status": "In Progress"})
+    assert upd.status_code == 200 and upd.json()["changed"] == ["status"] and upd.json()["estimated_hours"] == 8
+    cleared = client.post("/api/me/project-tasks/update", headers=auth, json={"project_id": project["id"], "task_id": tid, "estimated_hours": None, "end_date": "2027-02-20"})
+    assert cleared.json()["estimated_hours"] is None and cleared.json()["end_date"] == "2027-02-20" and cleared.json()["status"] == "In Progress"
+    renamed = client.post("/api/me/project-tasks/update", headers=auth, json={"project_id": project["id"], "task_id": tid, "name": "ZZ Claude Renamed"})
+    assert renamed.json()["task_name"] == "ZZ Claude Renamed" and renamed.json()["previous_name"] == "ZZ Claude Task"
+    assert client.post("/api/me/project-tasks/update", headers=auth, json={"project_id": project["id"], "task_id": tid}).status_code == 400   # nothing to change
+
+    gone = client.post("/api/me/project-tasks/delete", headers=auth, json={"project_id": project["id"], "task_id": tid})
+    assert gone.status_code == 200 and gone.json()["deleted"] is True
+    assert client.post("/api/me/project-tasks/delete", headers=auth, json={"project_id": project["id"], "task_id": tid}).status_code == 404
+
+    conn = get_admin_db()                                         # every change is recorded as made via Claude
+    try:
+        rows = conn.execute("SELECT action, detail FROM entity_audit_log WHERE module='Projects' AND entity_id=? ORDER BY id", (str(project["id"]),)).fetchall()
+    finally:
+        conn.close()
+    assert [r["action"] for r in rows][-6:].count("Task added") >= 1 and all("(via Claude)" in r["detail"] for r in rows if r["action"].startswith("Task"))
+
+
+@pytest.mark.parametrize("body,fragment", [
+    ({"name": ""}, "needs a name"),
+    ({"name": "ZZ X", "status": "Done-ish"}, "Status must be one of"),
+    ({"name": "ZZ X", "estimated_hours": -1}, "between 0 and 10000"),
+    ({"name": "ZZ X", "start_date": "tomorrow"}, "Start date must look like"),
+    ({"name": "ZZ X", "start_date": "2026-01-01"}, "before the project's start date"),
+    ({"name": "ZZ X", "start_date": "2027-03-01", "end_date": "2027-02-01"}, "End date must be on or after"),
+])
+def test_task_tool_input_rules(client, mcp_on, employee_with_login, make_test_project, body, fragment):
+    _, boss_h, project = _task_setup(client, employee_with_login, make_test_project)
+    tokens, _ = _connect(client, boss_h)
+    res = client.post("/api/me/project-tasks/add", headers=_bearer(tokens), json={"project_id": project["id"], **body})
+    assert res.status_code == 400 and fragment in res.json()["detail"], res.text
+
+
+def test_only_the_projects_own_manager_may_use_the_task_tools(client, mcp_on, hr_manager_auth, employee_with_login, make_test_project,
+                                                              make_test_employee, test_institution):
+    _, boss_h, project = _task_setup(client, employee_with_login, make_test_project)
+    _, stranger_h = employee_with_login(full_name="ZZ MCP Pm Stranger")
+    tokens, _ = _connect(client, stranger_h)
+    auth = _bearer(tokens)
+    assert client.get("/api/me/managed-projects", headers=auth).json() == []
+    for path, body in (("add", {"name": "ZZ Nope"}), ("update", {"task_id": 1, "name": "ZZ Nope"}), ("delete", {"task_id": 1})):
+        res = client.post(f"/api/me/project-tasks/{path}", headers=auth, json={"project_id": project["id"], **body})
+        assert res.status_code == 403 and "own managers" in res.json()["detail"], (path, res.text)
+    assert client.post("/api/me/project-tasks/add", headers=auth, json={"project_id": 999999999, "name": "ZZ Nope"}).status_code == 403   # same answer: no existence leak
+
+    # even an HR Manager who is not one of the project's managers is sent to the web screen: the Claude rule is the narrower one
+    emp = make_test_employee(full_name="ZZ MCP Hr Emp")
+    uname = f"zzmcphr_{emp['employee_id'].lower()}"
+    created = client.post("/api/users", headers=hr_manager_auth, json={"username": uname, "full_name": emp["full_name"], "password": "ZzPytest@123",
+                                                                       "role": "hr_manager", "employee_id": emp["employee_id"]})
+    assert created.status_code == 201, created.text
+    try:
+        login = client.post("/api/auth/login", json={"username": uname, "password": "ZzPytest@123", "institution_code": test_institution["code"]})
+        assert login.status_code == 200, login.text
+        hr_h = {"Authorization": f"Bearer {login.json()['access_token']}"}
+        assert client.post(f"/api/projects/{project['id']}/tasks", headers=hr_h, json={"name": "ZZ Web Ok"}).status_code == 201   # the web rule allows HR
+        hr_tokens, _ = _connect(client, hr_h)
+        res = client.post("/api/me/project-tasks/add", headers=_bearer(hr_tokens), json={"project_id": project["id"], "name": "ZZ Claude No"})
+        assert res.status_code == 403 and "own managers" in res.json()["detail"]
+    finally:
+        client.delete(f"/api/users/{created.json()['id']}", headers=hr_manager_auth)
+
+
+def test_task_tools_need_their_scope_and_the_general_endpoints_stay_closed(client, mcp_on, employee_with_login, make_test_project):
+    boss, boss_h, project = _task_setup(client, employee_with_login, make_test_project)
+    narrow, _ = _connect(client, boss_h, scope="timesheet:read")                 # a connection made before projects:write existed
+    res = client.get("/api/me/managed-projects", headers=_bearer(narrow))
+    assert res.status_code == 403 and "reconnect" in res.json()["detail"]
+    assert client.post("/api/me/project-tasks/add", headers=_bearer(narrow), json={"project_id": project["id"], "name": "ZZ No"}).status_code == 403
+
+    scoped, _ = _connect(client, boss_h, scope="projects:write")
+    assert client.get("/api/me/managed-projects", headers=_bearer(scoped)).status_code == 200
+    # holding it opens nothing else: the web endpoints (ids in their paths) are still unreachable for a Claude token
+    assert client.post(f"/api/projects/{project['id']}/tasks", headers=_bearer(scoped), json={"name": "ZZ Sneaky"}).status_code == 403
+    assert client.get("/api/projects", headers=_bearer(scoped)).status_code == 403
+
+
+def test_a_task_with_logged_hours_cannot_be_deleted_through_claude(client, mcp_on, employee_with_login, make_test_project, hr_manager_auth):
+    boss, boss_h, project = _task_setup(client, employee_with_login, make_test_project)
+    mate, mate_h = employee_with_login(full_name="ZZ MCP Pm Mate")
+    assert client.put(f"/api/projects/{project['id']}", headers=hr_manager_auth, json={
+        "name": project["name"], "status": "Active", "manager_ids": [boss["employee_id"]], "member_ids": [mate["employee_id"]],
+        "start_date": "2027-01-01", "end_date": "2027-06-30"}).status_code == 200
+    tokens, _ = _connect(client, boss_h)
+    auth = _bearer(tokens)
+    task = client.post("/api/me/project-tasks/add", headers=auth, json={"project_id": project["id"], "name": "ZZ MCP Worked"}).json()
+    assert client.post("/api/me/timesheet/log-hours", headers=mate_h, json={"project_id": project["id"], "task_id": task["task_id"], "hours": 1}).status_code == 201
+    managed = next(p for p in client.get("/api/me/managed-projects", headers=auth).json() if p["project_id"] == project["id"])
+    t = next(t for t in managed["tasks"] if t["task_id"] == task["task_id"])
+    assert t["logged_hours"] == 1 and t["can_delete"] is False
+    res = client.post("/api/me/project-tasks/delete", headers=auth, json={"project_id": project["id"], "task_id": task["task_id"]})
+    assert res.status_code == 400 and "Completed" in res.json()["detail"]
