@@ -257,14 +257,14 @@ def test_my_todos_groups_items_and_keeps_sensitive_ones_as_counts(fake_ems):
         "overdue": [{"title": "Leave approval: Amy Tan (2026-10-20 to 2026-10-21)", "days_overdue": 3, "due_date": "2026-10-20"}],
         "today": [{"title": "Interview Zed — 2026-10-23 14:00", "event_date": "2026-10-23"}],
         "waiting": [{"title": "Your timesheet for this week hasn't been submitted yet"}],
-        "sensitive_counts": {"Resignation approvals": 2, "Offboarding checklist tasks": 1}})
+        "sensitive_counts": {"Resignation approvals": 2, "PIP approvals": 1}})
     out = run(server.my_todos())
     msg = out["message"]
     assert msg.startswith("To-Do for 2026-10-23: 6 item(s) outstanding.")
     assert "Overdue (1):\n- Leave approval: Amy Tan (2026-10-20 to 2026-10-21) [3 day(s) overdue]" in msg
     assert "Today (1):\n- Interview Zed — 2026-10-23 14:00 [on 2026-10-23]" in msg
     assert "Waiting (1):\n- Your timesheet" in msg
-    assert "Also waiting in EMS (names not shown here): 2 resignation approvals, 1 offboarding checklist tasks." in msg
+    assert "Also waiting in EMS (names not shown here): 2 resignation approvals, 1 pip approvals." in msg
     assert fake_ems["calls"][-1][:2] == ("GET", "/api/me/todos")
 
 

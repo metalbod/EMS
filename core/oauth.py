@@ -34,7 +34,7 @@ SCOPES = {
     "leave:colleagues": "See which colleagues are on approved leave (names and dates only, never the type of leave)",
     "holidays:read": "See your company's public holidays",
     "projects:write": "See the projects you manage and add, edit and delete their tasks (only projects you are a listed manager of)",
-    "todos:read": "See your To-Do list: what is waiting for you, including requests waiting for your approval (read only; sensitive matters as counts only)",
+    "todos:read": "See your To-Do list: what is waiting for you, including requests waiting for your approval and offboarding tasks with the employee's name (read only; resignations and PIPs as counts only)",
 }
 DEFAULT_SCOPES = ("attendance:clock", "attendance:read", "leave:read", "timesheet:read", "timesheet:write", "leave:colleagues", "holidays:read", "projects:write", "todos:read")
 

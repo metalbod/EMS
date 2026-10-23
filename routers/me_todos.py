@@ -4,9 +4,10 @@ It is the same list the Home To-Do widget shows (routers/dashboard.py's build_to
 
 * "Everything outstanding": the widget has no notion of a daily list, so this returns what is waiting now, in three buckets: overdue (a
   real deadline has passed), today (due or happening today: an interview, a leave starting) and everything else still waiting.
-* Sensitive matters are COUNTS ONLY: resignation and PIP approvals and offboarding checklist tasks (who is leaving) come back as a number
-  per category and are never named. What Claude says gets pasted into chats and notes, which is also why colleagues_on_leave never says
-  the type of leave. The person still sees the names in EMS.
+* Sensitive matters are COUNTS ONLY: resignation and PIP approvals come back as a number per category and are never named. What Claude
+  says gets pasted into chats and notes, which is also why colleagues_on_leave never says the type of leave. The person still sees the
+  names in EMS. (Offboarding checklist tasks WERE counts-only too until 2026-10-23, when the owner chose to have them listed with their
+  titles and the employee's name, so they now come back like any other checklist task.)
 
 Leave approvals are described by their dates only (never the leave type) and benefit claims without the plan or amount.
 
@@ -29,7 +30,6 @@ APPROVAL_CATEGORIES = {
     "timesheet": "Timesheet approval", "ld_enrollment": "Training enrolment approval", "overtime": "Overtime approval",
 }
 SENSITIVE_APPROVALS = {"resignation": "Resignation approvals", "pip": "PIP approvals"}
-OFFBOARDING = "Offboarding checklist tasks"
 REMINDER_CATEGORIES = {
     "timesheet-my": "Timesheet draft", "ld-trainings": "Training in progress", "policy-ack": "Policy to acknowledge",
     "perf-team": "Appraisal review", "employee-documents-expiring": "Employee documents expiring",
@@ -44,7 +44,7 @@ def classify(t: Dict[str, Any]):
         return APPROVAL_CATEGORIES.get(t.get("module"), "Approval"), False
     key = t.get("key") or ""
     if key.startswith("ob-item-"):
-        return (OFFBOARDING, True) if t.get("stage_type") == "Offboarding" else ("Onboarding task", False)
+        return ("Offboarding task" if t.get("stage_type") == "Offboarding" else "Onboarding task"), False
     if key.startswith("interview-"):
         return "Interview", False
     return REMINDER_CATEGORIES.get(key, "Other"), False

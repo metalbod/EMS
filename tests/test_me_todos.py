@@ -54,7 +54,7 @@ def test_classify_names_every_category_and_flags_only_the_sensitive_ones():
     assert c(row(kind="approval", module="resignation")) == ("Resignation approvals", True)
     assert c(row(kind="approval", module="pip")) == ("PIP approvals", True)
     assert c(row(kind="task", key="ob-item-4", stage_type="Onboarding")) == ("Onboarding task", False)
-    assert c(row(kind="task", key="ob-item-5", stage_type="Offboarding")) == ("Offboarding checklist tasks", True)
+    assert c(row(kind="task", key="ob-item-5", stage_type="Offboarding")) == ("Offboarding task", False)     # listed with names since 2026-10-23
     assert c(row(key="interview-9")) == ("Interview", False)
     assert c(row(key="timesheet-my")) == ("Timesheet draft", False)
     assert c(row(key="perf-team")) == ("Appraisal review", False)
@@ -80,13 +80,15 @@ def test_buckets_counts_and_the_sensitive_rows_never_listed(client, hr_with_empl
     assert [i["person"] for i in body["overdue"]] == ["Amy Tan"] and body["overdue"][0]["days_overdue"] == 3
     assert body["overdue"][0]["title"] == "Leave approval: Amy Tan (2026-01-01 to 2026-01-01)" and "Secret Type" not in res.text
     assert [i["category"] for i in body["today"]] == ["Interview"]
-    assert [i["category"] for i in body["waiting"]] == ["Timesheet draft", "Training in progress"]
-    assert body["waiting"][1]["count"] == 3
-    assert body["sensitive_counts"] == {"Resignation approvals": 1, "PIP approvals": 1, "Offboarding checklist tasks": 1}
+    assert [i["category"] for i in body["waiting"]] == ["Timesheet draft", "Offboarding task", "Training in progress"]
+    assert body["waiting"][2]["count"] == 3
+    # offboarding tasks are listed with the task and the employee; resignation and PIP approvals are still counts only
+    leaver = body["waiting"][1]
+    assert leaver["person"] == "Leaver Person" and leaver["title"] == "Return laptop — Leaver Person (Offboarding)"
+    assert body["sensitive_counts"] == {"Resignation approvals": 1, "PIP approvals": 1}
     assert body["total_items"] == 1 + 1 + 1 + 1 + 1 + 1 + 3 and body["counts"]["Training in progress"] == 3
-    assert body["listed"] == 4 and body["truncated"] is False
-    # the sensitive people are not named anywhere in the response
-    for name in ("Secret Person", "Pip Person", "Leaver Person", "Return laptop"):
+    assert body["listed"] == 5 and body["truncated"] is False
+    for name in ("Secret Person", "Pip Person"):
         assert name not in res.text
 
 

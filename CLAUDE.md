@@ -1010,9 +1010,11 @@ wrapper everywhere.
   **`my_todos`** (scope `todos:read`, `routers/me_todos.py`, `GET /api/me/todos`; 2026-10-23): the Home To-Do list read-only, built by
   `routers/dashboard.py`'s `build_todos()` (extracted from `get_todos` so the widget and Claude can't drift apart). Decisions: **everything
   outstanding**, not a daily slice (the widget has no daily notion), grouped overdue / today (due or happening today) / waiting, capped at
-  50 listed items most-pressing-first with `total_items` and per-category `counts` always complete; **resignation approvals, PIP approvals
-  and offboarding checklist tasks are COUNTS ONLY** (`classify()` marks them sensitive; they're never in a list, so never named — same
-  reasoning as `colleagues_on_leave` hiding leave type); **read-only** (no approve/reject through Claude; `/api/todos` and the
+  50 listed items most-pressing-first with `total_items` and per-category `counts` always complete; **resignation approvals and PIP approvals
+  are COUNTS ONLY** (`classify()` marks them sensitive; they're never in a list, so never named — same reasoning as
+  `colleagues_on_leave` hiding leave type). **Offboarding checklist tasks were counts-only too until 2026-10-23, when the owner chose to
+  list them with task title and employee name** (and their last working day as the event date): the one place Claude names someone who
+  is leaving, by explicit decision — undo it by flagging `stage_type == "Offboarding"` as sensitive again in `classify()`; **read-only** (no approve/reject through Claude; `/api/todos` and the
   decision routes stay closed to tokens). The widget's own labels are NOT reused for approvals: a leave approval's label carries the **leave
   type** and a benefit claim's the plan and amount, so `build_todos` rows carry a separate `safe_detail` (`_approval_row_detail`: leave = dates
   only, claim = nothing) and `me_todos._title()` builds Claude's wording from it (found in the end-to-end run, not by the first tests: the

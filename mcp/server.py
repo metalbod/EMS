@@ -385,7 +385,7 @@ async def delete_project_task(project_id: int, task_id: int) -> dict:
     description=(
         "The signed-in employee's To-Do list: everything outstanding right now, the same list as the Home To-Do in EMS, in three groups: "
         "overdue, today (due or happening today) and everything else waiting. It includes requests waiting for the person's approval, "
-        "interviews, onboarding tasks, a draft timesheet and so on. Resignation and PIP approvals and offboarding tasks come back as COUNTS "
+        "interviews, onboarding and offboarding tasks, a draft timesheet and so on. Resignation and PIP approvals come back as COUNTS "
         "ONLY: never guess or ask for who they are, tell the person to open EMS for those. Read only: you cannot approve or reject anything "
         "from here, so don't offer to. Safe to call any time."),
     annotations=ToolAnnotations(title="My To-Do list", readOnlyHint=True, openWorldHint=False))
