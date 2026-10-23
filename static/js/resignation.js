@@ -100,7 +100,7 @@ async function handleResignAttachFile(e) {
   const file = e.target.files?.[0];
   e.target.value = '';
   if (!file) return;
-  if (file.size > RESIGN_ATTACH_MAX_BYTES) { alert('File is too large. Please choose a file under ~6MB.'); return; }
+  if (file.size > RESIGN_ATTACH_MAX_BYTES) { notify('File is too large. Please choose a file under ~6MB.'); return; }
   const dataUrl = await new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result);
@@ -156,7 +156,7 @@ const submitResignation = guardAsync(async function(e) {
     return;
   }
   closeResignModal();
-  if (empId) { closeViewModal(); alert('Resignation filed.'); }
+  if (empId) { closeViewModal(); notify('Resignation filed.'); }
   else { await refreshResignButtonState(); }
 });
 
@@ -183,7 +183,7 @@ async function refreshResignButtonState() {
 async function withdrawMyResignation(id) {
   if (!confirm('Withdraw your resignation request?')) return;
   const res = await api(`/api/resignations/${id}`, { method: 'PATCH', body: JSON.stringify({ status: 'Withdrawn' }) });
-  if (!res?.ok) { const d = await res?.json().catch(() => ({})); alert(d?.detail || 'Failed to withdraw'); return; }
+  if (!res?.ok) { const d = await res?.json().catch(() => ({})); notify(d?.detail || 'Failed to withdraw'); return; }
   await refreshResignButtonState();
 }
 
@@ -262,5 +262,5 @@ function setResignationApprovalFilter(status) {
 async function reviewResignationRequest(id, status) {
   const res = await api(`/api/resignations/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) });
   if (res?.ok) loadResignationApprovals();
-  else { const d = await res.json(); alert(d.detail || 'Failed to update'); }
+  else { const d = await res.json(); notify(d.detail || 'Failed to update'); }
 }

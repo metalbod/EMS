@@ -87,7 +87,7 @@ function closePayrollRunModal() { closeModal('payrollRunModal'); }
 const submitPayrollRun = guardAsync(async function() {
   const period_start=document.getElementById('prStart').value;
   const period_end=document.getElementById('prEnd').value;
-  if(!period_start||!period_end){ alert('Both dates are required'); return; }
+  if(!period_start||!period_end){ notify('Both dates are required'); return; }
   const res=await api('/api/payroll/runs',{method:'POST',body:JSON.stringify({period_start,period_end})});
   if(res?.ok){
     closePayrollRunModal();
@@ -95,7 +95,7 @@ const submitPayrollRun = guardAsync(async function() {
     loadPayrollRuns();
     openPayrollRunDetail(run.id);
   } else {
-    const d=await res.json(); alert(d.detail||'Failed to create payroll run');
+    const d=await res.json(); notify(d.detail||'Failed to create payroll run');
   }
 });
 
@@ -161,32 +161,32 @@ const saveAdjustedPayslip = guardAsync(async function(payslipId) {
   const unpaid_leave_days=parseFloat(document.getElementById(`ps-unpaid-${payslipId}`).value);
   const res=await api(`/api/payroll/payslips/${payslipId}`,{method:'PUT',body:JSON.stringify({basic_salary,unpaid_leave_days})});
   if(res?.ok){ openPayrollRunDetail(currentPayrollRunId); loadPayrollRuns(); }
-  else { const d=await res.json(); alert(d.detail||'Failed to save'); }
+  else { const d=await res.json(); notify(d.detail||'Failed to save'); }
 });
 
 async function recomputePayslip(payslipId) {
   const res=await api(`/api/payroll/payslips/${payslipId}/recompute`,{method:'PATCH'});
   if(res?.ok){ openPayrollRunDetail(currentPayrollRunId); loadPayrollRuns(); }
-  else { const d=await res.json(); alert(d.detail||'Failed to recompute'); }
+  else { const d=await res.json(); notify(d.detail||'Failed to recompute'); }
 }
 
 async function finalizePayrollRun(runId) {
   if(!confirm('Finalize this payroll run? Payslips will be locked and become visible to employees.')) return;
   const res=await api(`/api/payroll/runs/${runId}/finalize`,{method:'PATCH'});
   if(res?.ok){ openPayrollRunDetail(runId); loadPayrollRuns(); }
-  else { const d=await res.json(); alert(d.detail||'Failed to finalize'); }
+  else { const d=await res.json(); notify(d.detail||'Failed to finalize'); }
 }
 
 async function deletePayrollRun(runId) {
   if(!confirm('Delete this Draft payroll run and all its payslips?')) return;
   const res=await api(`/api/payroll/runs/${runId}`,{method:'DELETE'});
   if(res?.ok||res?.status===204){ closePayrollRunDetailModal(); loadPayrollRuns(); }
-  else { const d=await res.json(); alert(d.detail||'Failed to delete'); }
+  else { const d=await res.json(); notify(d.detail||'Failed to delete'); }
 }
 
 async function exportBankCsv(runId) {
   const res=await api(`/api/payroll/runs/${runId}/bank-csv`);
-  if(!res?.ok){ alert('Failed to export bank CSV'); return; }
+  if(!res?.ok){ notify('Failed to export bank CSV'); return; }
   const blob=await res.blob();
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
@@ -221,7 +221,7 @@ async function loadMyPayslips() {
 // ---------------------------------------------------------------------------
 async function viewPayslip(payslipId) {
   const res=await api(`/api/payroll/payslips/${payslipId}`);
-  if(!res?.ok){ alert('Failed to load payslip'); return; }
+  if(!res?.ok){ notify('Failed to load payslip'); return; }
   const p=await res.json();
   document.getElementById('payslipContent').innerHTML=`
     <div class="mb-4">

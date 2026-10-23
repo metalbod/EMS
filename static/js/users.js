@@ -45,7 +45,7 @@ function renderUserTable() {
 async function unlinkUserSso(id) {
   if(!confirm("Unlink this user's Microsoft account? Their next Microsoft sign-in will match them by email again.")) return;
   const res=await api(`/api/users/${id}/sso-unlink`,{method:'POST'});
-  if(!res?.ok){ const d=await res?.json().catch(()=>null); alert(d?.detail?apiErrorText(d.detail):'Could not unlink.'); return; }
+  if(!res?.ok){ const d=await res?.json().catch(()=>null); notify(d?.detail?apiErrorText(d.detail):'Could not unlink.'); return; }
   loadUsers();
 }
 

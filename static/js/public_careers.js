@@ -102,7 +102,7 @@ function handleCareersResumeSelected(e) {
   if (!file) { careersResumeFile = null; return; }
   const MAX_BYTES = 6 * 1024 * 1024;
   if (file.size > MAX_BYTES) {
-    alert('File is too large. Please choose a file under ~6MB.');
+    notify('File is too large. Please choose a file under ~6MB.');
     e.target.value = '';
     careersResumeFile = null;
     return;

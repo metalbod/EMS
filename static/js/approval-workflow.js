@@ -67,8 +67,8 @@ const saveOvertimeSettings = guardAsync(async function() {
     overtime_pay_multiplier: parseFloat(document.getElementById('awOtMultiplier').value) || 1.5,
   };
   const res = await api('/api/overtime/settings', {method: 'PUT', body: JSON.stringify(body)});
-  if (!res?.ok) { const d = await res?.json().catch(()=>({})); alert(d?.detail || 'Failed to save'); return; }
-  alert('Overtime settings saved.');
+  if (!res?.ok) { const d = await res?.json().catch(()=>({})); notify(d?.detail || 'Failed to save'); return; }
+  notify('Overtime settings saved.');
 });
 
 function awUpdateProjectManagerOptionVisibility() {
@@ -119,7 +119,7 @@ async function updateAwWorkflowMode() {
   const res = await api(`/api/approval-workflows/${awCurrentWorkflowId}`, {
     method:'PUT', body: JSON.stringify({name: current?.name || '', is_default: !!current?.is_default, mode})
   });
-  if (!res?.ok) { const d = await res?.json().catch(()=>({})); alert(d?.detail || 'Failed to update mode'); }
+  if (!res?.ok) { const d = await res?.json().catch(()=>({})); notify(d?.detail || 'Failed to update mode'); }
   await loadAwWorkflows(awCurrentWorkflowId);
 }
 
@@ -133,7 +133,7 @@ function hideAwWorkflowForm() { document.getElementById('awWorkflowForm')?.class
 
 const saveAwWorkflow = guardAsync(async function() {
   const name = document.getElementById('awWorkflowName').value.trim();
-  if (!name) { alert('Workflow name is required'); return; }
+  if (!name) { notify('Workflow name is required'); return; }
   const mode = document.getElementById('awWorkflowModeInput').value;
   const res = await api('/api/approval-workflows', {method:'POST', body: JSON.stringify({module: awCurrentModule, name, mode})});
   if (!res?.ok) return;
@@ -170,7 +170,7 @@ async function deleteAwWorkflow() {
   if (!awCurrentWorkflowId) return;
   if (!confirm('Delete this workflow?')) return;
   const res = await api(`/api/approval-workflows/${awCurrentWorkflowId}`, {method:'DELETE'});
-  if (!res?.ok) { const d = await res?.json().catch(()=>({})); alert(d?.detail || 'Failed to delete'); return; }
+  if (!res?.ok) { const d = await res?.json().catch(()=>({})); notify(d?.detail || 'Failed to delete'); return; }
   await loadAwWorkflows();
 }
 
@@ -240,21 +240,21 @@ function onAwNewStepAltTypeChange() {
 }
 
 const addAwStep = guardAsync(async function() {
-  if (!awCurrentWorkflowId) { alert('Create a workflow first'); return; }
+  if (!awCurrentWorkflowId) { notify('Create a workflow first'); return; }
   const approver_type = document.getElementById('awNewStepType').value;
   const specific_employee_id = approver_type === 'specific_employee' ? document.getElementById('awNewStepEmployee').value : null;
-  if (approver_type === 'specific_employee' && !specific_employee_id) { alert('Choose an employee'); return; }
+  if (approver_type === 'specific_employee' && !specific_employee_id) { notify('Choose an employee'); return; }
 
   const hasAlt = document.getElementById('awNewStepHasAlt').checked;
   const alt_approver_type = hasAlt ? document.getElementById('awNewStepAltType').value : null;
   const alt_specific_employee_id = hasAlt && alt_approver_type === 'specific_employee' ? document.getElementById('awNewStepAltEmployee').value : null;
   if (hasAlt) {
-    if (alt_approver_type === approver_type) { alert('The OR approver must be a different type than the primary approver'); return; }
-    if (alt_approver_type === 'specific_employee' && !alt_specific_employee_id) { alert('Choose an alternative employee'); return; }
+    if (alt_approver_type === approver_type) { notify('The OR approver must be a different type than the primary approver'); return; }
+    if (alt_approver_type === 'specific_employee' && !alt_specific_employee_id) { notify('Choose an alternative employee'); return; }
   }
 
   const res = await api(`/api/approval-workflows/${awCurrentWorkflowId}/steps`, {method:'POST', body: JSON.stringify({approver_type, specific_employee_id, alt_approver_type, alt_specific_employee_id})});
-  if (!res?.ok) { const d = await res?.json().catch(()=>({})); alert(d?.detail || 'Failed to add step'); return; }
+  if (!res?.ok) { const d = await res?.json().catch(()=>({})); notify(d?.detail || 'Failed to add step'); return; }
   document.getElementById('awNewStepHasAlt').checked = false;
   onAwNewStepAltToggle();
   await loadAwWorkflows(awCurrentWorkflowId);

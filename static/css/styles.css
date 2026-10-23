@@ -9,7 +9,7 @@
   --ink:         #14181C;  /* headings, primary text */
   --ink-2:       #3A4348;  /* nav labels, secondary body */
   --muted:       #667079;  /* meta text, table values, "Open" states */
-  --faint:       #97A4AB;  /* section labels, timestamps, counts */
+  --faint:       #68727A;  /* section labels, timestamps, counts (4.5:1+ on white and the grey canvas; was #97A4AB, 2.6:1) */
 
   /* Lines */
   --line:        #E3E6E9;  /* borders, outline buttons */
@@ -454,10 +454,28 @@ button[class~="text-xs"][class*="hover:underline"]:hover{background:var(--surfac
 
 /* Toast pop-ups (showToast in core.js) — top-centre, above modals (z-50), fade away. */
 #toastHost{position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:200;display:flex;flex-direction:column;gap:8px;align-items:center;width:min(92vw,440px);pointer-events:none}
-.toast{pointer-events:auto;cursor:pointer;width:100%;padding:10px 14px;border-radius:var(--radius-sm);font-size:.875rem;line-height:1.35;background:var(--surface);color:var(--ink);border:1px solid var(--line-strong,#8C979E);border-left-width:4px;box-shadow:0 8px 24px rgba(20,24,28,.18);animation:toastIn .22s ease-out;transition:opacity .3s,transform .3s}
+.toast{white-space:pre-line;pointer-events:auto;cursor:pointer;width:100%;padding:10px 14px;border-radius:var(--radius-sm);font-size:.875rem;line-height:1.35;background:var(--surface);color:var(--ink);border:1px solid var(--line-strong,#8C979E);border-left-width:4px;box-shadow:0 8px 24px rgba(20,24,28,.18);animation:toastIn .22s ease-out;transition:opacity .3s,transform .3s}
 .toast-error{border-left-color:#DC2626}
 .toast-success{border-left-color:var(--accent)}
 .toast-info{border-left-color:#2563EB}
 .toast-out{opacity:0;transform:translateY(-6px)}
 @keyframes toastIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.toast{animation:none;transition:none}}
+
+/* Phase 0 UX quick wins (Oct 2026) ------------------------------------------
+   Readable secondary text: Tailwind's slate-400 (#94A3B8, 2.6:1 on white) is used
+   for real information (dates, hints, empty states) in ~240 places; map it to the
+   --faint token so it passes 4.5:1. Unlayered, so it wins over the utility. */
+.text-slate-400{color:var(--faint)}
+/* Icon-only row buttons used slate-300 (1.7:1): visible at rest, colour on hover. */
+button.text-slate-300{color:var(--muted)}
+/* Clickable table rows: tint on hover, ring on keyboard focus, so a row that opens
+   something reads as clickable without a button in it. */
+tr[onclick]{cursor:pointer}
+tr[onclick]:hover>td{background:#EDF7F5}
+tr[onclick]:focus-visible{outline:2px solid var(--accent-ink);outline-offset:-2px}
+/* KPI tile arrow: a visible round button, filled on hover, instead of a bare chevron. */
+.kpi-tile-arrow{width:24px;height:24px;padding:5px;border:1px solid var(--line-strong);border-radius:999px;background:var(--surface);transition:background .15s,color .15s,border-color .15s}
+.kpi-tile-link:hover .kpi-tile-arrow,.kpi-tile-link:focus-visible .kpi-tile-arrow{background:var(--accent-ink);border-color:var(--accent-ink);color:#fff}
+.kpi-tile-link:focus-visible{outline:2px solid var(--accent-ink);outline-offset:2px}
+.kpi-tile-link .kpi-tile-label{padding-right:30px}

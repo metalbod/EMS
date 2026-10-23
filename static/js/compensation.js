@@ -117,7 +117,7 @@ async function submitPayGradeForm(e) {
 
   const res = await api(url, { method, body: JSON.stringify(body) });
   if (!res || !res.ok) {
-    alert('Error: ' + (await res.json()).detail);
+    notify('Error: ' + (await res.json()).detail);
     return;
   }
 
@@ -221,7 +221,7 @@ async function submitJobLevelForm(e) {
   });
 
   if (!res || !res.ok) {
-    alert('Error: ' + (await res.json()).detail);
+    notify('Error: ' + (await res.json()).detail);
     return;
   }
 
@@ -328,7 +328,7 @@ async function submitJobRoleForm(e) {
 
   const res = await api('/api/compensation/job-roles', { method: 'POST', body: JSON.stringify(body) });
   if (!res || !res.ok) {
-    alert('Error: ' + (await res.json()).detail);
+    notify('Error: ' + (await res.json()).detail);
     return;
   }
   const role = await res.json();
@@ -537,7 +537,7 @@ async function submitMeritRecommendation(e) {
   });
 
   if (!res || !res.ok) {
-    alert('Error: ' + (await res.json()).detail);
+    notify('Error: ' + (await res.json()).detail);
     return;
   }
 
@@ -553,7 +553,7 @@ async function decideMeritRec(recId, approvalStatus) {
   });
 
   if (!res || !res.ok) {
-    alert('Error updating recommendation');
+    notify('Error updating recommendation');
     return;
   }
 
@@ -585,7 +585,7 @@ async function submitMeritCycleForm(e) {
   });
 
   if (!res || !res.ok) {
-    alert('Error creating merit cycle');
+    notify('Error creating merit cycle');
     return;
   }
 
@@ -687,7 +687,7 @@ async function submitBonusPlanForm(e) {
   });
 
   if (!res || !res.ok) {
-    alert('Error: ' + (await res.json()).detail);
+    notify('Error: ' + (await res.json()).detail);
     return;
   }
 
@@ -732,7 +732,7 @@ async function changeBonusPlanStatus() {
     body: JSON.stringify({ status }),
   });
   if (!res || !res.ok) {
-    alert('Error updating plan status');
+    notify('Error updating plan status');
     return;
   }
   const updated = await res.json();
@@ -821,7 +821,7 @@ async function submitBonusPayout(e) {
   });
 
   if (!res || !res.ok) {
-    alert('Error: ' + (await res.json()).detail);
+    notify('Error: ' + (await res.json()).detail);
     return;
   }
 
@@ -836,7 +836,7 @@ async function decideBonusPayout(payoutId, status) {
     body: JSON.stringify({ status }),
   });
   if (!res || !res.ok) {
-    alert('Error updating payout');
+    notify('Error updating payout');
     return;
   }
   loadBonusPayouts(currentBonusPlanId);
@@ -845,7 +845,7 @@ async function decideBonusPayout(payoutId, status) {
 async function markBonusPayoutPaid(payoutId) {
   const res = await api(`/api/compensation/bonus-payouts/${payoutId}/pay`, { method: 'PUT' });
   if (!res || !res.ok) {
-    alert('Error marking payout as paid');
+    notify('Error marking payout as paid');
     return;
   }
   loadBonusPayouts(currentBonusPlanId);
@@ -941,7 +941,7 @@ async function submitCommissionPlanForm(e) {
   });
 
   if (!res || !res.ok) {
-    alert('Error: ' + (await res.json()).detail);
+    notify('Error: ' + (await res.json()).detail);
     return;
   }
 
@@ -996,7 +996,7 @@ async function changeCommissionPlanStatus() {
     body: JSON.stringify({ status }),
   });
   if (!res || !res.ok) {
-    alert('Error updating plan status');
+    notify('Error updating plan status');
     return;
   }
   const updated = await res.json();
@@ -1090,7 +1090,7 @@ async function submitCommissionEntry(e) {
   });
 
   if (!res || !res.ok) {
-    alert('Error: ' + (await res.json()).detail);
+    notify('Error: ' + (await res.json()).detail);
     return;
   }
 
@@ -1106,7 +1106,7 @@ async function decideCommissionEntry(entryId, status) {
     body: JSON.stringify({ status }),
   });
   if (!res || !res.ok) {
-    alert('Error updating commission entry');
+    notify('Error updating commission entry');
     return;
   }
   loadCommissionEntries(currentCommissionPlanId);
@@ -1115,7 +1115,7 @@ async function decideCommissionEntry(entryId, status) {
 async function markCommissionEntryPaid(entryId) {
   const res = await api(`/api/compensation/commission-entries/${entryId}/pay`, { method: 'PUT' });
   if (!res || !res.ok) {
-    alert('Error marking commission entry as paid');
+    notify('Error marking commission entry as paid');
     return;
   }
   loadCommissionEntries(currentCommissionPlanId);
@@ -1230,7 +1230,7 @@ async function submitEquityGrantForm(e) {
   });
 
   if (!res || !res.ok) {
-    alert('Error: ' + (await res.json()).detail);
+    notify('Error: ' + (await res.json()).detail);
     return;
   }
 
@@ -1335,7 +1335,7 @@ async function decideEquityGrant(status) {
     body: JSON.stringify({ status }),
   });
   if (!res || !res.ok) {
-    alert('Error deciding equity grant');
+    notify('Error deciding equity grant');
     return;
   }
   await openEquityGrantDetail(currentEquityGrantId);
@@ -1345,7 +1345,7 @@ async function decideEquityGrant(status) {
 async function cancelEquityGrant() {
   const res = await api(`/api/compensation/equity-grants/${currentEquityGrantId}/cancel`, { method: 'PUT' });
   if (!res || !res.ok) {
-    alert('Error cancelling equity grant');
+    notify('Error cancelling equity grant');
     return;
   }
   await openEquityGrantDetail(currentEquityGrantId);
@@ -1355,7 +1355,7 @@ async function cancelEquityGrant() {
 async function markVestingEventVested(eventId) {
   const res = await api(`/api/compensation/vesting-events/${eventId}/vest`, { method: 'PUT' });
   if (!res || !res.ok) {
-    alert('Error marking vesting event as vested');
+    notify('Error marking vesting event as vested');
     return;
   }
   await openEquityGrantDetail(currentEquityGrantId);
@@ -1389,7 +1389,7 @@ async function submitEquitySettleForm(e) {
   e.preventDefault();
   const settlement_price = parseFloat(document.getElementById('esPrice').value);
   if (isNaN(settlement_price) || settlement_price < 0) {
-    alert('Enter a valid non-negative settlement price.');
+    notify('Enter a valid non-negative settlement price.');
     return;
   }
   const res = await api(`/api/compensation/vesting-events/${currentSettleEventId}/settle`, {
@@ -1397,7 +1397,7 @@ async function submitEquitySettleForm(e) {
     body: JSON.stringify({ settlement_price }),
   });
   if (!res || !res.ok) {
-    alert('Error: ' + (await res.json()).detail);
+    notify('Error: ' + (await res.json()).detail);
     return;
   }
   closeEquitySettleModal();

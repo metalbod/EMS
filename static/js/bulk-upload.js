@@ -11,7 +11,7 @@ function resetBulkUploadUI() {
 
 async function downloadBulkTemplate() {
   const res=await api('/api/employees/bulk-template');
-  if(!res?.ok){ alert('Failed to download template'); return; }
+  if(!res?.ok){ notify('Failed to download template'); return; }
   const blob=await res.blob();
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
@@ -50,7 +50,7 @@ async function pollBulkUploadTask(taskId) {
 async function submitBulkUpload() {
   const fileInput=document.getElementById('bulkUploadFile');
   const file=fileInput.files[0];
-  if(!file){ alert('Choose a CSV file first'); return; }
+  if(!file){ notify('Choose a CSV file first'); return; }
   const btn=document.getElementById('bulkUploadBtn');
   btn.disabled=true; btn.textContent='Uploading…';
   try {
@@ -59,7 +59,7 @@ async function submitBulkUpload() {
     if(!res?.ok){
       let detail='Upload failed';
       try { detail=(await res.json()).detail||detail; } catch(_) {}
-      alert(detail); return;
+      notify(detail); return;
     }
     const { task_id } = await res.json();
     btn.textContent='Processing…';
@@ -67,7 +67,7 @@ async function submitBulkUpload() {
     renderBulkUploadResults(result);
     if(result.created.length || result.updated.length) { await loadEmployees(); }
   } catch (err) {
-    alert(err.message || 'Upload failed');
+    notify(err.message || 'Upload failed');
   } finally {
     btn.disabled=false; btn.textContent='Upload';
   }

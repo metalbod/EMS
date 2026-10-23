@@ -91,7 +91,7 @@ const attendanceClockIn = guardAsync(async function attendanceClockIn() {
     method: 'POST',
     body: JSON.stringify({ lat: attCurrentGeo?.lat ?? null, lng: attCurrentGeo?.lng ?? null }),
   });
-  if (!res || !res.ok) { alert('Error: ' + (await res.json()).detail); return; }
+  if (!res || !res.ok) { notify('Error: ' + (await res.json()).detail); return; }
   loadAttendanceClockPage();
 });
 
@@ -100,7 +100,7 @@ const attendanceClockOut = guardAsync(async function attendanceClockOut() {
     method: 'POST',
     body: JSON.stringify({ lat: attCurrentGeo?.lat ?? null, lng: attCurrentGeo?.lng ?? null }),
   });
-  if (!res || !res.ok) { alert('Error: ' + (await res.json()).detail); return; }
+  if (!res || !res.ok) { notify('Error: ' + (await res.json()).detail); return; }
   loadAttendanceClockPage();
 });
 
@@ -167,10 +167,10 @@ async function submitAttResolveForm(e) {
   if (action === 'ReclassifyAsLeave') {
     body.leave_type_id = parseInt(document.getElementById('attResolveLeaveType').value, 10) || null;
     body.half_day = document.getElementById('attResolveHalfDay').checked;
-    if (!body.leave_type_id) { alert('Select a leave type'); return; }
+    if (!body.leave_type_id) { notify('Select a leave type'); return; }
   }
   const res = await api(`/api/attendance/records/${currentAttResolveId}/resolve`, { method: 'PUT', body: JSON.stringify(body) });
-  if (!res || !res.ok) { alert('Error: ' + (await res.json()).detail); return; }
+  if (!res || !res.ok) { notify('Error: ' + (await res.json()).detail); return; }
   closeAttResolveModal();
   loadAttendanceReview();
 }
@@ -250,7 +250,7 @@ async function submitAttRuleForm(e) {
     default_shift_id: parseInt(document.getElementById('attRuleShift').value, 10) || null,
   };
   const res = await api('/api/attendance/settings', { method: 'POST', body: JSON.stringify(body) });
-  if (!res || !res.ok) { alert('Error: ' + (await res.json()).detail); return; }
+  if (!res || !res.ok) { notify('Error: ' + (await res.json()).detail); return; }
   closeAttRuleModal();
   loadAttRules();
 }
@@ -258,7 +258,7 @@ async function submitAttRuleForm(e) {
 async function deleteAttRule(id) {
   if (!confirm('Remove this attendance rule?')) return;
   const res = await api(`/api/attendance/settings/${id}`, { method: 'DELETE' });
-  if (!res || !res.ok) { alert('Error removing rule'); return; }
+  if (!res || !res.ok) { notify('Error removing rule'); return; }
   loadAttRules();
 }
 
@@ -297,7 +297,7 @@ async function submitShiftForm(e) {
     grace_period_minutes: parseInt(document.getElementById('shiftGrace').value, 10) || 0,
   };
   const res = await api('/api/attendance/shifts', { method: 'POST', body: JSON.stringify(body) });
-  if (!res || !res.ok) { alert('Error: ' + (await res.json()).detail); return; }
+  if (!res || !res.ok) { notify('Error: ' + (await res.json()).detail); return; }
   closeShiftModal();
   loadAttShifts();
 }
@@ -305,7 +305,7 @@ async function submitShiftForm(e) {
 async function deleteShift(id) {
   if (!confirm('Deactivate this shift?')) return;
   const res = await api(`/api/attendance/shifts/${id}`, { method: 'DELETE' });
-  if (!res || !res.ok) { alert('Error deactivating shift'); return; }
+  if (!res || !res.ok) { notify('Error deactivating shift'); return; }
   loadAttShifts();
 }
 
@@ -345,7 +345,7 @@ async function submitAssignmentForm(e) {
     effective_to: document.getElementById('assignTo').value || null,
   };
   const res = await api('/api/attendance/shift-assignments', { method: 'POST', body: JSON.stringify(body) });
-  if (!res || !res.ok) { alert('Error: ' + (await res.json()).detail); return; }
+  if (!res || !res.ok) { notify('Error: ' + (await res.json()).detail); return; }
   closeAssignmentModal();
   loadAttAssignments();
 }
@@ -353,7 +353,7 @@ async function submitAssignmentForm(e) {
 async function deleteAssignment(id) {
   if (!confirm('Remove this shift assignment?')) return;
   const res = await api(`/api/attendance/shift-assignments/${id}`, { method: 'DELETE' });
-  if (!res || !res.ok) { alert('Error removing assignment'); return; }
+  if (!res || !res.ok) { notify('Error removing assignment'); return; }
   loadAttAssignments();
 }
 
@@ -399,7 +399,7 @@ async function submitDeviceForm(e) {
     location_id: parseInt(document.getElementById('deviceLocation').value, 10) || null,
   };
   const res = await api('/api/attendance/devices', { method: 'POST', body: JSON.stringify(body) });
-  if (!res || !res.ok) { alert('Error: ' + (await res.json()).detail); return; }
+  if (!res || !res.ok) { notify('Error: ' + (await res.json()).detail); return; }
   const device = await res.json();
   document.getElementById('deviceForm').classList.add('hidden');
   document.getElementById('deviceKeyReveal').classList.remove('hidden');
@@ -415,6 +415,6 @@ function copyDeviceKey() {
 async function deleteDevice(id) {
   if (!confirm('Revoke this device? Any camera/hardware using its API key will stop working immediately.')) return;
   const res = await api(`/api/attendance/devices/${id}`, { method: 'DELETE' });
-  if (!res || !res.ok) { alert('Error revoking device'); return; }
+  if (!res || !res.ok) { notify('Error revoking device'); return; }
   loadAttDevices();
 }

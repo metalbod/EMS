@@ -46,7 +46,7 @@ async function deleteRole(roleId) {
   const res = await api(`/api/roles/${roleId}`, {method: 'DELETE'});
   if (!res?.ok) {
     const d = await res?.json().catch(()=>({}));
-    alert(d?.detail || 'Failed to delete role');
+    notify(d?.detail || 'Failed to delete role');
     return;
   }
   await loadRolesCache();
@@ -90,7 +90,7 @@ async function matrixSetOverride(actionKey, role, accessValue) {
   });
   if (!res?.ok) {
     const d = await res?.json().catch(() => ({}));
-    alert(d?.detail || 'Failed to update permission');
+    notify(d?.detail || 'Failed to update permission');
     return;
   }
   await loadPermissionMatrix();
@@ -102,7 +102,7 @@ async function matrixResetOverride(actionKey, role) {
   });
   if (!res?.ok) {
     const d = await res?.json().catch(() => ({}));
-    alert(d?.detail || 'Failed to reset permission');
+    notify(d?.detail || 'Failed to reset permission');
     return;
   }
   await loadPermissionMatrix();

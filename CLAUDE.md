@@ -1027,6 +1027,22 @@ wrapper everywhere.
   always serializes a bare origin that way; the two must match). Not covered by tests: a real Claude client against a real
   Microsoft login — verify with one test company before announcing.
 
+- **UX redesign, Phase 0 quick wins** (2026-10-23; the review is `EMS_UX_Review_and_Redesign.docx`, kept outside the repo;
+  owner decided the new navigation ships **in one release**, and that Analytics / Export Builder are dropped, not
+  rebuilt): (1) **Home quick actions follow the person, not the employee role** (`renderDashQuickActions` in
+  `dashboard.js`): anyone with an employee record gets Apply Leave / Submit Claim / Clock In / Log Hours; Resign stays
+  employee-role only; HR Manager/HR Admin also get "+ Add Employee", a role with Recruitment manage permission gets
+  "+ New Requisition" (`can_manage_recruitment`, read inline because `recruitment.js` is a lazy module — the shortcut
+  `ensureModuleLoaded('recruitment')` first), `payroll_manager` gets "+ New Payroll Run" (only that role creates runs).
+  (2) **`notify(message, type?)` (core.js) replaced all 210 `alert()` calls** — a toast (`showToast`) coloured from the
+  wording (failure words red, saved/sent words green, else blue), longer messages stay longer, a non-string server `detail`
+  goes through `apiErrorText`. Don't add new `alert()`; `confirm()` is unchanged. (3) **Contrast**: `--faint` is now #68727A and
+  `.text-slate-400` maps to it (was 2.6:1); icon-only row buttons (`button.text-slate-300`) use `--muted`. (4) **Affordances**:
+  `tr[onclick]` rows tint on hover, KPI tile arrows are a round button that fills on hover, and 92 icon-only buttons got
+  `aria-label` + tooltip (modal X = "Close", row icons = Edit/Delete). (5) Renames: Stationery → **Offers & Letters**;
+  the leave page is **Leave Requests** for HR/manager roles (it lists other people's requests) and **My Leave** for others; the
+  "More" menu and the "Coming Soon" page were removed.
+
 ## Recurring gotchas (hit more than once this project's history)
 
 - **RLS fails closed, not open.** A table gets RLS auto-enabled by an

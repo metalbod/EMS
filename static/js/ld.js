@@ -179,7 +179,7 @@ async function submitLdEnroll(e) {
   const courseId=parseInt(document.getElementById('ldEnrollCourseId').value);
   const canManage=HR_AND_MANAGER_ROLES.includes(currentUser?.role);
   const employeeId=canManage?document.getElementById('ldEnrollEmpId').value:currentUser?.employee_id;
-  if(!employeeId){alert('No employee selected.');return;}
+  if(!employeeId){notify('No employee selected.');return;}
   const res=await api('/api/ld/enrollments',{method:'POST',body:JSON.stringify({
     employee_id:employeeId, course_id:courseId,
     notes:document.getElementById('ldEnrollNotes').value.trim()||null
@@ -189,7 +189,7 @@ async function submitLdEnroll(e) {
     showPage('ld-trainings');
   } else {
     const d=await res.json();
-    alert(d.detail||'Failed to enroll');
+    notify(d.detail||'Failed to enroll');
   }
 }
 
@@ -213,7 +213,7 @@ function ldScoreCellHtml(row) {
 
 async function openLdAttemptsModal(enrollmentId) {
   const res=await api(`/api/ld/enrollments/${enrollmentId}/quiz-attempts`);
-  if(!res?.ok){ const d=await res?.json().catch(()=>null); alert(d?.detail?apiErrorText(d.detail):'Could not load the scores.'); return; }
+  if(!res?.ok){ const d=await res?.json().catch(()=>null); notify(d?.detail?apiErrorText(d.detail):'Could not load the scores.'); return; }
   const d=await res.json();
   document.getElementById('ldAttemptsTitle').textContent=`${d.course_title} — quiz scores`;
   document.getElementById('ldAttemptsSub').textContent=
@@ -418,7 +418,7 @@ function addLdQuizOption(idx) {
 const submitLdQuiz = guardAsync(async function() {
   const courseId=document.getElementById('ldQuizCourseId').value;
   const title=document.getElementById('ldQuizTitle').value.trim();
-  if(!title){alert('Quiz title is required');return;}
+  if(!title){notify('Quiz title is required');return;}
   const questions=[...document.querySelectorAll('#ldQuizQuestions > div')].map(qEl=>{
     const question_text=qEl.querySelector('.ldq-text').value.trim();
     const question_type=qEl.dataset.qtype==='multi'?'multi':'single';
@@ -429,11 +429,11 @@ const submitLdQuiz = guardAsync(async function() {
     return {question_text, question_type, options};
   }).filter(q=>q.question_text && q.options.length>=2);
 
-  if(!questions.length){alert('Add at least one question with at least 2 options.');return;}
+  if(!questions.length){notify('Add at least one question with at least 2 options.');return;}
   for(const q of questions){
     const correctCount=q.options.filter(o=>o.is_correct).length;
-    if(correctCount===0){alert(`Mark a correct answer for: "${q.question_text}"`);return;}
-    if(q.question_type==='single'&&correctCount>1){alert(`"${q.question_text}" is single-answer but has multiple correct options marked. Check "Multiple correct answers" if that's intended.`);return;}
+    if(correctCount===0){notify(`Mark a correct answer for: "${q.question_text}"`);return;}
+    if(q.question_type==='single'&&correctCount>1){notify(`"${q.question_text}" is single-answer but has multiple correct options marked. Check "Multiple correct answers" if that's intended.`);return;}
   }
 
   const body={
@@ -446,7 +446,7 @@ const submitLdQuiz = guardAsync(async function() {
   };
   const res=await api(`/api/ld/courses/${courseId}/quiz`,{method:'PUT',body:JSON.stringify(body)});
   if(res?.ok){closeLdQuizModal();loadLdCourses();}
-  else{const d=await res.json();alert(d.detail||'Failed to save quiz');}
+  else{const d=await res.json();notify(d.detail||'Failed to save quiz');}
 });
 
 async function deleteLdQuiz() {
@@ -477,7 +477,7 @@ function ldQuizOutcome(r, numberOf) {
 
 async function openLdTakeQuizModal(courseId, enrollmentId) {
   const res=await api(`/api/ld/courses/${courseId}/quiz`);
-  if(!res?.ok){alert('Could not load quiz.');return;}
+  if(!res?.ok){notify('Could not load quiz.');return;}
   const quiz=await res.json();
   document.getElementById('ldTakeQuizId').value=quiz.id;
   document.getElementById('ldTakeQuizEnrollId').value=enrollmentId;
@@ -524,7 +524,7 @@ const submitLdQuizAttempt = guardAsync(async function() {
   const res=await api(`/api/ld/quizzes/${quizId}/attempts`,{method:'POST',body:JSON.stringify({answers})});
   if(!res?.ok){
     const d=await res.json();
-    alert(apiErrorText(d.detail,'Failed to submit quiz'));
+    notify(apiErrorText(d.detail,'Failed to submit quiz'));
     return;
   }
   const result=await res.json();
@@ -590,8 +590,8 @@ async function ldPickDocument(idx, input) {
   const wrap=document.getElementById(`ldM-${idx}`);
   const status=wrap.querySelector('.ldm-file-status');
   const ext='.'+file.name.split('.').pop().toLowerCase();
-  if(!LD_DOC_EXTS.includes(ext)) { alert('Please choose a PDF, Word (.doc/.docx) or PowerPoint (.ppt/.pptx) file.'); return; }
-  if(file.size>LD_DOC_MAX_BYTES) { alert(`That file is ${ldFileSize(file.size)} — the limit is 20 MB.`); return; }
+  if(!LD_DOC_EXTS.includes(ext)) { notify('Please choose a PDF, Word (.doc/.docx) or PowerPoint (.ppt/.pptx) file.'); return; }
+  if(file.size>LD_DOC_MAX_BYTES) { notify(`That file is ${ldFileSize(file.size)} — the limit is 20 MB.`); return; }
   status.innerHTML='Uploading…';
   const dataUrl=await new Promise((resolve,reject)=>{ const r=new FileReader(); r.onload=()=>resolve(r.result); r.onerror=reject; r.readAsDataURL(file); });
   const courseId=document.getElementById('ldModulesCourseId').value;
@@ -599,7 +599,7 @@ async function ldPickDocument(idx, input) {
   if(!res?.ok) {
     const d=await res?.json().catch(()=>null);
     status.innerHTML=ldDocFileLabel(wrap.dataset.fileName, parseInt(wrap.dataset.fileSize)||0);
-    alert(d?.detail?apiErrorText(d.detail):'Upload failed.');
+    notify(d?.detail?apiErrorText(d.detail):'Upload failed.');
     return;
   }
   const f=await res.json();
@@ -655,7 +655,7 @@ const submitLdModules = guardAsync(async function() {
     const title=el.querySelector('.ldm-title').value.trim();
     if(!title) continue;
     if(el.dataset.contentType==='document') {
-      if(!el.dataset.fileId) { alert(`Choose a file for the document lesson "${title}", or remove it.`); return; }
+      if(!el.dataset.fileId) { notify(`Choose a file for the document lesson "${title}", or remove it.`); return; }
       modules.push({title, content_type:'document', file_id:parseInt(el.dataset.fileId)});
     } else {
       modules.push({title, content_type:el.dataset.contentType, content:el.querySelector('.ldm-content').value.trim()||null});
@@ -663,7 +663,7 @@ const submitLdModules = guardAsync(async function() {
   }
   const res=await api(`/api/ld/courses/${courseId}/modules`,{method:'PUT',body:JSON.stringify({modules})});
   if(res?.ok){closeLdModulesModal();loadLdCourses();}
-  else{const d=await res.json();alert(d.detail?apiErrorText(d.detail):'Failed to save content');}
+  else{const d=await res.json();notify(d.detail?apiErrorText(d.detail):'Failed to save content');}
 });
 
 // ---------------------------------------------------------------------------
@@ -688,7 +688,7 @@ async function ldOpenModuleFile(btn, moduleId, enrollmentId, inline) {
   if(!res?.ok) {
     if(win) win.close();
     const d=await res?.json().catch(()=>null);
-    alert(d?.detail?apiErrorText(d.detail):'Could not open the file.');
+    notify(d?.detail?apiErrorText(d.detail):'Could not open the file.');
     return;
   }
   const url=URL.createObjectURL(await res.blob());
@@ -725,7 +725,7 @@ let ldViewerCtx=null;
 async function openLdViewerModal(courseId, enrollmentId, courseTitle) {
   ldViewerCtx={courseId, enrollmentId, title:courseTitle};
   const res=await api(`/api/ld/courses/${courseId}/modules?enrollment_id=${enrollmentId}`);
-  if(!res?.ok){alert('Could not load course content.');return;}
+  if(!res?.ok){notify('Could not load course content.');return;}
   const modules=await res.json();
   document.getElementById('ldViewerTitle').textContent=courseTitle||'Course';
   const viewed=modules.filter(m=>m.viewed).length;
@@ -983,15 +983,15 @@ const submitPolicyPublish = guardAsync(async function(e) {
   const link=document.getElementById('policyLink').value.trim();
   const file=document.getElementById(isLink?'policyFileCopy':'policyFile').files?.[0];
   if(isLink){
-    if(!/^https?:\/\//i.test(link)){ alert('Enter the link, starting with http:// or https://'); return; }
-  } else if(!file){ alert('Choose the document to publish.'); return; }
+    if(!/^https?:\/\//i.test(link)){ notify('Enter the link, starting with http:// or https://'); return; }
+  } else if(!file){ notify('Choose the document to publish.'); return; }
   if(file){
     const ext='.'+file.name.split('.').pop().toLowerCase();
-    if(!LD_DOC_EXTS.includes(ext)){ alert('Please choose a PDF, Word (.doc/.docx) or PowerPoint (.ppt/.pptx) file.'); return; }
-    if(file.size>LD_DOC_MAX_BYTES){ alert(`That file is ${ldFileSize(file.size)} — the limit is 20 MB.`); return; }
+    if(!LD_DOC_EXTS.includes(ext)){ notify('Please choose a PDF, Word (.doc/.docx) or PowerPoint (.ppt/.pptx) file.'); return; }
+    if(file.size>LD_DOC_MAX_BYTES){ notify(`That file is ${ldFileSize(file.size)} — the limit is 20 MB.`); return; }
   }
   const type=document.getElementById('policyAudienceType').value;
-  if(type==='people'&&!policyPeople.length){ alert('Add at least one person.'); return; }
+  if(type==='people'&&!policyPeople.length){ notify('Add at least one person.'); return; }
   const dataUrl=file?await new Promise((resolve,reject)=>{ const r=new FileReader(); r.onload=()=>resolve(r.result); r.onerror=reject; r.readAsDataURL(file); }):null;
   const body={
     title:document.getElementById('policyTitle').value.trim(),
@@ -1005,7 +1005,7 @@ const submitPolicyPublish = guardAsync(async function(e) {
     file_name:file?file.name:null, data_url:dataUrl,
   };
   const res=await api(courseId?`/api/policies/${courseId}/versions`:'/api/policies',{method:'POST',body:JSON.stringify(body)});
-  if(!res?.ok){ const d=await res?.json().catch(()=>null); alert(d?.detail?apiErrorText(d.detail):'Could not publish the policy.'); return; }
+  if(!res?.ok){ const d=await res?.json().catch(()=>null); notify(d?.detail?apiErrorText(d.detail):'Could not publish the policy.'); return; }
   closePolicyPublishModal();
   loadLdPolicies();
 });
@@ -1013,7 +1013,7 @@ const submitPolicyPublish = guardAsync(async function(e) {
 // ---- Tracker (HR sees everyone; a manager their own team, read-only) ----
 async function openPolicyTracker(courseId, versionId) {
   const res=await api(`/api/policies/${courseId}/tracker${versionId?`?version_id=${versionId}`:''}`);
-  if(!res?.ok){ const d=await res?.json().catch(()=>null); alert(d?.detail?apiErrorText(d.detail):'Could not load the tracker.'); return; }
+  if(!res?.ok){ const d=await res?.json().catch(()=>null); notify(d?.detail?apiErrorText(d.detail):'Could not load the tracker.'); return; }
   policyTracker=await res.json();
   policyTrackerFilter=policyTracker.summary.assigned>policyTracker.summary.acknowledged?'outstanding':'all';
   renderPolicyTracker();
@@ -1065,12 +1065,12 @@ function renderPolicyTracker() {
 }
 const remindPolicyOutstanding = guardAsync(async function() {
   const t=policyTracker;
-  if(t.email_ready===false){ alert("Email isn't set up for this company. Turn on email notifications under Settings → Notifications first."); return; }
+  if(t.email_ready===false){ notify("Email isn't set up for this company. Turn on email notifications under Settings → Notifications first."); return; }
   if(!confirm('Email everyone who has not acknowledged this version yet? Anyone reminded in the last day is skipped.')) return;
   const res=await api(`/api/policies/versions/${t.version.id}/remind`,{method:'POST'});
-  if(!res?.ok){ const d=await res?.json().catch(()=>null); alert(d?.detail?apiErrorText(d.detail):'Could not send the reminders.'); return; }
+  if(!res?.ok){ const d=await res?.json().catch(()=>null); notify(d?.detail?apiErrorText(d.detail):'Could not send the reminders.'); return; }
   const r=await res.json();
-  alert(`Reminder queued for ${r.queued} ${r.queued===1?'person':'people'}.${r.skipped_recent?` ${r.skipped_recent} skipped (reminded in the last day).`:''}${r.no_email?` ${r.no_email} have no email address.`:''}`);
+  notify(`Reminder queued for ${r.queued} ${r.queued===1?'person':'people'}.${r.skipped_recent?` ${r.skipped_recent} skipped (reminded in the last day).`:''}${r.no_email?` ${r.no_email} have no email address.`:''}`);
   await openPolicyTracker(t.policy.course_id, t.version.id);
 });
 
@@ -1078,7 +1078,7 @@ const remindPolicyOutstanding = guardAsync(async function() {
 async function exportPolicyCsv() {
   const t=policyTracker;
   const res=await api(`/api/policies/${t.policy.course_id}/export.csv?version_id=${t.version.id}`);
-  if(!res?.ok){ const d=await res?.json().catch(()=>null); alert(d?.detail?apiErrorText(d.detail):'Could not export.'); return; }
+  if(!res?.ok){ const d=await res?.json().catch(()=>null); notify(d?.detail?apiErrorText(d.detail):'Could not export.'); return; }
   const url=URL.createObjectURL(await res.blob());
   const a=document.createElement('a'); a.href=url;
   a.download=`${t.policy.title.replace(/[^A-Za-z0-9]+/g,'-')}-v${t.version.version}-acknowledgements.csv`;
@@ -1088,7 +1088,7 @@ async function exportPolicyCsv() {
 
 async function policyAssign(ids) {
   const res=await api(`/api/policies/versions/${policyTracker.version.id}/assign`,{method:'POST',body:JSON.stringify({employee_ids:ids})});
-  if(!res?.ok){ const d=await res?.json().catch(()=>null); alert(d?.detail?apiErrorText(d.detail):'Could not add them.'); return; }
+  if(!res?.ok){ const d=await res?.json().catch(()=>null); notify(d?.detail?apiErrorText(d.detail):'Could not add them.'); return; }
   await openPolicyTracker(policyTracker.policy.course_id);
   loadLdPolicies();
 }
@@ -1174,7 +1174,7 @@ async function policyOpenFromModal() {
   if(!res?.ok){
     if(win) win.close();
     const d=await res?.json().catch(()=>null);
-    alert(d?.detail?apiErrorText(d.detail):'Could not open the document.');
+    notify(d?.detail?apiErrorText(d.detail):'Could not open the document.');
     return;
   }
   const url=URL.createObjectURL(await res.blob());
@@ -1191,7 +1191,7 @@ async function policyOpenLinkFromModal() {
   if(!res?.ok){
     if(win) win.close();
     const d=await res?.json().catch(()=>null);
-    alert(d?.detail?apiErrorText(d.detail):'Could not open the link.');
+    notify(d?.detail?apiErrorText(d.detail):'Could not open the link.');
     return;
   }
   const {url}=await res.json();
@@ -1202,23 +1202,23 @@ async function policyOpenLinkFromModal() {
 const submitPolicyAcknowledge = guardAsync(async function() {
   const p=policyRead; if(!p) return;
   if(currentUser?.password_signin_blocked){
-    if(p.require_open&&!p.first_opened_at){ alert('Open the document first, then confirm.'); return; }
+    if(p.require_open&&!p.first_opened_at){ notify('Open the document first, then confirm.'); return; }
     const start=await api('/api/auth/sso/reauth-start',{method:'POST',body:JSON.stringify({purpose:'policy_ack',ref:String(p.version_id)})});
     if(!start?.ok){
       const d=await start?.json().catch(()=>null);
-      alert(d?.detail?apiErrorText(d.detail):'Could not start the Microsoft confirmation.');
+      notify(d?.detail?apiErrorText(d.detail):'Could not start the Microsoft confirmation.');
       return;
     }
     window.location.href=(await start.json()).authorize_url;   // comes back via resumeSsoReauth() in core.js
     return;
   }
   const password=document.getElementById('policyReadPassword').value;
-  if(!password){ alert('Enter your password to confirm.'); return; }
+  if(!password){ notify('Enter your password to confirm.'); return; }
   const res=await api(`/api/policies/versions/${p.version_id}/acknowledge`,{method:'POST',body:JSON.stringify({password})});
   if(!res?.ok){
     const d=await res?.json().catch(()=>null);
     document.getElementById('policyReadPassword').value='';
-    alert(d?.detail?apiErrorText(d.detail):'Could not record your acknowledgement.');
+    notify(d?.detail?apiErrorText(d.detail):'Could not record your acknowledgement.');
     return;
   }
   closePolicyReadModal();

@@ -249,7 +249,7 @@ async function reqActionFailed(res, fallback) {
   if(!res) return true;
   if(res.ok) return false;
   const d=await res.json().catch(()=>({}));
-  alert(apiErrorText(d?.detail,fallback));
+  notify(apiErrorText(d?.detail,fallback));
   return true;
 }
 const submitReqForApproval = guardAsync(async function() {
@@ -279,7 +279,7 @@ async function closeReqAction() {
 async function enablePublicLink() {
   if(!viewingReqId) return;
   const res=await api(`/api/recruitment/requisitions/${viewingReqId}/public-link`,{method:'POST',body:JSON.stringify({})});
-  if(!res||!res.ok){const d=await res?.json().catch(()=>({}));alert(d?.detail||'Failed to enable public applications');return;}
+  if(!res||!res.ok){const d=await res?.json().catch(()=>({}));notify(d?.detail||'Failed to enable public applications');return;}
   await openReqDetail(viewingReqId);
 }
 async function disablePublicLink() {
@@ -607,7 +607,7 @@ async function moveApplicationStage(candId, requisitionId, selectEl) {
   const reqPath=requisitionId==null?0:requisitionId; // path param can't carry NULL — 0 means "general interest"
   const res=await api(`/api/recruitment/candidates/${candId}/requisitions/${reqPath}/stage`,
     {method:'PATCH',body:JSON.stringify({stage})});
-  if(!res||!res.ok){const d=await res?.json().catch(()=>({}));alert(d?.detail||'Failed to update stage');return;}
+  if(!res||!res.ok){const d=await res?.json().catch(()=>({}));notify(d?.detail||'Failed to update stage');return;}
   if(viewingCandId===candId) await openCandDetail(candId);
   loadCandidates();
 }
@@ -719,7 +719,7 @@ function handleCandFilesSelected(e) {
   e.target.value='';
   for (const file of files) {
     if (file.size > CAND_FILE_MAX_BYTES) {
-      alert(`"${file.name}" is too large. Please choose a file under ~6MB.`);
+      notify(`"${file.name}" is too large. Please choose a file under ~6MB.`);
       continue;
     }
     const reader=new FileReader();
@@ -1265,7 +1265,7 @@ async function submitScore(e) {
 }
 
 // ---------------------------------------------------------------------------
-// Recruitment — Stationery (Offer / Decline / Confirmation letters)
+// Recruitment — Offers & Letters (Offer / Decline / Confirmation letters)
 // ---------------------------------------------------------------------------
 const OFFER_TYPE_BADGE = { Offer: 'status-positive', Confirmation: 'status-info', Decline: 'status-negative' };
 
@@ -1297,7 +1297,7 @@ async function loadOffers() {
 async function deleteOffer(offerId) {
   if(!confirm('Delete this letter? This cannot be undone.')) return;
   const res=await api(`/api/recruitment/offers/${offerId}`,{method:'DELETE'});
-  if(!res||!res.ok){const d=await res?.json().catch(()=>({}));alert(d?.detail||'Failed to delete');return;}
+  if(!res||!res.ok){const d=await res?.json().catch(()=>({}));notify(d?.detail||'Failed to delete');return;}
   loadOffers();
 }
 
@@ -1389,11 +1389,11 @@ async function previewLetter() {
   const salary=parseFloat(document.getElementById('offerSalary').value)||null;
   const start=document.getElementById('offerStart').value||null;
   const expiry=document.getElementById('offerExpiry').value||null;
-  if(isConfirmation ? !empId : !candId){alert(isConfirmation?'Select an employee first':'Select a candidate first');return;}
+  if(isConfirmation ? !empId : !candId){notify(isConfirmation?'Select an employee first':'Select a candidate first');return;}
   const body={candidate_id:candId,employee_id:empId,offer_type:offerType,requisition_id:reqId,template_id:templateId,
     salary_offered:salary,start_date:start,expiry_date:expiry,letter_content:''};
   const res=await api('/api/recruitment/offers',{method:'POST',body:JSON.stringify(body)});
-  if(!res||!res.ok){const d=await res?.json();alert(d?.detail||'Failed to generate letter');return;}
+  if(!res||!res.ok){const d=await res?.json();notify(d?.detail||'Failed to generate letter');return;}
   const offer=await res.json();
   document.getElementById('offerLetterContent').value=offer.letter_content||'';
   // Update the hidden offerId so submitOfferForm doesn't create another
@@ -1492,7 +1492,7 @@ async function submitOfferTemplateForm(e) {
 async function deleteOfferTemplateRow(tmplId) {
   if(!confirm('Delete this letter template?')) return;
   const res=await api(`/api/recruitment/offer-letter-templates/${tmplId}`,{method:'DELETE'});
-  if(!res||!res.ok){const d=await res?.json().catch(()=>({}));alert(d?.detail||'Failed to delete');return;}
+  if(!res||!res.ok){const d=await res?.json().catch(()=>({}));notify(d?.detail||'Failed to delete');return;}
   loadOfferTemplates();
 }
 
@@ -1570,7 +1570,7 @@ function closeMyIntBrief(){closeModal('myIntBriefModal');}
 async function openMyIntBrief(intId) {
   const i=myInterviewsCache.find(x=>x.id===intId);
   const res=await api(`/api/recruitment/my-interviews/${intId}/candidate`);
-  if(!res?.ok){ const d=await res?.json().catch(()=>null); alert(d?.detail?apiErrorText(d.detail):'Could not load the candidate.'); return; }
+  if(!res?.ok){ const d=await res?.json().catch(()=>null); notify(d?.detail?apiErrorText(d.detail):'Could not load the candidate.'); return; }
   const b=await res.json(), c=b.candidate;
   document.getElementById('myIntBriefTitle').textContent=c.full_name;
   document.getElementById('myIntBriefSub').textContent=[c.current_position,c.current_company].filter(Boolean).join(' · ')||(i?i.requisition_title:'')||'';
@@ -1588,10 +1588,10 @@ async function openMyIntBrief(intId) {
 async function openMyIntDoc(intId, docId) {
   const win=window.open('','_blank');   // opened now so the popup blocker allows it
   const res=await api(`/api/recruitment/my-interviews/${intId}/documents/${docId}`);
-  if(!res?.ok){ if(win) win.close(); alert('Could not open the document.'); return; }
+  if(!res?.ok){ if(win) win.close(); notify('Could not open the document.'); return; }
   const d=await res.json();
   const m=/^data:([^;,]+)?(;base64)?,(.*)$/s.exec(d.data_url||'');
-  if(!m){ if(win) win.close(); alert('Could not open the document.'); return; }
+  if(!m){ if(win) win.close(); notify('Could not open the document.'); return; }
   const bytes=Uint8Array.from(atob(decodeURIComponent(m[3])),ch=>ch.charCodeAt(0));
   const blob=new Blob([bytes],{type:m[1]||d.mime_type||'application/octet-stream'});
   const url=URL.createObjectURL(blob);

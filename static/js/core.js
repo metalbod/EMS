@@ -25,7 +25,7 @@ const HR_STAFF_ROLES = ['hr_manager','hr_admin'];                  // no superad
 const HR_MANAGER_ONLY_ROLES = ['superadmin','hr_manager'];         // no hr_admin
 const COMPENSATION_STAFF_ROLES = ['hr_manager','payroll_manager','compensation_manager'];
 const BENEFITS_DASHBOARD_ROLES = ['hr_manager','compensation_manager','manager'];
-const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','my-interviews','leave-my','leave-approvals','leave-holidays','resignation-approvals','projects','timesheet-my','timesheet-approvals','overtime-my','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','comp-paygrades','comp-joblevels','comp-jobroles','comp-meritcycles','comp-bonusplans','comp-commissions','comp-equity','comp-totalrewards','comp-payequity','ben-plans','ben-periods','ben-lifeevents','ben-claims','ben-compliance','payroll-runs','payroll-my','payroll-myrewards','payroll-mybenefits','perf-my','perf-team','perf-cycles','perf-calibration','attendance-clock','attendance-review','settings-attendance','settings-approval-workflow','settings-roles','settings-document-types','settings-offer-letter-templates','settings-performance','settings-ai-assistant','settings-sso','settings-mcp','coming-soon'];
+const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','my-interviews','leave-my','leave-approvals','leave-holidays','resignation-approvals','projects','timesheet-my','timesheet-approvals','overtime-my','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','comp-paygrades','comp-joblevels','comp-jobroles','comp-meritcycles','comp-bonusplans','comp-commissions','comp-equity','comp-totalrewards','comp-payequity','ben-plans','ben-periods','ben-lifeevents','ben-claims','ben-compliance','payroll-runs','payroll-my','payroll-myrewards','payroll-mybenefits','perf-my','perf-team','perf-cycles','perf-calibration','attendance-clock','attendance-review','settings-attendance','settings-approval-workflow','settings-roles','settings-document-types','settings-offer-letter-templates','settings-performance','settings-ai-assistant','settings-sso','settings-mcp'];
 
 // ---------------------------------------------------------------------------
 // Lazy module loading (Speed Audit item 7)
@@ -492,6 +492,20 @@ function showToast(message, type = 'error', ms = 6000) {
   while (host.children.length > 6) host.firstChild.remove();
 }
 
+// Replacement for window.alert(): same call shape (one message), but it shows a
+// toast instead of freezing the page behind a browser dialog. Picks the colour
+// from the wording (most callers are failures), keeps longer messages up
+// longer, and copes with a non-string `detail` from the server.
+const NOTIFY_ERROR_RE = /\b(fail(ed|ure)?|could not|couldn't|can't|cannot|unable|error|invalid|required|must|too large|denied|not allowed|isn't|please|at least|already|no .* found|select|choose|enter|missing)\b/i;
+const NOTIFY_SUCCESS_RE = /\b(saved|sent|created|added|updated|deleted|removed|recorded|approved|submitted|filed|queued|enrolled|thank you)\b/i;
+function notify(message, type) {
+  if (message && typeof message === 'object') message = apiErrorText(message, 'Something went wrong');
+  const text = message == null ? '' : String(message);
+  if (!text) return;
+  const kind = type || (NOTIFY_ERROR_RE.test(text) ? 'error' : NOTIFY_SUCCESS_RE.test(text) ? 'success' : 'info');
+  showToast(text, kind, Math.min(15000, (kind === 'error' ? 6000 : 4000) + text.length * 40));
+}
+
 // ---------------------------------------------------------------------------
 // Auth
 // ---------------------------------------------------------------------------
@@ -594,13 +608,13 @@ async function resumeSsoReauth() {
   const p = pendingSsoReauth;
   pendingSsoReauth = null;
   if (!p) return;
-  if (p.error) { alert("Microsoft couldn't confirm it's you. Sign in with the same Microsoft account you normally use and try again."); return; }
+  if (p.error) { notify("Microsoft couldn't confirm it's you. Sign in with the same Microsoft account you normally use and try again."); return; }
   if (p.purpose === 'policy_ack') {
     showPage('ld-trainings');
     const res = await api(`/api/policies/versions/${encodeURIComponent(p.ref)}/acknowledge`, { method: 'POST', body: JSON.stringify({ sso_proof: p.proof }) });
-    if (!res?.ok) { const d = await res?.json().catch(() => null); alert(d?.detail ? apiErrorText(d.detail) : 'Could not record your acknowledgement.'); return; }
+    if (!res?.ok) { const d = await res?.json().catch(() => null); notify(d?.detail ? apiErrorText(d.detail) : 'Could not record your acknowledgement.'); return; }
     if (typeof loadLdMyPolicies === 'function') loadLdMyPolicies();
-    alert('Thank you. Your acknowledgement has been recorded.');
+    notify('Thank you. Your acknowledgement has been recorded.');
   }
 }
 if (document.getElementById('loginCode')?.value) refreshSsoButton();
@@ -929,6 +943,9 @@ function applyRoleUI() {
   document.getElementById('nav-ld-group')?.classList.toggle('hidden', hideEmp);
   document.getElementById('nav-leave-group')?.classList.toggle('hidden', hideEmp);
   document.getElementById('nav-leave-approvals')?.classList.toggle('hidden', !HR_AND_MANAGER_ROLES.includes(role));
+  // HR/manager roles see requests from other people on this page, not just their own.
+  const navLeaveMy = document.getElementById('navLeaveMyLabel');
+  if (navLeaveMy) navLeaveMy.textContent = HR_AND_MANAGER_ROLES.includes(role) ? 'Leave Requests' : 'My Leave';
   document.getElementById('nav-timesheet-group')?.classList.toggle('hidden', hideEmp);
   document.getElementById('nav-timesheet-approvals')?.classList.toggle('hidden', !HR_AND_MANAGER_ROLES.includes(role));
   // HR sees the whole Projects screen; a listed project manager sees it too, limited to their own projects' tasks (timesheet.js).
@@ -1101,11 +1118,11 @@ async function showPage(page, opts = {}) {
   const titles = {
     dashboard: currentUser?.role === 'superadmin' ? 'Dashboard' : 'Home',
     institutions:'Institutions', employees:'Employee List',
-    orgchart:'Org Chart', audit:'Audit Log', users:'User Management', 'coming-soon':'Coming Soon',
-    requisitions:'Job Requisitions', candidates:'Candidate Bank', interviews:'Interviews', offers:'Stationery',
+    orgchart:'Org Chart', audit:'Audit Log', users:'User Management',
+    requisitions:'Job Requisitions', candidates:'Candidate Bank', interviews:'Interviews', offers:'Offers & Letters',
     onboarding:'Onboarding', offboarding:'Offboarding',
     'ld-catalog':'Course Catalog', 'ld-trainings':'My Trainings', 'my-interviews':'My Interviews',
-    'leave-my':'My Leave', 'leave-approvals':'Leave Approvals', 'leave-holidays':'Holiday Manager',
+    'leave-my': HR_AND_MANAGER_ROLES.includes(currentUser?.role) ? 'Leave Requests' : 'My Leave', 'leave-approvals':'Leave Approvals', 'leave-holidays':'Holiday Manager',
     'resignation-approvals':'Resignation Approvals',
     'projects':'Projects', 'timesheet-my':'My Timesheet', 'timesheet-approvals':'Timesheet Approvals', 'overtime-my':'My Overtime',
     'settings-notifications':'Settings — Notifications',
@@ -1145,7 +1162,7 @@ async function showPage(page, opts = {}) {
   const lazyModule = LAZY_PAGE_MODULES[page];
   if (lazyModule) {
     try { await ensureModuleLoaded(lazyModule); }
-    catch (e) { console.error(e); alert('Failed to load this page — check your connection and try again.'); return; }
+    catch (e) { console.error(e); notify('Failed to load this page — check your connection and try again.'); return; }
   }
   if (page === 'dashboard')    renderDashboard();
   if (page === 'employees')    filterEmployees();

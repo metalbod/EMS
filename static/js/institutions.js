@@ -24,7 +24,7 @@ function handleInstLogoFile(e) {
   const file = e.target.files?.[0];
   if (!file) return;
   if (file.size > 500 * 1024) {
-    alert('Logo image is too large. Please choose a file under ~500KB.');
+    notify('Logo image is too large. Please choose a file under ~500KB.');
     e.target.value = '';
     return;
   }

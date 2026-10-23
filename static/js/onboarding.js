@@ -164,7 +164,7 @@ async function renderObProbationPanel(clId, cl) {
 async function enableProbationReviewFromDetail(clId) {
   if (!confirm('Enable Probation Review (Month 1/2/3) for this employee? This creates three linked Performance reviews right away.')) return;
   const res = await api(`/api/ob/checklists/${clId}/enable-probation-review`, { method: 'POST' });
-  if (!res?.ok) { const d = await res?.json().catch(() => ({})); alert(d?.detail || 'Failed to enable'); return; }
+  if (!res?.ok) { const d = await res?.json().catch(() => ({})); notify(d?.detail || 'Failed to enable'); return; }
   await openObDetail(clId);
 }
 
@@ -273,7 +273,7 @@ async function toggleObItem(clId,itemId,done) {
   if(!res.ok){
     // e.g. 403 "waiting for: …" when someone else finished/undid a prerequisite meanwhile.
     const d=await res.json().catch(()=>null);
-    if(d?.detail) alert(apiErrorText(d.detail));
+    if(d?.detail) notify(apiErrorText(d.detail));
     await openObDetail(clId);
     return;
   }
@@ -329,7 +329,7 @@ async function handleObAttachFiles(e, clId, itemId) {
   e.target.value = '';
   const payload = [];
   for (const file of files) {
-    if (file.size > OB_ATTACH_MAX_BYTES) { alert(`"${file.name}" is too large. Please choose a file under ~6MB.`); continue; }
+    if (file.size > OB_ATTACH_MAX_BYTES) { notify(`"${file.name}" is too large. Please choose a file under ~6MB.`); continue; }
     const dataUrl = await new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(reader.result);
@@ -340,7 +340,7 @@ async function handleObAttachFiles(e, clId, itemId) {
   }
   if (!payload.length) return;
   const res = await api(`/api/ob/checklists/${clId}/items/${itemId}/attachments`, {method:'POST', body: JSON.stringify(payload)});
-  if (!res?.ok) { const d = await res?.json().catch(()=>({})); alert(d?.detail || 'Failed to upload'); return; }
+  if (!res?.ok) { const d = await res?.json().catch(()=>({})); notify(d?.detail || 'Failed to upload'); return; }
   const atts = await res.json();
   renderObItemAttachments(clId, itemId, atts);
 }
@@ -348,7 +348,7 @@ async function handleObAttachFiles(e, clId, itemId) {
 async function deleteObItemAttachment(clId, itemId, attachmentId) {
   if (!confirm('Remove this attachment?')) return;
   const res = await api(`/api/ob/checklists/${clId}/items/${itemId}/attachments/${attachmentId}`, {method:'DELETE'});
-  if (!res?.ok) { const d = await res?.json().catch(()=>({})); alert(d?.detail || 'Failed to remove attachment'); return; }
+  if (!res?.ok) { const d = await res?.json().catch(()=>({})); notify(d?.detail || 'Failed to remove attachment'); return; }
   await loadObItemAttachments(clId, itemId);
 }
 
@@ -420,7 +420,7 @@ const saveObItemEdit = guardAsync(async function(clId,itemId) {
   const desc=document.getElementById('obedit-desc-'+itemId)?.value.trim();
   const role=document.getElementById('obedit-role-'+itemId)?.value;
   const dueDate=document.getElementById('obedit-duedate-'+itemId)?.value||null;
-  if(!title){alert('Title is required');return;}
+  if(!title){notify('Title is required');return;}
   await api(`/api/ob/checklists/${clId}/items/${itemId}`,{method:'PUT',body:JSON.stringify({title,description:desc||null,assigned_role:role,due_date:dueDate})});
   openObDetail(clId);
 });
@@ -436,7 +436,7 @@ const addObItem = guardAsync(async function(clId) {
   const title=document.getElementById('obAddTitle')?.value.trim();
   const role=document.getElementById('obAddRole')?.value;
   const dueDate=document.getElementById('obAddDueDate')?.value||null;
-  if(!title){alert('Title is required');return;}
+  if(!title){notify('Title is required');return;}
   await api(`/api/ob/checklists/${clId}/items`,{method:'POST',body:JSON.stringify({title,assigned_role:role,due_date:dueDate})});
   await openObDetail(clId);
   loadObChecklists(obCurrentType);
@@ -528,7 +528,7 @@ function hideObSetForm(type){oel(type,'obSetForm')?.classList.add('hidden');}
 
 const saveObTemplateSet = guardAsync(async function(type) {
   const name=oel(type,'obSetName').value.trim();
-  if(!name){alert('Template name is required');return;}
+  if(!name){notify('Template name is required');return;}
   const res=await api('/api/ob/template-sets',{method:'POST',body:JSON.stringify({type,name})});
   if(!res||!res.ok) return;
   const created=await res.json();
@@ -563,7 +563,7 @@ async function deleteObTemplateSet(type) {
   if(!setId) return;
   if(!confirm('Delete this template? All its checklist items must be removed first.')) return;
   const res=await api(`/api/ob/template-sets/${setId}`,{method:'DELETE'});
-  if(!res||!res.ok){const d=await res?.json();alert(d?.detail||'Failed to delete');return;}
+  if(!res||!res.ok){const d=await res?.json();notify(d?.detail||'Failed to delete');return;}
   await loadObTemplateSets(type);
 }
 
@@ -580,7 +580,7 @@ const addObTemplate = guardAsync(async function(type) {
   const title=oel(type,'obTmplTitle').value.trim();
   if(!title) return;
   const setId=obCurrentSetId[type];
-  if(!setId){alert('Create a template first');return;}
+  if(!setId){notify('Create a template first');return;}
   const courseVal=oel(type,'obTmplLdCourse').value;
   const dueRuleVal=oel(type,'obTmplDueRule').value;
   const body={
@@ -654,7 +654,7 @@ const saveObTmplItemDetail = guardAsync(async function() {
   const type=obActiveTmplType;
   const id=document.getElementById('obTmplItemId').value;
   const title=document.getElementById('obTmplItemTitle').value.trim();
-  if(!title){alert('Title is required');return;}
+  if(!title){notify('Title is required');return;}
   const courseVal=document.getElementById('obTmplItemCourse').value;
   const dueRuleVal=document.getElementById('obTmplItemDueRule').value;
   const body={
@@ -669,7 +669,7 @@ const saveObTmplItemDetail = guardAsync(async function() {
     const dres=await api(`/api/ob/templates/${id}/dependencies`,{method:'PUT',body:JSON.stringify({depends_on:obModalDeps})});
     if(!dres||!dres.ok){
       const d=await dres?.json().catch(()=>null);
-      alert(d?.detail?apiErrorText(d.detail):'Could not save "Starts after".');
+      notify(d?.detail?apiErrorText(d.detail):'Could not save "Starts after".');
       await refreshObTemplatesList(type);
       return;
     }
@@ -734,7 +734,7 @@ async function obSaveLayout(type, layout){
   const res=await api(`/api/ob/template-sets/${setId}/layout`,{method:'PUT',body:JSON.stringify({items:layout})});
   if(res&&res.ok){ obTmplItemsCache[type]=await res.json(); renderObSwimlane(type); return; }
   const d=await res?.json().catch(()=>null);
-  alert(d?.detail?apiErrorText(d.detail):'Could not save the new arrangement.');
+  notify(d?.detail?apiErrorText(d.detail):'Could not save the new arrangement.');
   if(res&&res.status===409) await refreshObTemplatesList(type);
   else { obTmplItemsCache[type]=before; renderObSwimlane(type); }
 }

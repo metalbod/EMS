@@ -11,10 +11,10 @@ const ssoStatus = new Function(`${settings.slice(settings.indexOf('function ssoS
 
 function loadLogin(fetchImpl) {
   const ctx = { fetch: fetchImpl, showGlobalLoading() {}, hideGlobalLoading() {}, bootApp: vi.fn(), localStorage: { setItem: vi.fn(), removeItem: vi.fn() }, history: { replaceState: vi.fn() }, currentUser: null,
-    api: vi.fn(), showPage: vi.fn(), alert: vi.fn(), apiErrorText: d => String(d) };
-  const fn = new Function('fetch', 'showGlobalLoading', 'hideGlobalLoading', 'bootApp', 'localStorage', 'history', 'location', 'api', 'showPage', 'alert', 'apiErrorText',
+    api: vi.fn(), showPage: vi.fn(), notify: vi.fn(), apiErrorText: d => String(d) };
+  const fn = new Function('fetch', 'showGlobalLoading', 'hideGlobalLoading', 'bootApp', 'localStorage', 'history', 'location', 'api', 'showPage', 'notify', 'apiErrorText',
     `let currentUser = null;\n${core.slice(start, end)}\nreturn { ssoErrorMessage, refreshSsoButton, handleSsoReturn, resumeSsoReauth, getUser: () => currentUser };`);
-  return { ctx, api: (loc) => fn(ctx.fetch, ctx.showGlobalLoading, ctx.hideGlobalLoading, ctx.bootApp, ctx.localStorage, ctx.history, loc, ctx.api, ctx.showPage, ctx.alert, ctx.apiErrorText) };
+  return { ctx, api: (loc) => fn(ctx.fetch, ctx.showGlobalLoading, ctx.hideGlobalLoading, ctx.bootApp, ctx.localStorage, ctx.history, loc, ctx.api, ctx.showPage, ctx.notify, ctx.apiErrorText) };
 }
 
 beforeEach(() => {
@@ -157,7 +157,7 @@ describe('confirming with Microsoft while signed in', () => {
     let m = api({ search: '?sso_reauth_error=1', pathname: '/', hash: '' });
     await m.handleSsoReturn();
     await m.resumeSsoReauth();
-    expect(ctx.alert.mock.calls[0][0]).toContain('same Microsoft account');
+    expect(ctx.notify.mock.calls[0][0]).toContain('same Microsoft account');
     expect(ctx.api).not.toHaveBeenCalled();
 
     ({ ctx, api } = loadLogin(vi.fn()));
@@ -165,6 +165,6 @@ describe('confirming with Microsoft while signed in', () => {
     await m.handleSsoReturn();
     ctx.api.mockResolvedValue({ ok: false, json: async () => ({ detail: 'Confirm with Microsoft to acknowledge this policy' }) });
     await m.resumeSsoReauth();
-    expect(ctx.alert.mock.calls[0][0]).toContain('Confirm with Microsoft');
+    expect(ctx.notify.mock.calls[0][0]).toContain('Confirm with Microsoft');
   });
 });

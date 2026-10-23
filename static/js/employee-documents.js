@@ -48,8 +48,8 @@ async function loadEmployeeDocTypesPage() {
     <div class="flex items-center gap-2 py-3">
       <span class="flex-1 text-sm text-slate-700">${esc(t.name)}</span>
       <span class="text-xs text-slate-400">Reminds ${t.reminder_window_days} day(s) before</span>
-      <button onclick="openEmployeeDocTypeModal(${t.id})" class="text-slate-300 hover:text-blue-500"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
-      <button onclick="deleteEmployeeDocType(${t.id})" class="text-slate-300 hover:text-red-500"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+      <button onclick="openEmployeeDocTypeModal(${t.id})" class="text-slate-300 hover:text-blue-500" aria-label="Edit" title="Edit"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
+      <button onclick="deleteEmployeeDocType(${t.id})" class="text-slate-300 hover:text-red-500" aria-label="Delete" title="Delete"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>`).join('');
 }
 
@@ -81,7 +81,7 @@ async function submitEmployeeDocType(e) {
   const url = id ? `/api/employee-document-types/${id}` : '/api/employee-document-types';
   const res = await api(url, { method: id ? 'PUT' : 'POST', body: JSON.stringify(body) });
   if (res?.ok) { closeEmployeeDocTypeModal(); loadEmployeeDocTypesPage(); }
-  else if (res) { const d = await res.json().catch(() => ({})); alert(d.detail || 'Failed to save document type'); }
+  else if (res) { const d = await res.json().catch(() => ({})); notify(d.detail || 'Failed to save document type'); }
 }
 
 async function deleteEmployeeDocType(id) {
@@ -119,8 +119,8 @@ async function loadEmployeeDocuments(employeeId) {
         ${d.attachment_data_url ? `<a href="${d.attachment_data_url}" target="_blank" class="text-xs text-blue-600 hover:underline mt-1 inline-block">View attachment</a>` : ''}
       </div>
       <div class="flex gap-1 shrink-0">
-        <button onclick="openEmployeeDocumentForm(${d.id})" class="text-slate-300 hover:text-blue-500"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
-        <button onclick="deleteEmployeeDocument(${d.id})" class="text-slate-300 hover:text-red-500"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+        <button onclick="openEmployeeDocumentForm(${d.id})" class="text-slate-300 hover:text-blue-500" aria-label="Edit" title="Edit"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
+        <button onclick="deleteEmployeeDocument(${d.id})" class="text-slate-300 hover:text-red-500" aria-label="Delete" title="Delete"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
       </div>
     </div>`).join('');
 }
@@ -152,7 +152,7 @@ function closeEmployeeDocumentModal() { closeModal('employeeDocumentModal'); }
 function handleEmployeeDocumentAttachFile(e) {
   const file = e.target.files?.[0];
   if (!file) return;
-  if (file.size > 6 * 1024 * 1024) { alert('File is too large. Please choose a file under ~6MB.'); e.target.value = ''; return; }
+  if (file.size > 6 * 1024 * 1024) { notify('File is too large. Please choose a file under ~6MB.'); e.target.value = ''; return; }
   const reader = new FileReader();
   reader.onload = () => {
     employeeDocAttachment = { fileName: file.name, mimeType: file.type, dataUrl: reader.result };
@@ -201,5 +201,5 @@ async function deleteEmployeeDocument(docId) {
   if (!confirm('Remove this document?')) return;
   const res = await api(`/api/employees/${viewingId}/documents/${docId}`, { method: 'DELETE' });
   if (res?.ok) loadEmployeeDocuments(viewingId);
-  else { const d = await res.json(); alert(d.detail || 'Failed to remove document'); }
+  else { const d = await res.json(); notify(d.detail || 'Failed to remove document'); }
 }

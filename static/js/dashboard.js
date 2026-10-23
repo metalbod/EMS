@@ -47,9 +47,7 @@ function renderDashboard() {
   checkDashboardSystemNotification();
   checkDashboardNotification();
   loadDashboardTodos();
-  const isEmployee = currentUser?.role === 'employee';
-  document.getElementById('dashboardQuickActions')?.classList.toggle('hidden', !isEmployee);
-  if (isEmployee) { refreshResignButtonState(); refreshDashClockState(); }
+  renderDashQuickActions();
   renderDashGreeting();
   if (currentUser.role === 'superadmin' && !currentInstitution) {
     document.getElementById('superadminGlobalDash').classList.remove('hidden');
@@ -928,8 +926,50 @@ async function loadDashboardTodos() {
   if (liveEl) liveEl.textContent = `${outcome}${_plural(items.length, 'item')} on your to-do list${deciding ? `, ${deciding} waiting for your decision` : ''}.`;
 }
 
-// Dashboard quick-action shortcuts (employee role only — see
-// renderDashboard's dashboardQuickActions toggle). Each jumps to the
+// Which quick-action shortcuts this person sees on Home. Personal ones need an
+// employee record (HR and managers are employees too); Resign stays
+// employee-role only; the "+ Add …" ones follow the same rule as the button on
+// the page they open.
+function renderDashQuickActions() {
+  const role = currentUser?.role;
+  const hasEmp = !!currentUser?.employee_id;
+  const show = (id, on) => document.getElementById(id)?.classList.toggle('hidden', !on);
+  ['dashQaApplyLeave', 'dashQaClaim', 'dashClockBtn', 'dashQaLogHours'].forEach(id => show(id, hasEmp));
+  const isEmployee = role === 'employee';
+  const canAddEmployee = HR_STAFF_ROLES.includes(role);
+  // recruitment.js is a lazy module, so its canManageRecruitment() isn't loaded yet: same rule, inline.
+  const canNewReq = role !== 'superadmin' && !!(currentUser?.can_manage_recruitment ?? HR_MANAGE_ROLES.includes(role));
+  const canPayroll = role === 'payroll_manager';
+  show('dashboardResignBtn', hasEmp && isEmployee);
+  show('dashQaAddEmployee', canAddEmployee);
+  show('dashQaNewReq', canNewReq);
+  show('dashQaNewPayrollRun', canPayroll);
+  show('dashQaRoleDivider', hasEmp && (canAddEmployee || canNewReq || canPayroll));
+  document.getElementById('dashboardQuickActions')?.classList.toggle('hidden', !(hasEmp || canAddEmployee || canNewReq || canPayroll));
+  if (hasEmp && isEmployee) refreshResignButtonState();
+  if (hasEmp) refreshDashClockState();
+}
+
+async function dashShortcutLogHours() { showPage('timesheet-my'); }
+
+async function dashShortcutAddEmployee() {
+  showPage('employees');
+  await openAddModal();
+}
+
+async function dashShortcutNewRequisition() {
+  showPage('requisitions');
+  await ensureModuleLoaded('recruitment');
+  await loadRecruitMeta();
+  openReqModal();
+}
+
+async function dashShortcutNewPayrollRun() {
+  showPage('payroll-runs');
+  openPayrollRunModal();
+}
+
+// Dashboard quick-action shortcuts (see renderDashQuickActions). Each jumps to the
 // relevant page (for its own nav-active state and title) and pre-loads
 // just the one piece of cached state its modal actually reads, rather
 // than awaiting that page's whole load function (which showPage's own
@@ -971,7 +1011,7 @@ const dashShortcutClockIn = guardAsync(async function dashShortcutClockIn() {
     method: 'POST',
     body: JSON.stringify({ lat: geo?.lat ?? null, lng: geo?.lng ?? null }),
   });
-  if (!res || !res.ok) { const d = await res?.json().catch(() => ({})); alert(d?.detail || 'Failed to clock in'); return; }
+  if (!res || !res.ok) { const d = await res?.json().catch(() => ({})); notify(d?.detail || 'Failed to clock in'); return; }
   await refreshDashClockState();
 });
 
@@ -981,7 +1021,7 @@ const dashShortcutClockOut = guardAsync(async function dashShortcutClockOut() {
     method: 'POST',
     body: JSON.stringify({ lat: geo?.lat ?? null, lng: geo?.lng ?? null }),
   });
-  if (!res || !res.ok) { const d = await res?.json().catch(() => ({})); alert(d?.detail || 'Failed to clock out'); return; }
+  if (!res || !res.ok) { const d = await res?.json().catch(() => ({})); notify(d?.detail || 'Failed to clock out'); return; }
   await refreshDashClockState();
 });
 

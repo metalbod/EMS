@@ -240,7 +240,7 @@ function togglePipOutcomeEndDate() {
 async function decidePip(id, status) {
   if (status === 'Rejected' && !confirm('Reject this PIP proposal?')) return;
   const res = await api(`/api/performance/pip/${id}/decide`, { method: 'PATCH', body: JSON.stringify({ status }) });
-  if (!res?.ok) { const d = await res.json(); alert(d.detail || 'Failed to update'); return; }
+  if (!res?.ok) { const d = await res.json(); notify(d.detail || 'Failed to update'); return; }
   closePipDetailModal();
   loadPipList();
 }
@@ -248,9 +248,9 @@ async function decidePip(id, status) {
 const submitPipCheckin = guardAsync(async function(id) {
   const checkin_date = document.getElementById('pipCheckinDate').value;
   const notes = document.getElementById('pipCheckinNotes').value.trim();
-  if (!checkin_date || !notes) { alert('Date and notes are required'); return; }
+  if (!checkin_date || !notes) { notify('Date and notes are required'); return; }
   const res = await api(`/api/performance/pip/${id}/checkins`, { method: 'POST', body: JSON.stringify({ checkin_date, notes }) });
-  if (!res?.ok) { const d = await res.json(); alert(d.detail || 'Failed to add check-in'); return; }
+  if (!res?.ok) { const d = await res.json(); notify(d.detail || 'Failed to add check-in'); return; }
   openPipDetail(id);
 });
 

@@ -467,7 +467,7 @@ const submitProject = guardAsync(async function() {
     is_open_to_all: document.getElementById('projectOpenToAll').checked,
     is_billable: document.getElementById('projectBillable').checked,
   };
-  if(!body.name){ alert('Project name is required'); return; }
+  if(!body.name){ notify('Project name is required'); return; }
   const url=id?`/api/projects/${id}`:'/api/projects';
   const res=await api(url,{method:id?'PUT':'POST',body:JSON.stringify(body)});
   if(res?.ok){
@@ -481,7 +481,7 @@ const submitProject = guardAsync(async function() {
       loadProjects();
     }
   } else {
-    const d=await res.json(); alert(d.detail||'Failed to save project');
+    const d=await res.json(); notify(d.detail||'Failed to save project');
   }
 });
 
@@ -489,7 +489,7 @@ async function deleteProject(projectId) {
   if(!confirm('Delete this project?')) return;
   const res=await api(`/api/projects/${projectId}`,{method:'DELETE'});
   if(res?.ok||res?.status===204){ closeProjectModal(); loadProjects(); }
-  else { const d=await res.json(); alert(d.detail||'Failed to delete project'); }
+  else { const d=await res.json(); notify(d.detail||'Failed to delete project'); }
 }
 
 // ---------------------------------------------------------------------------
@@ -514,7 +514,7 @@ function closeDuplicateProjectModal() { closeModal('dupProjectModal'); duplicati
 
 const submitDuplicateProject = guardAsync(async function() {
   const name=document.getElementById('dupProjectName').value.trim();
-  if(!name){ alert('Project name is required'); return; }
+  if(!name){ notify('Project name is required'); return; }
   const duplicate_scope=document.querySelector('input[name="dupProjectScope"]:checked').value;
   const res=await api(`/api/projects/${duplicatingProjectId}/duplicate`,{method:'POST',body:JSON.stringify({name,duplicate_scope})});
   if(res?.ok){
@@ -523,7 +523,7 @@ const submitDuplicateProject = guardAsync(async function() {
     await loadProjects();
     openProjectModal(proj.id);
   } else {
-    const d=await res.json(); alert(d.detail||'Failed to duplicate project');
+    const d=await res.json(); notify(d.detail||'Failed to duplicate project');
   }
 });
 
@@ -586,7 +586,7 @@ const submitProjectTask = guardAsync(async function() {
   const projectId=document.getElementById('projectId').value;
   const taskId=document.getElementById('projectTaskId').value;
   const name=document.getElementById('projectTaskName').value.trim();
-  if(!name){ alert('Task name is required'); return; }
+  if(!name){ notify('Task name is required'); return; }
   const body={
     name,
     description: document.getElementById('projectTaskDesc').value.trim()||null,
@@ -601,7 +601,7 @@ const submitProjectTask = guardAsync(async function() {
     await loadProjectTasksForManage(parseInt(projectId));
     resetProjectTaskForm();
   } else {
-    const d=await res.json(); alert(d.detail||'Failed to save task');
+    const d=await res.json(); notify(d.detail||'Failed to save task');
   }
 });
 
@@ -609,7 +609,7 @@ async function deleteProjectTask(projectId, taskId) {
   if(!confirm('Delete this task?')) return;
   const res=await api(`/api/projects/${projectId}/tasks/${taskId}`,{method:'DELETE'});
   if(res?.ok||res?.status===204){ loadProjectTasksForManage(projectId); resetProjectTaskForm(); }
-  else { const d=await res.json(); alert(d.detail||'Failed to delete task'); }
+  else { const d=await res.json(); notify(d.detail||'Failed to delete task'); }
 }
 
 // ---------------------------------------------------------------------------
@@ -862,7 +862,7 @@ function _tsOnRowTaskChange(rowIdx, taskId) {
   if(!taskId){ row.task_id=null; row.task_name=null; return; }
   const dup=tsGridRows.some((r,i)=>i!==rowIdx && r.project_id===row.project_id && r.task_id===parseInt(taskId));
   if(dup){
-    alert('This project/task is already a row above — enter hours there instead of adding a duplicate row.');
+    notify('This project/task is already a row above — enter hours there instead of adding a duplicate row.');
     document.getElementById(`tsGridRowTaskSelect${rowIdx}`).value='';
     row.task_id=null;
     row.task_name=null;
@@ -898,7 +898,7 @@ const saveTimesheetGrid = guardAsync(async function() {
   // without the person realizing why.
   const incompleteRow=tsGridRows.some(row => (!row.project_id || !row.task_id) && tsWeekDates.some(d => (parseFloat(row.cells[d]?.value)||0) > 0));
   if(incompleteRow){
-    alert('One row has hours entered but no project/task selected yet — pick both before saving, or clear those hours.');
+    notify('One row has hours entered but no project/task selected yet — pick both before saving, or clear those hours.');
     return;
   }
 
@@ -953,7 +953,7 @@ const submitTimesheet = guardAsync(async function() {
   if(!confirm('Submit this timesheet for approval? You will not be able to edit it afterwards.')) return;
   const res=await api(`/api/timesheets/${tsCurrentTimesheet.id}/status`,{method:'PATCH',body:JSON.stringify({status:'Submitted'})});
   if(res?.ok){ loadCurrentTimesheet(); }
-  else { const d=await res.json(); alert(d.detail||'Failed to submit'); }
+  else { const d=await res.json(); notify(d.detail||'Failed to submit'); }
 });
 
 // ---------------------------------------------------------------------------
@@ -1189,7 +1189,7 @@ async function reviewOvertime(id, tsId, status, isProjectSplit) {
   const url=isProjectSplit ? `/api/overtime/projects/${id}/status` : `/api/overtime/${id}/status`;
   const res=await api(url,{method:'PATCH',body:JSON.stringify({status})});
   if(res?.ok){ loadTimesheetDetailOvertime(tsId); }
-  else { const d=await res.json(); alert(d.detail||'Failed to update overtime record'); }
+  else { const d=await res.json(); notify(d.detail||'Failed to update overtime record'); }
 }
 
 // ---------------------------------------------------------------------------
@@ -1218,7 +1218,7 @@ function closeTimesheetDetailModal() { closeModal('timesheetDetailModal'); }
 async function reviewTimesheet(tsId, status) {
   const res=await api(`/api/timesheets/${tsId}/status`,{method:'PATCH',body:JSON.stringify({status})});
   if(res?.ok){ closeTimesheetDetailModal(); loadTimesheetApprovals(); }
-  else { const d=await res.json(); alert(d.detail||'Failed to update'); }
+  else { const d=await res.json(); notify(d.detail||'Failed to update'); }
 }
 
 async function reviewTimesheetProject(tsId, projectId, status) {
@@ -1229,6 +1229,6 @@ async function reviewTimesheetProject(tsId, projectId, status) {
     await openTimesheetDetail(tsId);
     loadTimesheetApprovals();
   } else {
-    const d=await res.json(); alert(d.detail||'Failed to update');
+    const d=await res.json(); notify(d.detail||'Failed to update');
   }
 }

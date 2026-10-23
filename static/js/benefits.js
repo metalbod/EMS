@@ -119,9 +119,9 @@ async function autoEnrollAllActiveEmployees() {
   if (!currentBenefitPlanId) return;
   if (!confirm('Enroll every active employee into this plan now? Employees already enrolled will be left as-is.')) return;
   const res = await api(`/api/benefits/plans/${currentBenefitPlanId}/auto-enroll-all`, { method: 'POST' });
-  if (!res || !res.ok) { alert('Error: ' + (await res.json().catch(()=>({}))).detail || 'Failed to auto-enroll'); return; }
+  if (!res || !res.ok) { notify('Error: ' + (await res.json().catch(()=>({}))).detail || 'Failed to auto-enroll'); return; }
   const data = await res.json();
-  alert(`Enrolled ${data.enrolled_count} active employee(s).`);
+  notify(`Enrolled ${data.enrolled_count} active employee(s).`);
 }
 
 async function initEligibilityEditor(planId) {
@@ -163,7 +163,7 @@ const addEligibilityRule = guardAsync(async function() {
   const jobLevelId = document.getElementById('benEligJobLevel').value;
   const payGradeId = document.getElementById('benEligPayGrade').value;
   if (!jobLevelId && !payGradeId) {
-    alert('Select a job level or pay grade to add.');
+    notify('Select a job level or pay grade to add.');
     return;
   }
   const res = await api(`/api/benefits/plans/${currentBenefitPlanId}/eligibility-rules`, {
@@ -174,7 +174,7 @@ const addEligibilityRule = guardAsync(async function() {
     }),
   });
   if (!res || !res.ok) {
-    alert('Error: ' + (await res.json()).detail);
+    notify('Error: ' + (await res.json()).detail);
     return;
   }
   document.getElementById('benEligJobLevel').value = '';
@@ -185,7 +185,7 @@ const addEligibilityRule = guardAsync(async function() {
 async function removeEligibilityRule(ruleId) {
   const res = await api(`/api/benefits/plans/${currentBenefitPlanId}/eligibility-rules/${ruleId}`, { method: 'DELETE' });
   if (!res || !res.ok) {
-    alert('Error removing eligibility rule');
+    notify('Error removing eligibility rule');
     return;
   }
   loadEligibilityRules(currentBenefitPlanId);
@@ -210,7 +210,7 @@ async function submitBenefitPlanForm(e) {
       payroll_sync_enabled: document.getElementById('benPlanPayrollSync').checked,
     };
     const res = await api(`/api/benefits/plans/${planId}`, { method: 'PUT', body: JSON.stringify(body) });
-    if (!res || !res.ok) { alert('Error: ' + (await res.json()).detail); return; }
+    if (!res || !res.ok) { notify('Error: ' + (await res.json()).detail); return; }
   } else {
     const body = {
       plan_name: g('benPlanName').trim(),
@@ -227,7 +227,7 @@ async function submitBenefitPlanForm(e) {
       payroll_sync_enabled: document.getElementById('benPlanPayrollSync').checked,
     };
     const res = await api('/api/benefits/plans', { method: 'POST', body: JSON.stringify(body) });
-    if (!res || !res.ok) { alert('Error: ' + (await res.json()).detail); return; }
+    if (!res || !res.ok) { notify('Error: ' + (await res.json()).detail); return; }
   }
 
   closeBenefitPlanModal();
@@ -308,14 +308,14 @@ async function submitEnrollmentPeriodForm(e) {
     end_date: g('epEnd'),
   };
   const res = await api('/api/benefits/enrollment-periods', { method: 'POST', body: JSON.stringify(body) });
-  if (!res || !res.ok) { alert('Error: ' + (await res.json()).detail); return; }
+  if (!res || !res.ok) { notify('Error: ' + (await res.json()).detail); return; }
   closeEnrollmentPeriodModal();
   loadEnrollmentPeriods();
 }
 
 async function changeEnrollmentPeriodStatus(periodId, status) {
   const res = await api(`/api/benefits/enrollment-periods/${periodId}`, { method: 'PUT', body: JSON.stringify({ status }) });
-  if (!res || !res.ok) { alert('Error updating enrollment period'); return; }
+  if (!res || !res.ok) { notify('Error updating enrollment period'); return; }
   loadEnrollmentPeriods();
 }
 
@@ -385,7 +385,7 @@ function renderLifeEventsTable() {
 
 async function decideLifeEvent(eventId, status) {
   const res = await api(`/api/benefits/life-events/${eventId}/decide`, { method: 'PUT', body: JSON.stringify({ status }) });
-  if (!res || !res.ok) { alert('Error deciding life event'); return; }
+  if (!res || !res.ok) { notify('Error deciding life event'); return; }
   loadLifeEvents();
 }
 
@@ -557,7 +557,7 @@ async function electMyBenefit(planId, status) {
   const body = { benefit_plan_id: planId, status };
   if (!myActivePeriod && myApprovedWindowEvent) body.life_event_id = myApprovedWindowEvent.id;
   const res = await api('/api/benefits/enrollments/mine', { method: 'POST', body: JSON.stringify(body) });
-  if (!res || !res.ok) { alert('Error: ' + (await res.json()).detail); return; }
+  if (!res || !res.ok) { notify('Error: ' + (await res.json()).detail); return; }
   loadMyBenefitsPage();
 }
 
@@ -577,7 +577,7 @@ async function submitLifeEventForm(e) {
     notes: g('leNotes').trim() || null,
   };
   const res = await api('/api/benefits/life-events/mine', { method: 'POST', body: JSON.stringify(body) });
-  if (!res || !res.ok) { alert('Error: ' + (await res.json()).detail); return; }
+  if (!res || !res.ok) { notify('Error: ' + (await res.json()).detail); return; }
   closeLifeEventModal();
   loadMyBenefitsPage();
 }
@@ -696,7 +696,7 @@ async function submitDependentForm(e) {
     res = await api('/api/benefits/dependents/mine', { method: 'POST', body: JSON.stringify(body) });
   }
 
-  if (!res || !res.ok) { alert('Error: ' + (await res.json()).detail); return; }
+  if (!res || !res.ok) { notify('Error: ' + (await res.json()).detail); return; }
   closeDependentModal();
 
   if (dependentFormContext === 'hr') {
@@ -783,7 +783,7 @@ function renderClaimsTable() {
 
 async function rejectClaim(claimId) {
   const res = await api(`/api/benefits/claims/${claimId}/decide`, { method: 'PUT', body: JSON.stringify({ status: 'Rejected' }) });
-  if (!res || !res.ok) { alert('Error rejecting claim'); return; }
+  if (!res || !res.ok) { notify('Error rejecting claim'); return; }
   loadClaims();
 }
 
@@ -808,14 +808,14 @@ async function submitClaimDecideForm(e) {
     method: 'PUT',
     body: JSON.stringify({ status: 'Approved', amount_approved }),
   });
-  if (!res || !res.ok) { alert('Error: ' + (await res.json()).detail); return; }
+  if (!res || !res.ok) { notify('Error: ' + (await res.json()).detail); return; }
   closeClaimDecideModal();
   loadClaims();
 }
 
 async function markClaimPaid(claimId) {
   const res = await api(`/api/benefits/claims/${claimId}/pay`, { method: 'PUT' });
-  if (!res || !res.ok) { alert('Error marking claim as paid'); return; }
+  if (!res || !res.ok) { notify('Error marking claim as paid'); return; }
   loadClaims();
 }
 
@@ -882,7 +882,7 @@ async function submitClaimForm(e) {
     project_id: !projectWrap.classList.contains('hidden') && g('claimProjectId') ? parseInt(g('claimProjectId')) : null,
   };
   const res = await api('/api/benefits/claims/mine', { method: 'POST', body: JSON.stringify(body) });
-  if (!res || !res.ok) { alert('Error: ' + (await res.json()).detail); return; }
+  if (!res || !res.ok) { notify('Error: ' + (await res.json()).detail); return; }
   closeClaimModal();
   loadMyBenefitsPage();
 }

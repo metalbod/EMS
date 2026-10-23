@@ -182,26 +182,26 @@ const submitCycle = guardAsync(async function() {
   const name=document.getElementById('cycleName').value.trim();
   const period_start=document.getElementById('cycleStart').value;
   const period_end=document.getElementById('cycleEnd').value;
-  if(!name||!period_start||!period_end){ alert('All fields are required'); return; }
+  if(!name||!period_start||!period_end){ notify('All fields are required'); return; }
   const res=await api('/api/performance/cycles',{method:'POST',body:JSON.stringify({name,period_start,period_end})});
   if(res?.ok){ closeCycleModal(); loadPerformanceCycles(); }
-  else { const d=await res.json(); alert(d.detail||'Failed to create cycle'); }
+  else { const d=await res.json(); notify(d.detail||'Failed to create cycle'); }
 });
 
 async function activateCycle(id) {
   if(!confirm('Activate this cycle? This opens goal-setting and creates a self-review appraisal for every active employee.')) return;
   const res=await api(`/api/performance/cycles/${id}/activate`,{method:'PATCH'});
-  if(res?.ok){ loadPerformanceCycles(); } else { const d=await res.json(); alert(d.detail||'Failed to activate'); }
+  if(res?.ok){ loadPerformanceCycles(); } else { const d=await res.json(); notify(d.detail||'Failed to activate'); }
 }
 async function openCalibration(id) {
   if(!confirm('Open calibration for this cycle?')) return;
   const res=await api(`/api/performance/cycles/${id}/open-calibration`,{method:'PATCH'});
-  if(res?.ok){ loadPerformanceCycles(); loadCalibrationPage(); } else { const d=await res.json(); alert(d.detail||'Failed to open calibration'); }
+  if(res?.ok){ loadPerformanceCycles(); loadCalibrationPage(); } else { const d=await res.json(); notify(d.detail||'Failed to open calibration'); }
 }
 async function closeCycle(id) {
   if(!confirm('Close this cycle? All calibrated appraisals will be finalized and locked.')) return;
   const res=await api(`/api/performance/cycles/${id}/close`,{method:'PATCH'});
-  if(res?.ok){ loadPerformanceCycles(); loadCalibrationPage(); } else { const d=await res.json(); alert(d.detail||'Failed to close cycle'); }
+  if(res?.ok){ loadPerformanceCycles(); loadCalibrationPage(); } else { const d=await res.json(); notify(d.detail||'Failed to close cycle'); }
 }
 
 // ---------------------------------------------------------------------------
@@ -318,15 +318,15 @@ function renderKeyResultsInForm() {
       <span class="flex-1">${esc(k.description)}</span>
       <input type="number" step="0.01" value="${k.actual_value}" class="inp text-xs" style="width:80px" onchange="updateKeyResultActual(${k.id}, this.value)"/>
       <span class="text-xs text-slate-400">/ ${k.target_value}</span>
-      <button onclick="removeKeyResult(${k.id})" class="text-slate-300 hover:text-red-500"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+      <button onclick="removeKeyResult(${k.id})" class="text-slate-300 hover:text-red-500" aria-label="Remove" title="Remove"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
     </div>`).join(''):'<p class="text-xs text-slate-400">No key results yet.</p>';
 }
 
 const addKeyResultToForm = guardAsync(async function() {
-  if(!currentGoalForForm){ alert('Save the goal first, then add key results.'); return; }
+  if(!currentGoalForForm){ notify('Save the goal first, then add key results.'); return; }
   const description=document.getElementById('newKrDescription').value.trim();
   const target_value=parseFloat(document.getElementById('newKrTarget').value)||100;
-  if(!description){ alert('Key result description is required'); return; }
+  if(!description){ notify('Key result description is required'); return; }
   const res=await api(`/api/performance/goals/${currentGoalForForm.id}/key-results`,{method:'POST',body:JSON.stringify({description,target_value,actual_value:0})});
   if(res?.ok){
     const kr=await res.json();
@@ -352,7 +352,7 @@ const submitGoal = guardAsync(async function() {
   const employee_id=document.getElementById('goalEmployeeId').value;
   const goal_type=document.getElementById('goalType').value;
   const title=document.getElementById('goalTitle').value.trim();
-  if(!title){ alert('Title is required'); return; }
+  if(!title){ notify('Title is required'); return; }
   const body={
     cycle_id, employee_id, goal_type, title,
     description: document.getElementById('goalDescription').value.trim()||null,
@@ -363,7 +363,7 @@ const submitGoal = guardAsync(async function() {
   };
   const url=id?`/api/performance/goals/${id}`:'/api/performance/goals';
   const res=await api(url,{method:id?'PUT':'POST',body:JSON.stringify(body)});
-  if(!res?.ok){ const d=await res.json(); alert(d.detail||'Failed to save goal'); return; }
+  if(!res?.ok){ const d=await res.json(); notify(d.detail||'Failed to save goal'); return; }
   const saved=await res.json();
   if(!id && goal_type==='OKR'){
     // Re-open in edit mode so key results can now be attached to the saved goal
@@ -383,14 +383,14 @@ async function deleteGoal(id) {
   if(!confirm('Delete this goal?')) return;
   const res=await api(`/api/performance/goals/${id}`,{method:'DELETE'});
   if(res?.ok||res?.status===204){ loadMyPerformancePage(); }
-  else { const d=await res.json(); alert(d.detail||'Failed to delete goal'); }
+  else { const d=await res.json(); notify(d.detail||'Failed to delete goal'); }
 }
 
 const submitSelfReview = guardAsync(async function(appraisalId) {
   const self_comments=document.getElementById('selfReviewComments').value.trim();
   if(!confirm('Submit self-review? This moves the appraisal to your manager for review.')) return;
   const res=await api(`/api/performance/appraisals/${appraisalId}/self-review`,{method:'POST',body:JSON.stringify({self_comments})});
-  if(res?.ok){ loadMyPerformancePage(); } else { const d=await res.json(); alert(d.detail||'Failed to submit'); }
+  if(res?.ok){ loadMyPerformancePage(); } else { const d=await res.json(); notify(d.detail||'Failed to submit'); }
 });
 
 // ---------------------------------------------------------------------------
@@ -458,7 +458,7 @@ const submitManagerReview = guardAsync(async function() {
   const manager_comments=document.getElementById('mrComments').value.trim()||null;
   const res=await api(`/api/performance/appraisals/${id}/manager-review`,{method:'POST',body:JSON.stringify({manager_rating,manager_comments})});
   if(res?.ok){ closeManagerReviewModal(); loadTeamAppraisalsPage(); }
-  else { const d=await res.json(); alert(d.detail||'Failed to submit'); }
+  else { const d=await res.json(); notify(d.detail||'Failed to submit'); }
 });
 
 // ---------------------------------------------------------------------------
@@ -549,16 +549,16 @@ const submitPayout = guardAsync(async function() {
   let res;
   if(type==='increment'){
     const increment_pct=parseFloat(document.getElementById('payoutIncrementPct').value);
-    if(!increment_pct || increment_pct<=0){ alert('Enter a valid increment percentage'); return; }
+    if(!increment_pct || increment_pct<=0){ notify('Enter a valid increment percentage'); return; }
     if(!confirm(`Apply a ${increment_pct}% merit increment? This updates the employee's basic salary immediately.`)) return;
     res=await api(`/api/performance/appraisals/${appraisalId}/merit-increment`,{method:'POST',body:JSON.stringify({increment_pct})});
   } else {
     const amount=parseFloat(document.getElementById('payoutBonusAmount').value);
-    if(!amount || amount<=0){ alert('Enter a valid bonus amount'); return; }
+    if(!amount || amount<=0){ notify('Enter a valid bonus amount'); return; }
     res=await api(`/api/performance/appraisals/${appraisalId}/bonus`,{method:'POST',body:JSON.stringify({amount})});
   }
   if(res?.ok){ closePayoutModal(); loadCalibrationPage(); }
-  else { const d=await res.json(); alert(d.detail||'Failed to apply payout'); }
+  else { const d=await res.json(); notify(d.detail||'Failed to apply payout'); }
 });
 
 const saveCalibration = guardAsync(async function(appraisalId) {
@@ -567,7 +567,7 @@ const saveCalibration = guardAsync(async function(appraisalId) {
   const calibrated_rating=ratingInput.value?parseFloat(ratingInput.value):null;
   const calibration_notes=notesInput.value.trim()||null;
   const res=await api(`/api/performance/appraisals/${appraisalId}/calibrate`,{method:'POST',body:JSON.stringify({calibrated_rating,calibration_notes})});
-  if(res?.ok){ loadCalibrationPage(); } else { const d=await res.json(); alert(d.detail||'Failed to save'); }
+  if(res?.ok){ loadCalibrationPage(); } else { const d=await res.json(); notify(d.detail||'Failed to save'); }
 });
 
 // ---------------------------------------------------------------------------
@@ -620,7 +620,7 @@ const loadDefaultProbationGoalTemplate = guardAsync(async function() {
     probGoalTemplateCache=await res.json();
     renderProbationGoalTemplate();
   } else {
-    const d=await res.json(); alert(d.detail||'Failed to load default criteria');
+    const d=await res.json(); notify(d.detail||'Failed to load default criteria');
   }
 });
 
@@ -635,7 +635,7 @@ const moveProbationGoalTemplateCriterion = guardAsync(async function(id, dir) {
     probGoalTemplateCache=await res.json();
     renderProbationGoalTemplate();
   } else {
-    const d=await res.json(); alert(d.detail||'Failed to reorder');
+    const d=await res.json(); notify(d.detail||'Failed to reorder');
   }
 });
 
@@ -677,5 +677,5 @@ async function deleteProbationGoalTemplateCriterion(id) {
   if(!confirm('Remove this criterion? Existing probation cycles already created keep their goals as-is — this only affects new ones going forward.')) return;
   const res=await api(`/api/performance/probation-goal-template/${id}`,{method:'DELETE'});
   if(res?.ok||res?.status===204) loadProbationGoalTemplatePage();
-  else { const d=await res.json(); alert(d.detail||'Failed to delete'); }
+  else { const d=await res.json(); notify(d.detail||'Failed to delete'); }
 }

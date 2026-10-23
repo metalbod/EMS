@@ -241,7 +241,7 @@ async function cancelLeaveApplication(appId) {
   if(!confirm('Cancel this leave application?')) return;
   const res=await api(`/api/leave/applications/${appId}/status`,{method:'PATCH',body:JSON.stringify({status:'Cancelled'})});
   if(res?.ok){ loadLeaveApplications(); renderLeaveBalanceCards(); }
-  else { const d=await res.json(); alert(d.detail||'Failed to cancel'); }
+  else { const d=await res.json(); notify(d.detail||'Failed to cancel'); }
 }
 
 // ---------------------------------------------------------------------------
@@ -455,7 +455,7 @@ function updateLeaveApplyDaysPreview() {
 function handleLeaveAttachFile(e) {
   const file=e.target.files?.[0];
   if(!file) return;
-  if(file.size>500*1024){ alert('File is too large. Please choose a file under ~500KB.'); e.target.value=''; return; }
+  if(file.size>500*1024){ notify('File is too large. Please choose a file under ~500KB.'); e.target.value=''; return; }
   const reader=new FileReader();
   reader.onload=()=>{ leaveApplyAttachment=reader.result; };
   reader.readAsDataURL(file);
@@ -588,7 +588,7 @@ function setLeaveApprovalFilter(status) {
 async function reviewLeaveApplication(appId, status) {
   const res=await api(`/api/leave/applications/${appId}/status`,{method:'PATCH',body:JSON.stringify({status})});
   if(res?.ok) loadLeaveApprovals();
-  else { const d=await res.json(); alert(d.detail||'Failed to update'); }
+  else { const d=await res.json(); notify(d.detail||'Failed to update'); }
 }
 
 // ---------------------------------------------------------------------------
@@ -642,7 +642,7 @@ async function loadHolidays() {
       <td class="px-4 py-2">${fmtDate(h.date)}</td>
       <td class="px-4 py-2 text-slate-500">${dayNames[d.getDay()]}</td>
       <td class="px-4 py-2">${esc(h.name)}</td>
-      <td class="px-4 py-2 text-right"><button onclick="deleteHoliday(${h.id})" class="text-slate-300 hover:text-red-500"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></td>
+      <td class="px-4 py-2 text-right"><button onclick="deleteHoliday(${h.id})" class="text-slate-300 hover:text-red-500" aria-label="Delete" title="Delete"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></td>
     </tr>`;
   }).join('');
 }
@@ -664,9 +664,9 @@ async function submitHoliday(e) {
     closeHolidayModal();
     document.getElementById('holidayYearSelect').value=body.year;
     loadHolidays();
-    if(saved.adjusted_applications_count) alert(`Holiday added — ${saved.adjusted_applications_count} leave application(s) were adjusted since they fell on this date.`);
+    if(saved.adjusted_applications_count) notify(`Holiday added — ${saved.adjusted_applications_count} leave application(s) were adjusted since they fell on this date.`);
   } else {
-    const d=await res.json(); alert(d.detail||'Failed to add holiday');
+    const d=await res.json(); notify(d.detail||'Failed to add holiday');
   }
 }
 
@@ -708,7 +708,7 @@ function _populateHolidayRowHtml(date, name, conflict) {
     <input type="date" class="inp w-40 shrink-0 text-sm pop-hol-date" value="${date || ''}"/>
     <input type="text" class="inp text-sm flex-1 min-w-0 pop-hol-name" placeholder="Holiday name" value="${esc(name || '')}"/>
     ${conflict ? '<span class="text-xs text-amber-600 shrink-0 whitespace-nowrap">Already exists</span>' : ''}
-    <button type="button" onclick="this.closest('.populate-holiday-row').remove()" class="text-slate-300 hover:text-red-500 p-1 shrink-0">
+    <button type="button" onclick="this.closest('.populate-holiday-row').remove()" class="text-slate-300 hover:text-red-500 p-1 shrink-0" aria-label="Remove row" title="Remove row">
       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
     </button>
   </div>`;
@@ -718,7 +718,7 @@ const openPopulateNextYearModal = guardAsync(async function() {
   const sourceYear = parseInt(document.getElementById('holidayYearSelect').value);
   const targetYear = sourceYear + 1;
   if (!leaveHolidaysCache.length) {
-    alert(`No holidays found for ${sourceYear} to populate from. Add ${sourceYear}'s holidays first, or use "+ Add Row" after opening this to enter ${targetYear}'s manually.`);
+    notify(`No holidays found for ${sourceYear} to populate from. Add ${sourceYear}'s holidays first, or use "+ Add Row" after opening this to enter ${targetYear}'s manually.`);
   }
   const targetRes = await api(`/api/holidays?year=${targetYear}`);
   const existingTargetDates = new Set((targetRes?.ok ? await targetRes.json() : []).map(h => h.date));
@@ -742,7 +742,7 @@ const submitPopulateHolidays = guardAsync(async function() {
     date: r.querySelector('.pop-hol-date').value,
     name: r.querySelector('.pop-hol-name').value.trim(),
   })).filter(r => r.date && r.name);
-  if (!items.length) { alert('Add at least one holiday with both a date and a name'); return; }
+  if (!items.length) { notify('Add at least one holiday with both a date and a name'); return; }
 
   let added = 0, lastYear = null;
   const failed = [];
@@ -756,15 +756,15 @@ const submitPopulateHolidays = guardAsync(async function() {
   closePopulateHolidaysModal();
   if (lastYear) document.getElementById('holidayYearSelect').value = lastYear;
   await loadHolidays();
-  alert(added + ' holiday(s) added.' + (failed.length ? `\n\nSkipped ${failed.length}:\n` + failed.join('\n') : ''));
+  notify(added + ' holiday(s) added.' + (failed.length ? `\n\nSkipped ${failed.length}:\n` + failed.join('\n') : ''));
 });
 
 // ---------------------------------------------------------------------------
 // Leave Types (management, shown under Holiday Manager page)
 // ---------------------------------------------------------------------------
 function leaveTypeRowButtons(t) {
-  return `<button onclick="openLeaveTypeModal(${t.id})" class="text-slate-300 hover:text-blue-500"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
-      <button onclick="deleteLeaveType(${t.id})" class="text-slate-300 hover:text-red-500"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>`;
+  return `<button onclick="openLeaveTypeModal(${t.id})" class="text-slate-300 hover:text-blue-500" aria-label="Edit" title="Edit"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
+      <button onclick="deleteLeaveType(${t.id})" class="text-slate-300 hover:text-red-500" aria-label="Delete" title="Delete"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>`;
 }
 
 // Leave types in display order: each type that owns a balance, followed (indented) by the
@@ -950,11 +950,11 @@ async function submitLeaveType(e) {
     // Balances already created keep the old days; offer to bring the untouched ones (nothing used, not adjusted) along.
     if(id && saved.stale_balances>0 && confirm(`${saved.stale_balances} balance(s) for this year or later are still on the old ${saved.previous_annual_entitlement} days with nothing used.\n\nUpdate them to ${saved.annual_entitlement} days too?`)){
       const sync=await api(`/api/leave/types/${id}/sync-balances`,{method:'POST',body:JSON.stringify({from_days:saved.previous_annual_entitlement})});
-      if(!sync?.ok){ const d=await sync?.json().catch(()=>({})); alert(d?.detail||'Could not update the balances.'); }
+      if(!sync?.ok){ const d=await sync?.json().catch(()=>({})); notify(d?.detail||'Could not update the balances.'); }
     }
     loadLeaveTypesForManage();
   }
-  else if(res){ const d=await res.json().catch(()=>({})); alert(d.detail||'Failed to save leave type'); }
+  else if(res){ const d=await res.json().catch(()=>({})); notify(d.detail||'Failed to save leave type'); }
 }
 
 async function deleteLeaveType(id) {

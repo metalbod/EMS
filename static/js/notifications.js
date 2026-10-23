@@ -298,12 +298,12 @@ const submitNotification = guardAsync(async function() {
   const message=document.getElementById('notificationMessage').value.trim();
   const startTime=document.getElementById('notificationStart').value;
   const endTime=document.getElementById('notificationEnd').value;
-  if(!message){ alert('Message is required'); return; }
-  if(message.trim().split(/\s+/).filter(Boolean).length>500){ alert('Message must be 500 words or fewer'); return; }
-  if(!startTime||!endTime){ alert('Start and end time are required'); return; }
+  if(!message){ notify('Message is required'); return; }
+  if(message.trim().split(/\s+/).filter(Boolean).length>500){ notify('Message must be 500 words or fewer'); return; }
+  if(!startTime||!endTime){ notify('Start and end time are required'); return; }
   const targetType=document.getElementById('notifAudienceUnder').checked?'under':'everyone';
   const targetEmployeeIds=targetType==='under'?selectedNotifAudienceIds():[];
-  if(targetType==='under' && !targetEmployeeIds.length){ alert('Select at least one person for "All under"'); return; }
+  if(targetType==='under' && !targetEmployeeIds.length){ notify('Select at least one person for "All under"'); return; }
   const body={
     message, start_time:localInputToUTC(startTime), end_time:localInputToUTC(endTime),
     target_type:targetType, target_employee_ids:targetEmployeeIds,
@@ -314,7 +314,7 @@ const submitNotification = guardAsync(async function() {
     closeNotificationModal();
     loadNotificationSettings();
   } else {
-    const d=await res.json(); alert(apiErrorText(d.detail, 'Failed to save notification'));
+    const d=await res.json(); notify(apiErrorText(d.detail, 'Failed to save notification'));
   }
 });
 
@@ -322,7 +322,7 @@ async function deleteNotification(notificationId) {
   if(!confirm('Delete this notification?')) return;
   const res=await api(`/api/notifications/${notificationId}`,{method:'DELETE'});
   if(res?.ok||res?.status===204){ loadNotificationSettings(); }
-  else { const d=await res.json(); alert(d.detail||'Failed to delete notification'); }
+  else { const d=await res.json(); notify(d.detail||'Failed to delete notification'); }
 }
 
 // ---------------------------------------------------------------------------
@@ -421,9 +421,9 @@ const submitSystemNotification = guardAsync(async function() {
   const message=document.getElementById('systemNotificationMessage').value.trim();
   const startTime=document.getElementById('systemNotificationStart').value;
   const endTime=document.getElementById('systemNotificationEnd').value;
-  if(!message){ alert('Message is required'); return; }
-  if(message.trim().split(/\s+/).filter(Boolean).length>500){ alert('Message must be 500 words or fewer'); return; }
-  if(!startTime||!endTime){ alert('Start and end time are required'); return; }
+  if(!message){ notify('Message is required'); return; }
+  if(message.trim().split(/\s+/).filter(Boolean).length>500){ notify('Message must be 500 words or fewer'); return; }
+  if(!startTime||!endTime){ notify('Start and end time are required'); return; }
   const body={ message, start_time:localInputToUTC(startTime), end_time:localInputToUTC(endTime) };
   const url=id?`/api/system-notifications/${id}`:'/api/system-notifications';
   const res=await api(url,{method:id?'PUT':'POST',body:JSON.stringify(body)});
@@ -431,7 +431,7 @@ const submitSystemNotification = guardAsync(async function() {
     closeSystemNotificationModal();
     loadSystemNotificationSettings();
   } else {
-    const d=await res.json(); alert(d.detail||'Failed to save system notification');
+    const d=await res.json(); notify(d.detail||'Failed to save system notification');
   }
 });
 
@@ -439,7 +439,7 @@ async function deleteSystemNotification(notificationId) {
   if(!confirm('Delete this system-wide notification?')) return;
   const res=await api(`/api/system-notifications/${notificationId}`,{method:'DELETE'});
   if(res?.ok||res?.status===204){ loadSystemNotificationSettings(); }
-  else { const d=await res.json(); alert(d.detail||'Failed to delete system notification'); }
+  else { const d=await res.json(); notify(d.detail||'Failed to delete system notification'); }
 }
 
 // Dashboard banner — shown to ALL roles (including superadmin), dismissible per session
