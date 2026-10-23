@@ -814,6 +814,14 @@ def resolve_attendance_record(
         ).fetchone()
         if not leave_type:
             raise HTTPException(404, detail="Leave type not found")
+        # Same rule as applying for leave (core/leave_eligibility.py): a day can't be booked to a type this person may not use.
+        from core.leave_eligibility import ineligible_reason, load_employees, load_overrides
+        from datetime import date as _date
+        _emp = load_employees(conn, inst_id, [rec["employee_id"]]).get(rec["employee_id"])
+        _why = ineligible_reason(leave_type, _emp, _date.fromisoformat(str(rec["work_date"])[:10]),
+                                 load_overrides(conn, inst_id, [rec["employee_id"]], [leave_type["id"]]).get((leave_type["id"], rec["employee_id"]))) if _emp else None
+        if _why:
+            raise HTTPException(400, detail=f"'{leave_type['name']}' isn't available to this employee: {_why}.")
 
         days = 0.5 if payload.half_day else 1.0
         conn.execute(

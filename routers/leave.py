@@ -23,6 +23,12 @@ from core.approval_workflow import start_workflow, advance_or_finalize, annotate
 
 from core.audit import diff_fields, write_entity_audit
 
+from core.institution_time import institution_today
+
+from core.leave_eligibility import (
+    GENDER_CHOICES, eligible_type_rows, has_rules, ineligible_reason, is_eligible, load_employees, load_overrides, rule_badges,
+)
+
 from db import get_db
 
 from core.db_session import db_session
@@ -72,6 +78,24 @@ class LeaveTypeIn(BaseModel):
     carry_forward_expiry_days: int = 0  # 0 = never expires
     carry_forward_percent_basis: str = "balance"  # what the % is of: 'balance' (unused) or 'entitlement' (their own annual entitlement)
     carry_forward_cap_rule: str = "lower"  # with both limits set, carry the 'lower' or the 'higher' of the two
+    # Who may use this type (core/leave_eligibility.py). The defaults are "everyone", i.e. no restriction.
+    eligible_gender: str = "Any"      # 'Any' | 'Male' | 'Female'
+    require_married: bool = False
+    min_service_months: int = 0       # 0 = no minimum
+
+    @field_validator("eligible_gender")
+    @classmethod
+    def _validate_eligible_gender(cls, v):
+        if v not in GENDER_CHOICES:
+            raise ValueError("eligible_gender must be 'Any', 'Male' or 'Female'")
+        return v
+
+    @field_validator("min_service_months")
+    @classmethod
+    def _validate_min_service_months(cls, v):
+        if not (0 <= v <= 120):
+            raise ValueError("min_service_months must be between 0 and 120")
+        return v
 
     @field_validator("carry_forward_percent_basis")
     @classmethod
@@ -474,14 +498,41 @@ def _validate_shares_entitlement(conn, inst_id: int, type_id: Optional[int], sha
 # ---------------------------------------------------------------------------
 # Leave — Types
 # ---------------------------------------------------------------------------
+def _company_today(conn, inst_id: int) -> date:
+    return date.fromisoformat(institution_today(conn, inst_id))
+
+
 @router.get("/api/leave/types")
 @db_session
-def list_leave_types(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
+def list_leave_types(conn, employee_id: Optional[str] = None, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
+    """Active leave types. For an employee (or a Claude token) it is only the types THEY may use. With `?employee_id=` (HR/managers,
+    e.g. applying on someone's behalf) it is the types that person may use. With neither, HR and managers get every type —
+    the admin screens (Leave types & holidays, approval workflows) need the full list. Each row carries `eligibility_badges`."""
     inst_id = need_inst(user)
-    rows = conn.execute(
-        "SELECT * FROM leave_types WHERE institution_id=? AND is_active=1 ORDER BY name", (inst_id,)
-    ).fetchall()
-    return [dict(r) for r in rows]
+    rows = [dict(r) for r in conn.execute(
+        "SELECT * FROM leave_types WHERE institution_id=? AND is_active=1 ORDER BY name", (inst_id,)).fetchall()]
+    target = None
+    if user["role"] == "employee" or user.get("oauth_scopes"):
+        target = user.get("employee_id") or ""
+    elif employee_id:
+        target = employee_id
+    if target is not None:
+        rows = eligible_type_rows(conn, inst_id, rows, target, _company_today(conn, inst_id))
+    for r in rows:
+        r["eligibility_badges"] = rule_badges(r)
+    return rows
+
+
+def _visible_balance_type_ids(types_by_id: Dict[int, Any], emp, overrides, on: date, emp_id: str) -> set:
+    """Leave type ids whose balance this employee may SEE: types they are eligible for, plus a pool owner whose own rules exclude them
+    but which one of their eligible types draws from (that type's card is drawn inside the owner's)."""
+    ok = {tid for tid, lt in types_by_id.items() if is_eligible(lt, emp, on, overrides.get((tid, emp_id)))} if emp is not None \
+        else {tid for tid, lt in types_by_id.items() if not has_rules(lt)}
+    for tid, lt in types_by_id.items():
+        pool = lt["shares_entitlement_with_id"]
+        if pool and tid in ok:
+            ok.add(pool)
+    return ok
 
 
 _LEAVE_TYPE_AUDIT_LABELS = {
@@ -493,6 +544,7 @@ _LEAVE_TYPE_AUDIT_LABELS = {
     "carry_forward_enabled": "Carry forward", "carry_forward_max_days": "Carry-forward max days",
     "carry_forward_max_percent": "Carry-forward max %", "carry_forward_expiry_days": "Carry-forward expiry days",
     "carry_forward_percent_basis": "Carry-forward % based on", "carry_forward_cap_rule": "Carry-forward limit rule",
+    "eligible_gender": "Open to (gender)", "require_married": "Married staff only", "min_service_months": "Minimum service (months)",
 }
 
 
@@ -518,14 +570,15 @@ def create_leave_type(conn, body: LeaveTypeIn, user: dict = Depends(get_current_
     _validate_shares_entitlement(conn, inst_id, None, body.shares_entitlement_with_id, body.name)
     _drop_own_carry_forward_if_sharing(body)
     conn.execute(
-        "INSERT INTO leave_types (institution_id,name,annual_entitlement,requires_approval,requires_attachment,is_paid,is_active,shares_entitlement_with_id,count_calendar_days,allow_half_day,accrual_mode,max_days_per_application,max_days_per_month,carry_forward_enabled,carry_forward_max_days,carry_forward_max_percent,carry_forward_expiry_days,carry_forward_percent_basis,carry_forward_cap_rule) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO leave_types (institution_id,name,annual_entitlement,requires_approval,requires_attachment,is_paid,is_active,shares_entitlement_with_id,count_calendar_days,allow_half_day,accrual_mode,max_days_per_application,max_days_per_month,carry_forward_enabled,carry_forward_max_days,carry_forward_max_percent,carry_forward_expiry_days,carry_forward_percent_basis,carry_forward_cap_rule,eligible_gender,require_married,min_service_months) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (inst_id, body.name, body.annual_entitlement, 1 if body.requires_approval else 0,
          1 if body.requires_attachment else 0, 1 if body.is_paid else 0, 1 if body.is_active else 0,
          body.shares_entitlement_with_id, 1 if body.count_calendar_days else 0, 1 if body.allow_half_day else 0,
          body.accrual_mode, body.max_days_per_application, body.max_days_per_month,
          1 if body.carry_forward_enabled else 0, body.carry_forward_max_days,
          body.carry_forward_max_percent, body.carry_forward_expiry_days,
-         body.carry_forward_percent_basis, body.carry_forward_cap_rule)
+         body.carry_forward_percent_basis, body.carry_forward_cap_rule,
+         body.eligible_gender, 1 if body.require_married else 0, body.min_service_months)
     )
     row = conn.execute("SELECT * FROM leave_types WHERE id=last_insert_rowid()").fetchone()
     write_entity_audit(conn, user, inst_id, "Leave", "leave_type", row["id"], "Created",
@@ -544,15 +597,20 @@ def update_leave_type(conn, type_id: int, body: LeaveTypeIn, user: dict = Depend
         raise HTTPException(404, "Leave type not found")
     _validate_shares_entitlement(conn, inst_id, type_id, body.shares_entitlement_with_id, body.name)
     _drop_own_carry_forward_if_sharing(body)
+    if body.eligible_gender != "Any" or body.require_married or body.min_service_months:
+        if conn.execute("SELECT 1 FROM institutions WHERE id=? AND overtime_leave_type_id=?", (inst_id, type_id)).fetchone():
+            raise HTTPException(400, f"'{old_row['name']}' is where approved overtime is credited as leave, so it has to stay open to everyone. "
+                                     "Choose another leave type for overtime first (Settings), then restrict this one.")
     conn.execute(
-        "UPDATE leave_types SET name=?,annual_entitlement=?,requires_approval=?,requires_attachment=?,is_paid=?,is_active=?,shares_entitlement_with_id=?,count_calendar_days=?,allow_half_day=?,accrual_mode=?,max_days_per_application=?,max_days_per_month=?,carry_forward_enabled=?,carry_forward_max_days=?,carry_forward_max_percent=?,carry_forward_expiry_days=?,carry_forward_percent_basis=?,carry_forward_cap_rule=? WHERE id=?",
+        "UPDATE leave_types SET name=?,annual_entitlement=?,requires_approval=?,requires_attachment=?,is_paid=?,is_active=?,shares_entitlement_with_id=?,count_calendar_days=?,allow_half_day=?,accrual_mode=?,max_days_per_application=?,max_days_per_month=?,carry_forward_enabled=?,carry_forward_max_days=?,carry_forward_max_percent=?,carry_forward_expiry_days=?,carry_forward_percent_basis=?,carry_forward_cap_rule=?,eligible_gender=?,require_married=?,min_service_months=? WHERE id=?",
         (body.name, body.annual_entitlement, 1 if body.requires_approval else 0,
          1 if body.requires_attachment else 0, 1 if body.is_paid else 0, 1 if body.is_active else 0,
          body.shares_entitlement_with_id, 1 if body.count_calendar_days else 0, 1 if body.allow_half_day else 0,
          body.accrual_mode, body.max_days_per_application, body.max_days_per_month,
          1 if body.carry_forward_enabled else 0, body.carry_forward_max_days,
          body.carry_forward_max_percent, body.carry_forward_expiry_days,
-         body.carry_forward_percent_basis, body.carry_forward_cap_rule, type_id)
+         body.carry_forward_percent_basis, body.carry_forward_cap_rule,
+         body.eligible_gender, 1 if body.require_married else 0, body.min_service_months, type_id)
     )
     row = conn.execute("SELECT * FROM leave_types WHERE id=?", (type_id,)).fetchone()
     changes = diff_fields(dict(old_row), dict(row), _LEAVE_TYPE_AUDIT_LABELS)
@@ -607,6 +665,114 @@ def sync_leave_type_balances(conn, type_id: int, body: SyncBalancesIn, user: dic
     return {"updated": len(rows), "from_days": body.from_days, "to_days": lt["annual_entitlement"]}
 
 
+# ---------------------------------------------------------------------------
+# Leave — who may use a type: HR's per-person exceptions, and a preview of a rule
+# ---------------------------------------------------------------------------
+class EligibilityOverrideIn(BaseModel):
+    allowed: bool   # True = may use it despite the rules, False = may not despite them
+    reason: str
+
+    @field_validator("reason")
+    @classmethod
+    def _reason_required(cls, v):
+        v = (v or "").strip()
+        if len(v) < 3:
+            raise ValueError("Give a reason for the exception")
+        return v[:300]
+
+
+def _type_or_404(conn, inst_id: int, type_id: int):
+    lt = conn.execute("SELECT * FROM leave_types WHERE id=? AND institution_id=?", (type_id, inst_id)).fetchone()
+    if not lt:
+        raise HTTPException(404, "Leave type not found")
+    return lt
+
+
+@router.get("/api/leave/types/{type_id}/overrides")
+@db_session
+def list_eligibility_overrides(conn, type_id: int, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
+    require_permission(conn, user, "leave.manage_leave_types")
+    inst_id = need_inst(user)
+    _type_or_404(conn, inst_id, type_id)
+    rows = conn.execute(
+        """SELECT o.employee_id, o.allowed, o.reason, o.created_by, o.created_at, e.full_name, e.preferred_name
+           FROM leave_type_eligibility_overrides o
+           LEFT JOIN employees e ON e.employee_id=o.employee_id AND e.institution_id=o.institution_id
+           WHERE o.institution_id=? AND o.leave_type_id=? ORDER BY e.full_name""", (inst_id, type_id)).fetchall()
+    return [{**dict(r), "allowed": bool(r["allowed"])} for r in rows]
+
+
+@router.put("/api/leave/types/{type_id}/overrides/{employee_id}")
+@db_session
+def set_eligibility_override(conn, type_id: int, employee_id: str, body: EligibilityOverrideIn,
+                             user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    require_permission(conn, user, "leave.manage_leave_types")
+    inst_id = need_inst(user)
+    lt = _type_or_404(conn, inst_id, type_id)
+    emp = conn.execute("SELECT employee_id, full_name FROM employees WHERE employee_id=? AND institution_id=?", (employee_id, inst_id)).fetchone()
+    if not emp:
+        raise HTTPException(404, "Employee not found")
+    existed = conn.execute("SELECT 1 FROM leave_type_eligibility_overrides WHERE leave_type_id=? AND employee_id=?", (type_id, employee_id)).fetchone()
+    conn.execute(
+        """INSERT INTO leave_type_eligibility_overrides (institution_id,leave_type_id,employee_id,allowed,reason,created_by)
+           VALUES (?,?,?,?,?,?)
+           ON CONFLICT (leave_type_id, employee_id) DO UPDATE SET allowed=EXCLUDED.allowed, reason=EXCLUDED.reason, created_by=EXCLUDED.created_by""",
+        (inst_id, type_id, employee_id, 1 if body.allowed else 0, body.reason, user["username"]))
+    write_entity_audit(conn, user, inst_id, "Leave", "leave_type", type_id, "Exception " + ("changed" if existed else "added"),
+                       detail=f"{lt['name']}: {'allowed' if body.allowed else 'withheld'} for {emp['full_name']} ({employee_id}) — {body.reason}",
+                       entity_label=lt["name"])
+    conn.commit()
+    return {"employee_id": employee_id, "allowed": body.allowed, "reason": body.reason}
+
+
+@router.delete("/api/leave/types/{type_id}/overrides/{employee_id}", status_code=204)
+@db_session
+def remove_eligibility_override(conn, type_id: int, employee_id: str, user: dict = Depends(get_current_user)) -> None:
+    require_permission(conn, user, "leave.manage_leave_types")
+    inst_id = need_inst(user)
+    lt = _type_or_404(conn, inst_id, type_id)
+    gone = conn.execute("DELETE FROM leave_type_eligibility_overrides WHERE institution_id=? AND leave_type_id=? AND employee_id=? RETURNING 1",
+                        (inst_id, type_id, employee_id)).fetchone()
+    if gone:
+        write_entity_audit(conn, user, inst_id, "Leave", "leave_type", type_id, "Exception removed",
+                           detail=f"{lt['name']}: exception for {employee_id} removed", entity_label=lt["name"])
+    conn.commit()
+
+
+class EligibilityPreviewIn(BaseModel):
+    eligible_gender: str = "Any"
+    require_married: bool = False
+    min_service_months: int = 0
+    type_id: Optional[int] = None   # when editing a type, so its existing exceptions are counted
+
+    @field_validator("eligible_gender")
+    @classmethod
+    def _g(cls, v):
+        if v not in GENDER_CHOICES:
+            raise ValueError("eligible_gender must be 'Any', 'Male' or 'Female'")
+        return v
+
+
+@router.post("/api/leave/types/eligibility-preview")
+@db_session
+def preview_eligibility(conn, body: EligibilityPreviewIn, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    """How many active employees a rule would let in today, before it is saved — and how many are left out only because the data the
+    rule needs (gender, start date) is missing from their record."""
+    require_permission(conn, user, "leave.manage_leave_types")
+    inst_id = need_inst(user)
+    draft = {"eligible_gender": body.eligible_gender, "require_married": int(body.require_married), "min_service_months": max(0, min(body.min_service_months, 120))}
+    emps = conn.execute("SELECT employee_id, gender, marital_status, start_date FROM employees WHERE institution_id=? AND status='Active'", (inst_id,)).fetchall()
+    ovs = load_overrides(conn, inst_id, None, [body.type_id]) if body.type_id else {}
+    on = _company_today(conn, inst_id)
+    eligible = missing = 0
+    for e in emps:
+        if is_eligible(draft, e, on, ovs.get((body.type_id, e["employee_id"]))):
+            eligible += 1
+        elif (draft["eligible_gender"] != "Any" and not e["gender"]) or (draft["min_service_months"] and not e["start_date"]):
+            missing += 1
+    return {"eligible": eligible, "total": len(emps), "missing_data": missing}
+
+
 @router.delete("/api/leave/types/{type_id}", status_code=204)
 @db_session
 def delete_leave_type(conn, type_id: int, user: dict = Depends(get_current_user)) -> None:
@@ -643,6 +809,7 @@ def list_leave_type_limits(conn, employee_id: Optional[str] = None, year: Option
         "SELECT lt.*, pool.name AS pool_name FROM leave_types lt JOIN leave_types pool ON pool.id=lt.shares_entitlement_with_id "
         "WHERE lt.institution_id=? AND lt.is_active=1 ORDER BY lt.name", (inst_id,)
     ).fetchall()
+    rows = eligible_type_rows(conn, inst_id, rows, emp_id, _company_today(conn, inst_id))
     out = []
     for lt in rows:
         used = _year_usage(conn, inst_id, emp_id, lt["id"], bool(lt["count_calendar_days"]), year)
@@ -655,11 +822,12 @@ def list_leave_type_limits(conn, employee_id: Optional[str] = None, year: Option
 @router.get("/api/leave/balances")
 @db_session
 def list_leave_balances(conn, employee_id: Optional[str] = None, year: Optional[int] = None, team: bool = False,
-                        user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
+                        include_ineligible: bool = False, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
     inst_id = need_inst(user)
     year = year or datetime.now().year
     q = """
-        SELECT b.*, lt.name AS leave_type_name, lt.accrual_mode, e.full_name AS employee_name,
+        SELECT b.*, lt.name AS leave_type_name, lt.accrual_mode, lt.eligible_gender, lt.require_married, lt.min_service_months,
+               lt.shares_entitlement_with_id, e.full_name AS employee_name,
                e.preferred_name AS employee_preferred_name, e.department, e.start_date AS employee_start_date
         FROM leave_balances b
         JOIN leave_types lt ON lt.id = b.leave_type_id
@@ -700,13 +868,28 @@ def list_leave_balances(conn, employee_id: Optional[str] = None, year: Optional[
             "SELECT id FROM leave_types WHERE institution_id=? AND is_active=1 AND shares_entitlement_with_id IS NULL",
             (inst_id,)
         ).fetchall()
+        # Only types this person may use get a balance row: a man is never given a Maternity Leave balance (core/leave_eligibility.py).
+        all_types = {t["id"]: t for t in conn.execute("SELECT * FROM leave_types WHERE institution_id=? AND is_active=1", (inst_id,)).fetchall()}
+        me = user["employee_id"]
+        visible = _visible_balance_type_ids(all_types, load_employees(conn, inst_id, [me]).get(me),
+                                            load_overrides(conn, inst_id, [me]), _company_today(conn, inst_id), me)
         existing_type_ids = {r["leave_type_id"] for r in rows}
-        missing = [t["id"] for t in types if t["id"] not in existing_type_ids]
+        missing = [t["id"] for t in types if t["id"] not in existing_type_ids and t["id"] in visible]
         if missing:
             for tid in missing:
                 _get_or_create_leave_balance(conn, inst_id, user["employee_id"], tid, year)
             conn.commit()
             rows = conn.execute(q, p).fetchall()
+    # Hide balances the employee may not use (rows already on file are kept, just not shown; they reappear if the rule or the person's
+    # record changes). HR can ask for them with include_ineligible=true.
+    if rows and not (include_ineligible and user["role"] in ("hr_manager", "hr_admin", "superadmin")):
+        emp_ids = {r["employee_id"] for r in rows}
+        emps = load_employees(conn, inst_id, emp_ids)
+        ovs = load_overrides(conn, inst_id, emp_ids)
+        all_types = {t["id"]: t for t in conn.execute("SELECT * FROM leave_types WHERE institution_id=?", (inst_id,)).fetchall()}
+        on = _company_today(conn, inst_id)
+        visible_by_emp = {e: _visible_balance_type_ids(all_types, emps.get(e), ovs, on, e) for e in emp_ids}
+        rows = [r for r in rows if r["leave_type_id"] in visible_by_emp[r["employee_id"]]]
     today = datetime.now().strftime("%Y-%m-%d")
     out = []
     for r in rows:
@@ -897,6 +1080,14 @@ def create_leave_application(conn, body: LeaveApplicationIn, user: dict = Depend
                        (body.leave_type_id, inst_id)).fetchone()
     if not lt:
         raise HTTPException(404, "Leave type not found")
+    try:
+        starts_on = date.fromisoformat(body.start_date)
+    except ValueError:
+        raise HTTPException(400, "Start date must be a valid date")
+    why = ineligible_reason(lt, emp, starts_on, load_overrides(conn, inst_id, [body.employee_id], [lt["id"]]).get((lt["id"], body.employee_id)))
+    if why:
+        who = "to you" if user.get("employee_id") == body.employee_id else "to this employee"
+        raise HTTPException(403, f"'{lt['name']}' isn't available {who}: {why}.")
     if lt["requires_attachment"] and not body.attachment:
         raise HTTPException(400, f"'{lt['name']}' requires a supporting document to be attached")
     if not bool(lt["allow_half_day"]) and (body.start_day_period or body.end_day_period):

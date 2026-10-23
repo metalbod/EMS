@@ -75,11 +75,15 @@ def update_overtime_settings(conn, body: OvertimeSettingsIn,
         if not body.overtime_leave_type_id:
             raise HTTPException(400, "overtime_leave_type_id is required when overtime_conversion_mode is 'leave'")
         lt = conn.execute(
-            "SELECT id FROM leave_types WHERE id=? AND institution_id=? AND is_active=1",
+            "SELECT * FROM leave_types WHERE id=? AND institution_id=? AND is_active=1",
             (body.overtime_leave_type_id, inst_id)
         ).fetchone()
         if not lt:
             raise HTTPException(404, "Leave type not found")
+        from core.leave_eligibility import has_rules
+        if has_rules(lt):
+            raise HTTPException(400, f"'{lt['name']}' is limited to some staff (gender, marital status or length of service). Approved overtime is "
+                                     "credited to anyone, so choose a leave type that is open to everyone.")
     before = conn.execute(
         "SELECT overtime_conversion_mode, overtime_leave_type_id, overtime_pay_multiplier FROM institutions WHERE id=?",
         (inst_id,)

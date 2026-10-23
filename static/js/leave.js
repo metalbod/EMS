@@ -256,6 +256,35 @@ let leaveApplyAttachment=null;
 let leaveApplyLimitsCache=[];
 let leaveApplyBalancesCache=[];
 
+// The leave types offered in Apply Leave are the ones THIS employee may use (server-side, core/leave_eligibility.py): the signed-in
+// person's own, or — for HR and managers applying on someone's behalf — the picked employee's, so it is re-fetched when the
+// employee changes. The balances and limits shown beside it follow the same employee.
+let leaveApplyTypes=[];
+function leaveApplyTypeLabel(t, all) {
+  const shared=t.shares_entitlement_with_id?all.find(x=>x.id===t.shares_entitlement_with_id):null;
+  return shared
+    ? `${t.name} (shares with ${shared.name}${t.annual_entitlement>0?`, max ${t.annual_entitlement}/yr`:''})`
+    : `${t.name} (${t.annual_entitlement} days/yr)`;
+}
+async function refreshLeaveApplyForEmployee() {
+  const typeSel=document.getElementById('leaveApplyTypeId');
+  const keep=typeSel.value;
+  const empId=(isLeaveManager()||currentUser?.role==='manager')?document.getElementById('leaveApplyEmpId').value:currentUser?.employee_id;
+  const tr=await api(`/api/leave/types${empId?`?employee_id=${encodeURIComponent(empId)}`:''}`);
+  leaveApplyTypes=tr?.ok?await tr.json():leaveTypesCache;
+  typeSel.innerHTML=leaveApplyTypes.length
+    ? leaveApplyTypes.map(t=>`<option value="${t.id}">${esc(leaveApplyTypeLabel(t, leaveTypesCache.length?leaveTypesCache:leaveApplyTypes))}</option>`).join('')
+    : '<option value="">No leave type is available to this employee</option>';
+  if(keep && leaveApplyTypes.some(t=>String(t.id)===keep)) typeSel.value=keep;
+  const res=await api(`/api/leave/balances?year=${new Date().getFullYear()}${empId?`&employee_id=${encodeURIComponent(empId)}`:''}`);
+  leaveApplyBalancesCache=res?.ok?await res.json():[];
+  // Own yearly limits of types that share another type's balance (used / remaining this year).
+  const limRes=await api(`/api/leave/type-limits?year=${new Date().getFullYear()}${empId?`&employee_id=${encodeURIComponent(empId)}`:''}`);
+  leaveApplyLimitsCache=limRes?.ok?await limRes.json():[];
+  updateLeaveApplyBalanceNote();
+  updateLeaveApplyDaysPreview();
+}
+
 async function openLeaveApplyModal() {
   document.getElementById('leaveApplyErr').classList.add('hidden');
   document.getElementById('leaveApplyReason').value='';
@@ -288,19 +317,7 @@ async function openLeaveApplyModal() {
     empSel.required=false;
   }
 
-  const typeSel=document.getElementById('leaveApplyTypeId');
-  typeSel.innerHTML=leaveTypesCache.map(t=>{
-    const shared=t.shares_entitlement_with_id?leaveTypesCache.find(x=>x.id===t.shares_entitlement_with_id):null;
-    const label=shared?`${esc(t.name)} (shares with ${esc(shared.name)}${t.annual_entitlement>0?`, max ${t.annual_entitlement}/yr`:''})`:`${esc(t.name)} (${t.annual_entitlement}/yr)`;
-    return `<option value="${t.id}">${label}</option>`;
-  }).join('');
-
-  const empId=(isLeaveManager()||currentUser?.role==='manager')?document.getElementById('leaveApplyEmpId').value:currentUser?.employee_id;
-  const res=await api(`/api/leave/balances?year=${new Date().getFullYear()}${empId?`&employee_id=${empId}`:''}`);
-  leaveApplyBalancesCache=res?.ok?await res.json():[];
-  // Own yearly limits of types that share another type's balance (used / remaining this year).
-  const limRes=await api(`/api/leave/type-limits?year=${new Date().getFullYear()}${empId?`&employee_id=${empId}`:''}`);
-  leaveApplyLimitsCache=limRes?.ok?await limRes.json():[];
+  await refreshLeaveApplyForEmployee();
 
   updateLeaveApplyBalanceNote();
   updateLeaveApplyDayPeriodVisibility();
@@ -808,6 +825,7 @@ function renderLeaveTypeRow({type:t, indent, sharedBy}) {
       ${t.accrual_mode==='monthly'?'<span class="badge text-xs bg-teal-100 text-teal-700">Accrues monthly</span>':''}
       ${t.max_days_per_application?`<span class="badge text-xs bg-slate-100 text-slate-600">Max ${t.max_days_per_application}/app</span>`:''}
       ${t.max_days_per_month?`<span class="badge text-xs bg-slate-100 text-slate-600">Max ${t.max_days_per_month}/mo</span>`:''}
+      ${(t.eligibility_badges||[]).map(b=>`<span class="badge text-xs bg-rose-100 text-rose-700" title="Who can use this leave type">${esc(b)}</span>`).join('')}
       ${t.requires_approval?'<span class="badge text-xs bg-blue-100 text-blue-700">Approval</span>':''}
       ${t.requires_attachment?'<span class="badge text-xs bg-purple-100 text-purple-700">Doc required</span>':''}
       ${t.carry_forward_enabled?`<span class="badge text-xs bg-amber-100 text-amber-700" title="${esc(leaveCarryTooltip(t))}">Carries forward</span>`:''}
@@ -852,6 +870,9 @@ function openLeaveTypeModal(typeId) {
     document.getElementById('leaveTypeCarryExpiryDays').value=t?.carry_forward_expiry_days||0;
     setLeaveCarryOption('basis', t?.carry_forward_percent_basis||'balance');
     setLeaveCarryOption('rule', t?.carry_forward_cap_rule||'lower');
+    document.getElementById('leaveTypeEligibleGender').value=t?.eligible_gender||'Any';
+    document.getElementById('leaveTypeRequireMarried').checked=!!t?.require_married;
+    document.getElementById('leaveTypeMinService').value=t?.min_service_months||0;
   } else {
     document.getElementById('leaveTypeName').value='';
     document.getElementById('leaveTypeEntitlement').value=14;
@@ -868,7 +889,15 @@ function openLeaveTypeModal(typeId) {
     document.getElementById('leaveTypeCarryMaxDays').value=0;
     document.getElementById('leaveTypeCarryMaxPercent').value=0;
     document.getElementById('leaveTypeCarryExpiryDays').value=0;
+    document.getElementById('leaveTypeEligibleGender').value='Any';
+    document.getElementById('leaveTypeRequireMarried').checked=false;
+    document.getElementById('leaveTypeMinService').value=0;
   }
+  // Exceptions are per saved type; the preview counts people against the rules as they stand in the form.
+  document.getElementById('leaveTypeExceptionsWrap').classList.toggle('hidden', !typeId);
+  document.getElementById('leaveTypeExceptionsHint').classList.toggle('hidden', !!typeId);
+  if(typeId) loadLeaveExceptions(typeId);
+  onLeaveEligibilityChange();
   // A type that is ALREADY sharing keeps its saved limit; only a fresh switch to "shares" zeroes it.
   leaveTypeEntitlementBeforeShare=document.getElementById('leaveTypeSharesWith').value?'14':null;
   onLeaveTypeSharesChange();
@@ -924,6 +953,66 @@ function onLeaveTypeCarryForwardChange() {
   document.getElementById('leaveTypeCarryForwardWrap').classList.toggle('hidden', !enabled);
 }
 
+// ---- Who can use this leave type (core/leave_eligibility.py is the one rule; the server hides/refuses, this only edits the rules) ----
+// "12 of 40 active staff can use this today (3 not counted: no gender on file)".
+function leaveEligibilityPreviewText(p, hasRules) {
+  if(!p) return '';
+  if(!hasRules) return `Everyone can use this (${p.total} active ${p.total===1?'person':'people'}).`;
+  let text=`${p.eligible} of ${p.total} active ${p.total===1?'person':'people'} can use this today.`;
+  if(p.missing_data>0) text+=` ${p.missing_data} not counted: their record has no gender or start date on file.`;
+  return text;
+}
+let leaveEligibilityPreviewSeq=0, leaveEligibilityTimer=null;
+function onLeaveEligibilityChange() {
+  clearTimeout(leaveEligibilityTimer);
+  leaveEligibilityTimer=setTimeout(refreshLeaveEligibilityPreview, 250);
+}
+async function refreshLeaveEligibilityPreview() {
+  const el=document.getElementById('leaveTypeEligibilityPreview');
+  if(!el) return;
+  const gender=document.getElementById('leaveTypeEligibleGender').value;
+  const married=document.getElementById('leaveTypeRequireMarried').checked;
+  const months=Math.max(0, Math.min(120, parseInt(document.getElementById('leaveTypeMinService').value)||0));
+  const typeId=parseInt(document.getElementById('leaveTypeId').value)||null;
+  const seq=++leaveEligibilityPreviewSeq;
+  const res=await api('/api/leave/types/eligibility-preview',{method:'POST',body:JSON.stringify({eligible_gender:gender,require_married:married,min_service_months:months,type_id:typeId})});
+  if(seq!==leaveEligibilityPreviewSeq) return;   // a newer edit is already on its way
+  el.textContent=res?.ok?leaveEligibilityPreviewText(await res.json(), gender!=='Any'||married||months>0):'';
+}
+
+async function loadLeaveExceptions(typeId) {
+  const list=document.getElementById('leaveTypeExceptionsList');
+  const sel=document.getElementById('leaveExcEmployee');
+  sel.innerHTML=employees.filter(e=>e.status==='Active').map(e=>`<option value="${e.employee_id}">${e.employee_id} — ${esc(displayName(e.full_name,e.preferred_name))}</option>`).join('');
+  document.getElementById('leaveExcReason').value='';
+  const res=await api(`/api/leave/types/${typeId}/overrides`);
+  const rows=res?.ok?await res.json():[];
+  list.innerHTML=rows.length?rows.map(r=>`
+    <li class="flex items-start gap-2 text-sm border border-slate-100 rounded-lg px-2.5 py-1.5">
+      <div class="flex-1 min-w-0">
+        <span class="font-medium text-slate-700">${esc(displayName(r.full_name||r.employee_id,r.preferred_name))}</span>
+        <span class="badge text-xs ${r.allowed?'bg-green-100 text-green-700':'bg-red-100 text-red-700'}">${r.allowed?'Allowed':'Withheld'}</span>
+        <p class="text-xs text-slate-500 break-words">${esc(r.reason)}</p>
+      </div>
+      <button type="button" class="btn-ghost text-xs" onclick="removeLeaveException(${typeId},'${esc(r.employee_id)}')">Remove</button>
+    </li>`).join(''):'<li class="text-xs text-slate-400">No exceptions.</li>';
+}
+async function addLeaveException() {
+  const typeId=parseInt(document.getElementById('leaveTypeId').value);
+  const emp=document.getElementById('leaveExcEmployee').value;
+  const reason=document.getElementById('leaveExcReason').value.trim();
+  if(!typeId||!emp) return;
+  if(reason.length<3){ notify('Give a reason for the exception.'); return; }
+  const res=await api(`/api/leave/types/${typeId}/overrides/${encodeURIComponent(emp)}`,{method:'PUT',body:JSON.stringify({allowed:document.getElementById('leaveExcAllowed').value==='1',reason})});
+  if(res?.ok){ await loadLeaveExceptions(typeId); onLeaveEligibilityChange(); }
+  else if(res){ const d=await res.json().catch(()=>({})); notify(d.detail||'Could not save the exception.'); }
+}
+async function removeLeaveException(typeId, empId) {
+  const res=await api(`/api/leave/types/${typeId}/overrides/${encodeURIComponent(empId)}`,{method:'DELETE'});
+  if(res?.ok||res?.status===204){ await loadLeaveExceptions(typeId); onLeaveEligibilityChange(); }
+  else if(res) notify('Could not remove the exception.');
+}
+
 async function submitLeaveType(e) {
   e.preventDefault();
   const id=document.getElementById('leaveTypeId').value;
@@ -946,6 +1035,9 @@ async function submitLeaveType(e) {
     carry_forward_expiry_days: parseInt(document.getElementById('leaveTypeCarryExpiryDays').value)||0,
     carry_forward_percent_basis: leaveCarryBasis,
     carry_forward_cap_rule: leaveCarryRule,
+    eligible_gender: document.getElementById('leaveTypeEligibleGender').value,
+    require_married: document.getElementById('leaveTypeRequireMarried').checked,
+    min_service_months: Math.max(0, parseInt(document.getElementById('leaveTypeMinService').value)||0),
   };
   const url=id?`/api/leave/types/${id}`:'/api/leave/types';
   const res=await api(url,{method:id?'PUT':'POST',body:JSON.stringify(body)});

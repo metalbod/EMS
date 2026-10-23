@@ -4612,7 +4612,7 @@
     <form id="leaveApplyForm" onsubmit="submitLeaveApplication(event)" class="p-6 space-y-4 overflow-y-auto flex-1">
       <div id="leaveApplyEmpWrap" class="hidden">
         <label class="lbl">Employee <span class="text-red-500">*</span></label>
-        <select id="leaveApplyEmpId" class="inp" required></select>
+        <select id="leaveApplyEmpId" class="inp" required onchange="refreshLeaveApplyForEmployee()"></select>
       </div>
       <div><label class="lbl">Leave Type <span class="text-red-500">*</span></label>
         <select id="leaveApplyTypeId" class="inp" required onchange="updateLeaveApplyBalanceNote();updateLeaveApplyDaysPreview()"></select>
@@ -4835,6 +4835,42 @@
       <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
         <input type="checkbox" id="leaveTypeAllowHalfDay" class="w-4 h-4" checked/> Allow half-day (AM/PM) applications
       </label>
+      <!-- Who may use this type (core/leave_eligibility.py). Everything off = everyone, as before. -->
+      <fieldset class="border border-slate-200 rounded-xl p-3 space-y-3">
+        <legend class="lbl px-1">Who can use this leave type</legend>
+        <div>
+          <label class="lbl" for="leaveTypeEligibleGender">Open to</label>
+          <select id="leaveTypeEligibleGender" class="inp" onchange="onLeaveEligibilityChange()">
+            <option value="Any">Everyone</option>
+            <option value="Female">Female staff only</option>
+            <option value="Male">Male staff only</option>
+          </select>
+        </div>
+        <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+          <input type="checkbox" id="leaveTypeRequireMarried" class="w-4 h-4" onchange="onLeaveEligibilityChange()"/> Married staff only
+        </label>
+        <div>
+          <label class="lbl" for="leaveTypeMinService">Minimum service (months)</label>
+          <input id="leaveTypeMinService" type="number" min="0" max="120" step="1" class="inp" value="0" oninput="onLeaveEligibilityChange()"/>
+          <p class="text-xs text-slate-400 mt-1">0 = no minimum. Counted from the person's start date to the first day of the leave.</p>
+        </div>
+        <p id="leaveTypeEligibilityPreview" class="text-xs text-slate-600" aria-live="polite"></p>
+        <p class="text-xs text-slate-400">People who may not use a leave type never see it: not when applying, and not in their balances. Existing balances and past applications are kept.</p>
+        <div id="leaveTypeExceptionsWrap" class="hidden border-t border-slate-100 pt-3 space-y-2">
+          <p class="lbl">Exceptions for named people</p>
+          <ul id="leaveTypeExceptionsList" class="space-y-1.5"></ul>
+          <div class="space-y-2">
+            <select id="leaveExcEmployee" class="inp" aria-label="Employee"></select>
+            <select id="leaveExcAllowed" class="inp" aria-label="Allow or withhold">
+              <option value="1">Allow, even if the rules say no</option>
+              <option value="0">Withhold, even if the rules say yes</option>
+            </select>
+            <input id="leaveExcReason" class="inp" maxlength="300" placeholder="Reason (required, kept in the audit trail)" aria-label="Reason"/>
+            <button type="button" class="pill-btn pill-btn-outline" onclick="addLeaveException()">Add exception</button>
+          </div>
+        </div>
+        <p id="leaveTypeExceptionsHint" class="text-xs text-slate-400">Save the leave type first to add exceptions for named people.</p>
+      </fieldset>
     </form>
     <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
       <button type="submit" form="leaveTypeForm" class="btn-primary">Save</button>

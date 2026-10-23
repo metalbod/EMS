@@ -1123,6 +1123,27 @@ wrapper everywhere.
   `function foo` silently replaces the first — a new `downloadCsv(filename, text)` once broke `dashboard.js`'s `downloadCsv(rows, filename)`.
   `__tests__/bundle-globals.test.js` now fails on any top-level name declared in two files; rename instead of adding to its allowlist.
 
+- **Leave type eligibility — who may use a leave type** (v1.3; `core/leave_eligibility.py`, migration `20261020_0001`,
+  `routers/leave.py`, `static/js/leave.js`'s "Who can use this leave type" block in `#leaveTypeModal`,
+  `tests/test_leave_eligibility.py`, `static/js/__tests__/leave-eligibility.test.js`) — made so a man never sees Maternity
+  and a woman never sees Paternity, on **every** screen. Per leave type: `eligible_gender` (Any/Male/Female), `require_married`,
+  `min_service_months`; **default is no rules, so nothing changes until HR sets them**. Plus HR-only per-person **exceptions**
+  (`leave_type_eligibility_overrides`, allow or withhold, reason required, audited) that beat the rules either way. One pure rule
+  (`ineligible_reason`) is the only place the question is answered, enforced at the server funnels: `GET /api/leave/types`
+  (own types for an employee/Claude token; `?employee_id=` for HR/managers applying on behalf — the Apply Leave dialog refetches
+  when the picked employee changes, `refreshLeaveApplyForEmployee`; no param = full admin list with `eligibility_badges`),
+  `list_leave_balances` (feeds Home, Me, profile Overview, the AI assistant and the Claude connector, so they all agree; HR may pass
+  `include_ineligible=true`), `GET /api/leave/type-limits`, `create_leave_application` (403 "'X' isn't available to you: for female
+  staff only"), and attendance "reclassify as leave". **Hidden, not greyed**; balance rows and past applications are kept and
+  reappear if the rule changes. Service length is judged on the leave's **start date** when applying and today when displaying
+  (company calendar). A pool owner's card stays visible if any sharing sub-type is eligible. The overtime-leave **credit target
+  must stay open to everyone** (`update_leave_type` and `PUT /api/overtime/settings` both refuse otherwise). `POST
+  /api/leave/types/eligibility-preview` powers the live "N of M people can use this" line (and counts people left out only because
+  their record lacks gender/start date). Malaysian setup: Maternity = Female, calendar days, max 98/application; Paternity = Male,
+  married, 12 months, calendar days, max 7. The "5 children" limits are deliberately **not** modelled (sources conflict; left to
+  HR approval). Gotcha found while testing: a `manager`'s own balance rows are only auto-created for the plain `employee` role
+  (pre-existing), so a manager with no rows sees an empty list there.
+
 ## Recurring gotchas (hit more than once this project's history)
 
 - **RLS fails closed, not open.** A table gets RLS auto-enabled by an
