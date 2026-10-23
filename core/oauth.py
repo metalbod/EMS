@@ -34,8 +34,9 @@ SCOPES = {
     "leave:colleagues": "See which colleagues are on approved leave (names and dates only, never the type of leave)",
     "holidays:read": "See your company's public holidays",
     "projects:write": "See the projects you manage and add, edit and delete their tasks (only projects you are a listed manager of)",
+    "todos:read": "See your To-Do list: what is waiting for you, including requests waiting for your approval (read only; sensitive matters as counts only)",
 }
-DEFAULT_SCOPES = ("attendance:clock", "attendance:read", "leave:read", "timesheet:read", "timesheet:write", "leave:colleagues", "holidays:read", "projects:write")
+DEFAULT_SCOPES = ("attendance:clock", "attendance:read", "leave:read", "timesheet:read", "timesheet:write", "leave:colleagues", "holidays:read", "projects:write", "todos:read")
 
 # scope -> the only (METHOD, exact path) pairs a token holding that scope may call.
 SCOPE_ROUTES = {
@@ -48,6 +49,7 @@ SCOPE_ROUTES = {
     "holidays:read": {("GET", "/api/me/public-holidays")},
     "projects:write": {("GET", "/api/me/managed-projects"), ("POST", "/api/me/project-tasks/add"),
                        ("POST", "/api/me/project-tasks/update"), ("POST", "/api/me/project-tasks/delete")},
+    "todos:read": {("GET", "/api/me/todos")},
 }
 
 _REDIRECT_OK = re.compile(r"^(https://[^\s#]+|http://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(/[^\s#]*)?)$")

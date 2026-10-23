@@ -77,7 +77,7 @@ mcp = FastMCP(
     "EMS",
     instructions=(
         "Self-service for the signed-in employee in EMS (their company's HR system): clock in and out, see today's "
-        "attendance, see leave balances, log hours to their draft timesheet, see the week's clocked and missing hours, see which colleagues are on approved leave, and (for projects they manage) add, edit and delete project tasks. Everything acts only as that one person. Clocking in/out records real "
+        "attendance, see leave balances, log hours to their draft timesheet, see the week's clocked and missing hours, see which colleagues are on approved leave, (for projects they manage) add, edit and delete project tasks, and read their To-Do list. Everything acts only as that one person. Clocking in/out records real "
         "attendance, so only do it when the person clearly asks."
     ),
     token_verifier=EmsTokenVerifier(),
@@ -379,6 +379,40 @@ async def update_project_task(project_id: int, task_id: int, name: Optional[str]
 async def delete_project_task(project_id: int, task_id: int) -> dict:
     res = await ems("POST", "/api/me/project-tasks/delete", json={"project_id": project_id, "task_id": task_id})
     return {**res, "message": f"Deleted task '{res['task_name']}' from {res['project_name']}."}
+
+
+@mcp.tool(
+    description=(
+        "The signed-in employee's To-Do list: everything outstanding right now, the same list as the Home To-Do in EMS, in three groups: "
+        "overdue, today (due or happening today) and everything else waiting. It includes requests waiting for the person's approval, "
+        "interviews, onboarding tasks, a draft timesheet and so on. Resignation and PIP approvals and offboarding tasks come back as COUNTS "
+        "ONLY: never guess or ask for who they are, tell the person to open EMS for those. Read only: you cannot approve or reject anything "
+        "from here, so don't offer to. Safe to call any time."),
+    annotations=ToolAnnotations(title="My To-Do list", readOnlyHint=True, openWorldHint=False))
+async def my_todos() -> dict:
+    res = await ems("GET", "/api/me/todos")
+    def line(i):
+        extra = []
+        if i.get("days_overdue"):
+            extra.append(f"{i['days_overdue']} day(s) overdue")
+        elif i.get("days_waiting"):
+            extra.append(f"waiting {i['days_waiting']} day(s)")
+        if i.get("due_date") and not i.get("days_overdue"):
+            extra.append(f"due {i['due_date']}")
+        if i.get("event_date") and i["event_date"] != i.get("due_date"):
+            extra.append(f"on {i['event_date']}")
+        return f"- {i['title']}" + (f" [{', '.join(extra)}]" if extra else "")
+    parts = [f"To-Do for {res['date']}: {res['total_items']} item(s) outstanding."]
+    for key, name in (("overdue", "Overdue"), ("today", "Today"), ("waiting", "Waiting")):
+        if res[key]:
+            parts.append(f"{name} ({len(res[key])}):\n" + "\n".join(line(i) for i in res[key]))
+    if res["sensitive_counts"]:
+        parts.append("Also waiting in EMS (names not shown here): " + ", ".join(f"{n} {k.lower()}" for k, n in res["sensitive_counts"].items()) + ".")
+    if res["truncated"]:
+        parts.append(f"Showing the first {res['listed']} of {res['total_items']}; the rest are in EMS.")
+    if res["total_items"] == 0:
+        parts = [f"Nothing outstanding on your To-Do list ({res['date']})."]
+    return {**res, "message": "\n".join(parts)}
 
 
 if __name__ == "__main__":

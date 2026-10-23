@@ -166,6 +166,8 @@ def _approval_row_detail(row, module: str, lookups: Dict[str, Dict]) -> Dict[str
             "focus_id": row["id"],
             "employee_id": row["employee_id"],
             "stage": f"{name}: {row['start_date']} to {row['end_date']}",
+            # What Claude may say about this request (routers/me_todos.py): the dates, never the type of leave.
+            "safe_detail": f"{row['start_date']} to {row['end_date']}",
             "stage_type": "Leave", "due_date": row["start_date"],
             "waiting_since": row["created_at"], "event_date": row["start_date"],
         }
@@ -175,6 +177,7 @@ def _approval_row_detail(row, module: str, lookups: Dict[str, Dict]) -> Dict[str
             "focus_id": row["id"],
             "employee_id": row["employee_id"],
             "stage": f"{name} claim — RM {row['amount_claimed']}",
+            "safe_detail": None,        # neither the plan (it can reveal a medical matter) nor the amount goes to Claude
             "stage_type": "Benefit Claim", "due_date": None,
             "waiting_since": _first_col(row, "created_at", "claim_date"), "event_date": None,
         }
@@ -182,7 +185,7 @@ def _approval_row_detail(row, module: str, lookups: Dict[str, Dict]) -> Dict[str
         return {
             "focus_id": row["id"],
             "employee_id": lookups["requisition_creator_emp"].get(row["created_by"]),
-            "stage": f"{row['title']} ({row['department']})",
+            "stage": f"{row['title']} ({row['department']})", "safe_detail": f"{row['title']} ({row['department']})",
             "stage_type": "Job Requisition", "due_date": None,
             "waiting_since": row["created_at"], "event_date": None,
         }
@@ -191,7 +194,7 @@ def _approval_row_detail(row, module: str, lookups: Dict[str, Dict]) -> Dict[str
             # a per-project split row carries its parent timesheet's id
             "focus_id": row["timesheet_id"] if "timesheet_id" in row.keys() else row["id"],
             "employee_id": row["employee_id"],
-            "stage": f"Week of {row['period_start']}",
+            "stage": f"Week of {row['period_start']}", "safe_detail": f"week of {row['period_start']}",
             "stage_type": "Timesheet", "due_date": None,
             "waiting_since": _first_col(row, "submitted_at", "created_at"), "event_date": row["period_start"],
         }
@@ -200,7 +203,7 @@ def _approval_row_detail(row, module: str, lookups: Dict[str, Dict]) -> Dict[str
         return {
             "focus_id": row["id"],
             "employee_id": row["employee_id"],
-            "stage": title,
+            "stage": title, "safe_detail": title,
             "stage_type": "Training Enrollment", "due_date": None,
             "waiting_since": row["created_at"], "event_date": None,
         }
@@ -214,7 +217,7 @@ def _approval_row_detail(row, module: str, lookups: Dict[str, Dict]) -> Dict[str
         return {
             "focus_id": focus_id,
             "employee_id": row["employee_id"],
-            "stage": f"{row['overtime_hours']}h overtime on {row['work_date']}",
+            "stage": f"{row['overtime_hours']}h overtime on {row['work_date']}", "safe_detail": f"{row['overtime_hours']}h overtime on {row['work_date']}",
             "stage_type": "Overtime", "due_date": None,
             "waiting_since": row["created_at"], "event_date": row["work_date"],
         }
@@ -239,6 +242,12 @@ def _approval_row_detail(row, module: str, lookups: Dict[str, Dict]) -> Dict[str
 @router.get("/api/todos")
 @db_session
 def get_todos(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
+    return build_todos(conn, user)
+
+
+def build_todos(conn, user: dict) -> List[Dict[str, Any]]:
+    """The signed-in person's To-Do list, computed live. Shared by the Home widget (GET /api/todos) and the Claude self-service
+    endpoint (routers/me_todos.py), so the two can't disagree about what is waiting."""
     role = user["role"]
     if role == "superadmin":
         return []
@@ -369,7 +378,7 @@ def get_todos(conn, user: dict = Depends(get_current_user)) -> List[Dict[str, An
             # Same extra keys the onboarding items below add, for the
             # Home page To-Do queue's per-item rendering.
             "employee_name": employee_name, "stage": detail["stage"],
-            "stage_type": detail["stage_type"], "due_date": detail["due_date"],
+            "stage_type": detail["stage_type"], "due_date": detail["due_date"], "safe_detail": detail.get("safe_detail"),
             # `module` lets the UI decide which requests can be approved/rejected
             # straight from Home (see static/js/todo-decisions.js).
             "kind": "approval", "module": module, "ref_id": row["id"], "focus_id": detail["focus_id"],

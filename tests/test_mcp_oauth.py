@@ -602,3 +602,16 @@ def test_a_task_with_logged_hours_cannot_be_deleted_through_claude(client, mcp_o
     assert t["logged_hours"] == 1 and t["can_delete"] is False
     res = client.post("/api/me/project-tasks/delete", headers=auth, json={"project_id": project["id"], "task_id": task["task_id"]})
     assert res.status_code == 400 and "Completed" in res.json()["detail"]
+
+
+def test_todo_tool_needs_its_scope_and_cannot_reach_the_approval_actions(client, mcp_on, employee_with_login):
+    _, headers = employee_with_login(full_name="ZZ MCP Todo")
+    narrow, _ = _connect(client, headers, scope="leave:read")
+    res = client.get("/api/me/todos", headers=_bearer(narrow))
+    assert res.status_code == 403 and "reconnect" in res.json()["detail"]
+    scoped, _ = _connect(client, headers, scope="todos:read")
+    ok = client.get("/api/me/todos", headers=_bearer(scoped))
+    assert ok.status_code == 200 and {"overdue", "today", "waiting", "sensitive_counts"} <= set(ok.json())
+    # read only: the widget's own endpoint and every approve/reject route stay closed to a Claude token
+    assert client.get("/api/todos", headers=_bearer(scoped)).status_code == 403
+    assert client.patch("/api/leave/applications/1/status", headers=_bearer(scoped), json={"status": "Approved"}).status_code == 403

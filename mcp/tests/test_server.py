@@ -249,3 +249,30 @@ def test_project_task_errors_pass_through(fake_ems):
     fake_ems["handlers"][("POST", "/api/me/project-tasks/delete")] = (400, {"detail": "Cannot delete a task that already has logged timesheet hours — mark it Completed instead"})
     with pytest.raises(ToolError, match="Completed"):
         run(server.delete_project_task(1, 2))
+
+
+def test_my_todos_groups_items_and_keeps_sensitive_ones_as_counts(fake_ems):
+    fake_ems["handlers"][("GET", "/api/me/todos")] = (200, {
+        "date": "2026-10-23", "total_items": 6, "counts": {}, "listed": 3, "truncated": False,
+        "overdue": [{"title": "Leave approval: Amy Tan (2026-10-20 to 2026-10-21)", "days_overdue": 3, "due_date": "2026-10-20"}],
+        "today": [{"title": "Interview Zed — 2026-10-23 14:00", "event_date": "2026-10-23"}],
+        "waiting": [{"title": "Your timesheet for this week hasn't been submitted yet"}],
+        "sensitive_counts": {"Resignation approvals": 2, "Offboarding checklist tasks": 1}})
+    out = run(server.my_todos())
+    msg = out["message"]
+    assert msg.startswith("To-Do for 2026-10-23: 6 item(s) outstanding.")
+    assert "Overdue (1):\n- Leave approval: Amy Tan (2026-10-20 to 2026-10-21) [3 day(s) overdue]" in msg
+    assert "Today (1):\n- Interview Zed — 2026-10-23 14:00 [on 2026-10-23]" in msg
+    assert "Waiting (1):\n- Your timesheet" in msg
+    assert "Also waiting in EMS (names not shown here): 2 resignation approvals, 1 offboarding checklist tasks." in msg
+    assert fake_ems["calls"][-1][:2] == ("GET", "/api/me/todos")
+
+
+def test_my_todos_empty_and_truncated(fake_ems):
+    fake_ems["handlers"][("GET", "/api/me/todos")] = (200, {"date": "2026-10-23", "total_items": 0, "overdue": [], "today": [], "waiting": [],
+                                                           "sensitive_counts": {}, "listed": 0, "truncated": False, "counts": {}})
+    assert run(server.my_todos())["message"] == "Nothing outstanding on your To-Do list (2026-10-23)."
+    fake_ems["handlers"][("GET", "/api/me/todos")] = (200, {"date": "2026-10-23", "total_items": 90, "overdue": [], "today": [],
+                                                           "waiting": [{"title": "x", "days_waiting": 2}], "sensitive_counts": {}, "listed": 50, "truncated": True, "counts": {}})
+    msg = run(server.my_todos())["message"]
+    assert "- x [waiting 2 day(s)]" in msg and "Showing the first 50 of 90; the rest are in EMS." in msg

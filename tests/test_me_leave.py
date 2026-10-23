@@ -136,9 +136,10 @@ def three_holidays(client, hr_manager_auth):
 
 def test_next_public_holidays_and_range(client, employee_with_login, three_holidays):
     _, headers = employee_with_login(full_name="ZZ Hol Viewer")
-    nxt = client.get("/api/me/public-holidays", headers=headers, params={"date": d(0), "limit": 2}).json()
+    # start after d(7): the weekend/holiday test above puts a holiday at d(7), and xdist may run it at the same time on another worker
+    nxt = client.get("/api/me/public-holidays", headers=headers, params={"date": d(8), "limit": 2}).json()
     assert [h["name"] for h in nxt["holidays"]] == ["ZZ Hol A", "ZZ Hol B"]
-    assert nxt["holidays"][0]["days_from_start"] == 10 and nxt["holidays"][0]["weekday"] == (MON + timedelta(days=10)).strftime("%a")
+    assert nxt["holidays"][0]["days_from_start"] == 2 and nxt["holidays"][0]["weekday"] == (MON + timedelta(days=10)).strftime("%a")
     rng = client.get("/api/me/public-holidays", headers=headers, params={"date": d(15), "end_date": d(30)}).json()
     assert [h["name"] for h in rng["holidays"]] == ["ZZ Hol B", "ZZ Hol C"] and rng["to"] == d(30)
 

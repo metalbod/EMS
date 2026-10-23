@@ -1,11 +1,11 @@
 ---
 name: ems-attendance
-description: Clock the user in or out of work in EMS, check whether they are clocked in, check their leave balance, log hours worked to their timesheet, show their clocked and missing hours for the week, say which colleagues are on leave on a day, tell them about the company's public holidays, and (for projects they manage) add, edit or delete project tasks. Use when the user says things like "clock me in", "clock out", "am I clocked in", "how many leave days do I have", "log 3 hours on Project X", "add my hours for today", "what hours am I missing this week", "who is on leave tomorrow", "is anyone from Sales off Friday", "is tomorrow a public holiday", "when is the next public holiday", "add a task to EZFY", "rename that task", "delete the Townhall task", or asks about their timesheet or hours. Requires the EMS connector.
+description: Clock the user in or out of work in EMS, check whether they are clocked in, check their leave balance, log hours worked to their timesheet, show their clocked and missing hours for the week, say which colleagues are on leave on a day, tell them about the company's public holidays, and (for projects they manage) add, edit or delete project tasks, and read their To-Do list. Use when the user says things like "clock me in", "clock out", "am I clocked in", "how many leave days do I have", "log 3 hours on Project X", "add my hours for today", "what hours am I missing this week", "who is on leave tomorrow", "is anyone from Sales off Friday", "is tomorrow a public holiday", "when is the next public holiday", "add a task to EZFY", "rename that task", "delete the Townhall task", "what's on my to-do list", "what do I need to do today", "anything waiting for my approval", or asks about their timesheet or hours. Requires the EMS connector.
 ---
 
 # EMS attendance, leave and timesheet
 
-Uses the EMS connector's tools: `attendance_today`, `clock_in`, `clock_out`, `leave_balance`, `my_projects`, `log_hours`, `week_hours`, `colleagues_on_leave`, `public_holidays`, `my_managed_projects`, `add_project_task`, `update_project_task`, `delete_project_task`.
+Uses the EMS connector's tools: `attendance_today`, `clock_in`, `clock_out`, `leave_balance`, `my_projects`, `log_hours`, `week_hours`, `colleagues_on_leave`, `public_holidays`, `my_managed_projects`, `add_project_task`, `update_project_task`, `delete_project_task`, `my_todos`.
 These act only as the signed-in user, on their own record. Clocking in or out writes real
 attendance that HR and payroll rely on.
 
@@ -81,6 +81,17 @@ attendance that HR and payroll rely on.
 - It never says what kind of leave anyone is on, and you must not guess or speculate about why anyone is away.
 - Weekends and public holidays come back as non-working days with nobody listed: say so instead of "nobody is on leave".
 - The person asking is not in the list. Use `leave_balance` / ask EMS for their own leave.
+
+## To-Do list
+
+- "What's on my to-do?", "what do I need to do today?", "anything waiting for my approval?": call `my_todos`. It returns everything outstanding
+  (the same list as the Home To-Do in EMS) in three groups: **overdue**, **today**, and **waiting**. Lead with overdue, then today,
+  then summarise the rest. If the user asked only about approvals, filter to those.
+- Resignation and PIP approvals and offboarding tasks come back as **counts only**. Report the count and say the details are in EMS. Never
+  guess or ask who they are, and don't try to find out through other tools.
+- It is **read only**. You can't approve, reject or complete anything: for an approval, tell them to open it from Home in EMS. Don't offer to do it.
+- If the list was cut off ("Showing the first 50 of N"), say so. If it is empty, say nothing is outstanding.
+- The list reflects the user's main EMS role. If they usually switch roles in EMS, it can differ slightly from what Home shows.
 
 ## Managing project tasks (project managers only)
 

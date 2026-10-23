@@ -1007,6 +1007,18 @@ wrapper everywhere.
   ids in the body, partial updates (`model_fields_set`; null clears), status must be Not Started/In Progress/Completed, exact duplicate
   task names in a project refused (Claude path only; the web grid still allows them), and the tool descriptions + skill make Claude
   read the change back and wait for a yes before every write, with an extra warning on delete. Scope added → everyone reconnects once.
+  **`my_todos`** (scope `todos:read`, `routers/me_todos.py`, `GET /api/me/todos`; 2026-10-23): the Home To-Do list read-only, built by
+  `routers/dashboard.py`'s `build_todos()` (extracted from `get_todos` so the widget and Claude can't drift apart). Decisions: **everything
+  outstanding**, not a daily slice (the widget has no daily notion), grouped overdue / today (due or happening today) / waiting, capped at
+  50 listed items most-pressing-first with `total_items` and per-category `counts` always complete; **resignation approvals, PIP approvals
+  and offboarding checklist tasks are COUNTS ONLY** (`classify()` marks them sensitive; they're never in a list, so never named — same
+  reasoning as `colleagues_on_leave` hiding leave type); **read-only** (no approve/reject through Claude; `/api/todos` and the
+  decision routes stay closed to tokens). The widget's own labels are NOT reused for approvals: a leave approval's label carries the **leave
+  type** and a benefit claim's the plan and amount, so `build_todos` rows carry a separate `safe_detail` (`_approval_row_detail`: leave = dates
+  only, claim = nothing) and `me_todos._title()` builds Claude's wording from it (found in the end-to-end run, not by the first tests: the
+  shared test company's backlog hid it under the 50-item cap, so test wording with synthetic rows). Claude tokens act as the user's *primary* DB role, not a role switched to in the web app, so
+  the list can differ slightly from Home for role switchers. Needs a linked employee. Tests note: the shared test company has hundreds of
+  leftover pending approvals, so assert on `counts`, not on what fits under the 50-item cap.
   Connector address staff paste into Claude: `https://ems-mcp.fly.dev/mcp` (no custom domain, by decision). The OAuth/registration
   rate limits are in-memory per machine, same tradeoff as the login limiter (prod runs 2 machines, so limits are per machine).
   The metadata `issuer` has a trailing slash on purpose (the MCP server's advertised issuer is a pydantic `AnyHttpUrl`, which

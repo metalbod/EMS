@@ -8,7 +8,7 @@ Claude ──► ems-mcp (this folder) ──► ems-app (/api/...)         OAut
 
 - **No data, no secrets here.** Each call carries a token EMS issued to that person; this server checks it with
   `GET /api/oauth/whoami` and forwards it. EMS enforces everything (company switch, revoke, scope per route).
-- Tools: `clock_in`, `clock_out`, `attendance_today`, `leave_balance`, `my_projects` (projects with tasks, managers and team), `log_hours`, `week_hours`, `my_managed_projects`, `add_project_task`, `update_project_task`, `delete_project_task` (a project's listed managers only), `public_holidays`, `colleagues_on_leave` (names/dates of colleagues on approved leave, never the leave type) (timesheet: hours go to the
+- Tools: `clock_in`, `clock_out`, `attendance_today`, `leave_balance`, `my_projects` (projects with tasks, managers and team), `log_hours`, `week_hours`, `my_todos` (the To-Do list, read-only; sensitive items as counts), `my_managed_projects`, `add_project_task`, `update_project_task`, `delete_project_task` (a project's listed managers only), `public_holidays`, `colleagues_on_leave` (names/dates of colleagues on approved leave, never the leave type) (timesheet: hours go to the
   week's *draft*, never submitted). People who connected before the timesheet tools existed must disconnect and reconnect once. Claude is told to ask for the person's location
   before clocking; if they decline, EMS records the clock-in as "no location".
 - HR turns it on per company in EMS: Settings → Claude Access (off by default).
