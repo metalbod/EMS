@@ -177,377 +177,8 @@
     <aside id="burgerDrawer" class="app-sidebar absolute inset-y-0 left-0 z-40 w-72 flex flex-col -translate-x-full transition-transform duration-200 ease-out shadow-xl lg:shadow-none lg:static lg:translate-x-0 lg:z-auto lg:w-64 lg:shrink-0">
     <div class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden py-3 px-3 flex flex-col gap-1">
 
-      <!-- Dashboard (direct nav) -->
-      <div id="nav-dashboard-wrap">
-        <button id="navDashboardBtn" class="nav-rail-btn" onclick="showPage('dashboard');closeBurgerMenu();" data-page="dashboard" title="Dashboard">
-          <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
-          <span id="navDashboardLabel" class="nav-rail-label">Dashboard</span>
-        </button>
-      </div>
-      <!-- Approvals inbox: shown to everyone who can have requests waiting (the plain employee role only while something is). Badge = count waiting. -->
-      <div id="nav-approvals" class="hidden">
-        <button class="nav-rail-btn" onclick="showPage('approvals');closeBurgerMenu();" data-page="approvals" title="Approvals">
-          <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-          <span class="nav-rail-label">Approvals</span>
-          <span id="navApprovalsBadge" class="hidden nav-badge" aria-label="waiting for you"></span>
-        </button>
-      </div>
-      <!-- Institutions (superadmin, direct nav) -->
-      <div id="nav-institutions-wrap" class="hidden">
-        <button class="nav-rail-btn" onclick="showPage('institutions');closeBurgerMenu();" data-page="institutions" title="Institutions">
-          <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
-          <span class="nav-rail-label">Institutions</span>
-        </button>
-      </div>
-      <!-- System Notifications (superadmin, direct nav — global, not tied to institution context) -->
-      <div id="nav-sysnotif-wrap" class="hidden">
-        <button class="nav-rail-btn" onclick="showPage('settings-system-notifications');closeBurgerMenu();" data-page="settings-system-notifications" title="System Notifications">
-          <svg class="w-5 h-5 shrink-0 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/></svg>
-          <span class="nav-rail-label">System Alerts</span>
-        </button>
-      </div>
-      <!-- Employee Management -->
-      <div id="nav-emp-group">
-        <button class="nav-rail-btn" onclick="toggleNavGroup('empMgmt')" title="Employee Management">
-          <svg class="nav-icon-chip" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
-          <span class="nav-rail-label">Employees</span>
-          <svg class="nav-rail-chevron w-3 h-3 ml-auto shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
-        </button>
-        <div id="submenu-empMgmt" class="nav-submenu hidden space-y-0.5">
-          <div class="nav-sub-item" onclick="showPage('employees');closeBurgerMenu();" data-page="employees">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
-            Employee List
-          </div>
-          <div class="nav-sub-item" onclick="showPage('orgchart');closeBurgerMenu();" data-page="orgchart">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1v-2zm10 0a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1h-4a1 1 0 01-1-1v-2z"/></svg>
-            Org Chart
-          </div>
-        </div>
-      </div>
-      <!-- Workforce (Onboarding/Offboarding — HR Manager / HR Admin only;
-           Resignation Approvals — also Manager, for their own reports) -->
-      <div id="nav-workforce-group" class="hidden">
-        <button class="nav-rail-btn" onclick="toggleNavGroup('workforce')" title="Workforce">
-          <svg class="nav-icon-chip" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2v-5a2 2 0 00-2-2H5a2 2 0 00-2 2v5a2 2 0 002 2z"/></svg>
-          <span class="nav-rail-label">Workforce</span>
-          <svg class="nav-rail-chevron w-3 h-3 ml-auto shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
-        </button>
-        <div id="submenu-workforce" class="nav-submenu hidden space-y-0.5">
-          <div id="nav-onboarding" class="hidden nav-sub-item" onclick="showPage('onboarding');closeBurgerMenu();" data-page="onboarding">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/></svg>
-            Onboarding
-          </div>
-          <div id="nav-offboarding" class="hidden nav-sub-item" onclick="showPage('offboarding');closeBurgerMenu();" data-page="offboarding">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
-            Offboarding
-          </div>
-          <div id="nav-resignation-approvals" class="hidden nav-sub-item" onclick="showPage('resignation-approvals');closeBurgerMenu();" data-page="resignation-approvals">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
-            Resignation
-          </div>
-        </div>
-      </div>
-      <!-- Recruitment -->
-      <div id="nav-recruit-group" class="hidden">
-        <button class="nav-rail-btn" onclick="toggleNavGroup('recruit')" title="Recruitment">
-          <svg class="nav-icon-chip" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-          <span class="nav-rail-label">Recruitment</span>
-          <svg class="nav-rail-chevron w-3 h-3 ml-auto shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
-        </button>
-        <div id="submenu-recruit" class="nav-submenu hidden space-y-0.5">
-          <div class="nav-sub-item" onclick="showPage('requisitions');closeBurgerMenu();" data-page="requisitions">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-            Job Requisitions
-          </div>
-          <div class="nav-sub-item" onclick="showPage('candidates');closeBurgerMenu();" data-page="candidates">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-            Candidate Bank
-          </div>
-          <div class="nav-sub-item" onclick="showPage('interviews');closeBurgerMenu();" data-page="interviews">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-            Interviews
-          </div>
-          <div class="nav-sub-item" onclick="showPage('offers');closeBurgerMenu();" data-page="offers">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
-            Offers &amp; Letters
-          </div>
-        </div>
-      </div>
-      <!-- L&D -->
-      <div id="nav-ld-group" class="hidden">
-        <button class="nav-rail-btn" onclick="toggleNavGroup('ld')" title="Learning &amp; Development">
-          <svg class="nav-icon-chip" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s4.832.477 6 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
-          <span class="nav-rail-label">L&amp;D</span>
-          <svg class="nav-rail-chevron w-3 h-3 ml-auto shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
-        </button>
-        <div id="submenu-ld" class="nav-submenu hidden space-y-0.5">
-          <div class="nav-sub-item" onclick="showPage('ld-catalog');closeBurgerMenu();" data-page="ld-catalog">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s4.832.477 6 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
-            Course Catalog
-          </div>
-          <div class="nav-sub-item" onclick="showPage('ld-trainings');closeBurgerMenu();" data-page="ld-trainings">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-            My Trainings
-          </div>
-        </div>
-      </div>
-      <!-- My Interviews (direct nav) — only for people picked as an interviewer; they may have no Recruitment access -->
-      <div id="nav-my-interviews" class="hidden">
-        <button class="nav-rail-btn" onclick="showPage('my-interviews');closeBurgerMenu();" data-page="my-interviews" title="My Interviews">
-          <svg class="nav-icon-chip" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-          <span class="nav-rail-label">My Interviews</span>
-        </button>
-      </div>
-      <!-- Leave -->
-      <div id="nav-leave-group" class="hidden">
-        <button class="nav-rail-btn" onclick="toggleNavGroup('leave')" title="Leave">
-          <svg class="nav-icon-chip" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-          <span class="nav-rail-label">Leave</span>
-          <svg class="nav-rail-chevron w-3 h-3 ml-auto shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
-        </button>
-        <div id="submenu-leave" class="nav-submenu hidden space-y-0.5">
-          <div class="nav-sub-item" onclick="showPage('leave-my');closeBurgerMenu();" data-page="leave-my">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-            <span id="navLeaveMyLabel">My Leave</span>
-          </div>
-          <div id="nav-leave-approvals" class="hidden nav-sub-item" onclick="showPage('leave-approvals');closeBurgerMenu();" data-page="leave-approvals">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-            Approvals
-          </div>
-        </div>
-      </div>
-      <!-- Timesheet -->
-      <div id="nav-timesheet-group" class="hidden">
-        <button class="nav-rail-btn" onclick="toggleNavGroup('timesheet')" title="Timesheet">
-          <svg class="nav-icon-chip" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-          <span class="nav-rail-label">Timesheet</span>
-          <svg class="nav-rail-chevron w-3 h-3 ml-auto shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
-        </button>
-        <div id="submenu-timesheet" class="nav-submenu hidden space-y-0.5">
-          <div class="nav-sub-item" onclick="showPage('timesheet-my');closeBurgerMenu();" data-page="timesheet-my">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-            My Timesheet
-          </div>
-          <div id="nav-timesheet-approvals" class="hidden nav-sub-item" onclick="showPage('timesheet-approvals');closeBurgerMenu();" data-page="timesheet-approvals">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-            Approvals
-          </div>
-          <div class="nav-sub-item" onclick="showPage('overtime-my');closeBurgerMenu();" data-page="overtime-my">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-            My Overtime
-          </div>
-          <div id="nav-projects" class="hidden nav-sub-item" onclick="showPage('projects');closeBurgerMenu();" data-page="projects">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5"/></svg>
-            Projects
-          </div>
-          <div id="nav-attendance-clock" class="hidden nav-sub-item" onclick="showPage('attendance-clock');closeBurgerMenu();" data-page="attendance-clock">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15a3 3 0 100-6 3 3 0 000 6z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09A1.65 1.65 0 0015.4 4.6a1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
-            Clock In / Out
-          </div>
-          <div id="nav-attendance-review" class="hidden nav-sub-item" onclick="showPage('attendance-review');closeBurgerMenu();" data-page="attendance-review">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-            Attendance Review
-          </div>
-        </div>
-      </div>
-      <!-- Payroll -->
-      <div id="nav-payroll-group" class="hidden">
-        <button class="nav-rail-btn" onclick="toggleNavGroup('payroll')" title="Payroll">
-          <svg class="nav-icon-chip" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
-          <span class="nav-rail-label">Payroll</span>
-          <svg class="nav-rail-chevron w-3 h-3 ml-auto shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
-        </button>
-        <div id="submenu-payroll" class="nav-submenu hidden space-y-0.5">
-          <div id="nav-payroll-runs" class="hidden nav-sub-item" onclick="showPage('payroll-runs');closeBurgerMenu();" data-page="payroll-runs">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
-            Payroll Runs
-          </div>
-          <div id="nav-payroll-my" class="hidden nav-sub-item" onclick="showPage('payroll-my');closeBurgerMenu();" data-page="payroll-my">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-            My Payslips
-          </div>
-          <div id="nav-payroll-myrewards" class="hidden nav-sub-item" onclick="showPage('payroll-myrewards');closeBurgerMenu();" data-page="payroll-myrewards">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-            My Total Rewards
-          </div>
-          <div id="nav-payroll-mybenefits" class="hidden nav-sub-item" onclick="showPage('payroll-mybenefits');closeBurgerMenu();" data-page="payroll-mybenefits">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
-            My Benefits
-          </div>
-        </div>
-      </div>
-      <!-- Settings (HR Manager / HR Admin) -->
-      <div id="nav-settings-wrap" class="hidden">
-        <button class="nav-rail-btn" onclick="toggleNavGroup('settings')" title="Settings">
-          <svg class="nav-icon-chip" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-          <span class="nav-rail-label">Settings</span>
-          <svg class="nav-rail-chevron w-3 h-3 ml-auto shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
-        </button>
-        <div id="submenu-settings" class="nav-submenu hidden space-y-0.5">
-          <div id="nav-settings-notifications" class="hidden nav-sub-item" onclick="showPage('settings-notifications');closeBurgerMenu();" data-page="settings-notifications">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
-            Notifications
-          </div>
-          <div id="nav-audit" class="hidden nav-sub-item" onclick="showPage('audit');closeBurgerMenu();" data-page="audit">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
-            Audit Log
-          </div>
-          <div id="nav-users" class="hidden nav-sub-item" onclick="showPage('users');closeBurgerMenu();" data-page="users">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-            Users
-          </div>
-          <div id="nav-bulk-upload" class="hidden nav-sub-item" onclick="showPage('settings-bulk-upload');closeBurgerMenu();" data-page="settings-bulk-upload">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"/></svg>
-            Bulk Upload
-          </div>
-          <div id="nav-locations" class="hidden nav-sub-item" onclick="showPage('settings-locations');closeBurgerMenu();" data-page="settings-locations">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-            Locations
-          </div>
-          <div id="nav-leave-holidays" class="hidden nav-sub-item" onclick="showPage('leave-holidays');closeBurgerMenu();" data-page="leave-holidays">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3M3 11h18M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-            Holiday Manager
-          </div>
-          <div id="nav-attendance-settings" class="hidden nav-sub-item" onclick="showPage('settings-attendance');closeBurgerMenu();" data-page="settings-attendance">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-            Attendance Settings
-          </div>
-          <div id="nav-approval-workflow" class="hidden nav-sub-item" onclick="showPage('settings-approval-workflow');closeBurgerMenu();" data-page="settings-approval-workflow">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2M9 12l2 2 4-4"/></svg>
-            Approval Workflows
-          </div>
-          <div id="nav-roles" class="hidden nav-sub-item" onclick="showPage('settings-roles');closeBurgerMenu();" data-page="settings-roles">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 100-8 4 4 0 000 8zm6 3.13a4 4 0 00-3-3.87m-9 3.87a4 4 0 013-3.87"/></svg>
-            Roles
-          </div>
-          <div id="nav-document-types" class="hidden nav-sub-item" onclick="showPage('settings-document-types');closeBurgerMenu();" data-page="settings-document-types">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-            Document Types
-          </div>
-          <div id="nav-offer-letter-templates" class="hidden nav-sub-item" onclick="showPage('settings-offer-letter-templates');closeBurgerMenu();" data-page="settings-offer-letter-templates">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
-            Letter Templates
-          </div>
-          <div id="nav-settings-performance" class="hidden nav-sub-item" onclick="showPage('settings-performance');closeBurgerMenu();" data-page="settings-performance">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
-            Performance
-          </div>
-          <div id="nav-sso-settings" class="hidden nav-sub-item" onclick="showPage('settings-sso');closeBurgerMenu();" data-page="settings-sso">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
-            Single Sign-On
-          </div>
-          <div id="nav-mcp-settings" class="hidden nav-sub-item" onclick="showPage('settings-mcp');closeBurgerMenu();" data-page="settings-mcp">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-            Claude Access
-          </div>
-          <div id="nav-ai-assistant-settings" class="hidden nav-sub-item" onclick="showPage('settings-ai-assistant');closeBurgerMenu();" data-page="settings-ai-assistant">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
-            AI Assistant
-          </div>
-        </div>
-      </div>
-      <!-- Compensation (HR Manager / Payroll Manager only) -->
-      <div id="nav-compensation-group" class="hidden">
-        <button class="nav-rail-btn" onclick="toggleNavGroup('compensation')" title="Compensation">
-          <svg class="nav-icon-chip" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V6m0 2v8m0 0v2m0-2c-1.11 0-2.08-.402-2.599-1"/></svg>
-          <span class="nav-rail-label">Compensation</span>
-          <svg class="nav-rail-chevron w-3 h-3 ml-auto shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
-        </button>
-        <div id="submenu-compensation" class="nav-submenu hidden space-y-0.5">
-          <div class="nav-sub-item" onclick="showPage('comp-paygrades');closeBurgerMenu();" data-page="comp-paygrades">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3v-6m-3 6v-9m-2 9h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-            Pay Grades
-          </div>
-          <div class="nav-sub-item" onclick="showPage('comp-joblevels');closeBurgerMenu();" data-page="comp-joblevels">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"/></svg>
-            Job Levels
-          </div>
-          <div class="nav-sub-item" onclick="showPage('comp-jobroles');closeBurgerMenu();" data-page="comp-jobroles">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-            Job Roles
-          </div>
-          <div class="nav-sub-item" onclick="showPage('comp-meritcycles');closeBurgerMenu();" data-page="comp-meritcycles">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-            Merit Cycles
-          </div>
-          <div class="nav-sub-item" onclick="showPage('comp-bonusplans');closeBurgerMenu();" data-page="comp-bonusplans">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V6m0 2v8m0 0v2m0-2c-1.11 0-2.08-.402-2.599-1M5 12a7 7 0 1114 0 7 7 0 01-14 0z"/></svg>
-            Bonus Plans
-          </div>
-          <div class="nav-sub-item" onclick="showPage('comp-commissions');closeBurgerMenu();" data-page="comp-commissions">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/></svg>
-            Commissions
-          </div>
-          <div class="nav-sub-item" onclick="showPage('comp-equity');closeBurgerMenu();" data-page="comp-equity">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"/></svg>
-            Equity Grants
-          </div>
-          <div class="nav-sub-item" onclick="showPage('comp-totalrewards');closeBurgerMenu();" data-page="comp-totalrewards">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-            Total Rewards
-          </div>
-          <div class="nav-sub-item" onclick="showPage('comp-payequity');closeBurgerMenu();" data-page="comp-payequity">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
-            Pay Equity
-          </div>
-        </div>
-      </div>
-      <!-- Benefits -->
-      <div id="nav-benefits-group" class="hidden">
-        <button class="nav-rail-btn" onclick="toggleNavGroup('benefits')" title="Benefits">
-          <svg class="nav-icon-chip" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
-          <span class="nav-rail-label">Benefits</span>
-          <svg class="nav-rail-chevron w-3 h-3 ml-auto shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
-        </button>
-        <div id="submenu-benefits" class="nav-submenu hidden space-y-0.5">
-          <div class="nav-sub-item" onclick="showPage('ben-plans');closeBurgerMenu();" data-page="ben-plans">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-            Plan Types
-          </div>
-          <div class="nav-sub-item" onclick="showPage('ben-periods');closeBurgerMenu();" data-page="ben-periods">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-            Enrollment Periods
-          </div>
-          <div class="nav-sub-item" onclick="showPage('ben-lifeevents');closeBurgerMenu();" data-page="ben-lifeevents">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-            Life Events
-          </div>
-          <div class="nav-sub-item" onclick="showPage('ben-claims');closeBurgerMenu();" data-page="ben-claims">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-            Claims
-          </div>
-          <div class="nav-sub-item" onclick="showPage('ben-compliance');closeBurgerMenu();" data-page="ben-compliance">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
-            Compliance &amp; Reporting
-          </div>
-        </div>
-      </div>
-      <!-- Performance -->
-      <div id="nav-performance-group" class="hidden">
-        <button class="nav-rail-btn" onclick="toggleNavGroup('performance')" title="Performance">
-          <svg class="nav-icon-chip" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
-          <span class="nav-rail-label">Performance</span>
-          <svg class="nav-rail-chevron w-3 h-3 ml-auto shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
-        </button>
-        <div id="submenu-performance" class="nav-submenu hidden space-y-0.5">
-          <div class="nav-sub-item" onclick="showPage('perf-my');closeBurgerMenu();" data-page="perf-my">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-            My Goals &amp; Appraisal
-          </div>
-          <div id="nav-perf-team" class="hidden nav-sub-item" onclick="showPage('perf-team');closeBurgerMenu();" data-page="perf-team">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
-            Team Review
-          </div>
-          <div id="nav-perf-cycles" class="hidden nav-sub-item" onclick="showPage('perf-cycles');closeBurgerMenu();" data-page="perf-cycles">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-            Cycles
-          </div>
-          <div id="nav-perf-calibration" class="hidden nav-sub-item" onclick="showPage('perf-calibration');closeBurgerMenu();" data-page="perf-calibration">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
-            Calibration
-          </div>
-        </div>
-      </div>
+      <!-- Areas (Home, Me, Team, People, Hiring, Pay, Learning, Admin): built by nav.js from its page model, per role. -->
+      <nav id="navRail" aria-label="Main" class="flex flex-col gap-1"></nav>
       <div class="flex-1"></div>
     </div>
 
@@ -605,6 +236,15 @@
   </aside>
 
     <main class="content-shell flex-1 min-h-0 overflow-y-auto">
+
+      <!-- Tabs for the area you are in (nav.js renderAreaNav): sections first, then that section's pages. -->
+      <div id="areaNav" class="hidden area-nav"></div>
+
+      <!-- ME OVERVIEW -->
+      <div id="page-me-overview" class="hidden">
+        <p class="appr-intro">Your leave, time, pay and learning at a glance. Each card opens the full page.</p>
+        <div id="meOverviewGrid" class="me-grid"></div>
+      </div>
 
       <!-- DASHBOARD -->
       <div id="page-dashboard" class="hidden">
@@ -1861,6 +1501,11 @@
             <button onclick="setLdEnrollFilter('Pending Approval')" class="btn-ghost text-xs ld-enr-filter-btn">Pending Approval</button>
             <button onclick="setLdEnrollFilter('In Progress')" class="btn-ghost text-xs ld-enr-filter-btn">In Progress</button>
             <button onclick="setLdEnrollFilter('Completed')" class="btn-ghost text-xs ld-enr-filter-btn">Completed</button>
+          </div>
+          <!-- HR and managers see more than their own trainings here; they start on "Mine" (nav: Me > Growth). -->
+          <div id="ldScopeToggle" class="hidden flex gap-2" role="group" aria-label="Whose trainings">
+            <button type="button" id="ldScopeMine" onclick="setLdScope('mine')" class="btn-ghost text-xs ld-scope-btn ld-enr-filter-active" aria-pressed="true">Mine</button>
+            <button type="button" id="ldScopeAll" onclick="setLdScope('all')" class="btn-ghost text-xs ld-scope-btn" aria-pressed="false">Everyone I manage</button>
           </div>
         </div>
         <div class="bg-white rounded-xl border border-slate-200 table-scroll">
@@ -3808,6 +3453,8 @@
 
     </main>
   </div>
+  <!-- Phone bottom bar (nav.js renderBottomBar) -->
+  <nav id="bottomBar" class="bottom-bar hidden" aria-label="Main"></nav>
 </div>
 
 <!-- ===== MODALS ===== -->

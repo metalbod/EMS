@@ -127,7 +127,10 @@ async function renderLeaveBalanceCards() {
 // the tabular view below instead of the card list, with an Employee
 // column to tell rows apart. Matches the same condition the backend uses.
 function myLeaveShowsEveryone() {
-  return currentUser?.role !== 'employee';
+  // My Leave is the caller's own leave for every role now (it sits under Me). HR and managers see other people's
+  // requests under Team > Leave requests (leave-approvals), which has the "All" filter. The table view below is
+  // kept for that purpose should it be reused, but nothing sets it here.
+  return false;
 }
 
 // Sorted client-side, not re-fetched — the table's rows are already all
@@ -197,8 +200,10 @@ async function loadLeaveApplications() {
   tableWrap.classList.toggle('hidden', !tabular);
   if(tabular) listEl.innerHTML=''; else tbody.innerHTML='';
   (tabular?tbody:listEl).innerHTML=`<p class="text-slate-400 text-sm text-center py-8">Loading…</p>`;
-  let url='/api/leave/applications';
-  if(leaveFilter) url+=`?status=${encodeURIComponent(leaveFilter)}`;
+  const ownId=currentUser?.employee_id;
+  if(!ownId){ listEl.innerHTML=''; tbody.innerHTML=''; leaveAppTableRowsCache=[]; emptyEl?.classList.remove('hidden'); return; }
+  let url=`/api/leave/applications?employee_id=${encodeURIComponent(ownId)}`;
+  if(leaveFilter) url+=`&status=${encodeURIComponent(leaveFilter)}`;
   const res=await api(url);
   if(!res?.ok){ listEl.innerHTML=''; tbody.innerHTML=''; return; }
   const rows=await res.json();

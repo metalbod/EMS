@@ -1,30 +1,7 @@
 // ---------------------------------------------------------------------------
-// Nav helpers — off-canvas burger drawer with accordion sub-menus.
-// Sub-menus are collapsed by default and only expand when their group header
-// is clicked. The whole drawer is closed after navigating to a page.
+// Nav helpers — off-canvas drawer on phones (the "More" sheet). The rail inside it is built by nav.js;
+// the whole drawer is closed after navigating to a page.
 // ---------------------------------------------------------------------------
-let activeNavGroup = null;
-
-function toggleNavGroup(name) {
-  if (activeNavGroup === name) { collapseNavGroups(); return; }
-  document.querySelectorAll('.nav-submenu').forEach(p => p.classList.add('hidden'));
-  document.querySelectorAll('.nav-rail-btn').forEach(b => b.classList.remove('group-active'));
-  document.querySelectorAll('.nav-rail-chevron').forEach(c => c.classList.remove('rot'));
-  const panel = document.getElementById(`submenu-${name}`);
-  if (!panel) return;
-  panel.classList.remove('hidden');
-  event?.currentTarget?.classList?.add('group-active');
-  event?.currentTarget?.querySelector('.nav-rail-chevron')?.classList?.add('rot');
-  activeNavGroup = name;
-}
-
-function collapseNavGroups() {
-  document.querySelectorAll('.nav-submenu').forEach(p => p.classList.add('hidden'));
-  document.querySelectorAll('.nav-rail-btn').forEach(b => b.classList.remove('group-active'));
-  document.querySelectorAll('.nav-rail-chevron').forEach(c => c.classList.remove('rot'));
-  activeNavGroup = null;
-}
-
 // Below the lg breakpoint the sidebar is an off-canvas drawer (slide in/out);
 // at lg and above it's a persistent column, so open/close are no-ops there —
 // closeBurgerMenu() is called after every nav click regardless of viewport,
@@ -38,7 +15,6 @@ function closeBurgerMenu() {
   if (window.innerWidth >= 1024) return;
   document.getElementById('burgerDrawer').classList.add('-translate-x-full');
   document.getElementById('navOverlay').classList.add('hidden');
-  collapseNavGroups();
 }
 
 function toggleBurgerMenu() {
@@ -74,17 +50,6 @@ function linkify(s) {
     return `<a href="${href}" target="_blank" rel="noopener noreferrer" class="underline hover:no-underline">${href}</a>${suffix}`;
   });
 }
-
-// ---------------------------------------------------------------------------
-// Active nav link styling
-// ---------------------------------------------------------------------------
-document.querySelectorAll('[data-page]').forEach(el => {
-  el.addEventListener('click', () => {
-    document.querySelectorAll('[data-page]').forEach(e => e.classList.remove('active'));
-    el.classList.add('active');
-  });
-});
-
 
 // ---------------------------------------------------------------------------
 // Init

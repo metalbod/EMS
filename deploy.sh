@@ -12,8 +12,8 @@
 # releases` trip needed. The minor number is derived from the highest
 # existing v<major>.<minor> tag on origin, so it keeps incrementing correctly
 # regardless of which clone runs the deploy. The major number only ever
-# changes by hand — create/push a vN.0 tag yourself (e.g. `git tag -a v1.0
-# -m "..." && git push origin v1.0`) when ready to bump it; this script never
+# changes by hand: run `APP_VERSION_OVERRIDE=2.0 ./deploy.sh` for the deploy that should become v2.0 (it is tagged
+# like any other). Merely creating a v2.0 tag first would make the NEXT deploy v2.1, not v2.0. This script never
 # rolls the minor over into a new major on its own. major/minor are parsed
 # and incremented as plain integers (never floating-point arithmetic), so
 # there's no risk of 0.1 + 0.1 drifting to something like 0.1999999999.
@@ -62,6 +62,22 @@ else
   minor="${last_version#*.}"
 fi
 app_version="$major.$((minor + 1))"
+
+# One-off major/minor bump: `APP_VERSION_OVERRIDE=1.0 ./deploy.sh` deploys AS v1.0 (and tags it) instead of the next minor.
+# Without this, creating a v1.0 tag first would make the deploy that follows it v1.1. Must be a plain major.minor that
+# is not already tagged — a typo can't silently reuse or skip a number.
+if [ -n "${APP_VERSION_OVERRIDE:-}" ]; then
+  if ! [[ "$APP_VERSION_OVERRIDE" =~ ^[0-9]+\.[0-9]+$ ]]; then
+    echo "ERROR: APP_VERSION_OVERRIDE must look like 1.0 (major.minor), got '$APP_VERSION_OVERRIDE'." >&2
+    exit 1
+  fi
+  if git tag -l "v$APP_VERSION_OVERRIDE" | grep -q .; then
+    echo "ERROR: tag v$APP_VERSION_OVERRIDE already exists — pick an unused version." >&2
+    exit 1
+  fi
+  echo "==> Using APP_VERSION_OVERRIDE: this deploy will be v$APP_VERSION_OVERRIDE (instead of v$app_version)."
+  app_version="$APP_VERSION_OVERRIDE"
+fi
 
 echo "==> Generating CHANGELOG.json for the About panel..."
 .venv/bin/python3 scripts/generate_changelog.py "$app_version"

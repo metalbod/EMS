@@ -152,8 +152,8 @@ first time its page is actually opened (`ensureModuleLoaded()` in
 or two other call sites a module is reached from outside `showPage` —
 e.g. `employee-documents.js` from the employee-detail modal's Documents
 tab, `locations.js` from the Add/Edit Employee modal), not at login —
-`applyRoleUI()` hiding a nav item was never enough on its own to stop the
-script behind it from loading too.
+hiding a page in the navigation (`NAV_PAGES` in `nav.js`) was never enough on
+its own to stop the script behind it from loading too.
 
 Deciding whether a new file belongs here instead of `js-manifest.js`:
 safe only if no role's own personal screen depends on it. Files that mix
@@ -381,11 +381,10 @@ npm run test:ui       # interactive test UI
 npm run test:coverage # test coverage report
 ```
 
-Frontend tests cover vanilla-JS navigation and menu logic (burger menu toggle,
-user dropdown, page navigation, nav accordion groups). Tests use Vitest + jsdom
-and are located in `static/js/__tests__/`. All 15 tests passing validates the
-burger-menu redesign and ensures menu interactions remain correct as the
-codebase evolves.
+Frontend tests cover vanilla-JS navigation and menu logic (the phone drawer,
+user dropdown, page navigation, and `nav-model.test.js`, which pins which pages
+each role is offered). Tests use Vitest + jsdom
+and are located in `static/js/__tests__/`. They keep menu and role-visibility behaviour from drifting as the codebase evolves.
 
 Integration tests run against a local Postgres, configured via
 `TEST_DATABASE_URL`/`TEST_ADMIN_DATABASE_URL` in `.env` (`tests/conftest.py`

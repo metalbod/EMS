@@ -548,15 +548,10 @@ async function loadDashboardKpis() {
 // Home KPI tiles double as shortcuts: "Pending approvals" jumps to the
 // decisions section on this same page; the others open the page their number
 // comes from — but only when this role can actually see that page in the
-// sidebar (nav items are hidden per role by applyRoleUI in core.js, and a
-// collapsed sidebar group is `.hidden` too, so its own #submenu-* wrapper is
-// ignored). A tile whose page the role can't open stays plain, not a dead link.
+// navigation (NAV_PAGES in nav.js decides per role). A tile whose page the role can't open stays plain, not a dead link.
 const _KPI_ARROW = '<svg class="kpi-tile-arrow" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>';
 
-function _canOpenPage(page) {
-  const item = document.querySelector(`[data-page="${page}"]`);
-  return !!item && !item.closest('.hidden:not([id^="submenu-"])');
-}
+function _canOpenPage(page) { return isPageReachableFromNav(page); }
 
 function _goToDecisions() {
   switchDashTab('dash-general');
@@ -877,7 +872,7 @@ async function loadDashboardTodos() {
       if (!Array.isArray(body)) throw new Error('unexpected /api/todos response');
       items = body;
       // Picked as an interviewer since this session started: reveal My Interviews so the To-Do link opens.
-      if (items.some(t => t.page === 'my-interviews')) document.getElementById('nav-my-interviews')?.classList.remove('hidden');
+      if (items.some(t => t.page === 'my-interviews')) navReveal('my-interviews');
     } else if (res.status === 403) {
       errorMsg = "You don't have access to your to-do list.";
     } else {

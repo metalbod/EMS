@@ -18,11 +18,18 @@ const fmtDateStub = v => {
 };
 
 const shown = []; // pages showPage() was asked to open
+// The sidebar used to be the thing that said which pages a role can open; these tests still model that with data-page
+// items in the DOM (a `hidden` ancestor = role-hidden, a collapsed #submenu-* is not), so stand in for nav.js's
+// isPageReachableFromNav with the same question asked of that DOM.
+const reachableFromDom = page => [...document.querySelectorAll(`[data-page="${page}"]`)].some(el => {
+  for (let n = el; n && n !== document.body; n = n.parentElement) if (n.classList.contains('hidden') && !n.id.startsWith('submenu-')) return false;
+  return true;
+});
 function load(apiImpl, user = { role: 'hr_manager', employee_id: 'E-ME' }) {
   // guardAsync (core.js) only adds a busy-button wrapper — pass-through here.
-  const factory = new Function('api', 'esc', 'fmtDate', 'currentUser', 'guardAsync', 'showPage', 'apiErrorText',
+  const factory = new Function('api', 'esc', 'fmtDate', 'currentUser', 'guardAsync', 'showPage', 'apiErrorText', 'isPageReachableFromNav', 'navReveal',
     `${SRC}\nreturn { loadDashboardTodos, toggleTodoGroup, wireDashboardKpiTiles, dashTabKeydown, switchDashTab };`);
-  const api = factory(apiImpl, escStub, fmtDateStub, user, fn => fn, p => shown.push(p), d => (typeof d === 'string' ? d : ''));
+  const api = factory(apiImpl, escStub, fmtDateStub, user, fn => fn, p => shown.push(p), d => (typeof d === 'string' ? d : ''), reachableFromDom, () => {});
   // inline onclick="toggleTodoGroup(this)" resolves in jsdom's own window
   (globalThis.jsdom?.window || document.defaultView).toggleTodoGroup = api.toggleTodoGroup;
   return api;

@@ -25,7 +25,7 @@ const HR_STAFF_ROLES = ['hr_manager','hr_admin'];                  // no superad
 const HR_MANAGER_ONLY_ROLES = ['superadmin','hr_manager'];         // no hr_admin
 const COMPENSATION_STAFF_ROLES = ['hr_manager','payroll_manager','compensation_manager'];
 const BENEFITS_DASHBOARD_ROLES = ['hr_manager','compensation_manager','manager'];
-const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','my-interviews','leave-my','leave-approvals','leave-holidays','resignation-approvals','projects','timesheet-my','timesheet-approvals','overtime-my','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','comp-paygrades','comp-joblevels','comp-jobroles','comp-meritcycles','comp-bonusplans','comp-commissions','comp-equity','comp-totalrewards','comp-payequity','ben-plans','ben-periods','ben-lifeevents','ben-claims','ben-compliance','payroll-runs','payroll-my','payroll-myrewards','payroll-mybenefits','perf-my','perf-team','perf-cycles','perf-calibration','attendance-clock','attendance-review','settings-attendance','settings-approval-workflow','settings-roles','settings-document-types','settings-offer-letter-templates','settings-performance','settings-ai-assistant','settings-sso','settings-mcp','approvals'];
+const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','my-interviews','leave-my','leave-approvals','leave-holidays','resignation-approvals','projects','timesheet-my','timesheet-approvals','overtime-my','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','comp-paygrades','comp-joblevels','comp-jobroles','comp-meritcycles','comp-bonusplans','comp-commissions','comp-equity','comp-totalrewards','comp-payequity','ben-plans','ben-periods','ben-lifeevents','ben-claims','ben-compliance','payroll-runs','payroll-my','payroll-myrewards','payroll-mybenefits','perf-my','perf-team','perf-cycles','perf-calibration','attendance-clock','attendance-review','settings-attendance','settings-approval-workflow','settings-roles','settings-document-types','settings-offer-letter-templates','settings-performance','settings-ai-assistant','settings-sso','settings-mcp','approvals','me-overview'];
 
 // ---------------------------------------------------------------------------
 // Lazy module loading (Speed Audit item 7)
@@ -700,22 +700,9 @@ async function loadRolesCache() {
 // ---------------------------------------------------------------------------
 // Boot
 // ---------------------------------------------------------------------------
-// Whether the current user's nav actually offers this page — applyRoleUI()
-// hides nav items/groups with the `hidden` class per role, so "has a visible
-// nav entry" is the same check the sidebar itself applies. A collapsed
-// submenu (`.nav-submenu.hidden`) is just folded shut, not role-hidden, so
-// it's skipped when walking up. Used to keep a URL hash (stale after a
-// session expiry + re-login as a different/default role, hand-edited, or
-// reached via Back) from opening a page this role can't see.
-function isPageReachableFromNav(page) {
-  const roleHidden = el => {
-    for (let n = el; n && n !== document.body; n = n.parentElement) {
-      if (n.classList.contains('hidden') && !n.classList.contains('nav-submenu')) return true;
-    }
-    return false;
-  };
-  return [...document.querySelectorAll(`[data-page="${page}"]`)].some(el => !roleHidden(el));
-}
+// isPageReachableFromNav(page) lives in nav.js: whether the current user's navigation offers a page. Used to keep a URL
+// hash (stale after a session expiry + re-login as a different role, hand-edited, or reached via Back) from opening a
+// page this role can't see.
 
 async function bootApp() {
   // Signed in with Microsoft while connecting Claude (the /oauth/authorize page stashes where it was before leaving for
@@ -895,139 +882,13 @@ function applyRoleUI() {
   const role = currentUser?.role;
   const isSA = role === 'superadmin';
   const canManage = HR_MANAGE_ROLES.includes(role);
-  const canAudit  = HR_MANAGER_ONLY_ROLES.includes(role);
-  const canUsers  = HR_MANAGER_ONLY_ROLES.includes(role);
-  const hideEmp = isSA && !currentInstitution;
+  const canEmailSettings = role === 'hr_manager';   // matches routers/notifications.py's EMAIL_SETTINGS_ROLES: the SMTP tab inside Notifications
 
   updateBrandHeader();
-  // Non-superadmin logins land on a personal landing page (their own
-  // to-dos, shortcuts), not an org-wide dashboard — "Home" reads more
-  // accurately for them than "Dashboard" (which stays as-is for
-  // superadmin, whose view is a genuine institution/platform overview).
-  const dashLabel = isSA ? 'Dashboard' : 'Home';
-  document.getElementById('navDashboardBtn')?.setAttribute('title', dashLabel);
-  const navDashboardLabelEl = document.getElementById('navDashboardLabel');
-  if (navDashboardLabelEl) navDashboardLabelEl.textContent = dashLabel;
-  document.getElementById('nav-institutions-wrap').classList.toggle('hidden', !isSA);
-  document.getElementById('nav-sysnotif-wrap')?.classList.toggle('hidden', !isSA);
-  document.getElementById('nav-emp-group').classList.toggle('hidden', hideEmp);
-  // Workforce's own rail button is visible to anyone who can see at least
-  // one of its three sub-items (HR sees all three; a plain manager sees
-  // only Resignation, for their own reports' requests) — each sub-item
-  // then has its own narrower toggle below, same nested pattern as Leave's
-  // "Approvals" sub-item. Deliberately excludes superadmin from both: a
-  // platform-level account has no employee record or direct reports of
-  // its own, so Workforce (onboarding/offboarding/resignation, all
-  // in-tenant employee-lifecycle actions) isn't something it manages.
-  const canWorkforceOb = HR_STAFF_ROLES.includes(role);
-  const canWorkforceResign = ['hr_manager', 'hr_admin', 'manager'].includes(role);
-  document.getElementById('nav-workforce-group')?.classList.toggle('hidden', !canWorkforceOb && !canWorkforceResign);
-  document.getElementById('nav-onboarding')?.classList.toggle('hidden', !canWorkforceOb);
-  document.getElementById('nav-offboarding')?.classList.toggle('hidden', !canWorkforceOb);
-  document.getElementById('nav-resignation-approvals')?.classList.toggle('hidden', !canWorkforceResign);
-  document.getElementById('nav-dashboard-wrap').classList.toggle('hidden', hideEmp);
-  document.getElementById('nav-audit').classList.toggle('hidden', !canAudit);
-  document.getElementById('nav-users').classList.toggle('hidden', !canUsers);
+  // Which pages each role is offered (rail, tabs, bottom bar) is decided by NAV_PAGES in nav.js.
+  renderNav();
   document.getElementById('addEmpBtn').classList.toggle('hidden', !canManage);
-  // can_view_recruitment (core/deps.py's build_current_user_out, via
-  // core/permission_matrix.py's has_permission) reflects this institution's
-  // own role_permission_overrides for the "View requisitions / candidates /
-  // interviews / offers" action — not just a static role list, so a manager/
-  // payroll_manager/compensation_manager who's been granted access here
-  // still sees the nav. The Home dashboard's own Recruitment tab (Open
-  // Positions for non-recruiting roles) is unaffected — it reads the public
-  // careers listing endpoint, which has no permission check at all.
-  document.getElementById('nav-recruit-group').classList.toggle('hidden', hideEmp || role === 'employee' || !currentUser?.can_view_recruitment);
-  // People picked as an interviewer get "My Interviews" whatever their role (they may have no Recruitment access).
-  document.getElementById('nav-my-interviews')?.classList.toggle('hidden', hideEmp || !currentUser?.is_interviewer);
-  document.getElementById('nav-ld-group')?.classList.toggle('hidden', hideEmp);
-  document.getElementById('nav-leave-group')?.classList.toggle('hidden', hideEmp);
-  document.getElementById('nav-leave-approvals')?.classList.toggle('hidden', !HR_AND_MANAGER_ROLES.includes(role));
-  // HR/manager roles see requests from other people on this page, not just their own.
-  const navLeaveMy = document.getElementById('navLeaveMyLabel');
-  if (navLeaveMy) navLeaveMy.textContent = HR_AND_MANAGER_ROLES.includes(role) ? 'Leave Requests' : 'My Leave';
-  document.getElementById('nav-timesheet-group')?.classList.toggle('hidden', hideEmp);
-  document.getElementById('nav-timesheet-approvals')?.classList.toggle('hidden', !HR_AND_MANAGER_ROLES.includes(role));
-  // HR sees the whole Projects screen; a listed project manager sees it too, limited to their own projects' tasks (timesheet.js).
-  document.getElementById('nav-projects')?.classList.toggle('hidden', !(HR_MANAGER_ONLY_ROLES.includes(role) || currentUser?.manages_projects));
-  // Clock In/Out is self-service for anyone with an employee record; the
-  // employee_id-linked check happens on load (see attendance.js), the nav
-  // toggle here just hides it from superadmin (no employee record at all).
-  document.getElementById('nav-attendance-clock')?.classList.toggle('hidden', hideEmp || isSA);
-  const canAttendanceManage = HR_MANAGE_ROLES.includes(role);
-  // Attendance Review is HR_AND_MANAGER_ROLES (adds manager on top of the
-  // Attendance Settings tier below) — matches the backend's
-  // attendance.review_queue_resolve_attendance_record permission-matrix
-  // entry, which is deliberately its own role set, not a reuse of
-  // _ATTENDANCE_MANAGE (a manager reviewing their team's late/absent days
-  // shouldn't also gain shift/device configuration access).
-  document.getElementById('nav-attendance-review')?.classList.toggle('hidden', !HR_AND_MANAGER_ROLES.includes(role));
-  const canNotify = HR_STAFF_ROLES.includes(role);
-  const canBulkUpload = role === 'hr_manager';
-  // Matches the backend's LOCATIONS_MANAGE_ROLES (routers/locations.py) —
-  // previously excluded superadmin, which meant a superadmin couldn't even
-  // see the nav entry for something the backend already let them manage.
-  const canLocations = HR_MANAGE_ROLES.includes(role);
-  const canApprovalWorkflow = HR_MANAGE_ROLES.includes(role);
-  const canRoles = HR_MANAGE_ROLES.includes(role);
-  const canDocTypes = HR_STAFF_ROLES.includes(role);
-  // Narrower than the usual HR tiers above — an institution's own Anthropic
-  // key is a real billing-relevant credential, hr_manager only, matching
-  // routers/assistant.py's ASSISTANT_SETTINGS_ROLES exactly.
-  const canAiSettings = role === 'hr_manager';
-  // Same risk category/tier as canAiSettings above — matches
-  // routers/notifications.py's EMAIL_SETTINGS_ROLES exactly. Gates the SMTP
-  // Settings tab inside the Notifications page (below), not a separate nav
-  // item anymore — an hr_admin sees the Notifications nav entry (canNotify)
-  // but not that one tab.
-  const canEmailSettings = role === 'hr_manager';
-  document.getElementById('nav-settings-wrap')?.classList.toggle('hidden', hideEmp || !(canAudit || canUsers || canNotify || canBulkUpload || canLocations || canManage || canAttendanceManage || canApprovalWorkflow || canRoles || canDocTypes || canAiSettings));
-  document.getElementById('nav-settings-notifications')?.classList.toggle('hidden', !canNotify);
   document.getElementById('notif-tab-smtp-btn')?.classList.toggle('hidden', !canEmailSettings);
-  document.getElementById('nav-bulk-upload')?.classList.toggle('hidden', !canBulkUpload);
-  document.getElementById('nav-locations')?.classList.toggle('hidden', !canLocations);
-  // Holiday Manager is HR Manager/HR Admin-only (canManage, same tier as
-  // Locations/Approval Workflows/Roles above) — moved here from the Leave
-  // nav group since it's institution-wide configuration, not a personal
-  // or team leave-management task like the rest of that group.
-  document.getElementById('nav-leave-holidays')?.classList.toggle('hidden', !canManage);
-  document.getElementById('nav-attendance-settings')?.classList.toggle('hidden', !canAttendanceManage);
-  document.getElementById('nav-approval-workflow')?.classList.toggle('hidden', !canApprovalWorkflow);
-  document.getElementById('nav-roles')?.classList.toggle('hidden', !canRoles);
-  document.getElementById('nav-document-types')?.classList.toggle('hidden', !canDocTypes);
-  document.getElementById('nav-offer-letter-templates')?.classList.toggle('hidden', !canManage);
-  // hr_manager only, matching routers/performance.py's PERFORMANCE_MANAGE_ROLES
-  // (every other Performance admin action in this app is gated the same way).
-  document.getElementById('nav-settings-performance')?.classList.toggle('hidden', role !== 'hr_manager');
-  document.getElementById('nav-ai-assistant-settings')?.classList.toggle('hidden', !canAiSettings);
-  document.getElementById('nav-sso-settings')?.classList.toggle('hidden', role !== 'hr_manager');   // routers/sso.py SETTINGS_ROLES
-  document.getElementById('nav-mcp-settings')?.classList.toggle('hidden', role !== 'hr_manager');   // routers/oauth.py SETTINGS_ROLES
-
-  // Compensation: its own top-level menu, visible to HR Manager, Payroll
-  // Manager, and the dedicated Compensation Manager role — explicitly
-  // excludes HR Admin (previously included, now revoked) and superadmin
-  // (unlike most other groups, which superadmin can see whenever an
-  // institution is selected).
-  const canCompensation = COMPENSATION_STAFF_ROLES.includes(role);
-  document.getElementById('nav-compensation-group')?.classList.toggle('hidden', !canCompensation);
-
-  // Benefits: its own top-level menu, same access gate as Compensation
-  // (deliberate choice — reuse the existing role set rather than add a
-  // dedicated Benefits Manager role).
-  const canBenefits = COMPENSATION_STAFF_ROLES.includes(role);
-  document.getElementById('nav-benefits-group')?.classList.toggle('hidden', !canBenefits);
-
-  const canPayrollView = ['payroll_manager','hr_manager'].includes(role);
-  document.getElementById('nav-payroll-group')?.classList.toggle('hidden', hideEmp);
-  document.getElementById('nav-payroll-runs')?.classList.toggle('hidden', !canPayrollView);
-  document.getElementById('nav-payroll-my')?.classList.toggle('hidden', isSA);
-  document.getElementById('nav-payroll-myrewards')?.classList.toggle('hidden', isSA);
-  document.getElementById('nav-payroll-mybenefits')?.classList.toggle('hidden', isSA);
-
-  document.getElementById('nav-performance-group')?.classList.toggle('hidden', hideEmp || isSA);
-  document.getElementById('nav-perf-team')?.classList.toggle('hidden', !['manager','hr_manager'].includes(role));
-  document.getElementById('nav-perf-cycles')?.classList.toggle('hidden', role !== 'hr_manager');
-  document.getElementById('nav-perf-calibration')?.classList.toggle('hidden', role !== 'hr_manager');
 
   // OB buttons
   const canManageOb=HR_MANAGE_ROLES.includes(role);
@@ -1059,7 +920,6 @@ function applyRoleUI() {
   } else {
     pill.classList.add('hidden'); pill.classList.remove('flex');
   }
-  if (typeof updateApprovalsNav === 'function') updateApprovalsNav(window._approvalsPending || 0);
   // Top bar: search, "+ New" and the clock chip depend on this role's rights (command-bar.js).
   if (typeof renderTopBarActions === 'function') renderTopBarActions();
 }
@@ -1115,17 +975,15 @@ async function showPage(page, opts = {}) {
     const el = document.getElementById(`page-${p}`);
     if (el) el.classList.toggle('hidden', p !== page);
   });
-  document.querySelectorAll('[data-page]').forEach(el => {
-    el.classList.toggle('active', el.dataset.page === page);
-  });
+  navSync(page); // rail, tab bars and bottom bar follow the page (nav.js)
   const titles = {
-    dashboard: currentUser?.role === 'superadmin' ? 'Dashboard' : 'Home', approvals: 'Approvals',
+    dashboard: currentUser?.role === 'superadmin' ? 'Dashboard' : 'Home', approvals: 'Approvals', 'me-overview': 'Me',
     institutions:'Institutions', employees:'Employee List',
     orgchart:'Org Chart', audit:'Audit Log', users:'User Management',
     requisitions:'Job Requisitions', candidates:'Candidate Bank', interviews:'Interviews', offers:'Offers & Letters',
     onboarding:'Onboarding', offboarding:'Offboarding',
     'ld-catalog':'Course Catalog', 'ld-trainings':'My Trainings', 'my-interviews':'My Interviews',
-    'leave-my': HR_AND_MANAGER_ROLES.includes(currentUser?.role) ? 'Leave Requests' : 'My Leave', 'leave-approvals':'Leave Approvals', 'leave-holidays':'Holiday Manager',
+    'leave-my':'My Leave', 'leave-approvals':'Leave Approvals', 'leave-holidays':'Holiday Manager',
     'resignation-approvals':'Resignation Approvals',
     'projects':'Projects', 'timesheet-my':'My Timesheet', 'timesheet-approvals':'Timesheet Approvals', 'overtime-my':'My Overtime',
     'settings-notifications':'Settings — Notifications',
@@ -1185,6 +1043,7 @@ async function showPage(page, opts = {}) {
   if (page === 'leave-my')          loadLeavePage();
   if (page === 'leave-approvals')   loadLeaveApprovals();
   if (page === 'approvals')         loadApprovals();
+  if (page === 'me-overview')       loadMeOverview();
   if (page === 'leave-holidays')    loadLeaveHolidaysPage();
   if (page === 'resignation-approvals') loadResignationApprovals();
   if (page === 'projects')            loadProjects();

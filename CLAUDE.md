@@ -1063,6 +1063,35 @@ wrapper everywhere.
   reason field, so rejecting a claim never asks for one. The employee role only sees the nav item while something is waiting.
   The bell was dropped by decision (the badge on Approvals replaces it). Keys on the page: J/K, A, R.
 
+- **New navigation — EMS v1.0 (UX redesign Phase 2, 2026-10-24)** — replaced the 12-group accordion sidebar. A page's **id is still
+  its address** (`#leave-approvals`, `showPage('leave-approvals')`, every deep link, emailed link, `ALL_PAGES`, per-page `load…()`
+  dispatch in `showPage`) — only *where* the shell shows a page and *who* sees it changed. **`static/js/nav.js`'s `NAV_PAGES` is the one
+  source**: per page an `area`, optional `section`, tab `label`, a `show(rights)` rule and search `aliases`; it drives the rail
+  (`renderNav`), the tab bar under the title (`renderAreaNav`: first row = sections — a one-page section shows that page's label —
+  then a second row of the active section's pages when it has two or more), the phone bottom bar (`renderBottomBar`, "More" opens
+  the old drawer, which still holds the rail plus the account/role-switcher footer), `isPageReachableFromNav()` (now answers from the
+  model, not the DOM — boot hash, Home KPI tiles, command bar), and the command bar's page list. **Adding or moving a page = one
+  entry there** (plus `ALL_PAGES`/titles/dispatch in core.js as before); `applyRoleUI()` no longer toggles any nav item (it still
+  toggles the in-page buttons and calls `renderNav()`). Areas: Platform (superadmin), Home, **Me**, **Team**, People, Hiring, **Pay**
+  (sections Payroll | Compensation | Benefits), Learning, Admin (sections Company | People & access | Time | Communication |
+  Integrations & AI | Audit). An entry's `area` may be a function: the **course catalog is HR's Learning area but Me > Growth for everyone
+  else**. Rail size: employee 3, manager 4, HR manager 8. **`static/js/__tests__/nav-model.test.js` + `fixtures/nav-visibility.json`**
+  pin exactly which pages each role/flag combination could reach through the OLD sidebar (captured from the live DOM before the
+  rewrite) — the new model must match it (only `me-overview` is new); change the fixture deliberately when a role's access
+  is meant to change. Decisions with the owner: Approvals is the first Team tab (badge on the Team rail item and tab; an employee
+  gets Team only while something waits on them, via `updateApprovalsNav` → `renderNav`); **Me > Overview** (`me-overview.js`,
+  `#page-me-overview`) is cards built from endpoints each person already uses for their own data; **My Leave is own-only for every
+  role** (`leave-my` passes `employee_id`; HR/managers see everyone's requests under Team > Leave requests with its All filter),
+  and `ld-trainings` gets a Mine / "Everyone I manage" toggle for non-employees (opens on "everyone" when a link points at someone
+  else's enrolment); Holiday Manager is labelled "Leave types & holidays" (it also holds leave types); Bulk Upload is People > Import;
+  Offers & Letters is Hiring. Old names stay findable in the command bar via `aliases`. `navReveal(page)` reveals a page a To-Do
+  just pointed at (My Interviews). **Deliberately not done** (kept for Phase 3): full-page employee profile (still a modal), role-
+  specific Home pages, Home Insights tab, moving the account menu into the top bar (it stays in the sidebar footer/drawer).
+  **Release**: this deploy is v1.0 via the new `APP_VERSION_OVERRIDE=1.0 ./deploy.sh` (a hand-made tag alone would have made the
+  next deploy v1.1). Rollback is a revert + redeploy — front-end only, no migration. Docs not updated: the Word onboarding guide.
+  (The Phase 1 / hash-routing entries above that describe reading pages from the sidebar DOM or `applyRoleUI` hiding nav items
+  are superseded by this.)
+
 ## Recurring gotchas (hit more than once this project's history)
 
 - **RLS fails closed, not open.** A table gets RLS auto-enabled by an

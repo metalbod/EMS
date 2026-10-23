@@ -1,6 +1,7 @@
 // Learning & Development
 // ---------------------------------------------------------------------------
 let ldCoursesCache=[], ldCatFilter='', ldEnrollFilter='', ldEnrollData=[];
+let ldEnrollScope='mine'; // HR/managers: 'mine' (own trainings, the Me > Growth default) or 'all' (everyone in scope)
 // Sort-only, like the Projects list (timesheet.js) — the catalog has no
 // pagination UI, and an institution's course count is small enough that
 // showing everything at once (rather than paging) matches how the rest
@@ -255,6 +256,10 @@ async function loadLdEnrollments() {
   ldEnrollData=res&&res.ok?await res.json():[];
   loadLdMyPolicies();
   const focusId=pendingFocusId('ld-trainings');
+  // A link to someone else's enrolment (an approval) must show it, so it opens on "everyone".
+  if(focusId && ldEnrollScope==='mine' && ldEnrollData.some(en=>String(en.id)===focusId && en.employee_id!==currentUser?.employee_id)) ldEnrollScope='all';
+  ldEnrollData=ldScopeFilter(ldEnrollData);
+  syncLdScopeToggle();
   if(focusId) ldEnrollList.showItem(ldEnrollData, en=>String(en.id)===focusId);
   renderLdEnrollTable();
   applyFocus('ld-trainings');
@@ -308,6 +313,23 @@ function renderLdEnrollTable() {
     </tr>`;
   }).join('');
 }
+
+// Only HR/manager roles have anything beyond their own here, so only they get the toggle (and the filtering).
+function ldScopeFilter(rows) {
+  if(currentUser?.role==='employee' || ldEnrollScope!=='mine') return rows;
+  return rows.filter(en=>en.employee_id===currentUser?.employee_id);
+}
+function syncLdScopeToggle() {
+  const wrap=document.getElementById('ldScopeToggle');
+  if(!wrap) return;
+  wrap.classList.toggle('hidden', currentUser?.role==='employee');
+  [['ldScopeMine','mine'],['ldScopeAll','all']].forEach(([id,v])=>{
+    const b=document.getElementById(id); if(!b) return;
+    b.classList.toggle('ld-enr-filter-active', ldEnrollScope===v);
+    b.setAttribute('aria-pressed', String(ldEnrollScope===v));
+  });
+}
+function setLdScope(scope) { ldEnrollScope=scope; loadLdEnrollments(); }
 
 function setLdEnrollFilter(status) {
   ldEnrollFilter=status;

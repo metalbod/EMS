@@ -4,8 +4,8 @@
 // One registry of things a person can DO (CMD_ACTIONS) drives three places: the
 // "+ New" menu (entries flagged `create`), the command bar's Actions group, and
 // Home's quick-action row (via quickActionRights). Pages come from the sidebar
-// itself — every [data-page] the nav actually offers this role, so a page the
-// sidebar hides (applyRoleUI) can never be reached from here either. People are
+// navigation model — every page nav.js offers this role (with its old names as search aliases), so a page the
+// nav hides can never be reached from here either. People are
 // the `employees` roster the server already scoped to this caller (an employee
 // gets only themself, a manager their reporting chain, HR everyone), so
 // searching adds no new exposure; only name/id/department/designation are read.
@@ -55,18 +55,9 @@ function cmdVisibleActions(createOnly) {
   return CMD_ACTIONS.filter(a => (!createOnly || a.create) && a.visible(rights));
 }
 
-// ---- pages, read from the sidebar -----------------------------------------
+// ---- pages, from the navigation model (nav.js) ---------------------------------
 function cmdPages() {
-  const seen = new Map();
-  document.querySelectorAll('#burgerDrawer [data-page]').forEach(el => {
-    const page = el.dataset.page;
-    if (seen.has(page) || !isPageReachableFromNav(page)) return;
-    const label = (el.querySelector('.nav-rail-label')?.textContent || el.textContent || '').replace(/\s+/g, ' ').trim();
-    if (!label) return;
-    const group = el.closest('.nav-submenu')?.previousElementSibling?.querySelector('.nav-rail-label')?.textContent.trim() || '';
-    seen.set(page, { page, label, group });
-  });
-  return [...seen.values()];
+  return navSearchPages().map(p => ({ page: p.page, label: p.label, group: p.group, aliases: p.aliases }));
 }
 
 // ---- matching (pure) ------------------------------------------------------
@@ -104,7 +95,7 @@ function cmdResults(query) {
     .sort((x, y) => y.s - x.s);
   (q ? actions : actions.slice(0, 6)).slice(0, 6).forEach(({ a }) => out.push({ group: 'Actions', id: `act-${a.id}`, label: a.label, sub: a.hint, run: a.run }));
   const pages = cmdPages()
-    .map(p => ({ p, s: cmdMatch(q, p.label, p.group) })).filter(x => x.s > 0)
+    .map(p => ({ p, s: cmdMatch(q, p.label, `${p.group} ${p.aliases}`) })).filter(x => x.s > 0)
     .sort((x, y) => y.s - x.s);
   (q ? pages : pages.slice(0, 5)).slice(0, 7).forEach(({ p }) => out.push({ group: 'Pages', id: `page-${p.page}`, label: p.label, sub: p.group ? `${p.group} › ${p.label}` : 'Home', run: () => showPage(p.page) }));
   cmdPeople(q).forEach(e => out.push({ group: 'People', id: `emp-${e.employee_id}`, label: displayName(e.full_name, e.preferred_name) || e.employee_id,

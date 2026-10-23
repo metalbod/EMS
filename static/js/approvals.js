@@ -71,16 +71,11 @@ function apprSelectedItem() {
   return apprState.items.find(t => t.key === apprState.selected) || null;
 }
 
-// Nav badge + (for the plain employee role) whether the item shows at all. Called whenever a fresh list is known.
+// Count waiting on this person: drives the Team badge / Approvals tab and (for the plain employee role) whether Team is offered at all.
 function updateApprovalsNav(count) {
+  const changed = window._approvalsPending !== count;
   window._approvalsPending = count;
-  const nav = document.getElementById('nav-approvals');
-  const badge = document.getElementById('navApprovalsBadge');
-  if (badge) { badge.textContent = count > 99 ? '99+' : String(count); badge.classList.toggle('hidden', !count); }
-  if (nav && currentUser) {
-    const hide = (currentUser.role === 'superadmin' && !currentInstitution) || (currentUser.role === 'employee' && !count);
-    nav.classList.toggle('hidden', hide);
-  }
+  if (changed && typeof renderNav === 'function') renderNav();
 }
 
 async function loadApprovals(keepSelection = false) {
