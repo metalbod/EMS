@@ -9,10 +9,12 @@ const dash = readFileSync(resolve(__dirname, '..', 'dashboard.js'), 'utf8');
 const toastSrc = core.slice(core.indexOf('function apiErrorText('), core.indexOf('// Auth\n') - 80);
 const loadNotify = () => new Function(`${toastSrc}\nreturn { notify, showToast };`)();
 
+const cmd = readFileSync(resolve(__dirname, '..', 'command-bar.js'), 'utf8');
 function loadQuickActions(ctx) {
+  const rights = cmd.slice(cmd.indexOf('function quickActionRights('), cmd.indexOf('const CMD_ACTIONS'));
   const src = dash.slice(dash.indexOf('function renderDashQuickActions('), dash.indexOf('async function dashShortcutLogHours'));
-  const names = ['currentUser', 'HR_STAFF_ROLES', 'HR_MANAGE_ROLES', 'refreshResignButtonState', 'refreshDashClockState'];
-  return new Function(...names, `${src}\nreturn renderDashQuickActions;`)(...names.map(n => ctx[n]));
+  const names = ['currentUser', 'HR_STAFF_ROLES', 'HR_MANAGE_ROLES', 'refreshResignButtonState', 'refreshDashClockState', 'isPageReachableFromNav'];
+  return new Function(...names, `${rights}\n${src}\nreturn renderDashQuickActions;`)(...names.map(n => ctx[n]));
 }
 
 describe('notify() replaces alert() with a toast', () => {
@@ -53,7 +55,7 @@ describe('Home quick actions follow the person, not just the employee role', () 
     'dashQaRoleDivider', 'dashQaAddEmployee', 'dashQaNewReq', 'dashQaNewPayrollRun'];
   const shown = id => !document.getElementById(id).classList.contains('hidden');
   const run = (user, canReq = false) => {
-    const ctx = { currentUser: { ...user, can_manage_recruitment: canReq }, HR_STAFF_ROLES: ['hr_manager', 'hr_admin'], HR_MANAGE_ROLES: ['superadmin', 'hr_manager', 'hr_admin'], refreshResignButtonState: vi.fn(), refreshDashClockState: vi.fn() };
+    const ctx = { currentUser: { ...user, can_manage_recruitment: canReq }, HR_STAFF_ROLES: ['hr_manager', 'hr_admin'], HR_MANAGE_ROLES: ['superadmin', 'hr_manager', 'hr_admin'], refreshResignButtonState: vi.fn(), refreshDashClockState: vi.fn(), isPageReachableFromNav: () => false };
     loadQuickActions(ctx)();
     return ctx;
   };

@@ -1043,6 +1043,26 @@ wrapper everywhere.
   the leave page is **Leave Requests** for HR/manager roles (it lists other people's requests) and **My Leave** for others; the
   "More" menu and the "Coming Soon" page were removed.
 
+- **UX redesign, Phase 1** (built 2026-10-23, not yet deployed when written): (1) **Top bar** (`static/js/command-bar.js`,
+  markup in `index.html`'s `<header>`): a search pill, a **clock chip** and a **"+ New" menu**, all set up by
+  `renderTopBarActions()` at the end of `applyRoleUI()` (so they follow login and role switches). One registry,
+  `CMD_ACTIONS`, drives the "+ New" menu (entries with `create`), the command bar's Actions group, and — through
+  `quickActionRights()` — Home's quick-action row; add an action once there. (2) **Command bar** (Ctrl/Cmd+K, `cmdResults`):
+  *Actions* from the registry, *Pages* enumerated from the sidebar DOM (`[data-page]` that pass `isPageReachableFromNav`, so a
+  page the nav hides is never offered), *People* from the `employees` roster the server already scoped per role (owner decision:
+  same as today — an employee finds only themself, a manager their chain, HR everyone; no colleague directory). (3) **Clock
+  chip** shares state with Home's Clock In button through `refreshDashClockState()` (one open attendance row = clocked in);
+  clocking out asks `confirm()` first. (4) **Approvals inbox** (`approvals.js`, `routers/approvals.py`, nav item
+  `#nav-approvals` with a count badge, hash `#approvals`): `GET /api/approvals` = the Home to-do's approval rows (same
+  `build_todos`), `GET /api/approvals/{module}/{ref_id}/context[?project_row=true]` = facts, warnings (leave: department
+  colleagues already away; resignation: approving starts offboarding) and approval steps — fail-closed (404 unless the request
+  is sitting at a step *this* person can act on now, via `pending_rows_for_approver`). **Decisions are made through each
+  module's own endpoint** (`apprDecisionRequest`, the table of 8) — no new decision logic; a per-project timesheet/overtime
+  split needs a different URL, which is why `build_todos` approval rows now carry `project_row`/`project_id`
+  (`module_is_project_row`). Bulk approve is leave + L&D only, approve only (decided with the owner). A claim's decision has no
+  reason field, so rejecting a claim never asks for one. The employee role only sees the nav item while something is waiting.
+  The bell was dropped by decision (the badge on Approvals replaces it). Keys on the page: J/K, A, R.
+
 ## Recurring gotchas (hit more than once this project's history)
 
 - **RLS fails closed, not open.** A table gets RLS auto-enabled by an

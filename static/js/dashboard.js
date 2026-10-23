@@ -907,6 +907,8 @@ async function loadDashboardTodos() {
   // empty-state paragraph or the list isn't reliably read out by screen readers.
   const deciding = items.filter(t => t.kind === 'approval').length;
   _todoItems = items;
+  if (typeof updateApprovalsNav === 'function') updateApprovalsNav(deciding);
+  document.getElementById('dashOpenApprovals')?.classList.toggle('hidden', !deciding);
   // Forget inline-decision state for requests that are no longer in the list
   // (including when the list has just become empty).
   for (const key of [..._todoDecisionUi.keys()]) if (!items.some(t => t.key === key)) _todoDecisionUi.delete(key);
@@ -931,15 +933,9 @@ async function loadDashboardTodos() {
 // employee-role only; the "+ Add …" ones follow the same rule as the button on
 // the page they open.
 function renderDashQuickActions() {
-  const role = currentUser?.role;
-  const hasEmp = !!currentUser?.employee_id;
+  const { hasEmp, isEmployee, canAddEmployee, canNewReq, canPayroll } = quickActionRights();
   const show = (id, on) => document.getElementById(id)?.classList.toggle('hidden', !on);
   ['dashQaApplyLeave', 'dashQaClaim', 'dashClockBtn', 'dashQaLogHours'].forEach(id => show(id, hasEmp));
-  const isEmployee = role === 'employee';
-  const canAddEmployee = HR_STAFF_ROLES.includes(role);
-  // recruitment.js is a lazy module, so its canManageRecruitment() isn't loaded yet: same rule, inline.
-  const canNewReq = role !== 'superadmin' && !!(currentUser?.can_manage_recruitment ?? HR_MANAGE_ROLES.includes(role));
-  const canPayroll = role === 'payroll_manager';
   show('dashboardResignBtn', hasEmp && isEmployee);
   show('dashQaAddEmployee', canAddEmployee);
   show('dashQaNewReq', canNewReq);
@@ -996,13 +992,16 @@ async function dashShortcutSubmitClaim() {
 // history table) that only exist on that page, not Home. attCaptureGeo()
 // itself has no such dependency, so it's shared as-is.
 async function refreshDashClockState() {
-  const btn = document.getElementById('dashClockBtn');
-  if (!btn || !currentUser?.employee_id) return;
+  if (!currentUser?.employee_id) return;
   const res = await api('/api/attendance/mine?limit=1');
   const rows = (res && res.ok) ? await res.json() : [];
-  const open = rows[0] && rows[0].clock_in_at && !rows[0].clock_out_at;
-  btn.textContent = open ? 'Clock Out' : 'Clock In';
-  btn.setAttribute('onclick', open ? 'dashShortcutClockOut()' : 'dashShortcutClockIn()');
+  const openRow = rows[0] && rows[0].clock_in_at && !rows[0].clock_out_at ? rows[0] : null;
+  const btn = document.getElementById('dashClockBtn');
+  if (btn) {
+    btn.textContent = openRow ? 'Clock Out' : 'Clock In';
+    btn.setAttribute('onclick', openRow ? 'dashShortcutClockOut()' : 'dashShortcutClockIn()');
+  }
+  if (typeof renderTopClock === 'function') renderTopClock(openRow); // the top-bar chip shares this state
 }
 
 const dashShortcutClockIn = guardAsync(async function dashShortcutClockIn() {
@@ -1013,6 +1012,7 @@ const dashShortcutClockIn = guardAsync(async function dashShortcutClockIn() {
   });
   if (!res || !res.ok) { const d = await res?.json().catch(() => ({})); notify(d?.detail || 'Failed to clock in'); return; }
   await refreshDashClockState();
+  notify('Clocked in.', 'success');
 });
 
 const dashShortcutClockOut = guardAsync(async function dashShortcutClockOut() {
@@ -1023,6 +1023,7 @@ const dashShortcutClockOut = guardAsync(async function dashShortcutClockOut() {
   });
   if (!res || !res.ok) { const d = await res?.json().catch(() => ({})); notify(d?.detail || 'Failed to clock out'); return; }
   await refreshDashClockState();
+  notify('Clocked out.', 'success');
 });
 
 // ---------------------------------------------------------------------------

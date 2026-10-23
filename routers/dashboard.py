@@ -138,6 +138,13 @@ def _todo_sort_key(t: Dict[str, Any]):
     return (2, False, "")
 
 
+def module_is_project_row(module: str, row) -> bool:
+    """True when a pending timesheet/overtime row came from the per-project split table (timesheet_project_approvals /
+    overtime_project_approvals) rather than the whole-record table — see pending_rows_for_approver."""
+    keys = row.keys()
+    return (module == "timesheet" and "timesheet_id" in keys) or (module == "overtime" and "overtime_record_id" in keys)
+
+
 def _approval_row_detail(row, module: str, lookups: Dict[str, Dict]) -> Dict[str, Any]:
     """Resolve the (employee, stage label, stage type, dates) shown on
     one per-item To-Do row for a pending approval-workflow request —
@@ -384,6 +391,10 @@ def build_todos(conn, user: dict) -> List[Dict[str, Any]]:
             "kind": "approval", "module": module, "ref_id": row["id"], "focus_id": detail["focus_id"],
             "employee_id": detail["employee_id"],
             "waiting_since": detail["waiting_since"], "event_date": detail["event_date"],
+            # A per-project timesheet/overtime split is decided through a different endpoint than a whole one
+            # (the Approvals inbox, static/js/approvals.js, needs to know which); project_id is the timesheet split's.
+            "project_row": module_is_project_row(module, row),
+            "project_id": row["project_id"] if module == "timesheet" and module_is_project_row(module, row) else None,
         })
 
     # Employee document compliance reminders (work permit renewal, passport

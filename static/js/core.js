@@ -25,7 +25,7 @@ const HR_STAFF_ROLES = ['hr_manager','hr_admin'];                  // no superad
 const HR_MANAGER_ONLY_ROLES = ['superadmin','hr_manager'];         // no hr_admin
 const COMPENSATION_STAFF_ROLES = ['hr_manager','payroll_manager','compensation_manager'];
 const BENEFITS_DASHBOARD_ROLES = ['hr_manager','compensation_manager','manager'];
-const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','my-interviews','leave-my','leave-approvals','leave-holidays','resignation-approvals','projects','timesheet-my','timesheet-approvals','overtime-my','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','comp-paygrades','comp-joblevels','comp-jobroles','comp-meritcycles','comp-bonusplans','comp-commissions','comp-equity','comp-totalrewards','comp-payequity','ben-plans','ben-periods','ben-lifeevents','ben-claims','ben-compliance','payroll-runs','payroll-my','payroll-myrewards','payroll-mybenefits','perf-my','perf-team','perf-cycles','perf-calibration','attendance-clock','attendance-review','settings-attendance','settings-approval-workflow','settings-roles','settings-document-types','settings-offer-letter-templates','settings-performance','settings-ai-assistant','settings-sso','settings-mcp'];
+const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','my-interviews','leave-my','leave-approvals','leave-holidays','resignation-approvals','projects','timesheet-my','timesheet-approvals','overtime-my','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','comp-paygrades','comp-joblevels','comp-jobroles','comp-meritcycles','comp-bonusplans','comp-commissions','comp-equity','comp-totalrewards','comp-payequity','ben-plans','ben-periods','ben-lifeevents','ben-claims','ben-compliance','payroll-runs','payroll-my','payroll-myrewards','payroll-mybenefits','perf-my','perf-team','perf-cycles','perf-calibration','attendance-clock','attendance-review','settings-attendance','settings-approval-workflow','settings-roles','settings-document-types','settings-offer-letter-templates','settings-performance','settings-ai-assistant','settings-sso','settings-mcp','approvals'];
 
 // ---------------------------------------------------------------------------
 // Lazy module loading (Speed Audit item 7)
@@ -1059,6 +1059,9 @@ function applyRoleUI() {
   } else {
     pill.classList.add('hidden'); pill.classList.remove('flex');
   }
+  if (typeof updateApprovalsNav === 'function') updateApprovalsNav(window._approvalsPending || 0);
+  // Top bar: search, "+ New" and the clock chip depend on this role's rights (command-bar.js).
+  if (typeof renderTopBarActions === 'function') renderTopBarActions();
 }
 
 function updateSidebarUser() {
@@ -1116,7 +1119,7 @@ async function showPage(page, opts = {}) {
     el.classList.toggle('active', el.dataset.page === page);
   });
   const titles = {
-    dashboard: currentUser?.role === 'superadmin' ? 'Dashboard' : 'Home',
+    dashboard: currentUser?.role === 'superadmin' ? 'Dashboard' : 'Home', approvals: 'Approvals',
     institutions:'Institutions', employees:'Employee List',
     orgchart:'Org Chart', audit:'Audit Log', users:'User Management',
     requisitions:'Job Requisitions', candidates:'Candidate Bank', interviews:'Interviews', offers:'Offers & Letters',
@@ -1181,6 +1184,7 @@ async function showPage(page, opts = {}) {
   if (page === 'ld-trainings') loadLdEnrollments();
   if (page === 'leave-my')          loadLeavePage();
   if (page === 'leave-approvals')   loadLeaveApprovals();
+  if (page === 'approvals')         loadApprovals();
   if (page === 'leave-holidays')    loadLeaveHolidaysPage();
   if (page === 'resignation-approvals') loadResignationApprovals();
   if (page === 'projects')            loadProjects();

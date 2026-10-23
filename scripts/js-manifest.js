@@ -26,6 +26,7 @@ module.exports = [
   'employee-picker.js',
   'dashboard.js',
   'todo-decisions.js',
+  'approvals.js',
   'home-compliance.js',
   'employees.js',
   'orgchart.js',
@@ -42,5 +43,6 @@ module.exports = [
   'pip.js',
   'assistant.js',
   'public_careers.js',
+  'command-bar.js',
   'app-init.js',
 ];
