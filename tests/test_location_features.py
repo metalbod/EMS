@@ -2,7 +2,7 @@
 import pytest
 from datetime import datetime, timedelta, date
 from db import get_db
-from conftest import _valid_employee_payload
+from conftest import _valid_employee_payload, db_today
 
 
 @pytest.fixture
@@ -802,7 +802,7 @@ def test_capacity_check_writes_a_snapshot(client, setup_location_features, hr_ma
     assert len(points) == 1, "expected exactly the one snapshot just written, not a fallback/fabricated point"
     assert points[0]["employee_count"] == checked["current_employees"]
     assert points[0]["capacity"] == checked["capacity"]
-    assert points[0]["date"] == datetime.utcnow().date().isoformat()
+    assert points[0]["date"] == db_today().isoformat()   # snapshot_date is SQL CURRENT_DATE, not necessarily the UTC date
 
 
 def test_capacity_check_same_day_upserts_not_duplicates(client, setup_location_features, hr_manager_auth):
@@ -836,6 +836,6 @@ def test_capacity_dashboard_trend_data_reflects_snapshot(client, setup_location_
     assert dash_res.status_code == 200, dash_res.text
     trend_data = dash_res.json()["trend_data"]
     assert len(trend_data) == 1
-    assert trend_data[0]["date"] == datetime.utcnow().date().isoformat()
+    assert trend_data[0]["date"] == db_today().isoformat()
 
 

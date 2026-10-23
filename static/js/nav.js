@@ -51,6 +51,8 @@ function navRights() {
     interviewer: !!currentUser?.is_interviewer || navRevealed.has('my-interviews'),
     managesProjects: !!currentUser?.manages_projects,
     approvals: (typeof window !== 'undefined' && window._approvalsPending) || 0,
+    routeId: typeof currentRouteId === 'undefined' ? null : currentRouteId,   // the record an id-carrying page is showing
+    ownEmpId: currentUser?.employee_id || null,
   };
 }
 
@@ -70,6 +72,7 @@ const NAV_PAGES = [
   { page: 'dashboard', area: 'home', label: 'Home', show: r => !r.hideEmp, aliases: 'dashboard' },
   // Me
   { page: 'me-overview', area: 'me', label: 'Overview', show: r => r.hasEmp && !r.hideEmp, aliases: 'my overview summary' },
+  { page: 'my-profile', area: 'me', section: 'Profile', label: 'Profile', show: r => r.hasEmp && !r.hideEmp, aliases: 'my profile personal details contact bank' },
   { page: 'leave-my', area: 'me', label: 'Leave', show: _inCompany, aliases: 'my leave time off balance apply' },
   { page: 'timesheet-my', area: 'me', section: 'Time', label: 'Timesheet', show: _inCompany, aliases: 'my timesheet hours' },
   { page: 'overtime-my', area: 'me', section: 'Time', label: 'Overtime', show: _inCompany, aliases: 'my overtime' },
@@ -92,6 +95,8 @@ const NAV_PAGES = [
   { page: 'perf-cycles', area: 'team', section: 'Performance', label: 'Cycles', show: r => !r.hideEmp && !r.isSA && r.hrMgr, aliases: 'performance cycles' },
   { page: 'perf-calibration', area: 'team', section: 'Performance', label: 'Calibration', show: r => !r.hideEmp && !r.isSA && r.hrMgr, aliases: 'performance calibration' },
   // People
+  // The record page: not a tab of its own — it shows under People > Directory, or Me > Profile when it is your own record.
+  { page: 'employee', record: true, area: r => (r.routeId && r.routeId === r.ownEmpId ? 'me' : 'people'), label: 'Employee', show: _inCompany, aliases: '' },
   { page: 'employees', area: 'people', label: 'Directory', show: _inCompany, aliases: 'employee list employees staff profile' },
   { page: 'orgchart', area: 'people', label: 'Org chart', show: _inCompany, aliases: 'organisation chart reporting' },
   { page: 'onboarding', area: 'people', label: 'Onboarding', show: r => r.hrStaff, aliases: 'new hire checklist' },
@@ -138,6 +143,17 @@ const NAV_PAGES = [
 const _NAV_BY_PAGE = new Map(NAV_PAGES.map(e => [e.page, e]));
 const navAreaMeta = id => NAV_AREAS.find(a => a.id === id);
 
+// The tab that is lit for a page. A record page lights the tab it belongs to.
+function navActivePage(page, r = navRights()) {
+  if (page === 'employee') return r.routeId && r.routeId === r.ownEmpId ? 'my-profile' : 'employees';
+  return page;
+}
+// Opens an entry: "Profile" is your own record page; everything else is just its page.
+function navOpen(page) {
+  if (page === 'my-profile') return showPage('employee', { id: currentUser?.employee_id });
+  return showPage(page);
+}
+
 function navEntryArea(e, r) { return typeof e.area === 'function' ? e.area(r) : e.area; }
 function navSectionOf(e) { return e.section || e.label; }
 
@@ -156,7 +172,7 @@ function navAreaOf(page, r = navRights()) {
 
 // The pages an area shows this person, in tab order.
 function navAreaEntries(areaId, r = navRights()) {
-  return NAV_PAGES.filter(e => navEntryArea(e, r) === areaId && e.show(r));
+  return NAV_PAGES.filter(e => !e.record && navEntryArea(e, r) === areaId && e.show(r));
 }
 
 function navVisibleAreas(r = navRights()) {
@@ -169,7 +185,7 @@ function navLabelOf(page) { return _NAV_BY_PAGE.get(page)?.label || page; }
 
 // Pages for the command bar: [{page, label, group, aliases}].
 function navSearchPages(r = navRights()) {
-  return NAV_PAGES.filter(e => e.show(r)).map(e => ({
+  return NAV_PAGES.filter(e => !e.record && e.show(r)).map(e => ({
     page: e.page, label: e.label, aliases: e.aliases || '',
     group: e.page === 'dashboard' ? '' : navAreaMeta(navEntryArea(e, r)).label + (e.section && e.section !== e.label ? ` › ${e.section}` : ''),
   }));
@@ -178,6 +194,7 @@ function navSearchPages(r = navRights()) {
 // Tab rows for an area: first row = sections (a one-page section is just that page), second row = the active
 // section's pages when it has two or more.
 function navTabModel(areaId, page, r = navRights()) {
+  page = navActivePage(page, r);
   const entries = navAreaEntries(areaId, r);
   const sections = [];
   for (const e of entries) {
@@ -238,10 +255,10 @@ function renderAreaNav(page) {
   if (!model || !model.sections.length || (model.sections.length === 1 && !model.pages.length)) { el.innerHTML = ''; el.classList.add('hidden'); return; }
   const badge = p => (p === 'approvals' && window._approvalsPending ? `<span class="appr-chip-n">${window._approvalsPending}</span>` : '');
   const row1 = model.sections.map(s =>
-    `<button type="button" class="area-tab${s.active ? ' area-tab-active' : ''}" ${s.active ? 'aria-current="page"' : ''} onclick="showPage('${s.active ? page : s.page}')">${esc(s.label)}${s.pages.length === 1 ? badge(s.page) : ''}</button>`).join('');
+    `<button type="button" class="area-tab${s.active ? ' area-tab-active' : ''}" ${s.active ? 'aria-current="page"' : ''} onclick="navOpen('${s.active ? navActivePage(page, r) : s.page}')">${esc(s.label)}${s.pages.length === 1 ? badge(s.page) : ''}</button>`).join('');
   const row2 = model.pages.length
     ? `<div class="area-tabs-sub" role="group" aria-label="${esc(model.sections.find(s => s.active).key)}">${model.pages.map(p =>
-      `<button type="button" class="area-subtab${p.active ? ' area-subtab-active' : ''}" ${p.active ? 'aria-current="page"' : ''} onclick="showPage('${p.page}')">${esc(p.label)}</button>`).join('')}</div>` : '';
+      `<button type="button" class="area-subtab${p.active ? ' area-subtab-active' : ''}" ${p.active ? 'aria-current="page"' : ''} onclick="navOpen('${p.page}')">${esc(p.label)}</button>`).join('')}</div>` : '';
   el.classList.remove('hidden');
   el.innerHTML = `<div class="area-tabs" role="group" aria-label="${esc(navAreaMeta(areaId).label)} sections">${row1}</div>${row2}`;
 }
@@ -265,7 +282,7 @@ function navGoArea(areaId) {
   const r = navRights();
   if (navAreaOf(currentPage, r) === areaId) { closeBurgerMenu(); return; }
   const first = navAreaEntries(areaId, r)[0];
-  if (first) showPage(first.page);
+  if (first) navOpen(first.page);
   closeBurgerMenu();
 }
 

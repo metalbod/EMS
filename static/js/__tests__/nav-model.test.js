@@ -17,13 +17,15 @@ const ROLES = {
   COMPENSATION_STAFF_ROLES: ['hr_manager', 'payroll_manager', 'compensation_manager'],
 };
 
-function load(user, institution = null, pending = 0, page = 'dashboard') {
+function load(user, institution = null, pending = 0, page = 'dashboard', routeId = null) {
   window._approvalsPending = pending;
-  const names = ['currentUser', 'currentInstitution', 'currentPage', ...Object.keys(ROLES), 'esc'];
-  const args = [user, institution, page, ...Object.values(ROLES), s => String(s)];
-  return new Function(...names, `${src}\nreturn { navPageVisible, navAreaOf, navAreaEntries, navVisibleAreas, navTabModel, navSearchPages, NAV_PAGES, NAV_AREAS, navRights };`)(...args);
+  const names = ['currentUser', 'currentInstitution', 'currentPage', 'currentRouteId', ...Object.keys(ROLES), 'esc'];
+  const args = [user, institution, page, routeId, ...Object.values(ROLES), s => String(s)];
+  return new Function(...names, `${src}\nreturn { navPageVisible, navAreaOf, navActivePage, navOpen, navAreaEntries, navVisibleAreas, navTabModel, navSearchPages, NAV_PAGES, NAV_AREAS, navRights };`)(...args);
 }
 
+// pages that did not exist in the old sidebar (the new Me tabs, and the record page, which is not a tab)
+const NEW_PAGES = ['me-overview', 'my-profile', 'employee'];
 const base = { can_view_recruitment: false, is_interviewer: false, manages_projects: false, employee_id: 'E1' };
 const SCENARIOS = {
   hr_manager: [{ ...base, role: 'hr_manager', can_view_recruitment: true }],
@@ -44,7 +46,7 @@ describe('the new navigation offers each role exactly the pages the old sidebar 
   for (const [name, [user, inst]] of Object.entries(SCENARIOS)) {
     it(name, () => {
       const nav = load(user, inst);
-      const visible = nav.NAV_PAGES.map(e => e.page).filter(p => nav.navPageVisible(p) && p !== 'me-overview').sort();
+      const visible = nav.NAV_PAGES.map(e => e.page).filter(p => nav.navPageVisible(p) && !NEW_PAGES.includes(p)).sort();
       expect(visible).toEqual(fixture[name]);
     });
   }
@@ -112,5 +114,36 @@ describe('structure', () => {
     expect(text(find('employees'))).toContain('employee list');
     expect(text(find('leave-holidays'))).toContain('holiday manager');
     expect(text(find('leave-my'))).toContain('my leave');
+  });
+});
+
+describe('the employee record page', () => {
+  it('lights People > Directory for someone else\'s record and Me > Profile for your own', () => {
+    const emp = SCENARIOS.hr_manager[0];
+    const other = load(emp, null, 0, 'employee', 'EMP9');
+    expect(other.navAreaOf('employee', other.navRights())).toBe('people');
+    expect(other.navActivePage('employee', other.navRights())).toBe('employees');
+    const own = load(emp, null, 0, 'employee', 'E1');
+    expect(own.navAreaOf('employee', own.navRights())).toBe('me');
+    expect(own.navActivePage('employee', own.navRights())).toBe('my-profile');
+    expect(own.navTabModel('me', 'employee').sections.find(s => s.active).label).toBe('Profile');
+    expect(other.navTabModel('people', 'employee').sections.find(s => s.active).label).toBe('Directory');
+  });
+
+  it('is never a tab or a search result of its own, but Profile is a tab in Me', () => {
+    const hr = load(...SCENARIOS.hr_manager);
+    expect(hr.navAreaEntries('people').map(e => e.page)).not.toContain('employee');
+    expect(hr.navSearchPages().map(p => p.page)).not.toContain('employee');
+    expect(hr.navAreaEntries('me').map(e => e.page)).toContain('my-profile');
+    expect(hr.navPageVisible('employee')).toBe(true);                       // reachable (boot hash, links) like the Directory
+    expect(load(...SCENARIOS.superadmin_no_inst).navPageVisible('employee')).toBe(false);
+  });
+
+  it('Profile opens the record page with your own id', () => {
+    const calls = [];
+    const nav = new Function('showPage', 'currentUser', 'currentInstitution', 'currentPage', 'currentRouteId', ...Object.keys(ROLES), 'esc',
+      `${src}\nreturn { navOpen };`)((...a) => calls.push(a), SCENARIOS.manager[0], null, 'dashboard', null, ...Object.values(ROLES), s => s);
+    nav.navOpen('my-profile'); nav.navOpen('leave-my');
+    expect(calls).toEqual([['employee', { id: 'E1' }], ['leave-my']]);
   });
 });

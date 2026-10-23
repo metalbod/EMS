@@ -8,7 +8,7 @@ let currentPage = null;
 let currentTab = 'personal';
 let openGroups = new Set(['empMgmt']);
 const TABS = ['personal','employment','statutory','dependents'];
-const VIEW_TABS = ['vt-personal','vt-employment','vt-locations','vt-statutory','vt-compensation','vt-notes','vt-documents','vt-consent','vt-learning'];
+const VIEW_TABS = ['vt-overview','vt-personal','vt-employment','vt-locations','vt-statutory','vt-compensation','vt-notes','vt-documents','vt-consent','vt-learning'];
 // Shared role-tier constants for the `.includes(role)` checks that gate nav
 // visibility and per-page "can manage" toggles across the app. Extracted
 // because the same role sets were previously hand-typed as inline array
@@ -25,7 +25,7 @@ const HR_STAFF_ROLES = ['hr_manager','hr_admin'];                  // no superad
 const HR_MANAGER_ONLY_ROLES = ['superadmin','hr_manager'];         // no hr_admin
 const COMPENSATION_STAFF_ROLES = ['hr_manager','payroll_manager','compensation_manager'];
 const BENEFITS_DASHBOARD_ROLES = ['hr_manager','compensation_manager','manager'];
-const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','my-interviews','leave-my','leave-approvals','leave-holidays','resignation-approvals','projects','timesheet-my','timesheet-approvals','overtime-my','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','comp-paygrades','comp-joblevels','comp-jobroles','comp-meritcycles','comp-bonusplans','comp-commissions','comp-equity','comp-totalrewards','comp-payequity','ben-plans','ben-periods','ben-lifeevents','ben-claims','ben-compliance','payroll-runs','payroll-my','payroll-myrewards','payroll-mybenefits','perf-my','perf-team','perf-cycles','perf-calibration','attendance-clock','attendance-review','settings-attendance','settings-approval-workflow','settings-roles','settings-document-types','settings-offer-letter-templates','settings-performance','settings-ai-assistant','settings-sso','settings-mcp','approvals','me-overview'];
+const ALL_PAGES = ['dashboard','institutions','employees','orgchart','audit','users','requisitions','candidates','interviews','offers','onboarding','offboarding','ld-catalog','ld-trainings','my-interviews','leave-my','leave-approvals','leave-holidays','resignation-approvals','projects','timesheet-my','timesheet-approvals','overtime-my','settings-notifications','settings-system-notifications','settings-bulk-upload','settings-locations','comp-paygrades','comp-joblevels','comp-jobroles','comp-meritcycles','comp-bonusplans','comp-commissions','comp-equity','comp-totalrewards','comp-payequity','ben-plans','ben-periods','ben-lifeevents','ben-claims','ben-compliance','payroll-runs','payroll-my','payroll-myrewards','payroll-mybenefits','perf-my','perf-team','perf-cycles','perf-calibration','attendance-clock','attendance-review','settings-attendance','settings-approval-workflow','settings-roles','settings-document-types','settings-offer-letter-templates','settings-performance','settings-ai-assistant','settings-sso','settings-mcp','approvals','me-overview','employee'];
 
 // ---------------------------------------------------------------------------
 // Lazy module loading (Speed Audit item 7)
@@ -752,12 +752,14 @@ async function bootApp() {
     // anywhere else in the app either. A superadmin viewing a specific
     // institution isn't covered: currentInstitution is in-memory only and
     // always resets to null on a fresh load, same as before this change.
-    const hashPage = location.hash.slice(1);
+    const route = parseRoute(location.hash);
+    const hashPage = route.page;
     // Must also be a page this role's nav actually offers — a stale hash
     // from a previous session as a different role (e.g. an hr_manager's
     // #requisitions, then the next login lands as plain manager) falls back
     // to Home instead of opening a screen they shouldn't be on.
-    showPage(ALL_PAGES.includes(hashPage) && isPageReachableFromNav(hashPage) ? hashPage : 'dashboard');
+    const ok = ALL_PAGES.includes(hashPage) && isPageReachableFromNav(hashPage) && (hashPage !== 'employee' || !!route.id);
+    showPage(ok ? hashPage : 'dashboard', { id: ok ? route.id : null });
   }
   if (currentUser.must_change_password) openChangePasswordModal(true);
 }
@@ -960,15 +962,31 @@ function clearInstitutionContext() {
 // ---------------------------------------------------------------------------
 // `opts.focus` deep-links to one record (see deep-link.js): the destination page
 // opens it or scrolls to and highlights its row.
+// A route is a page id, plus an id for the pages that show one record ("#employee/EMP0042").
+let currentRouteId = null;
+function routeToHash(page, id) { return id ? `${page}/${encodeURIComponent(id)}` : page; }
+function parseRoute(hash) {
+  const h = String(hash || '').replace(/^#/, '');
+  const i = h.indexOf('/');
+  if (i < 0) return { page: h, id: null };
+  let id = null;
+  try { id = decodeURIComponent(h.slice(i + 1)) || null; } catch (e) { /* malformed escape: treat as no id */ }
+  return { page: h.slice(0, i), id };
+}
+
+let _profileReturn = null;   // the page a profile was opened from, for its "‹ Back" link
+
 async function showPage(page, opts = {}) {
+  if (page === 'employee' && currentPage !== 'employee') _profileReturn = currentPage;
   currentPage = page;
+  currentRouteId = page === 'employee' ? (opts.id || null) : null;
   // Reflects the page in the URL so a refresh (or Back/Forward) can restore
   // it — see the hashchange listener below. Skipped when the hash already
   // matches: that's the case when this call is itself the result of a
   // hashchange (Back/Forward already moved location.hash before calling
   // us), so re-setting it here would be a no-op at best and, if it weren't
   // guarded, would risk fighting the browser's own navigation.
-  if (location.hash.slice(1) !== page) location.hash = page;
+  if (location.hash.slice(1) !== routeToHash(page, currentRouteId)) location.hash = routeToHash(page, currentRouteId);
   setPendingFocus(page, opts.focus);
   clearPageNotice(page);
   ALL_PAGES.forEach(p => {
@@ -977,7 +995,7 @@ async function showPage(page, opts = {}) {
   });
   navSync(page); // rail, tab bars and bottom bar follow the page (nav.js)
   const titles = {
-    dashboard: currentUser?.role === 'superadmin' ? 'Dashboard' : 'Home', approvals: 'Approvals', 'me-overview': 'Me',
+    dashboard: currentUser?.role === 'superadmin' ? 'Dashboard' : 'Home', approvals: 'Approvals', 'me-overview': 'Me', employee: 'Employee',
     institutions:'Institutions', employees:'Employee List',
     orgchart:'Org Chart', audit:'Audit Log', users:'User Management',
     requisitions:'Job Requisitions', candidates:'Candidate Bank', interviews:'Interviews', offers:'Offers & Letters',
@@ -1043,6 +1061,7 @@ async function showPage(page, opts = {}) {
   if (page === 'leave-my')          loadLeavePage();
   if (page === 'leave-approvals')   loadLeaveApprovals();
   if (page === 'approvals')         loadApprovals();
+  if (page === 'employee')          loadEmployeeProfilePage();
   if (page === 'me-overview')       loadMeOverview();
   if (page === 'leave-holidays')    loadLeaveHolidaysPage();
   if (page === 'resignation-approvals') loadResignationApprovals();
@@ -1098,8 +1117,10 @@ async function showPage(page, opts = {}) {
 // an initial '#' on page load) and for a hash that doesn't name a real
 // page (stale/hand-edited) or already matches what's showing.
 window.addEventListener('hashchange', () => {
-  const page = location.hash.slice(1);
-  if (!currentUser || !page || page === currentPage || !ALL_PAGES.includes(page)) return;
+  const { page, id } = parseRoute(location.hash);
+  if (!currentUser || !page || !ALL_PAGES.includes(page)) return;
+  if (page === currentPage && (page !== 'employee' || id === currentRouteId)) return;
+  if (page === 'employee') { showPage(isPageReachableFromNav('employee') && id ? 'employee' : 'dashboard', { id }); return; }
   showPage(isPageReachableFromNav(page) ? page : 'dashboard');
 });
 

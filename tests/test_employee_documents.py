@@ -13,11 +13,12 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from conftest import _valid_employee_payload
+from conftest import _valid_employee_payload, db_today
 
 
 def _today():
-    return datetime.now(timezone.utc).date()
+    # the database's own CURRENT_DATE, which the status SQL compares against (not UTC when the DB runs in another timezone)
+    return db_today()
 
 
 @pytest.fixture

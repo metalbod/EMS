@@ -13,6 +13,7 @@ import pytest
 from celery.schedules import crontab
 
 from db import get_db
+from conftest import company_today
 from core.tasks import app as celery_app, reminder_sweep_checklists, reminder_sweep_holidays, reminder_sweep_policies, reminder_sweep_timesheets
 
 
@@ -242,7 +243,7 @@ def test_reminder_sweep_holidays_task_emails_when_holiday_tomorrow(
     # from the real clock in the institution's own timezone — unaffected by
     # the core.tasks._reminder_local_now patch below, which only gates
     # whether this task considers the sweep due right now.
-    tomorrow = (datetime.now(timezone.utc).date() + timedelta(days=1)).isoformat()
+    tomorrow = (company_today(client, hr_manager_auth) + timedelta(days=1)).isoformat()
     holiday = client.post("/api/holidays", headers=hr_manager_auth, json={
         "name": "ZZ Task Reminder Eve Holiday", "date": tomorrow, "year": int(tomorrow[:4]),
     }).json()

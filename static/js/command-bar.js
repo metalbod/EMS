@@ -97,7 +97,7 @@ function cmdResults(query) {
   const pages = cmdPages()
     .map(p => ({ p, s: cmdMatch(q, p.label, `${p.group} ${p.aliases}`) })).filter(x => x.s > 0)
     .sort((x, y) => y.s - x.s);
-  (q ? pages : pages.slice(0, 5)).slice(0, 7).forEach(({ p }) => out.push({ group: 'Pages', id: `page-${p.page}`, label: p.label, sub: p.group ? `${p.group} › ${p.label}` : 'Home', run: () => showPage(p.page) }));
+  (q ? pages : pages.slice(0, 5)).slice(0, 7).forEach(({ p }) => out.push({ group: 'Pages', id: `page-${p.page}`, label: p.label, sub: p.group ? `${p.group} › ${p.label}` : 'Home', run: () => navOpen(p.page) }));
   cmdPeople(q).forEach(e => out.push({ group: 'People', id: `emp-${e.employee_id}`, label: displayName(e.full_name, e.preferred_name) || e.employee_id,
     sub: [e.designation, e.department].filter(Boolean).join(' · ') || e.employee_id, run: () => viewEmployee(e.employee_id) }));
   return out;

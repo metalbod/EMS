@@ -1092,6 +1092,37 @@ wrapper everywhere.
   (The Phase 1 / hash-routing entries above that describe reading pages from the sidebar DOM or `applyRoleUI` hiding nav items
   are superseded by this.)
 
+- **UX redesign Phase 3 (2026-10-24)** — one release after v1.0, four parts. **(1) Tables as cards on a phone**
+  (`table-cards.js`, CSS "Tables as cards" block): a table with class `cards-on-phone` becomes one card per row below 640px; the script
+  copies each `<th>` text onto its column's cells as `data-label` (re-run by a MutationObserver as lists re-render; the first column is the
+  card title, an empty header shows no label). Opt-in; on now for the Directory, Candidates, Requisitions, Interviews, Offers, Leave /
+  Timesheet / Resignation approvals, Attendance review and Payroll runs. A clickable row (`tr[onclick]`) gets a chevron after its last cell
+  (desktop, unless that cell holds a control) and an "Open ›" line on a phone card. **(2) Home = Today | Insights** (`switchDashTab`,
+  `openDashInsights`; the old General tab is "Today", the five dashboards moved under an "Insights" second row) with role-shaped Today
+  blocks in `home-today.js`: employee = clock-in hero + four task tiles with a live detail each + leave / this-week / next-pay-day cards
+  (the four personal pills are hidden for the employee role; Resign stays); manager/HR = "Your team today / Everyone today" (clocked in, on
+  leave, late or missing), who's away this week, and probation / contract ends in the next 30 days. Backed by the read-only
+  `routers/home.py`: `GET /api/home/team-today` (manager = their reporting chain and never themself, HR = the company; **never the leave type**;
+  "late or missing" only where attendance rules exist, else the tile says so — computed read-only in the company's local time, unlike the
+  Review screen's sweep which materialises records), `GET /api/home/glance` (next pay day, any employee), and
+  `GET /api/employees/{id}/attention` (profile page; employee = self, manager = their chain, HR = anyone, 404 otherwise; documents and
+  checklists only for hr_manager/hr_admin). **(3) The employee record is a page** at `#employee/<id>` (was the `#viewModal` pop-up): the hash
+  router now carries an id (`routeToHash` / `parseRoute`, `currentRouteId`; `showPage('employee', {id})`; `viewEmployee(id)` just navigates, so the
+  org chart, command bar and Home links are unchanged). `employees.js` still renders every tab (`renderEmployeeProfile`, `viewingId`, the `vt-*`
+  panels and all Edit / Deactivate / Resign flows) — Edit and Resign dialogs now open OVER the page and re-render it on save instead of closing a
+  modal; `employee-profile.js` owns the page around it: back link (to wherever you came from, `_profileReturn`), a single primary **Edit profile**
+  with a More menu (Confirm probation / File resignation / Deactivate), tab row with lock icons on HR-only tabs, and a new **Overview** tab (key
+  facts, needs attention, leave this year). The nav model treats `employee` as a record page (`record: true`): it lights People > Directory, or
+  **Me > Profile** (virtual entry `my-profile`, opened via `navOpen`) when it is your own record. Deliberately not built: tab counts. **(4) Saved
+  views + bulk bar** (`list-views.js`; Directory and Candidates): a view is a name for a set of filters, kept per person per browser in
+  `localStorage` (`listViews:<user id>:<list>`, owner decision — not server-side), with built-ins ("Probation ending soon" etc. — the
+  Directory list endpoint gained `department`, `probation_ending_days`, `contract_ending_days`). Directory bulk bar = **Export to CSV**
+  of the ticked rows, exactly the columns shown (never a field the list doesn't show; formulas defused in `csvCell`); Candidates bulk bar =
+  **Move to stage**, one existing per-application PATCH each (a refused move is reported by name, the rest go through). No bulk
+  assign-manager (owner decision). **Gotcha caught in this phase**: all the JS is ONE shared global scope, so a second top-level
+  `function foo` silently replaces the first — a new `downloadCsv(filename, text)` once broke `dashboard.js`'s `downloadCsv(rows, filename)`.
+  `__tests__/bundle-globals.test.js` now fails on any top-level name declared in two files; rename instead of adding to its allowlist.
+
 ## Recurring gotchas (hit more than once this project's history)
 
 - **RLS fails closed, not open.** A table gets RLS auto-enabled by an

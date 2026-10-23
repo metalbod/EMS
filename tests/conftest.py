@@ -301,6 +301,28 @@ def _unique_ic():
     return f"90{_ic_pid_salt:03d}{_ic_time_salt:03d}{n:04d}"
 
 
+def db_today():
+    """Today's date as the DATABASE sees it (SQL CURRENT_DATE) — what code that compares against CURRENT_DATE (employee-document
+    status, capacity snapshots) really uses. It is the DB session's timezone, which is not necessarily UTC (a local Postgres
+    in Malaysia is UTC+8), so tests must not build "today" from datetime.utcnow()."""
+    from db import get_admin_db
+    conn = get_admin_db()
+    try:
+        d = conn.execute("SELECT CURRENT_DATE AS d").fetchone()["d"]
+    finally:
+        conn.close()
+    return d if hasattr(d, "isoformat") and not isinstance(d, str) else __import__("datetime").date.fromisoformat(str(d)[:10])
+
+
+def company_today(client, headers):
+    """Today's date in the company's own timezone — what code using core.institution_time / the institution's `timezone`
+    column judges 'today' and 'tomorrow' by (reminder sweeps, to-do dates)."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    tz = client.get("/api/notifications/general-settings", headers=headers).json().get("timezone") or "UTC"
+    return datetime.now(ZoneInfo(tz)).date()
+
+
 def _valid_employee_payload(**overrides):
     payload = {
         "full_name": "ZZ Test Employee",

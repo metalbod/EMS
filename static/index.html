@@ -240,6 +240,97 @@
       <!-- Tabs for the area you are in (nav.js renderAreaNav): sections first, then that section's pages. -->
       <div id="areaNav" class="hidden area-nav"></div>
 
+      <!-- EMPLOYEE PROFILE (#employee/<id>) — the record that used to be a pop-up. employees.js renders it; employee-profile.js owns the page. -->
+      <div id="page-employee" class="hidden">
+        <button type="button" class="profile-back" onclick="leaveEmployeeProfile()">‹ <span id="profileBackLabel">Directory</span></button>
+        <header class="profile-head">
+          <div id="viewAvatar" class="profile-avatar" aria-hidden="true"></div>
+          <div class="min-w-0 flex-1">
+            <h2 id="viewName" class="profile-name">—</h2>
+            <p id="viewMeta" class="profile-meta">—</p>
+          </div>
+          <span id="viewBadge" class="badge"></span>
+          <div class="profile-actions">
+            <button id="viewEditBtn" type="button" onclick="editFromView()" class="btn-primary hidden">Edit profile</button>
+            <div id="viewMoreWrap" class="relative hidden">
+              <button id="viewMoreBtn" type="button" class="btn-ghost" aria-haspopup="menu" aria-expanded="false" aria-controls="viewMoreMenu" onclick="toggleViewMore()">More <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7"/></svg></button>
+              <div id="viewMoreMenu" role="menu" aria-label="More actions" class="tb-menu hidden">
+                <button id="viewConfirmProbationBtn" type="button" role="menuitem" onclick="confirmProbationFromView()" class="tb-menu-item hidden">Confirm probation</button>
+                <button id="viewFileResignBtn" type="button" role="menuitem" onclick="fileResignationFromView()" class="tb-menu-item hidden">File resignation</button>
+                <button id="viewToggleBtn" type="button" role="menuitem" onclick="toggleStatusFromView()" class="tb-menu-item hidden"></button>
+              </div>
+            </div>
+          </div>
+        </header>
+  <div class="profile-tabs" id="viewTabs" role="group" aria-label="Employee sections">
+    <button type="button" class="area-subtab area-subtab-active" data-vtab="vt-overview" onclick="switchViewTab('vt-overview')">Overview</button>
+    <button type="button" class="area-subtab" data-vtab="vt-personal" onclick="switchViewTab('vt-personal')">Personal info</button>
+    <button type="button" class="area-subtab" data-vtab="vt-employment" onclick="switchViewTab('vt-employment')">Employment</button>
+    <button type="button" class="area-subtab" data-vtab="vt-locations" onclick="switchViewTab('vt-locations')">Locations</button>
+    <button type="button" id="vt-statutory-btn" class="area-subtab hidden" data-vtab="vt-statutory" onclick="switchViewTab('vt-statutory')">Statutory &amp; payroll <svg class="vt-lock" width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-label="HR only"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4"/></svg></button>
+    <button type="button" id="vt-compensation-btn" class="area-subtab hidden" data-vtab="vt-compensation" onclick="switchViewTab('vt-compensation')">Compensation <svg class="vt-lock" width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-label="HR only"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4"/></svg></button>
+    <button type="button" id="vt-notes-btn" class="area-subtab hidden" data-vtab="vt-notes" onclick="switchViewTab('vt-notes')">HR notes <svg class="vt-lock" width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-label="HR only"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4"/></svg></button>
+    <button type="button" id="vt-documents-btn" class="area-subtab hidden" data-vtab="vt-documents" onclick="switchViewTab('vt-documents')">Documents <svg class="vt-lock" width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-label="HR only"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4"/></svg></button>
+    <button type="button" id="vt-learning-btn" class="area-subtab hidden" data-vtab="vt-learning" onclick="switchViewTab('vt-learning')">Learning</button>
+    <button type="button" id="vt-consent-btn" class="area-subtab hidden" data-vtab="vt-consent" onclick="switchViewTab('vt-consent')">FR consent <svg class="vt-lock" width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-label="HR only"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4"/></svg></button>
+  </div>
+        <div class="profile-panels">
+          <div id="vt-overview" class="view-tab-panel p-6"></div>
+
+        <div id="vt-personal" class="view-tab-panel p-6 hidden"></div>
+        <div id="vt-employment" class="view-tab-panel p-6 hidden"></div>
+        <div id="vt-locations" class="view-tab-panel p-6 hidden"></div>
+        <div id="vt-statutory" class="view-tab-panel p-6 hidden"></div>
+        <div id="vt-compensation" class="view-tab-panel p-6 hidden"></div>
+        <div id="vt-consent" class="view-tab-panel p-6 hidden"></div>
+        <div id="vt-learning" class="view-tab-panel p-6 hidden">
+          <p class="text-xs text-slate-400 mb-4">Courses and quiz scores. Select a score to see every attempt.</p>
+          <div class="bg-white rounded-xl border border-slate-200 table-scroll">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Course</th>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Completed</th>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Quiz score</th>
+                </tr>
+              </thead>
+              <tbody id="employeeLearningBody"></tbody>
+            </table>
+          </div>
+          <p id="employeeLearningEmpty" class="hidden text-sm text-slate-400 text-center py-8">No courses yet.</p>
+        </div>
+        <div id="vt-documents" class="view-tab-panel p-6 hidden">
+          <div class="flex justify-between items-center mb-4">
+            <p class="text-xs text-slate-400">Track time-sensitive documents for this employee — e.g. Work Permit, Passport.</p>
+            <button onclick="openEmployeeDocumentForm()" class="btn-primary text-sm flex items-center gap-2">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+              Add Document
+            </button>
+          </div>
+          <div id="employeeDocumentList" class="space-y-2"></div>
+          <p id="employeeDocumentEmpty" class="hidden text-sm text-slate-400 text-center py-8">No documents tracked yet.</p>
+        </div>
+        <div id="vt-notes" class="view-tab-panel p-6 hidden">
+          <div id="noteForm" class="mb-5 bg-slate-50 border border-slate-200 rounded-xl p-4">
+            <div class="flex gap-3 mb-3">
+              <select id="noteType" class="inp flex-1" style="font-size:.875rem">
+                <option value="general">General Note</option>
+                <option value="disciplinary">Disciplinary</option>
+                <option value="performance">Performance</option>
+                <option value="warning">Warning</option>
+                <option value="commendation">Commendation</option>
+              </select>
+              <button onclick="submitNote()" class="btn-primary">Add Note</button>
+            </div>
+            <textarea id="noteBody" class="inp" style="height:5rem;resize:none;font-size:.875rem" placeholder="Write note here…"></textarea>
+            <p id="noteError" class="hidden text-xs text-red-600 mt-1"></p>
+          </div>
+          <div id="notesList" class="space-y-3"></div>
+        </div>
+        </div>
+      </div>
+
       <!-- ME OVERVIEW -->
       <div id="page-me-overview" class="hidden">
         <p class="appr-intro">Your leave, time, pay and learning at a glance. Each card opens the full page.</p>
@@ -337,8 +428,12 @@
             </div>
           </div>
 
+          <!-- Today = this role's Home; Insights = the dashboards (Workforce … Leave), as a second row. -->
           <div class="flex items-center gap-1 flex-wrap mb-1" role="tablist" aria-label="Home sections" onkeydown="dashTabKeydown(event)">
-            <button id="dash-tab-general-btn" type="button" role="tab" aria-selected="true" aria-controls="dash-general" class="pill-tab pill-tab-active" data-dashtab="dash-general" onclick="switchDashTab('dash-general')">General</button>
+            <button id="dash-tab-general-btn" type="button" role="tab" aria-selected="true" aria-controls="dash-general" class="pill-tab pill-tab-active" data-dashtab="dash-general" onclick="switchDashTab('dash-general')">Today</button>
+            <button id="dash-tab-insights-btn" type="button" role="tab" aria-selected="false" aria-controls="dashInsightsRow" class="pill-tab" onclick="openDashInsights()">Insights</button>
+          </div>
+          <div id="dashInsightsRow" class="hidden flex items-center gap-1 flex-wrap mb-1 mt-2" role="tablist" aria-label="Insights" onkeydown="dashTabKeydown(event)">
             <button id="dash-tab-workforce-btn" type="button" role="tab" aria-selected="false" aria-controls="dash-workforce" class="pill-tab" data-dashtab="dash-workforce" onclick="switchDashTab('dash-workforce')">Workforce</button>
             <button id="dash-tab-recruitment-btn" type="button" role="tab" aria-selected="false" aria-controls="dash-recruitment" class="pill-tab hidden" data-dashtab="dash-recruitment" onclick="switchDashTab('dash-recruitment')">Recruitment</button>
             <button id="dash-tab-timesheet-btn" type="button" role="tab" aria-selected="false" aria-controls="dash-timesheet" class="pill-tab hidden" data-dashtab="dash-timesheet" onclick="switchDashTab('dash-timesheet')">Timesheet</button>
@@ -349,6 +444,9 @@
 
           <!-- General tab: to-do (default landing tab, always visible, loads immediately) -->
           <div id="dash-general" class="dash-tab-panel" role="tabpanel" aria-labelledby="dash-tab-general-btn">
+            <!-- Role Today (home-today.js): employee clock-in hero, task tiles and glance; manager/HR team-today. -->
+            <div id="homeEmployeeBlock" class="hidden mb-6"></div>
+            <div id="homeTeamBlock" class="hidden mb-6"></div>
             <!-- To-Do queue (all roles except superadmin) — always visible, even when empty -->
             <div id="dashboardTodoCard" class="hidden mb-6 relative">
               <div class="flex items-center justify-between gap-3 mb-3"><h2 class="section-heading" tabindex="-1">Your to-do<span id="dashboardTodoCount" class="todo-count"></span></h2><button id="dashOpenApprovals" type="button" class="hidden pill-btn pill-btn-outline shrink-0 whitespace-nowrap" onclick="showPage('approvals')">Open Approvals ›</button></div>
@@ -794,13 +892,17 @@
 
       <!-- EMPLOYEES -->
       <div id="page-employees" class="hidden">
-        <div class="flex flex-col sm:flex-row gap-3 mb-5">
+        <div id="empViews" class="mb-3"></div>
+        <div class="flex flex-col sm:flex-row sm:flex-wrap gap-3 mb-5">
           <select id="empStatusFilter" class="inp w-40" onchange="filterEmployees()">
             <option value="Active" selected>Active</option>
             <option value="Inactive">Inactive</option>
             <option value="">All Status</option>
           </select>
-          <div class="relative flex-1">
+          <select id="empDeptFilter" class="inp w-44" aria-label="Department" onchange="filterEmployees()">
+            <option value="">All departments</option>
+          </select>
+          <div class="relative flex-1" style="min-width:14rem">
             <input id="empSearch" type="text" placeholder="Search name, ID, IC, designation…" class="inp w-full" oninput="filterEmployees()"/>
             <span id="empSearchingIndicator" class="hidden absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 pointer-events-none">Searching…</span>
           </div>
@@ -821,8 +923,9 @@
             Add Employee
           </button>
         </div>
+        <div id="empBulkBar" class="hidden lv-bulk" role="region" aria-label="Selected employees" aria-live="polite"></div>
         <div id="empTableWrap" class="bg-white rounded-xl border border-slate-200 table-scroll transition-opacity">
-          <table class="w-full text-sm">
+          <table class="cards-on-phone w-full text-sm">
             <thead class="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
               <tr id="empTableHeadRow"></tr>
             </thead>
@@ -1054,7 +1157,7 @@
           </button>
         </div>
         <div class="bg-white rounded-xl border border-slate-200 table-scroll">
-          <table class="w-full text-sm">
+          <table class="cards-on-phone w-full text-sm">
             <thead class="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
               <tr>
                 <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Position</th>
@@ -1077,6 +1180,7 @@
 
       <!-- CANDIDATE BANK (ATS) -->
       <div id="page-candidates" class="hidden">
+        <div id="candViews" class="mb-3"></div>
         <div class="flex flex-wrap items-center gap-x-4 gap-y-2 mb-3 text-sm bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
           <span class="font-medium text-slate-600">Filter by Stage:</span>
           <label class="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" id="candStageAll" checked onchange="toggleAllCandStages(this.checked)"/> All</label>
@@ -1108,11 +1212,12 @@
             Add Candidate
           </button>
         </div>
+        <div id="candBulkBar" class="hidden lv-bulk" role="region" aria-label="Selected candidates" aria-live="polite"></div>
         <div class="bg-white rounded-xl border border-slate-200 table-scroll">
-          <table class="w-full text-sm" style="min-width:1100px">
+          <table class="cards-on-phone w-full text-sm" style="min-width:1100px">
             <thead class="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
               <tr>
-                <th onclick="setCandSort('full_name')" class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none">Candidate <span id="sortIcon-full_name" class="text-blue-600"></span></th>
+                <th onclick="setCandSort('full_name')" class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none"><input type="checkbox" class="cand-check hidden" id="candSelectAll" aria-label="Select every candidate on this page" onclick="event.stopPropagation()" onchange="toggleCandSelectAll(this.checked)"/> Candidate <span id="sortIcon-full_name" class="text-blue-600"></span></th>
                 <th onclick="setCandSort('requisition_title')" class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none">Position Applied <span id="sortIcon-requisition_title" class="text-blue-600"></span></th>
                 <th onclick="setCandSort('requisition_status')" class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none">Requisition Status <span id="sortIcon-requisition_status" class="text-blue-600"></span></th>
                 <th onclick="setCandSort('source')" class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none">Source <span id="sortIcon-source" class="text-blue-600"></span></th>
@@ -1168,7 +1273,7 @@
           </button>
         </div>
         <div class="bg-white rounded-xl border border-slate-200 table-scroll">
-          <table class="w-full text-sm">
+          <table class="cards-on-phone w-full text-sm">
             <thead class="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
               <tr>
                 <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Candidate</th>
@@ -1196,7 +1301,7 @@
           </button>
         </div>
         <div class="bg-white rounded-xl border border-slate-200 table-scroll">
-          <table class="w-full text-sm">
+          <table class="cards-on-phone w-full text-sm">
             <thead class="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
               <tr>
                 <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Recipient</th>
@@ -1582,7 +1687,7 @@
           <button onclick="setLeaveApprovalFilter('')" class="btn-ghost text-xs leave-appr-filter-btn">All</button>
         </div>
         <div class="bg-white rounded-xl border border-slate-200 table-scroll">
-            <table class="w-full text-sm">
+            <table class="cards-on-phone w-full text-sm">
               <thead class="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
                 <tr>
                   <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setLeaveApprovalSort('employee_name')">Employee <span class="leave-appr-sort-arrow" data-sort-key="employee_name"></span></th>
@@ -1620,7 +1725,7 @@
           <button onclick="setResignationApprovalFilter('')" class="btn-ghost text-xs resign-appr-filter-btn">All</button><button onclick="openEntityHistory({title:'Resignation history',module:'Resignation'})" class="hist-btn hidden btn-ghost text-sm ml-auto">History</button>
         </div>
         <div class="bg-white rounded-xl border border-slate-200 table-scroll">
-            <table class="w-full text-sm">
+            <table class="cards-on-phone w-full text-sm">
               <thead class="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
                 <tr>
                   <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setResignationApprovalSort('employee_name')">Employee <span class="resign-appr-sort-arrow" data-sort-key="employee_name"></span></th>
@@ -1784,7 +1889,7 @@
           <button onclick="clearTimesheetApprovalFilters()" class="btn-ghost text-xs">Clear</button>
         </div>
         <div class="bg-white rounded-xl border border-slate-200 table-scroll">
-            <table class="w-full text-sm">
+            <table class="cards-on-phone w-full text-sm">
               <thead class="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
                 <tr>
                   <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer" onclick="setTimesheetApprovalSort('employee_name')">Employee <span class="ts-appr-sort-arrow" data-sort-key="employee_name"></span></th>
@@ -1853,7 +1958,7 @@
       <div id="page-attendance-review" class="hidden">
         <p class="text-sm text-slate-500 mb-4">Days flagged late or absent, pending your review. Reclassifying as leave creates an approved leave application for that day.</p>
         <div class="bg-white rounded-xl border border-slate-200 table-scroll">
-          <table class="w-full text-sm">
+          <table class="cards-on-phone w-full text-sm">
             <thead class="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
               <tr>
                 <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase">Employee</th>
@@ -3161,7 +3266,7 @@
           </div>
         </section>
         <div class="bg-white rounded-xl border border-slate-200 table-scroll">
-          <table class="w-full text-sm">
+          <table class="cards-on-phone w-full text-sm">
             <thead class="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
               <tr>
                 <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Period</th>
@@ -3990,113 +4095,6 @@
 </div>
 
 <!-- Employee View Modal -->
-<div id="viewModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
-  <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-4xl flex flex-col" style="max-height:85vh">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
-      <div class="flex items-center gap-3 min-w-0">
-        <!-- Sections menu toggle — mobile/narrow only; the sidebar to the
-             left is always visible at sm: and up (see viewTabDrawer below). -->
-        <button onclick="toggleViewTabMenu()" class="sm:hidden shrink-0 -ml-1 p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition" title="Sections">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
-        </button>
-        <div class="min-w-0">
-          <h2 id="viewName" class="text-base font-semibold truncate">—</h2>
-          <p id="viewMeta" class="text-xs text-slate-500 mt-0.5 truncate">—</p>
-        </div>
-      </div>
-      <div class="flex items-center gap-2 shrink-0">
-        <span id="viewBadge" class="badge"></span>
-        <button onclick="closeViewModal()" class="btn-close" aria-label="Close" title="Close">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-        </button>
-      </div>
-    </div>
-
-    <!-- Sections drawer overlay — mobile/narrow only, mirrors the main
-         shell's own navOverlay/burgerDrawer pattern (core.js's
-         toggleBurgerMenu). Fixed (not absolute) so it doesn't depend on
-         this modal card's own auto height. -->
-    <div id="viewTabOverlay" class="hidden fixed inset-0 bg-slate-900/30 z-[60] sm:hidden" onclick="closeViewTabMenu()"></div>
-
-    <div class="flex flex-col sm:flex-row flex-1 overflow-y-auto">
-      <nav id="viewTabDrawer" class="fixed inset-y-0 left-0 z-[61] w-64 bg-white flex flex-col gap-0.5 py-3 px-3 -translate-x-full transition-transform duration-200 ease-out shadow-xl overflow-y-auto sm:shadow-none sm:static sm:translate-x-0 sm:z-auto sm:w-44 sm:shrink-0 sm:border-r sm:border-slate-200 sm:self-start sm:sticky sm:top-0">
-        <button class="nav-sub-item active w-full text-left" data-vtab="vt-personal" onclick="switchViewTab('vt-personal')">Personal Info</button>
-        <button class="nav-sub-item w-full text-left" data-vtab="vt-employment" onclick="switchViewTab('vt-employment')">Employment</button>
-        <button class="nav-sub-item w-full text-left" data-vtab="vt-locations" onclick="switchViewTab('vt-locations')">Locations</button>
-        <button id="vt-statutory-btn" class="nav-sub-item w-full text-left hidden" data-vtab="vt-statutory" onclick="switchViewTab('vt-statutory')">Statutory &amp; Payroll</button>
-        <button id="vt-compensation-btn" class="nav-sub-item w-full text-left hidden" data-vtab="vt-compensation" onclick="switchViewTab('vt-compensation')">Compensation</button>
-        <button id="vt-notes-btn" class="nav-sub-item w-full text-left hidden" data-vtab="vt-notes" onclick="switchViewTab('vt-notes')">HR Notes 🔒</button>
-        <button id="vt-documents-btn" class="nav-sub-item w-full text-left hidden" data-vtab="vt-documents" onclick="switchViewTab('vt-documents')">Documents</button>
-        <button id="vt-learning-btn" class="nav-sub-item w-full text-left hidden" data-vtab="vt-learning" onclick="switchViewTab('vt-learning')">Learning</button>
-        <button id="vt-consent-btn" class="nav-sub-item w-full text-left hidden" data-vtab="vt-consent" onclick="switchViewTab('vt-consent')">FR Consent</button>
-      </nav>
-
-      <div class="flex-1 min-w-0">
-        <div id="vt-personal" class="view-tab-panel p-6"></div>
-        <div id="vt-employment" class="view-tab-panel p-6 hidden"></div>
-        <div id="vt-locations" class="view-tab-panel p-6 hidden"></div>
-        <div id="vt-statutory" class="view-tab-panel p-6 hidden"></div>
-        <div id="vt-compensation" class="view-tab-panel p-6 hidden"></div>
-        <div id="vt-consent" class="view-tab-panel p-6 hidden"></div>
-        <div id="vt-learning" class="view-tab-panel p-6 hidden">
-          <p class="text-xs text-slate-400 mb-4">Courses and quiz scores. Select a score to see every attempt.</p>
-          <div class="bg-white rounded-xl border border-slate-200 table-scroll">
-            <table class="w-full text-sm">
-              <thead class="bg-slate-50 border-b border-slate-200">
-                <tr>
-                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Course</th>
-                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
-                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Completed</th>
-                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Quiz score</th>
-                </tr>
-              </thead>
-              <tbody id="employeeLearningBody"></tbody>
-            </table>
-          </div>
-          <p id="employeeLearningEmpty" class="hidden text-sm text-slate-400 text-center py-8">No courses yet.</p>
-        </div>
-        <div id="vt-documents" class="view-tab-panel p-6 hidden">
-          <div class="flex justify-between items-center mb-4">
-            <p class="text-xs text-slate-400">Track time-sensitive documents for this employee — e.g. Work Permit, Passport.</p>
-            <button onclick="openEmployeeDocumentForm()" class="btn-primary text-sm flex items-center gap-2">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-              Add Document
-            </button>
-          </div>
-          <div id="employeeDocumentList" class="space-y-2"></div>
-          <p id="employeeDocumentEmpty" class="hidden text-sm text-slate-400 text-center py-8">No documents tracked yet.</p>
-        </div>
-        <div id="vt-notes" class="view-tab-panel p-6 hidden">
-          <div id="noteForm" class="mb-5 bg-slate-50 border border-slate-200 rounded-xl p-4">
-            <div class="flex gap-3 mb-3">
-              <select id="noteType" class="inp flex-1" style="font-size:.875rem">
-                <option value="general">General Note</option>
-                <option value="disciplinary">Disciplinary</option>
-                <option value="performance">Performance</option>
-                <option value="warning">Warning</option>
-                <option value="commendation">Commendation</option>
-              </select>
-              <button onclick="submitNote()" class="btn-primary">Add Note</button>
-            </div>
-            <textarea id="noteBody" class="inp" style="height:5rem;resize:none;font-size:.875rem" placeholder="Write note here…"></textarea>
-            <p id="noteError" class="hidden text-xs text-red-600 mt-1"></p>
-          </div>
-          <div id="notesList" class="space-y-3"></div>
-        </div>
-      </div>
-    </div>
-
-    <div class="flex gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
-      <button id="viewEditBtn" onclick="editFromView()" class="btn-primary hidden">Edit</button>
-      <button id="viewToggleBtn" onclick="toggleStatusFromView()" class="btn-ghost hidden"></button>
-      <button id="viewConfirmProbationBtn" onclick="confirmProbationFromView()" class="btn-ghost hidden">Confirm Probation</button>
-      <button id="viewFileResignBtn" onclick="fileResignationFromView()" class="btn-ghost hidden text-red-600">File Resignation</button>
-      <div class="flex-1"></div>
-      <button onclick="closeViewModal()" class="btn-ghost">Close</button>
-    </div>
-  </div>
-</div>
-
 <!-- Add/Edit Employee Document Modal -->
 <div id="employeeDocumentModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
   <div class="modal-enter bg-white rounded-2xl shadow-2xl w-full max-w-sm flex flex-col" style="max-height:85vh">

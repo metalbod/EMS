@@ -63,7 +63,9 @@ describe('Home quick actions follow the person, not just the employee role', () 
 
   it('an employee gets the personal shortcuts and Resign, nothing administrative', () => {
     const ctx = run({ role: 'employee', employee_id: 'E1' });
-    expect(['dashQaApplyLeave', 'dashQaClaim', 'dashClockBtn', 'dashQaLogHours', 'dashboardResignBtn'].every(shown)).toBe(true);
+    // the clock-in hero and task tiles (home-today.js) replace the four personal pills for an employee; Resign stays
+    expect(shown('dashboardResignBtn')).toBe(true);
+    expect(['dashQaApplyLeave', 'dashQaClaim', 'dashClockBtn', 'dashQaLogHours'].some(shown)).toBe(false);
     expect(['dashQaAddEmployee', 'dashQaNewReq', 'dashQaNewPayrollRun', 'dashQaRoleDivider'].some(shown)).toBe(false);
     expect(ctx.refreshResignButtonState).toHaveBeenCalled();
   });

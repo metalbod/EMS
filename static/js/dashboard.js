@@ -13,6 +13,8 @@ const _dashTabLoaded = { recruitment: false, timesheet: false, compensation: fal
 let _lastBenefitsDashboard = null;
 window.getLastBenefitsDashboard = () => _lastBenefitsDashboard;
 
+let _lastInsightsTab = null;
+
 function switchDashTab(tabId) {
   document.querySelectorAll('.dash-tab-panel').forEach(el => el.classList.toggle('hidden', el.id !== tabId));
   document.querySelectorAll('[data-dashtab]').forEach(btn => {
@@ -21,10 +23,28 @@ function switchDashTab(tabId) {
     // Roving tabindex: one tab stop (the selected tab); arrow keys move between tabs.
     btn.setAttribute('tabindex', btn.dataset.dashtab === tabId ? '0' : '-1');
   });
+  // Today is the role's Home; every other panel is an Insight, shown under the second tab row.
+  const insights = tabId !== 'dash-general';
+  if (insights) _lastInsightsTab = tabId;
+  document.getElementById('dashInsightsRow')?.classList.toggle('hidden', !insights);
+  const toggle = document.getElementById('dash-tab-insights-btn');
+  if (toggle) {
+    toggle.classList.toggle('pill-tab-active', insights);
+    toggle.setAttribute('aria-selected', insights ? 'true' : 'false');
+    toggle.setAttribute('tabindex', insights ? '0' : '-1');
+  }
   if (tabId === 'dash-recruitment' && !_dashTabLoaded.recruitment) { _dashTabLoaded.recruitment = true; loadRecruitmentDash(); }
   if (tabId === 'dash-timesheet' && !_dashTabLoaded.timesheet) { _dashTabLoaded.timesheet = true; loadTimesheetDash(); }
   if (tabId === 'dash-compensation' && !_dashTabLoaded.compensation) { _dashTabLoaded.compensation = true; loadCompensationDash(); }
   if (tabId === 'dash-leave' && !_dashTabLoaded.leave) { _dashTabLoaded.leave = true; loadLeaveDash(); }
+}
+
+// The "Insights" tab opens the dashboard you looked at last (else the first one this role has).
+function openDashInsights() {
+  const visible = [...document.querySelectorAll('#dashInsightsRow [data-dashtab]')].filter(b => !b.classList.contains('hidden'));
+  const last = visible.find(b => b.dataset.dashtab === _lastInsightsTab);
+  const target = last || visible[0];
+  if (target) switchDashTab(target.dataset.dashtab);
 }
 
 // ARIA tabs keyboard support on the Home tab bar: Left/Right (wrapping), Home
@@ -112,7 +132,10 @@ function renderDashboard() {
   document.getElementById('dash-tab-timesheet-btn').classList.toggle('hidden', !canViewUtil);
   document.getElementById('dash-tab-compensation-btn').classList.toggle('hidden', !(canViewBenefitsDash || hasEmployeeRecord));
   document.getElementById('dash-tab-leave-btn').classList.toggle('hidden', !(canViewLeaveDash || hasEmployeeRecord));
+  document.getElementById('dash-tab-insights-btn')?.classList.toggle('hidden',
+    ![...document.querySelectorAll('#dashInsightsRow [data-dashtab]')].some(b => !b.classList.contains('hidden')));
   switchDashTab('dash-general');
+  renderHomeToday();
 }
 
 // Home KPI Headcount tile + the whole Workforce tab (Total/Active/
@@ -930,7 +953,8 @@ async function loadDashboardTodos() {
 function renderDashQuickActions() {
   const { hasEmp, isEmployee, canAddEmployee, canNewReq, canPayroll } = quickActionRights();
   const show = (id, on) => document.getElementById(id)?.classList.toggle('hidden', !on);
-  ['dashQaApplyLeave', 'dashQaClaim', 'dashClockBtn', 'dashQaLogHours'].forEach(id => show(id, hasEmp));
+  // An employee's Home has the clock-in hero and task tiles (home-today.js) in place of these four pills.
+  ['dashQaApplyLeave', 'dashQaClaim', 'dashClockBtn', 'dashQaLogHours'].forEach(id => show(id, hasEmp && !isEmployee));
   show('dashboardResignBtn', hasEmp && isEmployee);
   show('dashQaAddEmployee', canAddEmployee);
   show('dashQaNewReq', canNewReq);
@@ -997,6 +1021,7 @@ async function refreshDashClockState() {
     btn.setAttribute('onclick', openRow ? 'dashShortcutClockOut()' : 'dashShortcutClockIn()');
   }
   if (typeof renderTopClock === 'function') renderTopClock(openRow); // the top-bar chip shares this state
+  if (typeof renderHomeHero === 'function') renderHomeHero(openRow);   // …and so does the employee Home hero
 }
 
 const dashShortcutClockIn = guardAsync(async function dashShortcutClockIn() {

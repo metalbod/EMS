@@ -22,6 +22,7 @@ const CAND_SORT_FIELDS = ['full_name','requisition_title','requisition_status','
 // so they fetch it themselves, unbounded, independent of this page's
 // current page/search/stage-filter state (see those functions).
 let candPage = 1, candPageSize = 50, candTotal = 0, candPageRows = [];
+const candSelected = new Set(); // "<candidate id>:<requisition id or 0>" of the applications ticked on this page
 let candSearchDebounceTimer = null, candRequestSeq = 0;
 
 // Requisitions a resume can be added to: still open, or closed/filled — HR keeps
@@ -380,7 +381,7 @@ async function loadCandidates() {
   const body=document.getElementById('candTableBody');
   const empty=document.getElementById('candEmpty');
   const pagination=document.getElementById('candPagination');
-  if(!rows.length){body.innerHTML='';empty?.classList.remove('hidden');pagination?.classList.add('hidden');return;}
+  if(!rows.length){body.innerHTML='';empty?.classList.remove('hidden');pagination?.classList.add('hidden');candSelected.clear();renderCandBulkBar();listViewsRender('candidates');return;}
   empty?.classList.add('hidden');
   pagination?.classList.remove('hidden');
   const pageSizeEl=document.getElementById('candPageSize');
@@ -390,8 +391,13 @@ async function loadCandidates() {
   body.innerHTML=rows.map(c=>`
     <tr class="hover:bg-slate-50 cursor-pointer" onclick="openCandDetail(${c.id})">
       <td class="px-4 py-3">
-        <p class="font-medium text-slate-800">${esc(c.full_name)}</p>
-        <p class="text-xs text-slate-400">${esc(c.email||'')} ${c.phone?'· '+esc(c.phone):''}</p>
+        <div class="flex items-start gap-3">
+          ${canManage?`<input type="checkbox" class="cand-check mt-1" aria-label="Select ${esc(c.full_name)}${c.requisition_title?' for '+esc(c.requisition_title):''}" ${candSelected.has(candKey(c))?'checked':''} onclick="event.stopPropagation()" onchange="toggleCandSelect('${candKey(c)}', this.checked)"/>`:''}
+          <div>
+            <p class="font-medium text-slate-800">${esc(c.full_name)}</p>
+            <p class="text-xs text-slate-400">${esc(c.email||'')} ${c.phone?'· '+esc(c.phone):''}</p>
+          </div>
+        </div>
       </td>
       <td class="px-4 py-3 text-slate-600">${esc(c.requisition_title||'—')}</td>
       <td class="px-4 py-3">${c.requisition_status?`<span class="badge ${reqStatusBadge(c.requisition_status)}">${esc(c.requisition_status)}</span>`:'<span class="text-slate-400">—</span>'}</td>
@@ -402,6 +408,102 @@ async function loadCandidates() {
       <td class="px-4 py-3"><span class="badge ${stageBadgeClass(c.stage)}">${esc(c.stage)}</span></td>
       <td class="px-4 py-3 text-right"><button class="btn-ghost text-xs" onclick="event.stopPropagation();openCandDetail(${c.id})">View</button></td>
     </tr>`).join('');
+  candSelected.clear();
+  document.getElementById('candSelectAll')?.classList.toggle('hidden',!canManage);
+  renderCandBulkBar();
+  listViewsRender('candidates');
+}
+
+
+// ---------------------------------------------------------------------------
+// Candidate Bank — saved views and bulk stage move
+// ---------------------------------------------------------------------------
+const CAND_ALL_STAGES = ['New','Screening','Interview','Pending Checks','Offer','Hired','Rejected by Candidate','Rejected by Company','Withdrawn'];
+const CAND_DEFAULT_REQ = ['Approved','No Requisition'];
+const CAND_ALL_REQ = ['Draft','Pending Approval','Approved','Rejected','Closed','Filled','No Requisition'];
+
+function candViewState() {
+  return {
+    stages: [...document.querySelectorAll('.cand-stage-cb:checked')].map(cb=>cb.value),
+    reqStatuses: [...document.querySelectorAll('.cand-reqstatus-cb:checked')].map(cb=>cb.value),
+    search: (document.getElementById('candSearch')?.value||'').trim(),
+  };
+}
+
+function applyCandViewState(st) {
+  document.querySelectorAll('.cand-stage-cb').forEach(cb=>{ cb.checked=(st.stages||[]).includes(cb.value); });
+  document.getElementById('candStageAll').checked=[...document.querySelectorAll('.cand-stage-cb')].every(cb=>cb.checked);
+  document.querySelectorAll('.cand-reqstatus-cb').forEach(cb=>{ cb.checked=(st.reqStatuses||[]).includes(cb.value); });
+  document.getElementById('candReqStatusAll').checked=[...document.querySelectorAll('.cand-reqstatus-cb')].every(cb=>cb.checked);
+  const s=document.getElementById('candSearch'); if(s) s.value=st.search||'';
+  candPage=1; loadCandidates();
+}
+
+listViewsRegister('candidates', {
+  hostId: 'candViews',
+  builtins: [
+    { label: 'Everyone', state: { stages: CAND_ALL_STAGES, reqStatuses: CAND_DEFAULT_REQ, search: '' } },
+    { label: 'In progress', state: { stages: ['New','Screening','Interview','Pending Checks','Offer'], reqStatuses: CAND_DEFAULT_REQ, search: '' } },
+    { label: 'Offers out', state: { stages: ['Offer'], reqStatuses: CAND_DEFAULT_REQ, search: '' } },
+    { label: 'Hired', state: { stages: ['Hired'], reqStatuses: CAND_DEFAULT_REQ, search: '' } },
+    { label: 'Not progressing', state: { stages: ['Rejected by Candidate','Rejected by Company','Withdrawn'], reqStatuses: CAND_DEFAULT_REQ, search: '' } },
+    { label: 'Including closed jobs', state: { stages: CAND_ALL_STAGES, reqStatuses: CAND_ALL_REQ, search: '' } },
+  ],
+  getState: candViewState,
+  applyState: applyCandViewState,
+});
+
+// One row = one application (a person can appear once per requisition), so a row is identified by both ids.
+function candKey(c) { return `${c.id}:${c.requisition_id==null?0:c.requisition_id}`; }
+
+function syncCandSelectAll() {
+  const all=document.getElementById('candSelectAll');
+  if(all) all.checked=candPageRows.length>0&&candPageRows.every(c=>candSelected.has(candKey(c)));
+}
+function toggleCandSelect(key, on) {
+  if(on) candSelected.add(key); else candSelected.delete(key);
+  syncCandSelectAll(); renderCandBulkBar();
+}
+function toggleCandSelectAll(on) {
+  candPageRows.forEach(c=>{ if(on) candSelected.add(candKey(c)); else candSelected.delete(candKey(c)); });
+  document.querySelectorAll('#candTableBody .cand-check').forEach(cb=>{ cb.checked=on; });
+  renderCandBulkBar();
+}
+function clearCandSelection() {
+  candSelected.clear();
+  document.querySelectorAll('#candTableBody .cand-check, #candSelectAll').forEach(cb=>{ cb.checked=false; });
+  renderCandBulkBar();
+}
+
+function renderCandBulkBar() {
+  const bar=document.getElementById('candBulkBar');
+  if(!bar) return;
+  const n=candSelected.size;
+  bar.classList.toggle('hidden', !n || !canManageRecruitment());
+  bar.innerHTML=n?`<span class="lv-bulk-n">${n} selected</span>
+    <label class="lv-bulk-label" for="candBulkStage">Move to</label>
+    <select id="candBulkStage" class="inp lv-bulk-select">${(recruitMeta.stages||CAND_ALL_STAGES).map(s=>`<option>${esc(s)}</option>`).join('')}</select>
+    <button type="button" class="pill-btn pill-btn-primary" onclick="bulkMoveCandStage()">Move</button>
+    <button type="button" class="pill-btn pill-btn-outline" onclick="clearCandSelection()">Clear</button>`:'';
+}
+
+// Each application moves through the same endpoint the Candidate Detail uses (same checks and stage history): a move
+// the server refuses (an invalid step, an application that changed meanwhile) is reported by name, the rest still go through.
+async function bulkMoveCandStage() {
+  const stage=document.getElementById('candBulkStage')?.value;
+  const chosen=candPageRows.filter(c=>candSelected.has(candKey(c)));
+  if(!stage||!chosen.length) return;
+  if(!confirm(`Move ${chosen.length} application${chosen.length===1?'':'s'} to "${stage}"?`)) return;
+  let ok=0; const failed=[];
+  for(const c of chosen) {
+    const res=await api(`/api/recruitment/candidates/${c.id}/requisitions/${c.requisition_id==null?0:c.requisition_id}/stage`,{method:'PATCH',body:JSON.stringify({stage})});
+    if(res&&res.ok) ok++;
+    else if(res) { const d=await res.json().catch(()=>({})); failed.push(`${c.full_name}${d?.detail?` (${apiErrorText(d.detail,'')})`:''}`); }
+    else return; // 401: the sign-out flow has started
+  }
+  candSelected.clear();
+  notify(failed.length?`Moved ${ok} of ${chosen.length} to ${stage}. Couldn't move: ${failed.join('; ')}.`:`Moved ${ok} to ${stage}.`, failed.length?'error':'success');
+  loadCandidates();
 }
 
 function switchCandFormTab(tab) {

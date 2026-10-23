@@ -40,6 +40,7 @@ from routers.me_projects import router as me_projects_router
 from routers.me_todos import router as me_todos_router
 from routers.dashboard import router as dashboard_router
 from routers.approvals import router as approvals_router
+from routers.home import router as home_router
 from routers.payroll import router as payroll_router
 from routers.performance import router as performance_router
 from routers.employees import router as employees_router
@@ -156,6 +157,7 @@ app.include_router(me_projects_router)
 app.include_router(me_todos_router)
 app.include_router(dashboard_router)
 app.include_router(approvals_router)
+app.include_router(home_router)
 app.include_router(payroll_router)
 app.include_router(performance_router)
 app.include_router(employees_router)

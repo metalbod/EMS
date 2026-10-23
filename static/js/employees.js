@@ -37,6 +37,8 @@ let empPage = 1, empPageSize = 50, empTotal = 0;
 let empSortKey = 'full_name', empSortDir = 'asc';
 let empPageRows = [];
 let empSearchDebounceTimer = null;
+let empEnding = '';            // '' | 'probation' | 'contract' — the "ending within 30 days" saved-view filters (no control of their own)
+const empSelected = new Set(); // employee_ids ticked on the current page (cleared whenever the list reloads)
 
 // ---------------------------------------------------------------------------
 // Employee List — optional columns
@@ -184,20 +186,28 @@ async function loadEmployeeListPage() {
   });
   if (q) params.set('search', q);
   if (s) params.set('status', s);
+  const dept = document.getElementById('empDeptFilter')?.value;
+  if (dept) params.set('department', dept);
+  if (empEnding === 'probation') params.set('probation_ending_days', '30');
+  if (empEnding === 'contract') params.set('contract_ending_days', '30');
   const res = await api(`/api/employees?${params}`);
   if (seq !== empRequestSeq) return; // a newer request has since started — it owns hiding the indicator
   setEmpSearching(false);
   if (!res || !res.ok) return;
   empPageRows = await res.json();
   empTotal = parseInt(res.headers.get('X-Total-Count') || '0', 10);
+  empSelected.clear();
+  populateEmpDeptFilter();
   renderEmpTable();
+  renderEmpBulkBar();
+  listViewsRender('employees');
 }
 
 function renderEmpTableHead() {
   ensureEmpColumnPrefsLoaded();
   const cols = empAvailableColumns().filter(c => empVisibleColumns.has(c.key));
   document.getElementById('empTableHeadRow').innerHTML = `
-    <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none whitespace-nowrap" onclick="setEmpSort('full_name')">Name<span class="emp-sort-arrow" data-sort-key="full_name"></span></th>
+    <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none whitespace-nowrap" onclick="setEmpSort('full_name')"><input type="checkbox" class="emp-check" id="empSelectAll" aria-label="Select everyone on this page" onclick="event.stopPropagation()" onchange="toggleEmpSelectAll(this.checked)"/> Name<span class="emp-sort-arrow" data-sort-key="full_name"></span></th>
     ${cols.map(c => `<th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none whitespace-nowrap" onclick="setEmpSort('${c.sortKey}')">${esc(c.label)}<span class="emp-sort-arrow" data-sort-key="${c.sortKey}"></span></th>`).join('')}
     <th class="px-4 py-3"></th>
   `;
@@ -226,6 +236,7 @@ function renderEmpTable() {
     <tr class="hover:bg-slate-50 transition cursor-pointer" onclick="viewEmployee('${esc(e.employee_id)}')">
       <td class="px-4 py-3">
         <div class="flex items-center gap-3">
+          <input type="checkbox" class="emp-check" aria-label="Select ${esc(combinedName(e.full_name, e.preferred_name))}" ${empSelected.has(e.employee_id)?'checked':''} onclick="event.stopPropagation()" onchange="toggleEmpSelect('${esc(e.employee_id)}', this.checked)"/>
           <div class="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 text-xs font-bold shrink-0">${e.full_name.split(' ').slice(0,2).map(w=>w[0]||'').join('').toUpperCase()}</div>
           <p class="font-medium whitespace-nowrap">${esc(combinedName(e.full_name, e.preferred_name))}</p>
         </div>
@@ -239,11 +250,111 @@ function renderEmpTable() {
 }
 
 // ---------------------------------------------------------------------------
+// Directory — saved views, department filter, bulk bar (export)
+// ---------------------------------------------------------------------------
+const EMP_DEFAULT_STATE = { status: 'Active', search: '', department: '', ending: '' };
+
+function empViewState() {
+  return {
+    status: document.getElementById('empStatusFilter')?.value ?? 'Active',
+    search: (document.getElementById('empSearch')?.value || '').trim(),
+    department: document.getElementById('empDeptFilter')?.value || '',
+    ending: empEnding,
+  };
+}
+
+function applyEmpViewState(st) {
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  empEnding = st.ending || '';
+  set('empStatusFilter', st.status ?? '');
+  set('empSearch', st.search || '');
+  populateEmpDeptFilter(st.department || '');
+  set('empDeptFilter', st.department || '');
+  filterEmployees();
+}
+
+// Departments come from the roster the app already holds for this person (scoped like the list itself).
+function populateEmpDeptFilter(keep) {
+  const sel = document.getElementById('empDeptFilter');
+  if (!sel) return;
+  const current = keep ?? sel.value;
+  const depts = [...new Set((employees || []).map(e => e.department).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  if (current && !depts.includes(current)) depts.push(current);
+  sel.innerHTML = '<option value="">All departments</option>' + depts.map(d => `<option value="${esc(d)}">${esc(d)}</option>`).join('');
+  sel.value = current || '';
+}
+
+function clearEmpFilters() { applyEmpViewState(EMP_DEFAULT_STATE); }
+
+listViewsRegister('employees', {
+  hostId: 'empViews',
+  builtins: [
+    { label: 'Active', state: EMP_DEFAULT_STATE },
+    { label: 'Probation ending soon', state: { ...EMP_DEFAULT_STATE, ending: 'probation' } },
+    { label: 'Contracts ending soon', state: { ...EMP_DEFAULT_STATE, ending: 'contract' } },
+    { label: 'Inactive', state: { ...EMP_DEFAULT_STATE, status: 'Inactive' } },
+    { label: 'Everyone', state: { ...EMP_DEFAULT_STATE, status: '' } },
+  ],
+  getState: empViewState,
+  applyState: applyEmpViewState,
+});
+
+function syncEmpSelectAll() {
+  const all = document.getElementById('empSelectAll');
+  if (all) all.checked = empPageRows.length > 0 && empPageRows.every(e => empSelected.has(e.employee_id));
+}
+
+function toggleEmpSelect(id, on) {
+  if (on) empSelected.add(id); else empSelected.delete(id);
+  syncEmpSelectAll();
+  renderEmpBulkBar();
+}
+
+function toggleEmpSelectAll(on) {
+  empPageRows.forEach(e => { if (on) empSelected.add(e.employee_id); else empSelected.delete(e.employee_id); });
+  document.querySelectorAll('#empTableBody .emp-check').forEach(cb => { cb.checked = on; });
+  renderEmpBulkBar();
+}
+
+function clearEmpSelection() {
+  empSelected.clear();
+  document.querySelectorAll('#empTableBody .emp-check, #empSelectAll').forEach(cb => { cb.checked = false; });
+  renderEmpBulkBar();
+}
+
+function renderEmpBulkBar() {
+  const bar = document.getElementById('empBulkBar');
+  if (!bar) return;
+  const n = empSelected.size;
+  bar.classList.toggle('hidden', !n);
+  bar.innerHTML = n ? `<span class="lv-bulk-n">${n} selected</span>
+    <button type="button" class="pill-btn pill-btn-primary" onclick="exportEmpSelected()">Export to CSV</button>
+    <button type="button" class="pill-btn pill-btn-outline" onclick="clearEmpSelection()">Clear</button>` : '';
+}
+
+// Exports what is on screen for the ticked people: the Name column plus the columns shown now — never a field the list
+// itself doesn't show this person.
+function exportEmpSelected() {
+  const cols = empAvailableColumns().filter(c => empVisibleColumns.has(c.key));
+  const text = c => { const d = document.createElement('div'); d.innerHTML = c; return d.textContent.trim(); };
+  const rows = empPageRows.filter(e => empSelected.has(e.employee_id)).map(e =>
+    [combinedName(e.full_name, e.preferred_name), ...cols.map(c => text(c.render(e)))]);
+  if (!rows.length) return;
+  saveCsvFile(`employees-${localDateStr(new Date())}.csv`, csvText(['Name', ...cols.map(c => c.label)], rows));
+  notify(`Exported ${rows.length} ${rows.length === 1 ? 'person' : 'people'}.`, 'success');
+}
+
+// ---------------------------------------------------------------------------
 // Employee View Modal
 // ---------------------------------------------------------------------------
-function viewEmployee(id) {
-  const e = employees.find(em=>em.employee_id===id); if(!e) return;
+// Opening a record is navigating to its page (#employee/<id>); employee-profile.js's loadEmployeeProfilePage()
+// then calls renderEmployeeProfile(). Kept under the old name for the org chart, command bar and Home links.
+function viewEmployee(id) { showPage('employee', { id }); }
+
+function renderEmployeeProfile(id) {
+  const e = employees.find(em=>em.employee_id===id); if(!e) return false;
   viewingId = id;
+  document.getElementById('viewAvatar').textContent = (combinedName(e.full_name, e.preferred_name) || e.employee_id).split(/\s+/).map(w=>w[0]).filter(Boolean).slice(0,2).join('').toUpperCase();
   document.getElementById('viewName').textContent = combinedName(e.full_name, e.preferred_name) || e.employee_id;
   document.getElementById('viewMeta').textContent = [e.employee_id, e.designation, e.department].filter(Boolean).join(' · ') || '—';
   const badge = document.getElementById('viewBadge');
@@ -338,8 +449,9 @@ function viewEmployee(id) {
   ]);
   loadEmployeeLocations(id);
   loadEmployeeCompensationTab(id);
-  switchViewTab('vt-personal');
-  document.getElementById('viewModal').classList.remove('hidden');
+  syncViewMore();
+  switchViewTab('vt-overview');
+  return true;
 }
 
 function vgrid(fields) {
@@ -442,34 +554,15 @@ async function switchViewTab(name) {
   VIEW_TABS.forEach(t=>{
     document.getElementById(t)?.classList.toggle('hidden',t!==name);
     const btn=document.querySelector(`[data-vtab="${t}"]`);
-    if(btn) btn.classList.toggle('active',t===name);
+    if(btn){ btn.classList.toggle('area-subtab-active',t===name); if(t===name) btn.setAttribute('aria-current','page'); else btn.removeAttribute('aria-current'); }
   });
+  if(name==='vt-overview') loadProfileOverview(viewingId);
   if(name==='vt-notes') loadNotes();
   if(name==='vt-learning') loadEmployeeLearning(viewingId);
   // employee-documents.js is lazy-loaded (Speed Audit item 7 — HR-only,
   // this tab's button is itself hidden for non-HR-staff roles already).
   if(name==='vt-documents') { await ensureModuleLoaded('employee-documents'); loadEmployeeDocuments(viewingId); }
-  closeViewTabMenu();
 }
-
-// Sections drawer (mobile/narrow only) — mirrors app-init.js's
-// openBurgerMenu/closeBurgerMenu/toggleBurgerMenu for the main shell's
-// sidebar, scoped to this modal's own drawer/overlay instead.
-function openViewTabMenu() {
-  document.getElementById('viewTabDrawer')?.classList.remove('-translate-x-full');
-  document.getElementById('viewTabOverlay')?.classList.remove('hidden');
-}
-function closeViewTabMenu() {
-  if (window.innerWidth >= 640) return;
-  document.getElementById('viewTabDrawer')?.classList.add('-translate-x-full');
-  document.getElementById('viewTabOverlay')?.classList.add('hidden');
-}
-function toggleViewTabMenu() {
-  const isOpen = !document.getElementById('viewTabDrawer')?.classList.contains('-translate-x-full');
-  if (isOpen) closeViewTabMenu(); else openViewTabMenu();
-}
-
-function closeViewModal() { closeModal('viewModal', () => { viewingId=null; closeViewTabMenu(); }); }
 
 async function loadEmployeeLocations(empId) {
   const el = document.getElementById('vt-locations');
@@ -534,7 +627,7 @@ async function loadRelatedContracts(empId) {
           ${canRehire?`<button onclick="startRehire('${empId}')" class="btn-primary text-xs px-3 py-1.5">+ Rehire</button>`:''}
         </div>
         ${contracts.length?`<div class="space-y-2">${contracts.map(c=>`
-          <div class="flex items-center gap-3 rounded-lg border border-slate-100 bg-slate-50 px-4 py-3 cursor-pointer hover:bg-slate-100 transition" onclick="closeViewModal();viewEmployee('${c.employee_id}')">
+          <div class="flex items-center gap-3 rounded-lg border border-slate-100 bg-slate-50 px-4 py-3 cursor-pointer hover:bg-slate-100 transition" onclick="viewEmployee('${c.employee_id}')">
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2 flex-wrap">
                 <span class="text-sm font-medium text-slate-700">${esc(c.employee_id)}</span>
@@ -557,7 +650,7 @@ async function startRehire(fromEmpId) {
   const pre=await r.json();
   // Open modal first, then close view so re-renders don't dismiss it
   openAddModal();
-  document.getElementById('viewModal').classList.add('hidden'); viewingId=null;
+  showPage('employees'); // leave the old record's page; the add dialog stays up
   // Fill personal fields after modal opens
   await new Promise(res=>setTimeout(res,50));
   const fields={
@@ -593,7 +686,7 @@ async function startRehire(fromEmpId) {
 
 function editFromView() {
   const e=employees.find(em=>em.employee_id===viewingId); if(!e) return;
-  closeViewModal(); openEditModal(e);
+  openEditModal(e); // opens over the profile page; saving re-renders it (see saveEmployee)
 }
 
 async function toggleStatusFromView() {
@@ -604,7 +697,7 @@ async function toggleStatusFromView() {
     const updated=await res.json();
     const idx=employees.findIndex(em=>em.employee_id===viewingId);
     if(idx>=0) employees[idx]=updated;
-    closeViewModal(); filterEmployees(); renderDashboard();
+    renderEmployeeProfile(viewingId); filterEmployees(); renderDashboard();
   }
 }
 
@@ -867,9 +960,11 @@ async function submitEmpForm(e) {
   if(!res) return;
   if(!res.ok){const d=await res.json();err.textContent=d.detail||'Failed';err.classList.remove('hidden');return;}
   const saved=await res.json();
+  const editedId=currentEmpId;
   if(currentEmpId){const idx=employees.findIndex(em=>em.employee_id===currentEmpId);if(idx>=0)employees[idx]=saved;}
   else employees.unshift(saved);
   closeEmpModal(); filterEmployees(); renderDashboard();
+  if(editedId && editedId===viewingId && currentPage==='employee') renderEmployeeProfile(viewingId); // the page behind the dialog shows the new values
   if(saved.pay_grade_warning) notify(saved.pay_grade_warning);
 }
 

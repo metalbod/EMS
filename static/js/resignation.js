@@ -88,11 +88,7 @@ function fileResignationFromView() {
   const e = employees.find(em => em.employee_id === viewingId);
   if (!e) return;
   const empId = viewingId, empName = displayName(e.full_name, e.preferred_name);
-  // Close the employee detail modal first — leaving it open underneath
-  // stacked two full-screen modals (doubled-up backdrop, and the Resign
-  // modal's own success path already calls closeViewModal() again, which
-  // is harmless once it's already closed).
-  closeViewModal();
+  // The Resign dialog opens over the employee's page; filing it re-renders the page (see the submit handler below).
   openResignModal(empId, empName);
 }
 
@@ -156,7 +152,7 @@ const submitResignation = guardAsync(async function(e) {
     return;
   }
   closeResignModal();
-  if (empId) { closeViewModal(); notify('Resignation filed.'); }
+  if (empId) { if (currentPage === 'employee') renderEmployeeProfile(empId); notify('Resignation filed.'); }
   else { await refreshResignButtonState(); }
 });
 

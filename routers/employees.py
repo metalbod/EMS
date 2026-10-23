@@ -12,6 +12,8 @@ from core.deps import get_current_user, need_inst
 
 from core.org_queries import is_self_or_subordinate
 
+from core.institution_time import institution_today
+
 from core.audit import write_audit
 
 from core.validators import validate_logo_url
@@ -402,8 +404,12 @@ def list_employees(
     search: Optional[str] = None,
     sort_by: Optional[str] = None, sort_dir: str = "asc",
     limit: Optional[int] = None, offset: int = 0,
+    department: Optional[str] = None,
+    probation_ending_days: Optional[int] = None, contract_ending_days: Optional[int] = None,
     user: dict = Depends(get_current_user),
 ) -> List[Dict[str, Any]]:
+    # department / *_ending_days narrow the same role-scoped set the Directory's saved views use
+    # ("probation ending in 30 days" = probation_end_date from today through today+N, in the company's calendar).
     # limit is opt-in and defaults to None (today's "return everything"
     # behavior, unchanged) — this endpoint doubles as the app-wide employee
     # roster cache (org chart, pickers, dashboards; see loadEmployees() and
@@ -430,6 +436,13 @@ def list_employees(
         if user["role"] == "employee":
             q += " AND employee_id=?"; p.append(user["employee_id"])
     if status: q += " AND status=?"; p.append(status)
+    if department: q += " AND department=?"; p.append(department)
+    for col, days in (("probation_end_date", probation_ending_days), ("contract_end_date", contract_ending_days)):
+        if days is not None:
+            from datetime import date as _date
+            today = _date.fromisoformat(institution_today(conn, inst_id))
+            q += f" AND {col} >= ? AND {col} <= ?"
+            p.extend([today.isoformat(), (today + timedelta(days=max(0, min(days, 365)))).isoformat()])
     if search and user["role"] != "employee":
         like = f"%{search}%"
         # ILIKE, not LIKE — plain LIKE is case-sensitive in Postgres, so

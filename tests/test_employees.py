@@ -747,3 +747,21 @@ def test_rehire_prefill_success(client, hr_manager_auth, make_test_employee):
 def test_rehire_prefill_not_found_returns_404(client, hr_manager_auth):
     res = client.get("/api/employees/EMP_ZZ_NONEXISTENT/rehire-prefill", headers=hr_manager_auth)
     assert res.status_code == 404
+
+
+def test_list_filters_department_and_probation_or_contract_ending(client, hr_manager_auth, make_test_employee):
+    from datetime import date, timedelta
+    dept = f"ZZFilterDept{__import__('os').urandom(2).hex()}"
+    soon = (date.today() + timedelta(days=10)).isoformat()
+    far = (date.today() + timedelta(days=120)).isoformat()
+    a = make_test_employee(department=dept, probation_end_date=soon)
+    b = make_test_employee(department=dept, contract_end_date=soon)
+    c = make_test_employee(department=dept, probation_end_date=far)
+    other = make_test_employee(probation_end_date=soon)
+    ids = lambda params: {e["employee_id"] for e in client.get("/api/employees", headers=hr_manager_auth, params=params).json()}
+    assert ids({"department": dept}) == {a["employee_id"], b["employee_id"], c["employee_id"]}
+    assert ids({"department": dept, "probation_ending_days": 30}) == {a["employee_id"]}
+    assert ids({"department": dept, "contract_ending_days": 30}) == {b["employee_id"]}
+    assert other["employee_id"] in ids({"probation_ending_days": 30})
+    assert other["employee_id"] not in ids({"department": dept, "probation_ending_days": 30})
+    assert ids({"department": dept, "probation_ending_days": 200}) == {a["employee_id"], c["employee_id"]}
